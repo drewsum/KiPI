@@ -27,15 +27,22 @@ from scipy.sparse.csgraph import connected_components
 from kipi.mesh.mesher import NetMesh
 from kipi.model.board import BoardSnapshot
 from kipi.progress import NULL, ProgressReporter
+from kipi.solver import direct
 from kipi.solver.setup import REF_TEMP_C, SHORT_OHMS, NetProblem
 
-DIRECT_SOLVE_MAX_UNKNOWNS = 30_000
+# Largest systems factorized directly, by backend (see kipi.solver.direct); AMG-CG above.
+# Measured on board meshes: SuperLU beats AMG-CG up to ~250k unknowns (0.7 s vs 2.4 s at
+# 160k; ~1 GB of factors at 420k), and multithreaded PARDISO beats it at every size
+# tried (1.2 s vs 10 s at 640k).
+DIRECT_SOLVE_MAX_UNKNOWNS = 200_000
+DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO = 1_000_000
 # CG on big boards can reach the floor that round-off allows just above the target
 # tolerance; past that point it does not stall quietly but diverges. Stop once it has
 # gone this many iterations without a new best residual, and keep the best iterate.
 CG_STALL_ITERATIONS = 40
 CG_ACCEPT_FACTOR = 100     # accept a stopped CG result within this factor of tol
 CG_WARM_ACCEPT_FACTOR = 10  # skip CG when a warm start is already within this factor
+CG_REUSED_MAX_ITERATIONS = 150  # past this, a reused preconditioner is set up afresh
 
 
 class SolveError(RuntimeError):
@@ -217,49 +224,102 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
 # Solve
 # ---------------------------------------------------------------------------
 
+def direct_solve_max_unknowns() -> int:
+    """Largest system solved directly with the backend this machine has."""
+    return (DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO if direct.backend() == "pardiso"
+            else DIRECT_SOLVE_MAX_UNKNOWNS)
+
+
 class _Factor:
     """Solver for the fixed reduced matrix, reused for every right-hand side.
 
-    Small systems are LU-factorized once; large ones keep their AMG hierarchy and warm
-    start CG from the previous solution (power-tree iterations change only the
-    right-hand side, and only slightly)."""
+    Small systems are factorized once; large ones keep their AMG hierarchy and warm start
+    CG from the previous solution (power-tree iterations change only the right-hand side,
+    and only slightly).
 
-    def __init__(self, A: sp.csr_matrix, settings, progress: ProgressReporter, stats: dict):
+    ``previous`` is the solver of an earlier matrix with the same unknowns and nearly the
+    same values (the electro-thermal loop changes only copper resistivity). If it used AMG,
+    its hierarchy preconditions CG on the new matrix, which skips the AMG setup; if that
+    does not converge, the new matrix gets a setup of its own. Direct factorizations are
+    not reused: a refactorization costs less than running CG for every right-hand side."""
+
+    def __init__(self, A: sp.csr_matrix, settings, progress: ProgressReporter, stats: dict,
+                 previous: Optional["_Factor"] = None):
         self.A = A
         self.s = settings
         self.stats = stats
         self.x_prev = None
-        self.lu = None
-        self.ml = None
+        self.lu = None            # direct factorization of A itself
+        self.M = None             # CG preconditioner: this matrix's AMG cycle, or a previous one's
+        self.reused = False
         n = A.shape[0]
-        if n <= DIRECT_SOLVE_MAX_UNKNOWNS:
-            from scipy.sparse.linalg import factorized
-            progress.info(f"Direct solve ({n} unknowns)")
+        if (previous is not None and previous.M is not None
+                and previous.A.shape == A.shape and previous.A.nnz == A.nnz):
+            self.M = previous.M
+            self.x_prev = previous.x_prev
+            self.reused = True
+            stats["method"] = "amg-cg (reused hierarchy)"
+            progress.info(f"Reusing the previous AMG hierarchy as preconditioner "
+                          f"({n} unknowns)")
+        else:
+            self._setup(progress)
+
+    def _setup(self, progress: ProgressReporter):
+        """Factorization (small systems) or AMG hierarchy (large ones) for A itself."""
+        A, n = self.A, self.A.shape[0]
+        self.reused = False
+        self.M = None
+        if n <= direct_solve_max_unknowns():
+            progress.info(f"Direct solve ({n} unknowns, {direct.backend()})")
             progress.fraction(None)
-            self.lu = factorized(A.tocsc()) if n else None
-            stats["method"] = "direct"
-            stats["iterations"] = 0
+            self.lu = direct.factorize(A, progress.warn) if n else None
+            self.stats["method"] = f"direct ({self.lu.name})" if n else "direct"
+            self.stats["iterations"] = 0
         else:
             import pyamg
             t = time.perf_counter()
             progress.info(f"AMG setup ({n} unknowns, {A.nnz} non-zeros)...")
-            self.ml = pyamg.smoothed_aggregation_solver(A, symmetry="hermitian", max_coarse=500)
-            progress.info(f"AMG hierarchy: {len(self.ml.levels)} levels, operator complexity "
-                          f"{self.ml.operator_complexity():.2f} ({time.perf_counter() - t:.2f} s)")
-            stats["method"] = "amg-cg"
+            ml = pyamg.smoothed_aggregation_solver(A, symmetry="hermitian", max_coarse=500)
+            progress.info(f"AMG hierarchy: {len(ml.levels)} levels, operator complexity "
+                          f"{ml.operator_complexity():.2f} ({time.perf_counter() - t:.2f} s)")
+            self.M = ml.aspreconditioner()
+            self.stats["method"] = "amg-cg"
 
     def solve(self, rhs: np.ndarray, progress: ProgressReporter) -> np.ndarray:
         if self.A.shape[0] == 0:
             return np.zeros(0)
         if self.lu is not None:
             return np.asarray(self.lu(rhs))
+        x, rel = self._cg(rhs, progress)
+        if rel > self.s.tol * CG_ACCEPT_FACTOR and self.reused:
+            progress.info(f"The reused AMG hierarchy did not converge (relative residual "
+                          f"{rel:.1e}); setting up this matrix afresh")
+            self._setup(progress)
+            if self.lu is not None:
+                self.x_prev = np.asarray(self.lu(rhs))
+                return self.x_prev
+            x, rel = self._cg(rhs, progress)
+        if rel > self.s.tol * CG_ACCEPT_FACTOR:
+            progress.warn("Iterative solve did not converge; switching this system to a "
+                          "direct solve")
+            progress.fraction(None)
+            # Kept for this system's later right-hand sides (power-tree passes).
+            self.lu = direct.factorize(self.A, progress.warn)
+            self.M = None
+            x = self.lu(rhs)
+            self.stats["method"] = f"direct ({self.lu.name}, fallback)"
+        self.x_prev = np.asarray(x)
+        return self.x_prev
+
+    def _cg(self, rhs: np.ndarray, progress: ProgressReporter):
+        """Preconditioned CG from the previous solution: (x, relative residual)."""
+        from pyamg.krylov import cg
         s = self.s
         # The target is ||b - A x|| <= tol * ||b||, which is also what pyamg's CG tests
         # (its default 'rr' criterion), so tol is passed straight through.
         norm_b = float(np.linalg.norm(rhs))
         if norm_b == 0:
-            self.x_prev = np.zeros_like(rhs)
-            return self.x_prev
+            return np.zeros_like(rhs), 0.0
         x0 = self.x_prev if self.x_prev is not None and len(self.x_prev) == len(rhs) else None
         if x0 is not None:
             # Re-solves (power-tree passes, electro-thermal iterations) often start right
@@ -270,7 +330,7 @@ class _Factor:
                 self.stats["iterations"] = 0
                 self.stats["relative_residual"] = r0 / norm_b
                 progress.info(f"Warm start already converged (relative residual {r0 / norm_b:.2e})")
-                return x0
+                return x0, r0 / norm_b
 
         residuals: List[float] = []
         state = {"last": 0.0}
@@ -293,16 +353,19 @@ class _Factor:
                 progress.info(f"  CG iteration {it}: relative residual {r:.2e}")
                 progress.fraction(min(1.0, math.log10(max(r, 1e-300)) / log_target))
 
+        # A reused preconditioner that needs many iterations is a worse deal than a setup
+        # of this matrix's own.
+        maxiter = min(s.max_iter, CG_REUSED_MAX_ITERATIONS) if self.reused else s.max_iter
         stalled = False
         try:
-            x = self.ml.solve(rhs, x0=x0, tol=s.tol, maxiter=s.max_iter, accel="cg",
-                              callback=cb, residuals=residuals)
+            x, _ = cg(self.A, rhs, x0=x0, tol=s.tol, maxiter=maxiter, M=self.M,
+                      callback=cb, residuals=residuals)
         except _Stalled:
             stalled = True
             x = best["x"]
         else:
             if best["x"] is not None and residuals[-1] > best["res"]:
-                x = best["x"]          # hit max_iter after wandering off its best iterate
+                x = best["x"]          # hit maxiter after wandering off its best iterate
         rel = float(np.linalg.norm(rhs - self.A @ x)) / norm_b
         self.stats["iterations"] = len(residuals) - 1
         self.stats["relative_residual"] = rel
@@ -313,18 +376,7 @@ class _Factor:
         else:
             progress.info(f"CG converged in {len(residuals) - 1} iterations, "
                           f"relative residual {rel:.2e}")
-        if rel > s.tol * CG_ACCEPT_FACTOR:
-            progress.warn("Iterative solve did not converge; switching this system to a "
-                          "direct solve")
-            from scipy.sparse.linalg import factorized
-            progress.fraction(None)
-            # Kept for this system's later right-hand sides (power-tree passes).
-            self.lu = factorized(self.A.tocsc())
-            self.ml = None
-            x = self.lu(rhs)
-            self.stats["method"] = "direct (fallback)"
-        self.x_prev = np.asarray(x)
-        return self.x_prev
+        return x, rel
 
 
 class LinearSystem:
@@ -334,10 +386,14 @@ class LinearSystem:
     factorization). :meth:`solve` then takes source voltages and load currents, which
     may change between calls (VRM sense correction, VRM input currents in a power
     tree), and returns a :class:`Solution`.
+
+    ``previous`` is the ``factor`` of a system for the same mesh and terminals with
+    slightly different copper resistivity; its factorization or AMG hierarchy is reused
+    as the preconditioner (see :class:`_Factor`).
     """
 
     def __init__(self, snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem,
-                 progress: ProgressReporter = NULL):
+                 progress: ProgressReporter = NULL, previous: Optional[_Factor] = None):
         if not problem.sources:
             raise SolveError(f"{problem.net} needs a voltage source (a VRM output)")
         t0 = time.perf_counter()
@@ -393,7 +449,7 @@ class LinearSystem:
         A = self.K[self.free][:, self.free].tocsr()
         self.K_fd = self.K[self.free][:, self.fixed_idx].tocsr()
         with progress.timed("Factorizing"):
-            self.factor = _Factor(A, problem.settings, progress, self.stats)
+            self.factor = _Factor(A, problem.settings, progress, self.stats, previous)
         self.setup_s = time.perf_counter() - t0
         for w in self.warnings:
             progress.warn(w)

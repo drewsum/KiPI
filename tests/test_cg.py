@@ -5,13 +5,20 @@ import scipy.sparse as sp
 
 pytest.importorskip("pyamg")
 
+from kipi.solver import fem  # noqa: E402
 from kipi.solver.fem import CG_ACCEPT_FACTOR, _Factor  # noqa: E402
 from kipi.solver.setup import SolveSettings  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _amg_only(monkeypatch):
+    """These tests are about the iterative path, whatever size the direct solver takes."""
+    monkeypatch.setattr(fem, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
+    monkeypatch.setattr(fem, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
+
+
 def _poisson(n=200):
-    """Grounded 2D Laplacian (Dirichlet on the boundary): SPD, n*n unknowns, above the
-    direct-solve size so the AMG path is used."""
+    """Grounded 2D Laplacian (Dirichlet on the boundary): SPD, n*n unknowns."""
     t = sp.diags_array([-1.0, 2.0, -1.0], offsets=[-1, 0, 1], shape=(n, n))
     eye = sp.identity(n)
     return (sp.kron(t, eye) + sp.kron(eye, t)).tocsr()
@@ -46,7 +53,8 @@ def test_unreachable_tolerance_stops_early_instead_of_running_to_max_iter():
     f = _Factor(A, s, _quiet(), stats)
     x = f.solve(b, _quiet())
     assert stats["iterations"] < 200
-    assert stats["method"] == "direct (fallback)"   # could not get within 100x of tol
+    assert stats["method"].startswith("direct (")   # could not get within 100x of tol
+    assert stats["method"].endswith("fallback)")
     assert _rel(A, x, b) < 1e-10
     # The fallback factorization is kept for the next right-hand side.
     x2 = f.solve(2 * b, _quiet())

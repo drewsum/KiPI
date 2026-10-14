@@ -28,7 +28,7 @@ LICENSE = "GPL-3.0-or-later"
 
 # Distributions whose versions are worth quoting in a bug report.
 _DEPS = ["kicad-python", "PySide6-Essentials", "pyvista", "pyvistaqt", "numpy", "scipy",
-         "shapely", "triangle", "pyamg", "plotly", "matplotlib"]
+         "shapely", "triangle", "pyamg", "pypardiso", "mkl", "plotly", "matplotlib"]
 
 
 def icon_path() -> Optional[Path]:
@@ -44,6 +44,11 @@ def versions() -> List[Tuple[str, str]]:
             rows.append((dist, metadata.version(dist)))
         except metadata.PackageNotFoundError:
             pass
+    try:
+        from kipi.solver import direct
+        rows.append(("Direct solver", direct.backend_note()))
+    except Exception:          # the dialog must open whatever state the solver stack is in
+        pass
     return rows
 
 

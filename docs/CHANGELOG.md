@@ -4,6 +4,30 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## 0.7.0 (in development): Faster solves
+
+### Added
+- **Optional multithreaded solver.** If `pypardiso` is installed (Windows and Linux on
+  x86-64), KiPI solves with Intel MKL's PARDISO, and directly for rails of up to 1M
+  unknowns. A 645k-unknown rail solves in 1.2 s instead of about 8 s.
+  - It is opt-in because of its size. MKL and its libraries are about 210 MB to download
+    on Windows (about 320 MB on Linux) and about 630 MB on disk. That takes KiPI's plugin
+    environment from about 860 MB to about 1.5 GB. The README explains how to add it.
+  - Without it, or if it fails on a system, KiPI falls back to SciPy.
+  - *Copy version info* names the solver in use.
+
+### Changed
+- **Faster solves.** Rails of up to 200k unknowns now get a direct solve rather than AMG,
+  which on board meshes is 2–3× faster and exact, and makes later power-tree passes nearly
+  free. The example board's power tree solves in 1.7 s instead of 3.0 s.
+- **Faster electro-thermal runs on large boards.** Each iteration reuses the previous
+  iteration's AMG hierarchy as the preconditioner rather than building a new one, because
+  only the copper's resistivity has changed (89 s → 78 s for four iterations at 645k
+  unknowns; 34 s with PARDISO).
+
+### Development
+- CI also runs the tests on Windows with PARDISO installed.
+
 ## 0.6.5 (2026-10-13): Drop and boost, limits and fixes
 
 ### Added

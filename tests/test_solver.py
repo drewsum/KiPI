@@ -142,6 +142,7 @@ def test_multi_pad_load_splits_current_and_amg_path_agrees(monkeypatch):
     assert va == pytest.approx(vb, rel=1e-6)            # mirror symmetry (mesh is not exactly)
     import kipi.solver.fem as fem
     monkeypatch.setattr(fem, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
+    monkeypatch.setattr(fem, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
     amg = run(snap, prob)
     assert amg.solution.stats["method"] == "amg-cg"
     assert amg.fields.terminals[1].v_mean == pytest.approx(direct.fields.terminals[1].v_mean,

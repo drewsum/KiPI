@@ -100,6 +100,7 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
     history: List[dict] = []
     tree: Optional[TreeResult] = None
     meshes: dict = {}                 # the copper does not change between iterations
+    factors: dict = {}                # each group's last solver; AMG hierarchies are reused
     heat_total = 0.0
     n = max(1, int(thermal.iterations))
     for it in range(1, n + 1):
@@ -107,7 +108,7 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
         progress.stage(f"Electro-thermal iteration {it}/{n}")
         # Iteration 1 solves the copper at ambient, not at the 20 degC reference.
         tree = solve_tree(snap, setup, progress, temperature=model.sampler(temps),
-                          mesh_cache=meshes)
+                          mesh_cache=meshes, factor_cache=factors)
         xy, w = heat_sources(tree, snap, setup)
         heat = model.empty_heat()
         model.deposit(heat, xy, w)

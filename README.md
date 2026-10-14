@@ -19,7 +19,7 @@ KiPI is a HyperLynx-PI-style DC drop analyzer that runs as a KiCad 9 and 10 IPC 
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
-**Status: 0.6.5 (alpha)** ([changelog](docs/CHANGELOG.md)). This entire project was vibe coded with Claude Opus 5.5. I make no assurances that any of this works or is accurate; however, for my use cases (decently complex PCB layouts, windows 11 machine, KiCad 10.0.7), it seems stable. Results have been found to be in line with what Hyperlynx PI produces by myself and other users. The solver itself will yield close results to professional tools, it's the modelling of vias, power supplies, and the bridging of layers that's the difficult part. Please leave any comments, concerns or bugs as a github issue. I am used to the Hyperlynx PI workflow and wanted to create a free open source alternative for KiCad, which I think this project accomplishes. I'm open to suggestons for improvements.
+**Status: 0.7.0 (alpha)** ([changelog](docs/CHANGELOG.md)). This entire project was vibe coded with Claude Opus 5.5. I make no assurances that any of this works or is accurate; however, for my use cases (decently complex PCB layouts, windows 11 machine, KiCad 10.0.7), it seems stable. Results have been found to be in line with what Hyperlynx PI produces by myself and other users. The solver itself will yield close results to professional tools, it's the modelling of vias, power supplies, and the bridging of layers that's the difficult part. Please leave any comments, concerns or bugs as a github issue. I am used to the Hyperlynx PI workflow and wanted to create a free open source alternative for KiCad, which I think this project accomplishes. I'm open to suggestons for improvements.
 
 ## Install
 
@@ -68,6 +68,36 @@ KiPI is a HyperLynx-PI-style DC drop analyzer that runs as a KiCad 9 and 10 IPC 
    downloads PySide6 and VTK, so give it a few minutes. The **KiPI** toolbar button appears
    once the venv is ready. If it never appears, right-click the action in
    *Preferences → Plugins* and choose *Recreate Plugin Environment*.
+
+### Optional: faster solves on large boards (Windows and Linux, x86-64)
+
+KiPI solves each rail with SciPy's single-threaded sparse solver, or with AMG when a rail
+has more than 200k unknowns. If the optional [`pypardiso`](https://pypi.org/project/pypardiso/)
+package is installed, KiPI uses Intel MKL's multithreaded PARDISO solver instead, and for
+rails of up to 1M unknowns. On a 645k-unknown rail one solve drops from about 8 s to 1.2 s,
+and a four-iteration electro-thermal run from about 90 s to 34 s. Small boards gain little.
+
+It is not installed by default because of its size, and because there are no MKL packages for
+macOS or ARM:
+
+| | Without PARDISO | With PARDISO |
+|---|---|---|
+| Extra download | | about 210 MB on Windows, about 320 MB on Linux |
+| Plugin environment on disk (Windows) | about 860 MB | about 1.5 GB |
+
+Almost all of that is MKL itself (565 MB installed) and Intel's OpenMP runtime (61 MB).
+To add it, install it into KiPI's plugin environment and restart the PCB editor:
+
+```powershell
+# Windows (KiCad 10; use 9.0 for KiCad 9)
+& "$env:LOCALAPPDATA\KiCad\10.0\python-environments\com.github.drewsum.kipi\Scripts\pip" install pypardiso
+```
+
+On Linux the environment is usually under `~/.cache/kicad/10.0/python-environments/`. Use its
+`bin/pip` the same way. *About → Copy version info* shows which solver KiPI is using. If
+PARDISO cannot load or fails on a system, KiPI falls back to SciPy and says so in the log.
+To compare the two, set `KIPI_DIRECT_SOLVER=superlu`. *Recreate Plugin Environment*
+removes `pypardiso`, so install it again afterwards.
 
 ## Using KiPI
 

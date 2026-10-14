@@ -139,12 +139,14 @@ class _TreeSolver:
     """One solve of a validated setup. Each method is one step of :func:`solve_tree`."""
 
     def __init__(self, snap: BoardSnapshot, setup: PISetup, progress: ProgressReporter,
-                 temperature, mesh_cache: Optional[dict]):
+                 temperature, mesh_cache: Optional[dict],
+                 factor_cache: Optional[dict] = None):
         errors = validate(setup)
         if errors:
             raise SolveError("Setup problems:\n- " + "\n- ".join(errors))
         self.snap, self.setup, self.progress = snap, setup, progress
         self.temperature, self.mesh_cache = temperature, mesh_cache
+        self.factor_cache = factor_cache
         self.pads = _Pads(snap)
         self.groups = net_groups(setup)
         self.driver: Dict[Group, Vrm] = {self.groups[v.output.net]: v for v in setup.vrms}
@@ -235,7 +237,11 @@ class _TreeSolver:
                                  progress=self.progress)
             if self.mesh_cache is not None:
                 self.mesh_cache[key] = mesh
-        self.built[g] = (mesh, LinearSystem(self.snap, mesh, prob, self.progress))
+        previous = self.factor_cache.get(key) if self.factor_cache is not None else None
+        system = LinearSystem(self.snap, mesh, prob, self.progress, previous=previous)
+        if self.factor_cache is not None:
+            self.factor_cache[key] = system.factor
+        self.built[g] = (mesh, system)
         return self.built[g]
 
     # ------------------------------------------------------------ rails
@@ -508,8 +514,11 @@ class _TreeSolver:
 
 def solve_tree(snap: BoardSnapshot, setup: PISetup,
                progress: ProgressReporter = NULL, temperature=None,
-               mesh_cache: Optional[dict] = None) -> TreeResult:
+               mesh_cache: Optional[dict] = None,
+               factor_cache: Optional[dict] = None) -> TreeResult:
     """Solve every rail and ground group. ``temperature`` (optional) maps KiCad xy (mm) to
     copper temperature in degC for temperature-dependent resistivity. ``mesh_cache`` (a
-    dict) lets repeated solves of the same setup reuse their meshes."""
-    return _TreeSolver(snap, setup, progress, temperature, mesh_cache).run()
+    dict) lets repeated solves of the same setup reuse their meshes; ``factor_cache`` (a
+    dict) keeps each group's solver so the next solve can reuse its AMG hierarchy as the
+    preconditioner, which pays off when only the temperature has changed."""
+    return _TreeSolver(snap, setup, progress, temperature, mesh_cache, factor_cache).run()
