@@ -46,10 +46,10 @@ def test_dialog_falls_back_to_the_still_icon_without_gif_support(app, monkeypatc
                for lb in d.findChildren(QLabel))
 
 
-def test_toolbar_has_about_after_open_results(app, no_3d):
+def test_toolbar_has_help_and_about_after_open_results(app, no_3d):
     from qtpy.QtWidgets import QToolBar
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
     names = [a.text() for a in w.findChild(QToolBar).actions() if a.text()]
-    assert names[-2:] == ["Open results…", "About"]
+    assert names[-3:] == ["Open results…", "Help", "About"]
     w.close()

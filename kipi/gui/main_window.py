@@ -111,18 +111,24 @@ class MainWindow(QMainWindow):
         self.chk_refill.setToolTip("Refill all zones in KiCad before reading (recommended)")
         tb.addWidget(self.chk_refill)
         tb.addSeparator()
-        act("Open snapshot…", self.open_snapshot, "Load a saved board snapshot (.json / .json.gz)")
+        act("Open snapshot…", self.open_snapshot,
+            "Load a saved board snapshot (.json / .json.gz), without KiCad running")
         self.act_save = act("Save snapshot…", self.save_snapshot,
                             "Save the extracted board for offline use")
         tb.addSeparator()
-        act("Top", lambda: self._show_3d(self.viewer.view_top))
-        act("Bottom", lambda: self._show_3d(self.viewer.view_bottom))
-        act("Iso", lambda: self._show_3d(self.viewer.view_iso))
-        act("Screenshot…", self.save_screenshot)
+        act("Top", lambda: self._show_3d(self.viewer.view_top), "Look down on the top of the board")
+        act("Bottom", lambda: self._show_3d(self.viewer.view_bottom),
+            "Look up at the bottom of the board")
+        act("Iso", lambda: self._show_3d(self.viewer.view_iso), "Isometric view of the board")
+        act("Screenshot…", self.save_screenshot,
+            "Save the 3D view, or the impedance plot if it is showing, as a PNG")
         tb.addSeparator()
         self.act_open_results = act("Open results…", self.open_results,
-                                    "Reopen a saved power-tree solve")
+                                    "Reopen a saved DC power-tree solve (.kipi-results); load "
+                                    "the board first")
         tb.addSeparator()
+        self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser (F1)")
+        self.act_help.setShortcut("F1")
         self.act_about = act("About", self.show_about, "Version, author and project links")
 
         # Analysis mode, at the far right.
@@ -200,6 +206,10 @@ class MainWindow(QMainWindow):
         from kipi.gui.about import AboutDialog
         AboutDialog(self).exec()
 
+    def show_help(self):
+        from kipi.gui.help import open_help
+        open_help(self)
+
     def _build_left_panel(self):
         panel = QWidget(self)
         lay = QVBoxLayout(panel)
@@ -210,17 +220,23 @@ class MainWindow(QMainWindow):
         ln = QVBoxLayout(g_nets)
         self.net_filter = QLineEdit(g_nets)
         self.net_filter.setPlaceholderText("Filter nets…")
+        self.net_filter.setToolTip("Show only nets whose name contains this text")
         self.net_filter.textChanged.connect(self._apply_net_filter)
         self.chk_power_only = QCheckBox("Power && ground only", g_nets)
         self.chk_power_only.setChecked(True)
+        self.chk_power_only.setToolTip("Hide signal nets that are not ticked. Power and ground "
+                                       "nets are recognized by name, net class and zones.")
         self.chk_power_only.toggled.connect(self._apply_net_filter)
         self.net_list = QListWidget(g_nets)
         self.net_list.itemChanged.connect(self._on_net_item_changed)
+        self.net_list.setToolTip("Tick the nets to analyze: they are drawn in 3D and offered "
+                                 "in the setup's pin pickers")
         row = QHBoxLayout()
         btn_power = QPushButton("All power", g_nets)
-        btn_power.setToolTip("Show every power and ground net")
+        btn_power.setToolTip("Tick every power and ground net (keeps the nets already ticked)")
         btn_power.clicked.connect(self._check_power_nets)
         btn_none = QPushButton("None", g_nets)
+        btn_none.setToolTip("Untick every net")
         btn_none.clicked.connect(lambda: self._set_checked(lambda it: False))
         row.addWidget(btn_power, 1)
         row.addWidget(btn_none, 1)
@@ -234,6 +250,8 @@ class MainWindow(QMainWindow):
         ll = QVBoxLayout(g_layers)
         self.layer_list = QListWidget(g_layers)
         self.layer_list.itemChanged.connect(self._on_layer_item_changed)
+        self.layer_list.setToolTip("Show or hide each copper layer. Result colors stretch "
+                                   "over the layers that are shown.")
         ll.addWidget(self.layer_list)
 
         # --- display options
@@ -241,6 +259,7 @@ class MainWindow(QMainWindow):
         fv = QFormLayout(g_view)
         self.cmb_color = QComboBox(g_view)
         self.cmb_color.addItems(["By layer", "By net"])
+        self.cmb_color.setToolTip("Color the copper by layer or by net (plain geometry view)")
         self.cmb_color.currentIndexChanged.connect(
             lambda i: self.viewer.set_color_mode("net" if i == 1 else "layer"))
         self.spin_z = QDoubleSpinBox(g_view)
@@ -248,13 +267,17 @@ class MainWindow(QMainWindow):
         self.spin_z.setSingleStep(1.0)
         self.spin_z.setValue(5.0)
         self.spin_z.setSuffix(" ×")
-        self.spin_z.setToolTip("Z exaggeration (stackup thickness only)")
+        self.spin_z.setToolTip("Stretch the stackup vertically to see the layers apart. "
+                               "Only the drawing changes, not the solve.")
         self.spin_z.valueChanged.connect(self.viewer.set_zscale)
         self.viewer.set_zscale(self.spin_z.value())
         feats = QHBoxLayout()
+        feat_tips = {"vias": "Show via and plated-hole barrels",
+                     "pads": "Show pads", "board": "Show the board outline and laminate"}
         for name, label in (("vias", "Vias"), ("pads", "Pads"), ("board", "Board")):
             cb = QCheckBox(label, g_view)
             cb.setChecked(True)
+            cb.setToolTip(feat_tips[name])
             cb.toggled.connect(lambda v, n=name: self.viewer.set_feature_visible(n, v))
             feats.addWidget(cb)
         fv.addRow("Color", self.cmb_color)
@@ -263,11 +286,14 @@ class MainWindow(QMainWindow):
         cut = QHBoxLayout()
         self.cmb_cut = QComboBox(g_view)
         self.cmb_cut.addItems(["Off", "X", "Y", "Z"])
-        self.cmb_cut.setToolTip("Cut the view with a plane across this axis")
+        self.cmb_cut.setToolTip("Cut the view with a plane across this axis, to look inside "
+                                "the stackup")
         self.sld_cut = QSlider(Qt.Horizontal, g_view)
         self.sld_cut.setRange(0, 1000)
         self.sld_cut.setValue(500)
+        self.sld_cut.setToolTip("Where the cutting plane sits along its axis")
         self.chk_cut_flip = QCheckBox("Flip", g_view)
+        self.chk_cut_flip.setToolTip("Keep the other side of the cutting plane")
         for w in (self.cmb_cut, self.sld_cut, self.chk_cut_flip):
             cut.addWidget(w, 1 if w is self.sld_cut else 0)
         self.cmb_cut.currentIndexChanged.connect(self._cut_changed)
@@ -280,8 +306,11 @@ class MainWindow(QMainWindow):
         li = QVBoxLayout(g_info)
         self.info = QTextBrowser(g_info)
         self.info.setOpenExternalLinks(False)
+        self.info.setToolTip("What you last clicked in the 3D view, or the impedance "
+                             "plot's cursor values")
         self.btn_select_kicad = QPushButton("Select in KiCad", g_info)
         self.btn_select_kicad.setEnabled(False)
+        self.btn_select_kicad.setToolTip("Select the picked pad or via in the KiCad PCB editor")
         self.btn_select_kicad.clicked.connect(self._select_in_kicad)
         li.addWidget(self.info, 1)
         li.addWidget(self.btn_select_kicad)
@@ -345,6 +374,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setMaximumHeight(14)
         self.btn_cancel = QPushButton("Cancel", w)
         self.btn_cancel.setEnabled(False)
+        self.btn_cancel.setToolTip("Stop the running operation")
         self.btn_cancel.clicked.connect(self._cancel_task)
         row.addWidget(self.lbl_stage, 2)
         row.addWidget(self.progress_bar, 3)

@@ -28,7 +28,7 @@ from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.core.model.parts import parse_capacitance
 from kipi.dc.gui.pi_panel import (
     ItemList, LinkEditor, PIPanel, VrmEditor, _Editor, _spin, _unique, make_searchable,
-    parts_on_net,
+    parts_on_net, tip,
 )
 from kipi.dc.pi.model import PinRef, PISetup
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
@@ -57,18 +57,27 @@ class CapEditor(_Editor):
         self.cap.setSpecialValueText("required")
         self.esl = _spin(0, 1e4, 0, 3, " nH", 0.05)
         self.esl.setSpecialValueText("required")
-        self.esl.setToolTip("Equivalent series inductance of the part itself (from its "
-                            "datasheet); the board's mounting inductance is simulated")
         self.esr = _spin(0, 1e6, 0, 3, " mΩ", 0.5)
         self.esr.setSpecialValueText("required")
         f.addRow("Name", self.name)
         f.addRow("Capacitance", self.cap)
         f.addRow("ESL", self.esl)
         f.addRow("ESR", self.esr)
+        for w, text in (
+                (self.name, "A name for this model, e.g. the part number or value"),
+                (self.cap, "Capacitance of one part. Use the effective value at the rail's DC "
+                           "bias if the datasheet gives it (ceramics lose capacitance with "
+                           "voltage)."),
+                (self.esl, "Equivalent series inductance of the part itself (from its "
+                           "datasheet); the board's mounting inductance is simulated"),
+                (self.esr, "Equivalent series resistance of one part, from its datasheet")):
+            tip(f, w, text)
         self._watch(self.name, self.cap, self.esl, self.esr)
 
         self.filter = QLineEdit()
         self.filter.setPlaceholderText("Filter parts (reference, value or net)…")
+        self.filter.setToolTip("Show only the parts whose reference, value, nets or model "
+                               "contain this text")
         self.filter.textChanged.connect(self._apply_filter)
         f.addRow(self.filter)
         self.table = QTableWidget(0, len(self.COLS))
@@ -80,14 +89,19 @@ class CapEditor(_Editor):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setMinimumHeight(140)
         self.table.itemChanged.connect(self._item_changed)
+        self.table.setToolTip("Capacitors between nets ticked in the Board panel. Tick a part "
+                              "to give it this model (taking it from any other model); grayed "
+                              "rows already use another model.")
         f.addRow(self.table)
         row = QHBoxLayout()
         b_val = QPushButton("Tick same value")
         b_val.setToolTip("Tick every listed part with the value of the selected row")
         b_val.clicked.connect(self._tick_same_value)
         b_all = QPushButton("Tick shown")
+        b_all.setToolTip("Give this model to every part the filter shows")
         b_all.clicked.connect(lambda: self._tick_shown(True))
         b_none = QPushButton("Untick shown")
+        b_none.setToolTip("Take this model off every part the filter shows")
         b_none.clicked.connect(lambda: self._tick_shown(False))
         for b in (b_val, b_all, b_none):
             row.addWidget(b)
@@ -222,12 +236,8 @@ class ProbeEditor(_Editor):
         self.ground = self._picker()
         self.target = _spin(0, 1e6, 0, 3, " mΩ", 1)
         self.target.setSpecialValueText("none")
-        self.target.setToolTip("Target impedance: PASS if |Z| stays at or below this up to "
-                               "the target frequency")
         self.target_f = _spin(0, 1e7, 0, 1, " kHz", 100)
         self.target_f.setSpecialValueText("none")
-        self.target_f.setToolTip("Frequency up to which the target impedance applies "
-                                 "(none: the whole sweep)")
         self.btn_calc = QPushButton("Target Impedance/Frequency Calculator…")
         self.btn_calc.setToolTip("Work out a target impedance and frequency from the "
                                  "device's supply tolerance and transient current")
@@ -235,8 +245,6 @@ class ProbeEditor(_Editor):
         self.target_kind = QComboBox()
         self.target_kind.addItem("Flat, up to a frequency", "flat")
         self.target_kind.addItem("Custom (piecewise linear)", "custom")
-        self.target_kind.setToolTip("Custom: a target mask through frequency/impedance "
-                                    "points, in place of the flat target")
         self.points = QTableWidget(0, 3)
         self.points.setHorizontalHeaderLabels(["Frequency", "Target |Z|", ""])
         hdr = self.points.horizontalHeader()
@@ -246,6 +254,8 @@ class ProbeEditor(_Editor):
         self.points.setColumnWidth(2, 28)
         self.points.verticalHeader().setVisible(False)
         self.points.setMinimumHeight(130)
+        self.points.setToolTip("Corner points of the custom target mask: a frequency and the "
+                               "target |Z| there")
         self.btn_point = QPushButton("Add point")
         self.btn_point.setToolTip("Add a point a decade above the last one")
         self.btn_point.clicked.connect(self._add_point)
@@ -270,6 +280,17 @@ class ProbeEditor(_Editor):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
+        for w, text in (
+                (self.name, "A name for this probe, shown in the plot legend and the table"),
+                (self.rail, "The device's supply pins: where the impedance is looked into"),
+                (self.ground, "The device's ground pins, on the ground net being simulated"),
+                (self.target_kind, "Flat: one impedance up to a frequency. Custom: a target "
+                                   "mask through frequency/impedance points."),
+                (self.target, "Target impedance: PASS if |Z| stays at or below this up to "
+                              "the target frequency"),
+                (self.target_f, "Frequency up to which the target impedance applies "
+                                "(none: the whole sweep)")):
+            tip(f, w, text)
         self._watch(self.name, self.target, self.target_f, self.target_kind)
         self.target_kind.currentIndexChanged.connect(self._target_rows)
         self.rail.cmb_part.currentIndexChanged.connect(self._follow_part)
@@ -401,24 +422,33 @@ class ACPanel(QWidget):
 
         self.tabs = QTabWidget(self)
         self.vrm_list = ItemList(lambda: self.setup.vrms, VrmEditor(self, mode="ac"),
-                                 self._new_vrm, PIPanel._describe_vrm)
+                                 self._new_vrm, PIPanel._describe_vrm, noun="VRM")
         self.link_list = ItemList(lambda: self.setup.links, LinkEditor(self, mode="ac"),
-                                  self._new_link, self._describe_link)
+                                  self._new_link, self._describe_link, noun="series link")
         self.cap_list = ItemList(lambda: self.setup.caps, CapEditor(self), self._new_cap,
-                                 self._describe_cap)
+                                 self._describe_cap, noun="capacitor model")
         b_values = QPushButton("Models from values")
         b_values.setToolTip("Make one model per distinct value of the capacitors that have "
                             "none yet (capacitance read from the value; enter ESL and ESR)")
         b_values.clicked.connect(self._models_from_values)
         self.cap_list.layout().insertWidget(0, b_values)
         self.probe_list = ItemList(lambda: self.setup.probes, ProbeEditor(self),
-                                   self._new_probe, self._describe_probe)
+                                   self._new_probe, self._describe_probe, noun="probe")
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.link_list, "Series links")
         self.tabs.addTab(self.cap_list, "Capacitors")
         self.tabs.addTab(self.probe_list, "Probes")
         self.tabs.addTab(self._sweep_tab(), "Sweep")
         self.tabs.addTab(self._mesh_tab(), "Mesh")
+        for i, text in enumerate((
+                "The regulators, shared with DC. In AC they pick the rail to simulate.",
+                "Parts in series between two nets, shared with DC; AC adds their ESL",
+                "RLC models for the decoupling capacitors, and which parts use each",
+                "Where the impedance is looked into (usually a device's power pins), "
+                "with its target",
+                "Frequency range and resolution of the sweep",
+                "Mesh density and dielectric losses for the AC field solve")):
+            self.tabs.setTabToolTip(i, text)
         for il in self._lists():
             il.changed.connect(self._on_changed)
         lay.addWidget(self.tabs, 3)
@@ -439,6 +469,9 @@ class ACPanel(QWidget):
         self.cmb_gnd.currentIndexChanged.connect(self._gnd_changed)
         self.btn_solve = QPushButton("Solve rail", self)
         self.btn_solve.setStyleSheet("font-weight: bold; padding: 6px;")
+        self.btn_solve.setToolTip("Save the setup, then sweep the impedance at every probe on "
+                                  "this rail. Problems that stop the solve are listed above "
+                                  "in red.")
         self.btn_solve.clicked.connect(self._solve)
         row.addWidget(QLabel("Rail"))
         row.addWidget(self.cmb_rail, 2)
@@ -467,6 +500,8 @@ class ACPanel(QWidget):
         row = QHBoxLayout()
         self.btn_export = QPushButton("Export CSV…", g_res)
         self.btn_export.setEnabled(False)
+        self.btn_export.setToolTip("Write |Z|, R and X at every probe and sweep frequency to a "
+                                   "CSV file")
         self.btn_export.clicked.connect(self._export_csv)
         row.addStretch(1)
         row.addWidget(self.btn_export)
@@ -489,19 +524,21 @@ class ACPanel(QWidget):
         self.spin_ppd = QSpinBox()
         self.spin_ppd.setRange(1, 2000)
         self.spin_ppd.setValue(s.points_per_decade)
-        self.spin_ppd.setToolTip("Frequencies per decade in the plotted sweep")
         self.spin_fpd = QSpinBox()
         self.spin_fpd.setRange(0, 2000)
         self.spin_fpd.setValue(s.field_points_per_decade)
         self.spin_fpd.setSpecialValueText("every point")
-        self.spin_fpd.setToolTip("Copper (field) solves per decade. The parts are evaluated "
-                                 "at every sweep point; the copper's response in between "
-                                 "is interpolated. 'Every point' solves the copper at each "
-                                 "sweep frequency (slowest, exact).")
         f.addRow("Start", self.spin_fstart)
         f.addRow("Stop", self.spin_fstop)
         f.addRow("Points per decade", self.spin_ppd)
         f.addRow("Field solves per decade", self.spin_fpd)
+        tip(f, self.spin_fstart, "Lowest frequency of the sweep")
+        tip(f, self.spin_fstop, "Highest frequency of the sweep")
+        tip(f, self.spin_ppd, "Frequencies per decade in the plotted sweep")
+        tip(f, self.spin_fpd, "Copper (field) solves per decade. The parts are evaluated "
+                              "at every sweep point; the copper's response in between "
+                              "is interpolated. 'Every point' solves the copper at each "
+                              "sweep frequency (slowest, exact).")
         for wdg in (self.spin_fstart, self.spin_fstop, self.spin_ppd, self.spin_fpd):
             wdg.valueChanged.connect(self._ac_settings_changed)
         return w
@@ -514,14 +551,20 @@ class ACPanel(QWidget):
         self.spin_grading = _spin(0.0, 2.0, s.grading, 2, "", 0.05)
         self.spin_min_edge = _spin(0.005, 1.0, s.min_edge_mm, 3, " mm", 0.01)
         self.spin_tand = _spin(0.0, 0.2, s.loss_tangent, 4, "", 0.001)
-        self.spin_tand.setToolTip("Dielectric loss tangent (FR4 is about 0.02)")
         self.spin_er = _spin(1.0, 20.0, s.default_er, 2, "", 0.1)
-        self.spin_er.setToolTip("Dielectric constant used where the board stackup gives none")
         f.addRow("Max edge", self.spin_edge)
         f.addRow("Via grading", self.spin_grading)
         f.addRow("Min edge (at holes)", self.spin_min_edge)
         f.addRow("Loss tangent", self.spin_tand)
         f.addRow("Default εr", self.spin_er)
+        tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
+                               "accurate and slower.")
+        tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
+                                  "edge per mm of distance)")
+        tip(f, self.spin_min_edge, "Mesh edge length at plated holes, where via inductance "
+                                   "is decided")
+        tip(f, self.spin_tand, "Dielectric loss tangent (FR4 is about 0.02)")
+        tip(f, self.spin_er, "Dielectric constant used where the board stackup gives none")
         note = QLabel("The mesh decides the plane spreading and via inductance: elements grow "
                       "from 'min edge' at plated holes by 'via grading' per mm, up to 'max "
                       "edge'. Copper resistivity and barrel plating come from the DC setup.")

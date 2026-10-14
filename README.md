@@ -2,7 +2,7 @@
   <img src="resources/kipi.gif" alt="KiPI logo" width="128">
 </p>
 
-# KiPI — DC power integrity for KiCad
+# KiPI — DC and AC power integrity for KiCad
 
 [![CI](https://github.com/drewsum/KiPI/actions/workflows/ci.yml/badge.svg)](https://github.com/drewsum/KiPI/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -10,12 +10,22 @@
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#requirements)
 [![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab.svg?logo=python&logoColor=white)](#requirements)
 
-KiPI is a power integrity analyzer for DC voltage drop that runs as a KiCad 9 and 10 IPC plugin:
+KiPI is a power integrity analyzer that runs as a KiCad 9 and 10 IPC plugin. It has two
+analysis modes:
 
-1. Define voltage regulators (VRMs), loads (current into pins) and DC series elements (beads, resistors, load switches).
-2. Simulate voltage drop net by net, across every copper layer, with live solver progress.
-3. Inspect voltage, current density, via currents, copper power dissipation and (optionally)
-   board temperature in a rotatable 3D view, and write an interactive HTML report.
+* **DC: voltage drop.** Define voltage regulators (VRMs), loads (current into pins) and series
+  parts (beads, resistors, load switches), then simulate the voltage drop net by net, across
+  every copper layer. Inspect voltage, current density, via currents, copper power
+  dissipation and (optionally) board temperature in a rotatable 3D view, with PASS/FAIL
+  checks for loads, VRMs, vias and temperature, and write an interactive HTML report.
+* **AC: PDN impedance.** Give the decoupling capacitors RLC models and put probes on a
+  device's power pins, then sweep the impedance of the power distribution network (planes,
+  vias, mounting and capacitors) over frequency. Check it against a flat or custom target
+  impedance, with a calculator that works the target out from the device's transient spec.
+
+New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
+**F1**) walks through every button, the workflows and what the results mean, and every
+control in KiPI has a tooltip.
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
@@ -114,8 +124,10 @@ stage as it runs.
   (save first if you have unsaved changes).
 * **Save snapshot… / Open snapshot…** store the extracted board as a file that KiPI can open
   later without KiCad.
-* **Mode: DC / AC** (right end of the toolbar) picks the analysis. Everything below is DC,
-  the default. AC (PDN impedance over frequency) is planned and not available yet.
+* **Mode: DC / AC** (right end of the toolbar) picks the analysis. Sections 2 to 5 are DC,
+  the default; [section 6](#6-ac-pdn-impedance) covers AC. The DC setup and results are kept
+  while you are in AC mode and come back when you switch.
+* **Help** (or **F1**) opens the [user guide](docs/help.html) in your browser.
 
 ### 2. Pick the nets
 
@@ -149,6 +161,7 @@ libraries for a bug report.
 
 The **PI setup** panel on the right holds the power tree. KiPI infers nothing from the board,
 so every entry comes from you. Each list has **Add**, **Duplicate** and **Remove** buttons.
+Hover over any field for a tooltip saying what it does.
 Pins are chosen with a picker: pick the net, then the part (type to search), then optionally
 the pin numbers (e.g. `1,2,5`; blank means all of that part's pins on the net). Problems such
 as missing pins, or two VRMs on one group, are shown in red as you edit.
@@ -199,14 +212,24 @@ To try it without a design of your own, open the example board in
 |---|---|
 | ![Load editor](docs/images/setup_loads.png) | ![Thermal settings](docs/images/setup_thermal.png) |
 
-**DC connections tab**: parts that pass DC from one net to another, such as sense
+**Series links tab**: parts that pass DC from one net to another, such as sense
 resistors, ferrite beads, fuses, load switches and 0 Ω links. Give **Side A pins**,
 **Side B pins** and a **Resistance**. A new connection starts on a part that bridges the first
 two ticked nets, if there is one. When both sides are on the same resistor (reference `R…`),
 the resistance is read from its value field: `10m`, `0.005`, `4k7`, `0R1`, `5 mΩ` and the like
 all work, and anything after the value (`1% 0603`) is ignored. You can still type your own.
 Nets joined this way are solved together as one group, and each group may hold only one VRM.
-A net with no connection to its VRM is reported, not guessed at.
+A net with no connection to its VRM is reported, not guessed at. **ESL** is only used by the AC
+analysis.
+
+**Solve tab**: every net group, with a checkbox. Untick the groups that are not modeled or
+routed yet to solve the rest; only the ticked groups are validated, and the choice is saved.
+Where a solved group meets an excluded one, a VRM whose output is excluded becomes a constant
+load on its input pins (the input current its rail would need at nominal voltages), a VRM
+whose input is excluded becomes an ideal source, and ground pins on an excluded ground are
+ignored. The Notes tab lists these substitutions.
+
+![The Solve tab: tick the net groups to solve](docs/images/dc_solve_tab.png)
 
 **Mesh tab**: **Max edge** is the largest triangle edge in mm; smaller is more accurate and
 slower. **Via grading** controls how fast the mesh refines towards plated holes, and
@@ -231,6 +254,9 @@ the board and the warmer copper become more resistive. Set:
   material in your KiCad stackup (FR4, prepreg types, polyimide, Kapton, PTFE, Rogers,
   ceramic, aluminum…). Unrecognized names fall back to FR4 with a warning. Enter a value
   here to override.
+* **Max copper temperature** and **Max rise above ambient** (optional): copper hotter than
+  either limit, on any layer, is marked FAIL in the Thermal results tab. Changing them grades
+  the last solve straight away.
 
 The setup is saved as `<board>.kipi-setup.json` next to the board when you click **Save** at
 the top of the panel and every time you solve. It travels with the project and can go into
@@ -238,7 +264,8 @@ version control.
 
 ### 4. Solve
 
-Click **Solve all**. Every net group is meshed and solved, the downstream loads first and then
+Click **Solve all** (it reads *Solve 3 of 5 net groups* when some are unticked in the Solve
+tab). Every net group is meshed and solved, the downstream loads first and then
 back towards the source, so each VRM's input current includes everything it feeds. Progress
 and solver residuals stream into the log; **Cancel** stops the run.
 
@@ -293,9 +320,10 @@ Result tabs (click a column header to sort by it; click again to reverse):
 |---|---|
 | Loads | Each load's current, effective voltage, drop or boost, worst pin and PASS/FAIL. Double-click to show its group. |
 | VRMs | Output and input voltage, current and power, conversion loss, and PASS/FAIL against the output current limit, with a row per phase for multi-phase VRMs |
-| DC connections | Current and loss in each series part |
+| Series links | Current and loss in each series part |
 | Vias | Every via and PTH barrel ranked by current. Set a **Current limit** for PASS/FAIL, and double-click a row to fly to it. |
-| Losses | Copper loss per group and layer, vias, DC connections and VRM conversion |
+| Losses | Copper loss per group and layer, vias, series links and VRM conversion |
+| Thermal | After an electro-thermal solve: the hottest copper on each layer, its rise and location, PASS/FAIL against the temperature limits, the iteration history and the dielectric conductivities used. Double-click a row to show that group's temperature. |
 | Notes | Solver details, warnings and the thermal iteration history |
 
 **Export ▾** writes the tables as CSV, the 3D results as a ParaView `.vtm`, or **Save
@@ -303,10 +331,56 @@ results…** as a `.kipi-results` file, which the toolbar's **Open results…** 
 solving again (load the board first). Results files are Python pickles, so only open ones
 you created.
 
+### 6. AC: PDN impedance
+
+Switch **Mode** to **AC**. The setup panel becomes the **AC setup**, which shares the VRMs and
+series links with DC (fields only DC uses are grayed out) and adds:
+
+* **Capacitors tab**: RLC models (capacitance, ESL, ESR) for the decoupling capacitors, each
+  shared by a group of identical parts. **Models from values** makes one model per capacitor
+  value that has none yet, reading the capacitance from the value; enter the ESL and ESR
+  from the datasheet. The table lists every capacitor between ticked nets: tick parts to
+  assign them to the selected model, with **Tick same value**, **Tick shown** and
+  **Untick shown** for many at once. Enter only the part's own ESL: its mounting (pads,
+  vias, planes) is simulated.
+* **Probes tab**: where the impedance is looked into, usually a device's supply and ground
+  pins. Each probe has a target: **flat** (an impedance up to a frequency) or **custom**, a
+  piecewise-linear mask through frequency/impedance points on the log-log plot.
+  **Target Impedance/Frequency Calculator…** works out a flat target from the device's AC
+  voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).
+* **Sweep tab**: start and stop frequency, points per decade, and how many copper field
+  solves per decade (the copper's response is interpolated between them).
+* **Mesh tab**: mesh size, minimum edge at plated holes (which sets the via inductance),
+  dielectric loss tangent and default εr.
+
+| Capacitor models | Target calculator |
+|---|---|
+| ![Capacitors tab](docs/images/ac_capacitors.png) | ![Target impedance calculator](docs/images/ac_target_calc.png) |
+
+Pick the **Rail** (by its VRM) and **Ground** under the tabs and click **Solve rail**. The copper
+of the rail and its ground is field-solved as a 2.5D model with both faces of every sheet:
+plane resistance with skin effect, spreading inductance, plane-pair capacitance and cavity
+resonances, and via inductance all come out of the mesh. The capacitors and series links are
+then attached at every sweep frequency. The VRM itself is not modeled as an impedance, so the
+curve keeps rising towards low frequency as the bulk capacitance runs out.
+
+The result opens in the **Impedance** tab next to the 3D view: |Z| against frequency for every
+probe, with its target dashed in the same color. Click a curve to place a cursor; drag it or
+use ←/→ (Shift: ×10) to move along the curve, ↑/↓ to change curve, and Esc or right-click to
+remove it. The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
+equivalent L or C, PASS/FAIL against the target with the margin in dB, and every other
+probe's |Z| at that frequency. The results table gives each probe's minimum and worst |Z|
+(closest to, or furthest over, the target) and PASS/FAIL; the notes list the capacitors that
+were left out for having no model. Each rail keeps its last result, so switching **Rail** shows
+another rail's curves without solving again. **Export CSV…** writes |Z|, R and X at every
+frequency.
+
+![The impedance plot of the example's 0.9 V core rail against its custom target, with the cursor on the anti-resonance and its values in the Info box](docs/images/ac_impedance.png)
+
 ### Tips and troubleshooting
 
 * **"No copper path" between a VRM and a load** usually means unrouted copper, an unfilled
-  zone, or a missing DC connection for a series part between them.
+  zone, or a missing series link for a part between them.
 * **Unexpected drop:** compare the board view with KiCad. Thermal reliefs, necked traces and
   via counts dominate DC drop, and the Current density view with Arrows makes the bottleneck
   obvious.
@@ -365,13 +439,14 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/core/progress.py` | Progress/log reporting used by every pipeline stage |
 | `kipi/dc/` | DC analysis: |
 | `kipi/dc/solver/` | 2.5D DC conduction FEM: sheet conductance, via/PTH barrels, series parts, sources, loads |
-| `kipi/dc/pi/` | User power-tree setup (VRMs, loads, DC connections), JSON, validation, tree solver, results tables |
+| `kipi/dc/pi/` | User power-tree setup (VRMs, loads, series links), JSON, validation, tree solver, results tables |
 | `kipi/dc/thermal/` | Board heat model, stackup material conductivities, electro-thermal iteration |
 | `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
 | `kipi/dc/gui/` | The PI setup and results panel |
-| `kipi/ac/` | AC analysis (planned): PDN impedance over frequency; for now a placeholder panel |
-| `kipi/gui/` | PySide6 application shell shared by both modes: main window, mode switch, 3D viewer, worker threads |
+| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the AC setup panel and impedance plot (`gui/`) |
+| `kipi/gui/` | PySide6 application shell shared by both modes: main window, mode switch, 3D viewer, worker threads, About and Help |
+| `docs/help.html` | The user guide opened by **Help**; a single offline HTML file |
 | `kipi/compat.py` | Opens results files saved by earlier versions, from before modules moved |
 | `examples/` | Example boards as snapshots with their PI setups, and the scripts that generate them |
 

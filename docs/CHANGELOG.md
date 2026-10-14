@@ -4,13 +4,33 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.7.0 (in development): Faster solves, groundwork for AC analysis
+## 0.7.0 (in development): AC impedance analysis, faster solves
 
 ### Added
-- **Analysis mode switch.** The right end of the toolbar has *Mode: DC / AC*. DC is the
-  default and works as before. AC is a placeholder for a planned PDN impedance analysis;
-  choosing it swaps the PI setup panel for an AC one, and the DC setup and results come
-  back when DC is chosen again.
+- **AC analysis: PDN impedance over frequency.** The right end of the toolbar has
+  *Mode: DC / AC*. DC is the default and works as before; AC swaps the PI setup panel for
+  an AC setup, and the DC setup and results come back when DC is chosen again.
+  - The AC setup shares the VRMs and series links with DC (series links gain an ESL), and
+    adds capacitor models (C, ESL, ESR, assigned to parts, with *Models from values*),
+    probes, the sweep and its own mesh settings.
+  - A rail and its ground are field-solved as a 2.5D model with two faces per copper
+    sheet: plane resistance with skin effect, spreading and via inductance, plane
+    capacitance and cavity resonances. The parts are attached at every sweep frequency,
+    and the copper is solved at fewer frequencies and interpolated in between.
+  - The **Impedance** tab beside the 3D view plots |Z| for every probe with its target. A
+    cursor tracks a curve (click, drag, arrow keys) and shows frequency, |Z|, phase, R, X,
+    equivalent L or C and the target margin in the Info box.
+  - Probe targets are flat up to a frequency, or a custom piecewise-linear mask. The
+    *Target Impedance/Frequency Calculator* derives a flat target from the AC voltage
+    tolerance, load step and slew rate.
+  - Each rail keeps its last result; switching the rail shows its curves without solving
+    again. *Export CSV…* writes |Z|, R and X per probe.
+- **User guide and tooltips.** *Help* in the toolbar (or F1) opens `docs/help.html`, an
+  offline guide to every button, the workflows and the results, with collapsible sections.
+  Every button, box and table in KiPI now has a tooltip.
+- **Thermal limits.** *Max copper temperature* and *Max rise above ambient* grade an
+  electro-thermal solve; a new Thermal results tab lists the hottest copper on each layer
+  with PASS/FAIL.
 - **Solve only some nets (restored).** The DC setup's Solve tab lists every net group with
   a checkbox, so rails that are not modeled or routed yet can be left out while the rest is
   solved. It was written for 0.6.0 but never reached a release. Only the ticked groups are
@@ -40,6 +60,9 @@ milestones rather than versions that were ever set.
   unknowns; 34 s with PARDISO).
 
 ### Fixed
+- **Result colors no longer flicker on coincident copper.** Overlapping copper surfaces
+  z-fought in the 3D view, so DC results showed speckled patches; they now render
+  smoothly.
 - Saving results after an electro-thermal solve failed ("Can't pickle local object").
   Saved problems now leave out the live temperature field, keeping its effect on
   resistivity and the temperature map itself.
@@ -54,7 +77,7 @@ milestones rather than versions that were ever set.
 - **Package restructured for more than one analysis.** Code shared by every analysis
   (board model and extraction, geometry, meshing, sparse solvers, copper views) moved to
   `kipi.core`; the DC analysis (power tree, conduction solver, thermal, reports, result
-  views, setup panel) moved to `kipi.dc`; `kipi.ac` holds the AC placeholder. The
+  views, setup panel) moved to `kipi.dc`; the AC analysis is in `kipi.ac`. The
   direct / AMG-CG solver moved out of the DC FEM into `kipi.core.solver.spd`. Results
   files saved by earlier versions still open (`kipi.compat` maps the old module paths).
 

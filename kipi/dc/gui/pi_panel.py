@@ -85,6 +85,14 @@ def _set_optional(s: QDoubleSpinBox, value: Optional[float]):
     s.setValue(s.minimum() if value is None else value)
 
 
+def tip(form: QFormLayout, field: QWidget, text: str):
+    """Give a form row's field and its label the tooltip ``text``."""
+    field.setToolTip(text)
+    label = form.labelForField(field)
+    if label is not None:
+        label.setToolTip(text)
+
+
 def make_searchable(combo: QComboBox):
     """Let the user type to filter a combo box (substring, case-insensitive).
 
@@ -157,6 +165,19 @@ class PinPicker(QWidget):
         self.cmb_part.currentIndexChanged.connect(self._part_changed)
         self.txt_pins.editingFinished.connect(self.changed.emit)
         self._loading = False
+        self.setToolTip("")
+
+    # What each of the three boxes picks, added under the row's own tooltip.
+    _PART_TIPS = ("Net: one of the nets ticked in the Board panel (type to search)",
+                  "Part: a part with pads on that net, as reference, value and pad count",
+                  "Pins: pin numbers, e.g. 1,2,5. Blank uses every pin of the part on "
+                  "the net.")
+
+    def setToolTip(self, text: str):
+        """The row's tooltip, shown on each box with a line on what that box picks."""
+        super().setToolTip(text)
+        for w, line in zip((self.cmb_net, self.cmb_part, self.txt_pins), self._PART_TIPS):
+            w.setToolTip(f"{text}\n\n{line}" if text else line)
 
     def net(self) -> str:
         """The selected net (not the half-typed search text)."""
@@ -319,8 +340,6 @@ class VrmEditor(_Editor):
         self.iq = _spin(0, 10000, 0, 3, " mA", 0.1)
         self.i_limit = _spin(0, 10000, 0, 3, " A", 0.1)
         self.i_limit.setSpecialValueText("no limit")
-        self.i_limit.setToolTip("PASS if the VRM's total output current (all phases) is at "
-                                "most this")
         self.dropout = _spin(0, 100, 0, 3, " V", 0.05)
         self.vin_min = _optional_volts()
         self.vin_max = _optional_volts()
@@ -331,14 +350,10 @@ class VrmEditor(_Editor):
         # Multi-phase: the output, input and ground pickers show the selected phase.
         self.n_phases = QSpinBox()
         self.n_phases.setRange(1, 32)
-        self.n_phases.setToolTip("Parallel phases; each carries an equal share of the output "
-                                 "current and has its own output, input and ground pins")
         self.cmb_phase = QComboBox()
-        self.cmb_phase.setToolTip("The phase whose pins are shown below")
         self._phase = 0
         self.bandwidth = _spin(0, 1e6, 0, 2, " kHz", 1)
         self.bandwidth.setSpecialValueText("none")
-        self.bandwidth.setToolTip("Control loop bandwidth of the converter (AC analysis)")
         f.addRow("Name", self.name)
         f.addRow("Type", self.kind)
         f.addRow("Set voltage", self.voltage)
@@ -356,6 +371,43 @@ class VrmEditor(_Editor):
         f.addRow("Ground pins", self.ground)
         f.addRow("Sense pins", self.sense)
         f.addRow("Ground sense pins", self.ground_sense)
+        for w, text in (
+                (self.name, "A name for this regulator, used in the results tables"),
+                (self.kind, "Source: an ideal supply with no input (a connector, a bench "
+                            "supply).\nLDO: input current = output current + quiescent "
+                            "current.\nSwitcher: input power = output power / efficiency."),
+                (self.voltage, "The voltage the VRM holds at its output pins, or at its sense "
+                               "pins if it has them"),
+                (self.eff, "Switcher efficiency: input power = output power / efficiency"),
+                (self.iq, "Quiescent current, drawn from the input on top of the load "
+                          "current"),
+                (self.i_limit, "PASS if the VRM's total output current (all phases) is at "
+                               "most this"),
+                (self.dropout, "LDO dropout: the least input-to-output difference it "
+                               "regulates at. Below it, its loads are marked VRM OUT OF "
+                               "REGULATION."),
+                (self.vin_min, "Optional lowest input voltage it regulates at. A lower solved "
+                               "input marks its loads VRM OUT OF REGULATION."),
+                (self.vin_max, "Optional highest input voltage it regulates at. A higher "
+                               "solved input marks its loads VRM OUT OF REGULATION."),
+                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis)"),
+                (self.n_phases, "Parallel phases of a multi-phase regulator. Each carries an "
+                                "equal share of the output current and has its own output, "
+                                "input and ground pins."),
+                (self.cmb_phase, "The phase whose output, input and ground pins are shown "
+                                 "below"),
+                (self.output, "Where the VRM drives its rail: e.g. its output pin, or a "
+                              "switcher's inductor"),
+                (self.input, "Where the VRM draws its input current from. This ties it to its "
+                             "upstream net and builds the power tree."),
+                (self.ground, "Optional: the VRM's ground pins. With them, the ground return "
+                              "is solved too and drops are measured output to ground."),
+                (self.sense, "Optional remote sense: the VRM holds its set voltage at these "
+                             "pins instead of at its output"),
+                (self.ground_sense, "Optional negative remote sense on the ground net: the "
+                                    "set voltage is held relative to these pins instead of "
+                                    "0 V (needs ground pins)")):
+            tip(f, w, text)
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.dropout, self.vin_min, self.vin_max, self.bandwidth)
         self.kind.currentIndexChanged.connect(self._kind_rows)
@@ -488,6 +540,7 @@ class LoadEditor(_Editor):
         self.groups.verticalHeader().setVisible(False)
         self.groups.setMinimumHeight(110)
         self.btn_group = QPushButton("Add pin group")
+        self.btn_group.setToolTip("Add a group of supply pins with its own current")
         self.btn_group.clicked.connect(lambda: (self._add_group_row("", "", 0.0), self._store()))
         self.btn_each = QPushButton("One group per pin")
         self.btn_each.setToolTip("Replace the groups with one group per supply pin")
@@ -500,8 +553,6 @@ class LoadEditor(_Editor):
         self.tol = _spin(0, 100, 0, 2, " %", 0.5)
         self.tol.setPrefix("± ")
         self.tol.setSpecialValueText("no limit")
-        self.tol.setToolTip("PASS if every supply pin is within ± this % of the VRM set "
-                            "voltage: no pin drops below it or is boosted above it by more")
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -511,6 +562,22 @@ class LoadEditor(_Editor):
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
+        for w, text in (
+                (self.name, "A name for this load, used in the results tables"),
+                (self.supply, "The pins the load draws its current from"),
+                (self.mode, "Split the current evenly over all supply pins, or give pin "
+                            "groups, each with its own current (e.g. a core and an I/O "
+                            "supply)"),
+                (self.current, "Total current the load draws, shared evenly by its supply "
+                               "pins"),
+                (self.lbl_total, "Sum of the pin groups' currents"),
+                (self.ground, "Optional: the load's ground pins, to include the ground "
+                              "return in the solve"),
+                (self.tol, "PASS if every supply pin is within ± this % of the VRM set "
+                           "voltage: no pin drops below it or is boosted above it by more")):
+            tip(f, w, text)
+        self.groups.setToolTip("Pin groups: an optional name, the pin numbers (e.g. 15,28) "
+                               "and the current into those pins")
         self._watch(self.name, self.current, self.tol, self.mode)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
@@ -537,6 +604,7 @@ class LoadEditor(_Editor):
         btn = QToolButton()
         btn.setText("✕")
         btn.setAutoRaise(True)
+        btn.setToolTip("Remove this pin group")
         btn.clicked.connect(lambda _=False, b=btn: self._remove_group_of(b))
         self.groups.setCellWidget(r, 3, btn)
 
@@ -621,15 +689,21 @@ class LinkEditor(_Editor):
         self.b = self._picker()
         self.r = _spin(0, 1e9, 0, 3, " mΩ", 1)
         self.r.setSpecialValueText("0 (short)")
-        self.r.setToolTip("DC resistance (DCR), used by both analyses")
         self.esl = _spin(0, 1e6, 0, 3, " nH", 0.1)
         self.esl.setSpecialValueText("none")
-        self.esl.setToolTip("Series inductance (ESL) of the part")
         f.addRow("Name", self.name)
         f.addRow("Side A pins", self.a)
         f.addRow("Side B pins", self.b)
         f.addRow("Resistance (DCR)", self.r)
         f.addRow("ESL", self.esl)
+        for w, text in (
+                (self.name, "A name for this part, used in the results tables"),
+                (self.a, "The part's pins on one net"),
+                (self.b, "The part's pins on the other net"),
+                (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
+                         "read from the part's value when both sides are on it."),
+                (self.esl, "Series inductance (ESL) of the part")):
+            tip(f, w, text)
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
                       "load switch…). The nets it joins are simulated together.")
         hint.setWordWrap(True)
@@ -672,16 +746,20 @@ class ItemList(QWidget):
     changed = Signal()
 
     def __init__(self, items: Callable[[], list], editor: _Editor, make_new: Callable[[], object],
-                 describe: Callable[[object], str], parent=None):
+                 describe: Callable[[object], str], parent=None, noun: str = "item"):
         super().__init__(parent)
         self.items, self.editor, self.make_new, self.describe = items, editor, make_new, describe
         lay = QVBoxLayout(self)
         lay.setContentsMargins(2, 2, 2, 2)
         self.lst = QListWidget(self)
         self.lst.currentRowChanged.connect(self._select)
+        self.lst.setToolTip(f"Select a {noun} to edit it below")
         row = QHBoxLayout()
-        for text, slot in (("Add", self._add), ("Duplicate", self._dup), ("Remove", self._remove)):
+        for text, slot, what in (("Add", self._add, f"Add a new {noun}"),
+                                 ("Duplicate", self._dup, f"Add a copy of the selected {noun}"),
+                                 ("Remove", self._remove, f"Delete the selected {noun}")):
             b = QPushButton(text, self)
+            b.setToolTip(what)
             b.clicked.connect(slot)
             row.addWidget(b)
         split = QSplitter(Qt.Vertical, self)
@@ -804,11 +882,11 @@ class PIPanel(QWidget):
 
         self.tabs = QTabWidget(self)
         self.vrm_list = ItemList(lambda: self.setup.vrms, VrmEditor(self), self._new_vrm,
-                                 self._describe_vrm)
+                                 self._describe_vrm, noun="VRM")
         self.load_list = ItemList(lambda: self.setup.loads, LoadEditor(self), self._new_load,
-                                  self._describe_load)
+                                  self._describe_load, noun="load")
         self.link_list = ItemList(lambda: self.setup.links, LinkEditor(self), self._new_link,
-                                  self._describe_link)
+                                  self._describe_link, noun="series link")
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.load_list, "Loads")
         self.tabs.addTab(self.link_list, "Series links")
@@ -816,6 +894,17 @@ class PIPanel(QWidget):
         self.tabs.addTab(self._settings_tab(), "Mesh")
         self.tabs.addTab(self._copper_tab(), "Copper")
         self.tabs.addTab(self._thermal_tab(), "Thermal")
+        for i, text in enumerate((
+                "Regulators and supplies: where each rail is driven, and from where",
+                "Consumers: the current each part draws, and its voltage tolerance",
+                "Parts in series between two nets (sense resistors, ferrites, fuses, load "
+                "switches, 0 Ω links)",
+                "Choose which net groups to solve",
+                "Mesh density and via barrel plating",
+                "Copper resistivity and its temperature coefficient, per layer",
+                "Electro-thermal co-simulation: losses heat the board, hot copper "
+                "resists more")):
+            self.tabs.setTabToolTip(i, text)
         for il in (self.vrm_list, self.load_list, self.link_list):
             il.changed.connect(self._on_changed)
         lay.addWidget(self.tabs, 3)
@@ -827,6 +916,8 @@ class PIPanel(QWidget):
         row = QHBoxLayout()
         self.btn_solve = QPushButton("Solve all", self)
         self.btn_solve.setStyleSheet("font-weight: bold; padding: 6px;")
+        self.btn_solve.setToolTip("Save the setup, then mesh and solve every ticked net group. "
+                                  "Problems that stop the solve are listed above in red.")
         self.btn_solve.clicked.connect(lambda: self.solve_requested.emit(self.setup))
         self.chk_report = QCheckBox("HTML report", self)
         self.chk_report.setToolTip("Also write an HTML report (interactive 3D, per-layer maps "
@@ -850,6 +941,7 @@ class PIPanel(QWidget):
         self.cmb_group.currentTextChanged.connect(
             lambda t: t and self.group_changed.emit(t))
         self.cmb_field = QComboBox(g_res)
+        self.cmb_field.setToolTip("Result shown on the copper in 3D")
         for key, (_, _, label, unit) in FIELDS.items():
             if key != "temperature":           # added once a thermal solve exists
                 self.cmb_field.addItem(f"{label} ({unit})", key)
@@ -866,9 +958,13 @@ class PIPanel(QWidget):
         menu.addAction("3D results for ParaView (.vtm)…", lambda: self.export_requested.emit("vtk"))
         menu.addAction("Save results…", lambda: self.export_requested.emit("results"))
         b_export.setMenu(menu)
+        b_export.setToolTip("Export the tables as CSV, the 3D results for ParaView, or save the "
+                            "results to reopen later")
         self.btn_export = b_export
         b_export.setEnabled(False)
         b_geom = QPushButton("Show copper", g_res)
+        b_geom.setToolTip("Back to the plain copper view. Pick a net group or field to see the "
+                          "results again.")
         b_geom.clicked.connect(self.show_geometry.emit)
         row.addWidget(self.cmb_group, 2)
         row.addWidget(self.cmb_field, 2)
@@ -885,17 +981,25 @@ class PIPanel(QWidget):
                                   "furthest from the set point either way.")
         self.tbl_vrms = self._table(["VRM", "Type", "V out", "I out (A)", "V in", "I in (A)",
                                      "P in (W)", "Loss (W)", "I limit (A)", ""], sortable=True)
+        self.tbl_vrms.setToolTip("Each VRM's solved output and input, conversion loss, and "
+                                 "PASS/FAIL against its output current limit; a row per phase "
+                                 "under a multi-phase VRM")
         self.tbl_links = self._table(["Part", "Group", "R (mΩ)", "I (A)", "P (mW)"],
                                       sortable=True)
+        self.tbl_links.setToolTip("Current through, and power in, each series link")
         self.txt_notes = QTextBrowser(g_res)
         self.res_tabs.addTab(self.tbl_loads, "Loads")
         self.res_tabs.addTab(self.tbl_vrms, "VRMs")
         self.res_tabs.addTab(self.tbl_links, "Series links")
         self.res_tabs.addTab(self._vias_tab(), "Vias")
         self.tbl_losses = self._table(["Group"], sortable=True)
+        self.tbl_losses.setToolTip("Power lost in the copper of each net group, by layer, in "
+                                   "its vias and series links, and in VRM conversion")
         self.res_tabs.addTab(self.tbl_losses, "Losses")
         self.thermal_res = self._thermal_results_tab()   # shown after an electro-thermal solve
         self.res_tabs.addTab(self.txt_notes, "Notes")
+        self.txt_notes.setToolTip("Solve details: the net groups, pin groups, warnings and "
+                                  "the thermal iteration history")
         self.tbl_loads.cellDoubleClicked.connect(self._row_to_group)
         lr.addWidget(self.res_tabs)
         lay.addWidget(g_res, 2)
@@ -1023,6 +1127,8 @@ class PIPanel(QWidget):
         v.addLayout(row)
         self.tbl_vias = self._table(["Group", "Via / pad", "x (mm)", "y (mm)", "Drill (mm)",
                                      "I (mA)", "P (mW)", ""], sortable=True)
+        self.tbl_vias.setToolTip("Every via and plated-hole barrel, highest current first. "
+                                 "Double-click a row to fly to it in 3D.")
         self.tbl_vias.cellDoubleClicked.connect(self._via_row_clicked)
         v.addWidget(self.tbl_vias)
         return w
@@ -1114,6 +1220,12 @@ class PIPanel(QWidget):
         f.addRow("Max edge", self.spin_edge)
         f.addRow("Via grading", self.spin_grading)
         f.addRow("Barrel plating", self.spin_plating)
+        tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
+                               "accurate and slower.")
+        tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
+                                  "edge per mm of distance). Lower keeps the mesh fine further "
+                                  "out from vias; 0 turns grading off.")
+        tip(f, self.spin_plating, "Copper thickness of via and plated-hole barrel walls")
         for sp in (self.spin_edge, self.spin_grading, self.spin_plating):
             sp.valueChanged.connect(self._settings_changed)
         return w
@@ -1131,6 +1243,8 @@ class PIPanel(QWidget):
                                  "electro-thermal co-simulation. Copper is 0.00393 /°C.")
         f.addRow("Resistivity", self.spin_rho)
         f.addRow("TCR", self.spin_tcr)
+        for sp in (self.spin_rho, self.spin_tcr):
+            f.labelForField(sp).setToolTip(sp.toolTip())
         self.cmb_thk_unit = QComboBox()
         self.cmb_thk_unit.addItems(list(THICKNESS_UNITS))
         self.cmb_thk_unit.setToolTip("Unit for the layer thicknesses below (1 oz = 35 µm). "
@@ -1139,6 +1253,7 @@ class PIPanel(QWidget):
         self.cmb_thk_unit.setCurrentText(unit if unit in THICKNESS_UNITS else "µm")
         self.cmb_thk_unit.currentTextChanged.connect(self._thickness_unit_changed)
         f.addRow("Thickness unit", self.cmb_thk_unit)
+        f.labelForField(self.cmb_thk_unit).setToolTip(self.cmb_thk_unit.toolTip())
         lay.addLayout(f)
         self.tbl_rho = self._table(["Layer", "Thickness", "Resistivity at 20 °C"])
         self.tbl_rho.setSelectionMode(QAbstractItemView.NoSelection)
@@ -1220,6 +1335,14 @@ class PIPanel(QWidget):
         f.addRow("Airflow", self.spin_airflow)
         f.addRow("Grid", self.spin_tgrid)
         f.addRow("Laminate k", self.spin_lam_k)
+        tip(f, self.spin_ambient, "Temperature of the air around the board")
+        tip(f, self.spin_iters, "Electrical and thermal solves to alternate. Three is usually "
+                                "enough; the Notes tab shows how much each one changed.")
+        tip(f, self.spin_airflow, "Air speed over both faces of the board. Faster air cools "
+                                  "it more.")
+        tip(f, self.spin_tgrid, "Cell size of the thermal grid. 'Auto' gives about 250 cells "
+                                "across the board.")
+        tip(f, self.spin_lam_k, self.spin_lam_k.toolTip())
         self.spin_max_t = _spin(0, 500, t.max_temp_c or 0.0, 1, " °C", 5)
         self.spin_max_t.setSpecialValueText("none")
         self.spin_max_t.setToolTip("Copper hotter than this, on any layer, is marked FAIL")
@@ -1229,6 +1352,8 @@ class PIPanel(QWidget):
                                       "marked FAIL")
         f.addRow("Max copper temperature", self.spin_max_t)
         f.addRow("Max rise above ambient", self.spin_max_rise)
+        for sp in (self.spin_max_t, self.spin_max_rise):
+            f.labelForField(sp).setToolTip(sp.toolTip())
         note = QLabel("Heat from every net and layer (copper, vias, DC parts, VRM conversion "
                       "loss) spreads through the board's copper and laminate and leaves both "
                       "faces by convection: h = 10 + 3.8·v W/m²K per face.")
@@ -1268,11 +1393,15 @@ class PIPanel(QWidget):
         note.setStyleSheet("color: #999;")
         v.addWidget(note)
         self.lst_groups = QListWidget(w)
+        self.lst_groups.setToolTip("Untick a net group to leave it out of the solve. VRMs "
+                                   "feeding or fed by it are replaced by an ideal source or a "
+                                   "constant load; the Notes tab lists what changed.")
         self.lst_groups.itemChanged.connect(self._store_ticks)
         v.addWidget(self.lst_groups, 1)
         row = QHBoxLayout()
         for text, on in (("All", True), ("None", False)):
             b = QPushButton(text, w)
+            b.setToolTip("Tick every net group" if on else "Untick every net group")
             b.clicked.connect(partial(self._tick_all_groups, on))
             row.addWidget(b)
         row.addStretch(1)

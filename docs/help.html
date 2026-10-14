@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KiPI User Guide</title>
+<style>
+:root {
+  --bg: #fbfbfa; --panel: #ffffff; --text: #1f2328; --muted: #5d646d; --border: #d9dce0;
+  --accent: #2f6fd0; --accent-soft: #e7effb; --code: #f1f2f4; --pass: #1f8a3b; --fail: #c62f2f;
+  --warn: #a86400; --note-bg: #f3f6fb; --tip-bg: #f1f8f2; --warn-bg: #fdf6ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17191c; --panel: #1f2226; --text: #e4e6e9; --muted: #9aa1aa; --border: #33373d;
+    --accent: #6ea8ff; --accent-soft: #233149; --code: #2a2e33; --pass: #5fd07a; --fail: #ff7070;
+    --warn: #f0b350; --note-bg: #1f2633; --tip-bg: #1c2a21; --warn-bg: #2d2619;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17191c; --panel: #1f2226; --text: #e4e6e9; --muted: #9aa1aa; --border: #33373d;
+  --accent: #6ea8ff; --accent-soft: #233149; --code: #2a2e33; --pass: #5fd07a; --fail: #ff7070;
+  --warn: #f0b350; --note-bg: #1f2633; --tip-bg: #1c2a21; --warn-bg: #2d2619;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 -apple-system, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, kbd {
+  font-family: Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", monospace; font-size: 0.9em;
+  background: var(--code); border-radius: 4px; padding: 1px 5px;
+}
+kbd { border: 1px solid var(--border); border-bottom-width: 2px; }
+.layout { display: flex; max-width: 1280px; margin: 0 auto; }
+nav#toc {
+  position: sticky; top: 0; align-self: flex-start; width: 270px; flex: none;
+  height: 100vh; overflow-y: auto; padding: 20px 16px 40px; border-right: 1px solid var(--border);
+}
+nav#toc .brand { font-weight: 700; font-size: 1.15em; margin-bottom: 2px; }
+nav#toc .sub { color: var(--muted); font-size: 0.85em; margin-bottom: 14px; }
+nav#toc ol { list-style: none; margin: 0; padding: 0; }
+nav#toc li { margin: 1px 0; }
+nav#toc ol ol { padding-left: 14px; font-size: 0.92em; }
+nav#toc a { display: block; padding: 2px 8px; border-radius: 5px; color: var(--text); }
+nav#toc a:hover { background: var(--accent-soft); text-decoration: none; }
+nav#toc .group { margin-top: 12px; color: var(--muted); font-size: 0.78em; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; padding-left: 8px; }
+main { flex: 1; min-width: 0; padding: 24px 40px 80px; }
+h1 { font-size: 2em; margin: 0 0 4px; line-height: 1.2; }
+h2 { font-size: 1.45em; margin: 40px 0 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+h3 { font-size: 1.12em; margin: 22px 0 6px; }
+h4 { font-size: 1em; margin: 16px 0 4px; }
+.lead { color: var(--muted); font-size: 1.05em; margin-top: 0; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 8px; }
+.toolbar button {
+  font: inherit; font-size: 0.9em; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+}
+.toolbar button:hover { border-color: var(--accent); }
+details {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  margin: 10px 0; padding: 0 16px;
+}
+details > summary {
+  cursor: pointer; padding: 10px 0; font-weight: 600; list-style: none; position: relative;
+  padding-left: 20px;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: "▸"; position: absolute; left: 0; color: var(--muted); transition: transform 0.15s;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+details[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+details > .body { padding-bottom: 12px; }
+details details { background: transparent; }
+summary .hint { font-weight: 400; color: var(--muted); font-size: 0.9em; margin-left: 6px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 0.94em; }
+th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--code); font-weight: 600; }
+td:first-child { white-space: nowrap; }
+td.wrap { white-space: normal; }
+.callout { border-left: 4px solid var(--accent); background: var(--note-bg); padding: 8px 14px;
+  border-radius: 0 6px 6px 0; margin: 12px 0; }
+.callout.tip { border-color: var(--pass); background: var(--tip-bg); }
+.callout.warn { border-color: var(--warn); background: var(--warn-bg); }
+.callout b:first-child { margin-right: 4px; }
+.pass { color: var(--pass); font-weight: 600; }
+.fail { color: var(--fail); font-weight: 600; }
+.warnc { color: var(--warn); font-weight: 600; }
+figure { margin: 12px 0 18px; }
+figure img { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; display: block; }
+figcaption { color: var(--muted); font-size: 0.88em; margin-top: 4px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+ol.steps > li { margin-bottom: 6px; }
+.diagram { font-family: Consolas, Menlo, monospace; font-size: 0.85em; line-height: 1.35;
+  background: var(--code); border-radius: 6px; padding: 12px; overflow-x: auto; white-space: pre; }
+.back { font-size: 0.85em; float: right; font-weight: 400; }
+@media (max-width: 900px) {
+  .layout { display: block; }
+  nav#toc { position: static; width: auto; height: auto; border-right: none;
+    border-bottom: 1px solid var(--border); padding: 16px; }
+  main { padding: 16px; }
+  .pair { grid-template-columns: 1fr; }
+  td:first-child { white-space: normal; }
+}
+@media print {
+  nav#toc, .toolbar { display: none; }
+  details { border: none; padding: 0; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="toc" aria-label="Contents">
+  <div class="brand">KiPI User Guide</div>
+  <div class="sub">Power integrity for KiCad, DC and AC</div>
+  <ol>
+    <li class="group">Start here</li>
+    <li><a href="#overview">What KiPI does</a></li>
+    <li><a href="#quickstart">Quick start</a></li>
+    <li><a href="#window">The main window</a></li>
+    <li class="group">Interface reference</li>
+    <li><a href="#toolbar">Toolbar</a></li>
+    <li><a href="#board-panel">Board panel</a>
+      <ol>
+        <li><a href="#nets">Nets</a></li>
+        <li><a href="#layers">Copper layers</a></li>
+        <li><a href="#display">Display</a></li>
+        <li><a href="#info">Info</a></li>
+      </ol></li>
+    <li><a href="#view3d">3D view and mouse</a></li>
+    <li><a href="#log">Log and progress</a></li>
+    <li class="group">DC analysis</li>
+    <li><a href="#dc-concepts">DC concepts</a></li>
+    <li><a href="#pin-picker">The pin picker</a></li>
+    <li><a href="#dc-setup">DC setup tabs</a>
+      <ol>
+        <li><a href="#dc-vrms">VRMs</a></li>
+        <li><a href="#dc-loads">Loads</a></li>
+        <li><a href="#dc-links">Series links</a></li>
+        <li><a href="#dc-solve-tab">Solve</a></li>
+        <li><a href="#dc-mesh">Mesh</a></li>
+        <li><a href="#dc-copper">Copper</a></li>
+        <li><a href="#dc-thermal">Thermal</a></li>
+      </ol></li>
+    <li><a href="#dc-solving">Solving</a></li>
+    <li><a href="#dc-results">DC results</a>
+      <ol>
+        <li><a href="#dc-fields">3D result fields</a></li>
+        <li><a href="#dc-tables">Results tables</a></li>
+        <li><a href="#dc-reading">Reading the numbers</a></li>
+        <li><a href="#dc-export">Export and report</a></li>
+      </ol></li>
+    <li class="group">AC analysis</li>
+    <li><a href="#ac-concepts">AC concepts</a></li>
+    <li><a href="#ac-setup">AC setup tabs</a>
+      <ol>
+        <li><a href="#ac-vrms">VRMs and series links</a></li>
+        <li><a href="#ac-caps">Capacitors</a></li>
+        <li><a href="#ac-probes">Probes and targets</a></li>
+        <li><a href="#ac-calc">Target calculator</a></li>
+        <li><a href="#ac-sweep">Sweep</a></li>
+        <li><a href="#ac-mesh">Mesh</a></li>
+      </ol></li>
+    <li><a href="#ac-solving">Solving a rail</a></li>
+    <li><a href="#ac-results">AC results</a>
+      <ol>
+        <li><a href="#ac-plot">Impedance plot and cursor</a></li>
+        <li><a href="#ac-table">Results table</a></li>
+        <li><a href="#ac-reading">Reading the curve</a></li>
+      </ol></li>
+    <li class="group">Workflows</li>
+    <li><a href="#workflows">Step-by-step workflows</a></li>
+    <li class="group">Reference</li>
+    <li><a href="#files">Files KiPI reads and writes</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ol>
+</nav>
+
+<main>
+<h1>KiPI User Guide</h1>
+<p class="lead">How to set up, solve and read power integrity simulations of a KiCad board. Every
+section below can be opened and closed; use the contents on the left to jump around.</p>
+<div class="toolbar">
+  <button type="button" id="expand-all">Expand all</button>
+  <button type="button" id="collapse-all">Collapse all</button>
+  <button type="button" id="theme">Toggle light/dark</button>
+</div>
+
+<div class="callout tip"><b>Tip:</b> almost every button, box and table in KiPI has a tooltip.
+Hover over it for a one-line reminder of what it does. Press <kbd>F1</kbd> in KiPI to open this
+guide.</div>
+
+<!-- ================================================================== OVERVIEW -->
+<h2 id="overview">What KiPI does</h2>
+<p>KiPI is a power integrity (PI) analyzer that runs as a KiCad 9/10 plugin. It reads the
+copper of your board straight from the PCB editor and simulates how power gets from your
+regulators to the parts that use it. It has two analysis modes, chosen at the right end of
+the toolbar:</p>
+<table>
+  <tr><th>Mode</th><th>Question it answers</th><th>What you get</th></tr>
+  <tr><td><b>DC</b></td><td class="wrap">With every load drawing its current, what voltage
+    actually reaches each pin, how much current flows through each trace, plane and via, and
+    how hot does the board get?</td><td class="wrap">IR drop and PASS/FAIL per load, voltage,
+    current density, power density, via current and temperature maps in 3D, VRM and loss
+    tables, an optional HTML report.</td></tr>
+  <tr><td><b>AC</b></td><td class="wrap">Looking into a device's power pins, how does the
+    impedance of the power distribution network (planes, vias, decoupling capacitors) vary
+    with frequency, and is it below the device's target impedance?</td><td class="wrap">|Z|
+    versus frequency curves for each probe point, a cursor to read values off them, and
+    PASS/FAIL against a flat or custom target mask.</td></tr>
+</table>
+<p>KiPI infers nothing about your power system from the schematic. You tell it where the
+regulators are, what each load draws, which parts sit in series between nets, and (for AC)
+which capacitor model each decoupling capacitor uses. The board's copper, layer stackup,
+vias and pads come from KiCad.</p>
+<div class="callout warn"><b>Accuracy:</b> KiPI's solvers are a 2.5D finite element model of
+the copper, checked against closed-form results. Solving the field is the well-understood
+part; the modelling of vias, regulators and parts is where the approximations are. Treat the
+results as an engineering estimate and sanity-check anything surprising.</div>
+
+<!-- ================================================================== QUICK START -->
+<h2 id="quickstart">Quick start</h2>
+<details open>
+<summary>DC voltage drop in ten minutes <span class="hint">the most common first run</span></summary>
+<div class="body">
+<ol class="steps">
+  <li>In KiCad, enable <b>Preferences → Plugins → Enable KiCad API</b> (once).</li>
+  <li>Open your board in the PCB editor and click the <b>KiPI</b> toolbar button. KiPI
+    reads the board (refilling zones first) and draws it in 3D.</li>
+  <li>In the <a href="#nets">Nets</a> list on the left, tick the power and ground nets you
+    want to analyze. KiPI pre-ticks a guess the first time.</li>
+  <li>In the <b>PI setup</b> panel on the right, <a href="#dc-vrms">VRMs tab</a>: click
+    <b>Add</b>, pick the regulator's output net and part, set its voltage. Add its
+    <b>Ground pins</b> if you want the ground return solved too.</li>
+  <li><a href="#dc-loads">Loads tab</a>: click <b>Add</b> for each part that draws current,
+    pick its supply pins, enter its current and a tolerance (e.g. ±3 %).</li>
+  <li>If a sense resistor, ferrite, fuse or load switch sits between two nets you ticked,
+    add it on the <a href="#dc-links">Series links tab</a>.</li>
+  <li>Click <b>Solve all</b>. Watch the log at the bottom.</li>
+  <li>Read the <a href="#dc-tables">Loads table</a> for PASS/FAIL, and click around the 3D
+    view to probe voltages. Switch the field to <b>Current density</b> and tick
+    <b>Arrows</b> to find bottlenecks.</li>
+</ol>
+<p>The setup is saved next to your board as <code>&lt;board&gt;.kipi-setup.json</code> every
+time you solve, so the next session starts where you left off.</p>
+</div>
+</details>
+<details>
+<summary>AC impedance of one rail <span class="hint">after the DC setup has a VRM on the rail</span></summary>
+<div class="body">
+<ol class="steps">
+  <li>Switch <b>Mode</b> (right end of the toolbar) to <b>AC</b>. The setup panel becomes
+    the <b>AC setup</b>; VRMs and series links are shared with DC.</li>
+  <li>Make sure the rail's net, its ground and every net its capacitors connect to are ticked
+    in the Nets list.</li>
+  <li><a href="#ac-caps">Capacitors tab</a>: click <b>Models from values</b> to make one
+    model per capacitor value, then enter each model's <b>ESL</b> and <b>ESR</b> from the
+    datasheet (and check the capacitance).</li>
+  <li><a href="#ac-probes">Probes tab</a>: click <b>Add</b>. KiPI picks the busiest part on
+    the rail that also has ground pins, which is usually the load. Set a target impedance,
+    or open the <a href="#ac-calc">target calculator</a>.</li>
+  <li>Under the tabs, choose the <b>Rail</b> (by its VRM) and <b>Ground</b>, then click
+    <b>Solve rail</b>.</li>
+  <li>The <b>Impedance</b> tab in the middle shows |Z| against frequency. Click a curve to
+    place a cursor and read the values in the Info box.</li>
+</ol>
+</div>
+</details>
+<details>
+<summary>Try it without a board of your own</summary>
+<div class="body">
+<p>The repository includes an example: a 4-phase 12 V → 0.9 V, 40 A core rail with decoupling
+and probes already set up. From a development checkout run</p>
+<p><code>python -m kipi --snapshot examples/multiphase_buck/multiphase_buck.kipi.json.gz</code></p>
+<p>or click <b>Open snapshot…</b> in KiPI and choose that file.</p>
+</div>
+</details>
+
+<!-- ================================================================== WINDOW -->
+<h2 id="window">The main window</h2>
+<div class="diagram">┌──────────────────────────────── Toolbar ─────────────────────────────── Mode: ◉ DC ○ AC ┐
+│┌ Board ───────┐┌ 3D view │ Impedance ─────────────────────┐┌ PI setup / AC setup ────────┐│
+││ Nets         ││                                           ││ [Save]                      ││
+││ Copper layers││         the board, or results,            ││ VRMs │ Loads │ Links │ …   ││
+││ Display      ││         in 3D                             ││ list + editor               ││
+││ Info         ││  (AC: the |Z| plot in the second tab)     ││ problems in red             ││
+││ [Select in   ││                                           ││ [Solve all] [HTML report]   ││
+││  KiCad]      ││                                           ││ Results: tables             ││
+│└──────────────┘└───────────────────────────────────────────┘└─────────────────────────────┘│
+│┌ Log ─── stage ▓▓▓▓▓▓░░░░ [Cancel] ─────────────────────────────────────────────────────┐ │
+│└───────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────┘</div>
+<figure><img src="images/overview.png" alt="KiPI main window with nets on the left, the board in 3D and the PI setup on the right">
+<figcaption>The main window in DC mode.</figcaption></figure>
+<p>The Board, setup and Log panels are dock widgets: drag their title bars to move them or
+float them in their own windows.</p>
+
+<!-- ================================================================== TOOLBAR -->
+<h2 id="toolbar">Toolbar</h2>
+<details open>
+<summary>Every toolbar button</summary>
+<div class="body">
+<table>
+  <tr><th>Button</th><th>What it does</th></tr>
+  <tr><td><b>Load from KiCad</b></td><td class="wrap">Re-reads the board from the running PCB
+    editor (after you change the layout) and reloads the saved setup. The nets you have
+    ticked stay ticked. Save the setup first if you have unsaved changes.</td></tr>
+  <tr><td><b>Refill zones</b></td><td class="wrap">When ticked, KiPI asks KiCad to refill every
+    zone and waits for it before reading. KiPI only sees <em>filled</em> copper, so leave
+    this on unless the fills are already current and the refill is slow.</td></tr>
+  <tr><td><b>Open snapshot…</b></td><td class="wrap">Opens a board saved with <b>Save
+    snapshot…</b>. KiCad does not need to be running.</td></tr>
+  <tr><td><b>Save snapshot…</b></td><td class="wrap">Saves the extracted board as
+    <code>.kipi.json.gz</code>, to analyze later, on another machine, or to attach to a bug
+    report.</td></tr>
+  <tr><td><b>Top / Bottom / Iso</b></td><td class="wrap">Snap the 3D camera to look down on
+    the board, up at its underside, or from an isometric angle. They also bring the 3D view
+    to the front from the Impedance tab.</td></tr>
+  <tr><td><b>Screenshot…</b></td><td class="wrap">Saves whatever is in the middle as a PNG:
+    the 3D view, or the impedance plot when its tab is showing.</td></tr>
+  <tr><td><b>Open results…</b></td><td class="wrap">Reopens a DC solve saved with <b>Export ▾
+    → Save results…</b>, without solving again. Load the same board first. DC mode
+    only.</td></tr>
+  <tr><td><b>Help</b> <kbd>F1</kbd></td><td class="wrap">Opens this guide in your web
+    browser.</td></tr>
+  <tr><td><b>About</b></td><td class="wrap">Version, author and project links.
+    <b>Copy version info</b> copies the versions of KiPI, Python, its libraries and the
+    sparse solver in use, for bug reports.</td></tr>
+  <tr><td><b>Mode: DC / AC</b></td><td class="wrap">Chooses the analysis. The setup dock
+    shows that mode's panel. The DC setup and results are kept while you are in AC and come
+    back when you switch to DC. You cannot switch while a task is running.</td></tr>
+</table>
+</div>
+</details>
+
+<!-- ================================================================== BOARD PANEL -->
+<h2 id="board-panel">Board panel</h2>
+<p>The left-hand dock. Its four parts are separated by splitters you can drag.</p>
+
+<details open id="nets">
+<summary>Nets</summary>
+<div class="body">
+<p>Every net on the board. <b>Tick the nets you want to analyze.</b> Ticked nets are drawn in
+3D and are the only nets offered in the setup's pin pickers, so a net you need for a VRM,
+load, series link, capacitor or probe must be ticked first.</p>
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td>Filter box</td><td class="wrap">Shows only nets whose name contains the text.</td></tr>
+  <tr><td><b>Power &amp; ground only</b></td><td class="wrap">Hides signal nets that are not
+    ticked. Power nets are shown in orange with <code>[PWR]</code>, grounds in blue with
+    <code>[GND]</code>. KiPI recognizes them by name (<code>+3V3</code>, <code>VCC</code>,
+    <code>GND</code>…), net class, or a zone with several pads.</td></tr>
+  <tr><td><b>All power</b></td><td class="wrap">Ticks every power and ground net, keeping
+    any others already ticked.</td></tr>
+  <tr><td><b>None</b></td><td class="wrap">Unticks everything.</td></tr>
+</table>
+<p>The ticked nets are saved with the setup. A board with no saved choice starts with a guess:
+its largest power planes and the main ground. Building the 3D copper of a big net takes a
+moment; nets appear as they finish, and <b>Cancel</b> stops the build.</p>
+</div>
+</details>
+
+<details id="layers">
+<summary>Copper layers</summary>
+<div class="body">
+<p>Each copper layer with its thickness and height in the stackup. Untick a layer to hide it.
+Hiding layers also rescales the result colors: the color scale only covers the layers that
+are shown, so one layer's outlier does not wash out the others.</p>
+</div>
+</details>
+
+<details id="display">
+<summary>Display</summary>
+<div class="body">
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td><b>Color</b></td><td class="wrap">Colors the plain copper by layer or by net.</td></tr>
+  <tr><td><b>Z scale</b></td><td class="wrap">Stretches the stackup vertically (1× to 100×)
+    so the layers can be told apart. It only changes the drawing.</td></tr>
+  <tr><td><b>Vias / Pads / Board</b></td><td class="wrap">Show or hide via barrels, pads and
+    the board body.</td></tr>
+  <tr><td><b>Cut</b> axis, slider, <b>Flip</b></td><td class="wrap">Cuts the view with a plane
+    across X, Y or Z, so you can look inside the stackup. The slider moves the plane;
+    <b>Flip</b> keeps the other half.</td></tr>
+</table>
+<figure><img src="images/stackup_cut.png" alt="Stackup cut along Y at 15x Z scale">
+<figcaption>A cut along Y at 15× Z scale shows the inner planes and via barrels.</figcaption></figure>
+</div>
+</details>
+
+<details id="info">
+<summary>Info and Select in KiCad</summary>
+<div class="body">
+<p>Shows a summary of the board when it loads, and afterwards whatever you last clicked in 3D:
+the layer and coordinates, the pad or via hit (net, drill, layer span), and, when results are
+shown, the voltage, drop, current density, power density and via current at that point. In AC
+mode it shows the impedance plot's cursor values.</p>
+<p><b>Select in KiCad</b> selects the picked pad or via in the PCB editor, so you can find it
+in your layout. It needs a live KiCad connection (not a snapshot).</p>
+</div>
+</details>
+
+<!-- ================================================================== 3D VIEW -->
+<h2 id="view3d">3D view and mouse</h2>
+<details open>
+<summary>Navigating and probing</summary>
+<div class="body">
+<table>
+  <tr><th>Action</th><th>Mouse</th></tr>
+  <tr><td>Rotate</td><td>Left-drag</td></tr>
+  <tr><td>Pan</td><td>Shift + left-drag, or middle-drag</td></tr>
+  <tr><td>Zoom</td><td>Scroll wheel</td></tr>
+  <tr><td>Probe / identify</td><td class="wrap">Left-click copper or a via. The result goes to
+    the <a href="#info">Info</a> box and the status bar.</td></tr>
+</table>
+<p>In AC mode a second tab, <b>Impedance</b>, appears beside <b>3D view</b> and holds the
+<a href="#ac-plot">impedance plot</a>.</p>
+</div>
+</details>
+
+<!-- ================================================================== LOG -->
+<h2 id="log">Log and progress</h2>
+<details>
+<summary>The Log dock</summary>
+<div class="body">
+<p>The bottom dock shows the current stage, a progress bar, and <b>Cancel</b>, which stops the
+running task (loading, building nets or solving). The log streams every stage with its
+timing, solver residuals and warnings: warnings are amber, errors red, stage headers blue.</p>
+<p>Each session also writes a log file to <code>kipi/</code> in your temporary folder
+(<code>%TEMP%</code> on Windows, <code>$TMPDIR</code> on macOS, <code>/tmp</code> on Linux).
+See <a href="#troubleshooting">Troubleshooting</a>.</p>
+</div>
+</details>
+
+<!-- ================================================================== DC CONCEPTS -->
+<h2 id="dc-concepts">DC concepts</h2>
+<details open>
+<summary>Net groups, the power tree and voltage references</summary>
+<div class="body">
+<h4>Net groups</h4>
+<p>KiPI solves copper one <b>net group</b> at a time. A group is a net plus every net joined
+to it by a <a href="#dc-links">series link</a>. For example, <code>+3V3</code> and
+<code>+3V3_FILT</code> joined by a ferrite bead are one group. Each group may be driven by at
+most one VRM. Ground nets used by VRM or load ground pins are their own groups.</p>
+<h4>The power tree</h4>
+<p>A VRM's <b>input pins</b> make it a load on its upstream net. KiPI solves the tree from the
+leaves back to the source: downstream rails first, then each VRM's input current (from its
+output current, efficiency or quiescent current) is applied as a load upstream. So the
+12 V input rail carries the current of everything it feeds.</p>
+<h4>Voltage reference</h4>
+<p>Voltages are measured against the source's ground (0 V). If ground pins are given, the
+ground return is solved too and a load's ground rises above 0 V. The figure to compare with
+the set point is the load's <b>effective voltage</b>: supply minus ground at the load.</p>
+<h4>Drop and boost</h4>
+<p>A <b>drop</b> is a pin below the VRM's set voltage. A <b>boost</b> is a pin above it, which
+happens with remote sense: the VRM raises its output to hold a sense point further down the
+copper, so pins nearer the VRM sit above the set point. A load is judged by its worst pin,
+whichever direction.</p>
+</div>
+</details>
+
+<details id="pin-picker">
+<summary>The pin picker <span class="hint">used everywhere pins are chosen</span></summary>
+<div class="body">
+<p>Every "pins" field is three boxes:</p>
+<ol>
+  <li><b>Net</b>: one of the nets ticked in the Board panel. Type to search.</li>
+  <li><b>Part</b>: the parts with pads on that net, busiest first, shown as reference, value and
+    pad count, e.g. <code>U4 TPS62130 (3)</code>. Type to search (<code>u4</code> is
+    enough).</li>
+  <li><b>Pins</b>: optional pin numbers, comma-separated, e.g. <code>1,2,5</code>. Blank means
+    every pin of that part on that net; the placeholder lists them.</li>
+</ol>
+<p>Optional pickers have <code>(none)</code> as their first net.</p>
+</div>
+</details>
+
+<!-- ================================================================== DC SETUP -->
+<h2 id="dc-setup">DC setup tabs</h2>
+<p>The <b>PI setup</b> dock on the right. <b>Save</b> at its top writes the setup next to the
+board (DC and AC share one file). Problems that stop a solve are listed in red under the tabs
+as you edit. The VRMs, Loads and Series links tabs share one layout: a list with <b>Add</b>,
+<b>Duplicate</b> and <b>Remove</b>, and an editor for the selected entry below it.</p>
+
+<details open id="dc-vrms">
+<summary>VRMs tab <span class="hint">regulators and supplies</span></summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Name</td><td class="wrap">Used in the results tables.</td></tr>
+  <tr><td>Type</td><td class="wrap"><b>Source</b>: an ideal supply with no input (connector,
+    bench supply, battery). <b>LDO</b>: I<sub>in</sub> = I<sub>out</sub> + I<sub>q</sub>.
+    <b>Switcher</b>: P<sub>in</sub> = P<sub>out</sub> / efficiency.</td></tr>
+  <tr><td>Set voltage</td><td class="wrap">The voltage it holds at its output (or sense) pins.
+    Guessed from the net name when you pick the output net.</td></tr>
+  <tr><td>Efficiency</td><td class="wrap">Switcher only.</td></tr>
+  <tr><td>Quiescent</td><td class="wrap">LDO and switcher: extra input current.</td></tr>
+  <tr><td>Output current limit</td><td class="wrap">Optional. The VRM row shows PASS if its total
+    output current (all phases) is at most this.</td></tr>
+  <tr><td>Dropout</td><td class="wrap">LDO only: the least input-to-output difference at which it
+    still regulates.</td></tr>
+  <tr><td>Input min / max</td><td class="wrap">Optional input range. A VRM whose solved input is
+    outside its range (or an LDO below its dropout) cannot hold its output, and every load it
+    feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
+    REGULATION</span>.</td></tr>
+  <tr><td>Control loop bandwidth</td><td class="wrap">AC only; grayed out in DC.</td></tr>
+  <tr><td>Phases / Edit phase</td><td class="wrap">Multi-phase regulators. See
+    <a href="#wf-multiphase">the multi-phase workflow</a>.</td></tr>
+  <tr><td>Output pins</td><td class="wrap">Where it drives the rail: the output pin, or for a
+    switcher usually the inductor's output side.</td></tr>
+  <tr><td>Input pins</td><td class="wrap">LDO and switcher: where it draws its input. This
+    links it into the power tree.</td></tr>
+  <tr><td>Ground pins</td><td class="wrap">Optional: solve the ground return as well.</td></tr>
+  <tr><td>Sense pins</td><td class="wrap">Optional remote sense (positive).</td></tr>
+  <tr><td>Ground sense pins</td><td class="wrap">Optional negative remote sense on the ground net
+    (needs ground pins).</td></tr>
+</table>
+</div>
+</details>
+
+<details id="dc-loads">
+<summary>Loads tab <span class="hint">parts that draw current</span></summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Name</td><td class="wrap">Defaults to the supply part's reference.</td></tr>
+  <tr><td>Supply pins</td><td class="wrap">Where the current is drawn.</td></tr>
+  <tr><td>Current split</td><td class="wrap"><b>Equal across the supply pins</b>, or <b>Per pin
+    group</b>: a table of groups, each with its own pins and current. <b>Add pin group</b>
+    adds a row; <b>One group per pin</b> replaces the table with one row per supply pin,
+    sharing the total. ✕ removes a row. Use groups when a part draws different currents on
+    different pins.</td></tr>
+  <tr><td>Current</td><td class="wrap">The load's total current (equal split). Negative
+    values are allowed for parts that source current.</td></tr>
+  <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return.</td></tr>
+  <tr><td>Tolerance</td><td class="wrap">±% of the VRM set voltage. PASS if every supply pin is
+    within it.</td></tr>
+</table>
+<figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
+</div>
+</details>
+
+<details id="dc-links">
+<summary>Series links tab <span class="hint">parts between two nets</span></summary>
+<div class="body">
+<p>Sense resistors, ferrite beads, fuses, load switches, 0 Ω links: any part that passes DC
+from one net to another. Give the part's <b>Side A pins</b> and <b>Side B pins</b> and its
+<b>Resistance (DCR)</b>; 0 is a short. When both sides are on the same resistor, the resistance
+is read from its value field (<code>10m</code>, <code>4k7</code>, <code>0R1</code>,
+<code>5 mΩ</code>…). <b>ESL</b> is used by AC only. A new link starts on a part that bridges
+the first two ticked nets, if there is one.</p>
+<p>The nets a link joins are solved together as one group, so a group can only hold one
+VRM. A net with no copper path to its VRM is reported, not guessed at.</p>
+</div>
+</details>
+
+<details id="dc-solve-tab">
+<summary>Solve tab <span class="hint">choose which net groups to solve</span></summary>
+<div class="body">
+<p>Lists every net group with its role (rail from a VRM, ground, or not driven). Untick
+groups that are not modeled or routed yet; <b>All</b> and <b>None</b> tick or untick them all.
+Only ticked groups are validated and solved, and the choice is saved. Where a solved group
+meets an excluded one:</p>
+<ul>
+  <li>A VRM whose <em>output</em> is excluded becomes a constant load on its input pins, drawing
+    the input current its rail would need at nominal voltages.</li>
+  <li>A VRM whose <em>input</em> is excluded is treated as an ideal source.</li>
+  <li>Ground pins on an excluded ground are ignored.</li>
+</ul>
+<p>The Notes results tab lists what was left out and substituted. The Solve button shows how
+many groups will be solved, e.g. <b>Solve 3 of 5 net groups</b>.</p>
+<figure><img src="images/dc_solve_tab.png" alt="The Solve tab listing net groups with checkboxes">
+<figcaption>The Solve tab of the example board.</figcaption></figure>
+</div>
+</details>
+
+<details id="dc-mesh">
+<summary>Mesh tab</summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Max edge</td><td class="wrap">Largest triangle edge, mm. Smaller is more accurate and
+    slower. Raise it for quick looks at big boards.</td></tr>
+  <tr><td>Via grading</td><td class="wrap">How fast elements grow away from plated holes, where
+    current crowds. Lower keeps the mesh fine further out; 0 turns grading off.</td></tr>
+  <tr><td>Barrel plating</td><td class="wrap">Via and PTH wall thickness, µm.</td></tr>
+</table>
+<p>The defaults suit most boards.</p>
+</div>
+</details>
+
+<details id="dc-copper">
+<summary>Copper tab</summary>
+<div class="body">
+<p><b>Resistivity</b> at 20 °C (annealed copper, 1.724 µΩ·cm, by default) applies to every layer
+and to via plating. <b>TCR</b> (0.00393 /°C for copper) is used by the electro-thermal solve.
+The table lists each layer's thickness, from the KiCad stackup, and lets you override its
+resistivity, e.g. for electroplated or rolled foil; <code>default</code> uses the value above.
+<b>Thickness unit</b> shows the thicknesses in µm, mil or oz (1 oz = 35 µm).</p>
+</div>
+</details>
+
+<details id="dc-thermal">
+<summary>Thermal tab <span class="hint">electro-thermal co-simulation, off by default</span></summary>
+<div class="body">
+<p>Tick <b>Electro-thermal co-simulation</b> to let copper losses heat the board, with warmer
+copper becoming more resistive. KiPI alternates electrical and thermal solves.</p>
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Ambient</td><td class="wrap">Air temperature around the board.</td></tr>
+  <tr><td>Iterations</td><td class="wrap">Electrical/thermal passes. Three is usually enough;
+    the Thermal results tab shows how much each changed.</td></tr>
+  <tr><td>Airflow</td><td class="wrap">Air speed over both faces, m/s; 0 is still air.
+    Convection is h = 10 + 3.8·v W/m²K per face.</td></tr>
+  <tr><td>Grid</td><td class="wrap">Thermal cell size; <i>auto</i> is about 250 cells across
+    the board.</td></tr>
+  <tr><td>Laminate k</td><td class="wrap">In-plane dielectric conductivity. <i>From stackup</i>
+    looks it up from each dielectric's material name (FR4, prepregs, polyimide, PTFE, Rogers,
+    ceramic, aluminum…), falling back to FR4 with a warning.</td></tr>
+  <tr><td>Max copper temperature</td><td class="wrap">Optional limit: copper hotter than this
+    on any layer is FAIL.</td></tr>
+  <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
+</table>
+<p>Heat comes from every solved net and layer, vias, series parts and VRM conversion loss. The
+limits grade the last solve straight away when you change them.</p>
+<figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
+</div>
+</details>
+
+<!-- ================================================================== DC SOLVING -->
+<h2 id="dc-solving">Solving</h2>
+<details open>
+<summary>Solve all, HTML report and Cancel</summary>
+<div class="body">
+<p><b>Solve all</b> saves the setup, meshes every ticked net group and solves the power tree.
+It is disabled while there are problems (listed in red). If you click it while the 3D view is
+still building nets, the solve is queued and starts as soon as that finishes.</p>
+<p>Tick <b>HTML report</b> before solving to also write <code>&lt;board&gt;_kipi_report.html</code>
+next to the board; <b>Report</b> opens it. The report is a single offline file with every
+table, an interactive 3D view of each net group, per-layer statistics and maps, and the
+temperature map.</p>
+<p>A solve that fails on a setup problem (e.g. no copper path) shows <b>Cannot solve</b> in the
+Notes tab with the reason. Untick the group with the problem in the Solve tab to solve the
+rest.</p>
+</div>
+</details>
+
+<!-- ================================================================== DC RESULTS -->
+<h2 id="dc-results">DC results</h2>
+<p>The <b>Results</b> box under the Solve button. Pick a <b>net group</b> and a <b>field</b> to
+color the copper in 3D.</p>
+
+<details open id="dc-fields">
+<summary>3D result fields</summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Shows</th><th>Look for</th></tr>
+  <tr><td>Voltage (V)</td><td class="wrap">Copper potential.</td><td class="wrap">The gradient
+    from VRM to load; where the drop happens.</td></tr>
+  <tr><td>Current density (A/mm²)</td><td class="wrap">How hard the copper is worked. Tick
+    <b>Arrows</b> to see where and which way current flows.</td><td class="wrap">Necks, thermal
+    reliefs, narrow traces, plane slots. Clipped at the 99.5th percentile (pad corners
+    spike).</td></tr>
+  <tr><td>Power density (mW/mm²)</td><td class="wrap">Copper loss per area.</td><td class="wrap">
+    Hot spots that the thermal solve will pick up.</td></tr>
+  <tr><td>Via current (mA)</td><td class="wrap">Current in each via barrel.</td><td class="wrap">
+    Vias doing all the work while neighbors idle.</td></tr>
+  <tr><td>Temperature (°C)</td><td class="wrap">Board temperature (electro-thermal only).</td>
+    <td class="wrap">Peak location and rise.</td></tr>
+</table>
+<p><b>Show copper</b> returns to the plain geometry; pick a group or field again to bring the
+results back. Click anywhere to probe: Info shows the exact value at that point (not
+clipped).</p>
+<div class="pair">
+<figure><img src="images/voltage.png" alt="Voltage across a plane"><figcaption>Voltage.</figcaption></figure>
+<figure><img src="images/current_density.png" alt="Current density with arrows"><figcaption>Current density with arrows.</figcaption></figure>
+<figure><img src="images/via_current.png" alt="Via current"><figcaption>Via current and the Vias table.</figcaption></figure>
+<figure><img src="images/temperature.png" alt="Board temperature"><figcaption>Temperature from the electro-thermal solve.</figcaption></figure>
+</div>
+</div>
+</details>
+
+<details open id="dc-tables">
+<summary>Results tables <span class="hint">click a header to sort; again to reverse</span></summary>
+<div class="body">
+<table>
+  <tr><th>Tab</th><th>Columns and use</th></tr>
+  <tr><td><b>Loads</b></td><td class="wrap">Current, effective voltage (supply − ground),
+    average drop/boost, worst pin, worst %, tolerance and verdict. Double-click a row to show
+    its group.</td></tr>
+  <tr><td><b>VRMs</b></td><td class="wrap">V/I out, V/I in, input power, conversion loss,
+    current limit and PASS/FAIL; a gray row per phase under multi-phase VRMs.</td></tr>
+  <tr><td><b>Series links</b></td><td class="wrap">Resistance, current and power in each
+    part.</td></tr>
+  <tr><td><b>Vias</b></td><td class="wrap">Every via and PTH barrel, highest current first. Set
+    a <b>Current limit</b> for PASS/FAIL. Double-click a row to fly the camera to it.</td></tr>
+  <tr><td><b>Losses</b></td><td class="wrap">Copper loss per group and layer, in vias and
+    series parts, with the total and each VRM's conversion loss at the bottom.</td></tr>
+  <tr><td><b>Thermal</b></td><td class="wrap">After an electro-thermal solve: the hottest copper
+    on each layer, its rise and location, PASS/FAIL against the limits, the iteration history
+    and the dielectric conductivities used. Double-click a row to show its group's
+    temperature.</td></tr>
+  <tr><td><b>Notes</b></td><td class="wrap">Solve time, the nets in each group, pin group
+    results, warnings and excluded groups.</td></tr>
+</table>
+<h4>Load verdicts</h4>
+<table>
+  <tr><th>Verdict</th><th>Meaning</th></tr>
+  <tr><td class="pass">PASS</td><td class="wrap">Every supply pin within ± tolerance of the set
+    point.</td></tr>
+  <tr><td class="fail">FAIL</td><td class="wrap">At least one pin outside the tolerance.</td></tr>
+  <tr><td class="fail">VRM OUT OF REGULATION</td><td class="wrap">A VRM feeding it, directly or
+    upstream, is outside its input range or below its dropout.</td></tr>
+  <tr><td class="warnc">NOT CONVERGED</td><td class="wrap">Its group's solve did not converge;
+    the numbers cannot be trusted. See <a href="#troubleshooting">Troubleshooting</a>.</td></tr>
+  <tr><td>(blank)</td><td class="wrap">No tolerance set.</td></tr>
+</table>
+</div>
+</details>
+
+<details id="dc-reading">
+<summary>Reading the numbers</summary>
+<div class="body">
+<ul>
+  <li><b>Effective voltage</b> is what the load actually sees: its supply pins minus its ground
+    pins. Compare it with the set point, not the raw plane voltage.</li>
+  <li>A supply plane reading <em>above</em> its set point is normal with remote sense or when
+    ground return is solved; see <a href="#dc-concepts">drop and boost</a>.</li>
+  <li><b>Worst pin</b> is the one furthest from the set point; with many pins, one far pin can
+    fail a load whose average looks fine.</li>
+  <li>The color scale covers the shown layers only; untick layers to stretch it.</li>
+  <li>Losses are I²R in the copper; VRM conversion loss is the difference between input and
+    output power.</li>
+</ul>
+</div>
+</details>
+
+<details id="dc-export">
+<summary>Export and HTML report</summary>
+<div class="body">
+<table>
+  <tr><th>Export ▾ item</th><th>Writes</th></tr>
+  <tr><td>Tables as CSV…</td><td class="wrap">One CSV per results table into a folder.</td></tr>
+  <tr><td>3D results for ParaView (.vtm)…</td><td class="wrap">The result meshes, for ParaView
+    or other VTK tools.</td></tr>
+  <tr><td>Save results…</td><td class="wrap">A <code>.kipi-results</code> file that <b>Open
+    results…</b> reloads without solving. It is a Python pickle: only open files you
+    trust.</td></tr>
+</table>
+<div class="pair">
+<figure><img src="images/report_tables.png" alt="HTML report tables"><figcaption>HTML report: summary tables.</figcaption></figure>
+<figure><img src="images/report_3d.png" alt="HTML report 3D view"><figcaption>HTML report: interactive 3D.</figcaption></figure>
+</div>
+</div>
+</details>
+
+<!-- ================================================================== AC CONCEPTS -->
+<h2 id="ac-concepts">AC concepts</h2>
+<details open>
+<summary>What the AC analysis models</summary>
+<div class="body">
+<p>The AC analysis computes the <b>PDN impedance</b> seen from a <b>probe</b>, a device's
+supply and ground pins, looking out into the board over a range of frequencies. A device that
+draws a changing current <i>I</i> from a PDN of impedance <i>Z</i> sees its supply move by about
+<i>I</i>·|<i>Z</i>|, so keeping |Z| below a <b>target impedance</b> keeps the supply ripple
+within tolerance.</p>
+<p>A solve covers one <b>rail</b> (the nets its VRM drives, plus nets joined to them by series
+links) against one <b>ground</b> net. It includes:</p>
+<ul>
+  <li><b>The copper</b>, field-solved: plane and trace resistance (with skin effect), the
+    spreading inductance of planes, the capacitance between facing rail and ground copper,
+    cavity resonances, and the inductance of vias and their mounting.</li>
+  <li><b>Capacitors</b> between the rail and ground, each as a series R-L-C from its
+    <a href="#ac-caps">model</a>. Only the part's own ESL is entered; its mounting (pads, vias,
+    planes) is simulated.</li>
+  <li><b>Series links</b> as their resistance plus ESL.</li>
+</ul>
+<div class="callout"><b>Note:</b> the VRM itself is not modeled as an impedance. In AC, VRMs only
+define which nets make up a rail and its default ground. Below the frequency where the
+capacitors take over, the real PDN impedance is set by the regulator's control loop, which the
+plotted curve does not include: expect the curve to rise toward low frequency as the bulk
+capacitance runs out.</div>
+<p>Capacitors that sit between the rail and ground but have no model are left out, and the
+results notes list them.</p>
+</div>
+</details>
+
+<!-- ================================================================== AC SETUP -->
+<h2 id="ac-setup">AC setup tabs</h2>
+<p>Switch <b>Mode</b> to <b>AC</b>. The setup dock becomes the <b>AC setup</b>; it edits the
+same setup file as DC.</p>
+
+<details open id="ac-vrms">
+<summary>VRMs and Series links tabs <span class="hint">shared with DC</span></summary>
+<div class="body">
+<p>The same VRMs and series links as the DC setup; edits in one mode show in the other. Fields
+that only DC uses are grayed out (their tooltip says so). In AC:</p>
+<ul>
+  <li>A VRM's output net (and ground pins) define a rail and its default ground for the
+    <b>Rail</b> picker.</li>
+  <li>A series link adds its <b>ESL</b> to its resistance. A link leading off the rail to a net
+    that is not part of the solve is left out, with a note. A 0 Ω link with no ESL merges the
+    two nets.</li>
+</ul>
+</div>
+</details>
+
+<details open id="ac-caps">
+<summary>Capacitors tab <span class="hint">RLC models and which parts use them</span></summary>
+<div class="body">
+<p>A <b>model</b> is a capacitance, ESL and ESR shared by a group of identical parts. All three
+are required.</p>
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td><b>Models from values</b></td><td class="wrap">Creates one model per distinct value
+    among the capacitors that have none yet, named after the value, with the capacitance read
+    from it. Enter ESL and ESR yourself.</td></tr>
+  <tr><td>Capacitance</td><td class="wrap">Per part. For ceramics, use the effective value at
+    the rail's DC bias if the datasheet gives it.</td></tr>
+  <tr><td>ESL</td><td class="wrap">The part's own inductance (datasheet), not including
+    mounting.</td></tr>
+  <tr><td>ESR</td><td class="wrap">Per part.</td></tr>
+  <tr><td>Filter box</td><td class="wrap">Narrows the parts table by reference, value, net or
+    model.</td></tr>
+  <tr><td>Parts table</td><td class="wrap">Every capacitor (reference <code>C…</code>) whose pads
+    are all on ticked nets, across two nets. Tick a part to give it this model; it moves from
+    any other model. Grayed rows already belong to another model, named in the last
+    column.</td></tr>
+  <tr><td><b>Tick same value</b></td><td class="wrap">Ticks every part with the value of the
+    selected row.</td></tr>
+  <tr><td><b>Tick shown / Untick shown</b></td><td class="wrap">Applies to every row the filter
+    shows.</td></tr>
+</table>
+<figure><img src="images/ac_capacitors.png" alt="The Capacitors tab with a model and its parts">
+<figcaption>A capacitor model and the parts that use it.</figcaption></figure>
+</div>
+</details>
+
+<details open id="ac-probes">
+<summary>Probes tab <span class="hint">where the impedance is measured, and its target</span></summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Name</td><td class="wrap">Shown in the plot legend and the table; follows the supply
+    part by default.</td></tr>
+  <tr><td>Supply pins</td><td class="wrap">The device's power pins. Picking a part also picks
+    its ground pins if it has any.</td></tr>
+  <tr><td>Ground pins</td><td class="wrap">Must be on the ground net being simulated.</td></tr>
+  <tr><td>Target</td><td class="wrap"><b>Flat, up to a frequency</b>, or <b>Custom (piecewise
+    linear)</b>.</td></tr>
+  <tr><td>Target |Z| / Target frequency</td><td class="wrap">Flat target: PASS if |Z| stays at
+    or below it up to the frequency (<i>none</i>: the whole sweep).</td></tr>
+  <tr><td>Calculator…</td><td class="wrap">Opens the <a href="#ac-calc">Target
+    Impedance/Frequency Calculator</a>.</td></tr>
+  <tr><td>Custom points</td><td class="wrap">Frequency/|Z| corner points, joined by straight
+    lines on the log-log plot. Below the first point the first |Z| holds, above the last the
+    last holds. <b>Add point</b> adds one a decade above the last; ✕ removes one.</td></tr>
+</table>
+<p>A rail can have several probes, e.g. one per device; they are all solved together and each
+sees the others as open circuits.</p>
+</div>
+</details>
+
+<details id="ac-calc">
+<summary>Target Impedance/Frequency Calculator</summary>
+<div class="body">
+<p>Works out a flat target from the device's transient spec:</p>
+<ul>
+  <li><b>AC voltage tolerance</b>: how far the supply may move during a load transient, e.g.
+    the AC part of a ±3 % spec on a 0.9 V rail: 27 mV.</li>
+  <li><b>Load step (ΔI)</b>: the size of the current step.</li>
+  <li><b>Load step slew rate</b>: how fast it steps, A/µs.</li>
+</ul>
+<p>Then Z<sub>target</sub> = V<sub>AC</sub> / ΔI, flat up to f<sub>target</sub> = 1 / (π ·
+t<sub>rise</sub>), with t<sub>rise</sub> = ΔI / slew rate. <b>Use for probe</b> fills the probe's
+target fields; the inputs are remembered for next time.</p>
+<figure><img src="images/ac_target_calc.png" alt="Target impedance calculator dialog">
+<figcaption>The calculator: 27 mV over a 10 A step at 10 A/µs gives 2.7 mΩ up to about 318 kHz.</figcaption></figure>
+</div>
+</details>
+
+<details id="ac-sweep">
+<summary>Sweep tab</summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Start / Stop</td><td class="wrap">Frequency range.</td></tr>
+  <tr><td>Points per decade</td><td class="wrap">Resolution of the plotted curve. Cheap: the
+    parts are evaluated at every point.</td></tr>
+  <tr><td>Field solves per decade</td><td class="wrap">How often the copper itself is solved;
+    in between, its response is interpolated (smoothly, it varies slowly).
+    <i>Every point</i> solves the copper at each sweep frequency: exact and slowest. Raise
+    this if sharp plane resonances look under-resolved.</td></tr>
+</table>
+</div>
+</details>
+
+<details id="ac-mesh">
+<summary>Mesh tab</summary>
+<div class="body">
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td>Max edge</td><td class="wrap">Largest element, mm.</td></tr>
+  <tr><td>Via grading</td><td class="wrap">Element growth per mm away from plated holes.</td></tr>
+  <tr><td>Min edge (at holes)</td><td class="wrap">Element size at plated holes. The mesh here
+    decides the via and mounting inductance.</td></tr>
+  <tr><td>Loss tangent</td><td class="wrap">Dielectric loss (FR4 about 0.02). Damps the plane
+    resonances.</td></tr>
+  <tr><td>Default εr</td><td class="wrap">Dielectric constant where the stackup gives none.</td></tr>
+</table>
+<p>Copper resistivity and barrel plating come from the DC setup's Copper and Mesh tabs.</p>
+</div>
+</details>
+
+<!-- ================================================================== AC SOLVING -->
+<h2 id="ac-solving">Solving a rail</h2>
+<details open>
+<summary>Rail, Ground and Solve rail</summary>
+<div class="body">
+<p>Below the tabs: <b>Rail</b> lists each VRM and its output net; <b>Ground</b> lists the ticked
+nets with grounds first, defaulting to the VRM's ground pins' net. <b>Solve rail</b> saves the
+setup and runs the sweep; problems that stop it are listed in red above. The log shows the
+field solves as they go.</p>
+<p>Each rail keeps its last result: switch <b>Rail</b> to look at another rail's curves
+without solving again. If you change the rail while a solve is running, the result is kept
+for its own rail and the notes say so.</p>
+</div>
+</details>
+
+<!-- ================================================================== AC RESULTS -->
+<h2 id="ac-results">AC results</h2>
+
+<details open id="ac-plot">
+<summary>Impedance plot and cursor</summary>
+<div class="body">
+<p>The <b>Impedance</b> tab in the middle plots |Z| against frequency on log-log axes: one solid
+curve per probe and, dashed in the same color, its target. Hovering shows every probe's |Z| at
+the frequency under the mouse in the line above the plot.</p>
+<figure><img src="images/ac_impedance.png" alt="Impedance plot with a cursor and its values in the Info box">
+<figcaption>Impedance curves and targets, with the cursor's values in the Info box.</figcaption></figure>
+<h4>Cursor</h4>
+<table>
+  <tr><th>Action</th><th>Input</th></tr>
+  <tr><td>Place on the nearest curve</td><td>Left-click</td></tr>
+  <tr><td>Move along the curve</td><td>Drag, or <kbd>←</kbd> <kbd>→</kbd> (with
+    <kbd>Shift</kbd>: 10 points)</td></tr>
+  <tr><td>Switch curve</td><td><kbd>↑</kbd> <kbd>↓</kbd></td></tr>
+  <tr><td>Remove</td><td><kbd>Esc</kbd> or right-click</td></tr>
+</table>
+<p>The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
+equivalent L or C, the target there with PASS/FAIL and the margin in dB (positive is below the
+target), and every other probe's |Z| at the same frequency.</p>
+<p><b>Screenshot…</b> in the toolbar saves the plot as a PNG while its tab is showing.</p>
+</div>
+</details>
+
+<details open id="ac-table">
+<summary>Results table and notes</summary>
+<div class="body">
+<table>
+  <tr><th>Column</th><th>Meaning</th></tr>
+  <tr><td>Min |Z|</td><td class="wrap">Lowest impedance in the sweep.</td></tr>
+  <tr><td>Worst |Z| / at</td><td class="wrap">With a target: the point where |Z| comes closest to,
+    or furthest over, the target (within the target's frequency range). Without one: the
+    highest |Z| in the sweep.</td></tr>
+  <tr><td>Target</td><td class="wrap">The flat level, or the custom mask's range.</td></tr>
+  <tr><td>Verdict</td><td class="wrap"><span class="pass">PASS</span> if |Z| is at or below the
+    target everywhere it applies.</td></tr>
+</table>
+<p>Below the table, the notes give the rail's nets and ground, the number of capacitors and
+series links included, the total plane capacitance, the solve size and time, capacitors left
+out for having no model, and any warnings. <b>Export CSV…</b> writes |Z|, R and X of every probe
+at every frequency.</p>
+</div>
+</details>
+
+<details id="ac-reading">
+<summary>Reading an impedance curve</summary>
+<div class="body">
+<ul>
+  <li><b>Falling at −20 dB/decade</b> (|Z| ∝ 1/f): capacitive. At the low end this is the bulk
+    capacitance; since the VRM is not modeled, the curve keeps rising toward low frequency.</li>
+  <li><b>Dips</b>: series resonances, where a capacitor bank's C and its ESL plus mounting
+    inductance cancel. The depth is set by ESR.</li>
+  <li><b>Peaks</b> between dips: <b>anti-resonances</b>, where one bank's inductance resonates with
+    the next bank's capacitance. These are usually where a target fails. Fix them with more
+    or lower-ESL parts, more value overlap between banks, or extra damping (ESR).</li>
+  <li><b>Rising at +20 dB/decade</b> (|Z| ∝ f): inductive. The capacitors' ESL and their mounting
+    (pad, via and spreading inductance) dominate. Place the cursor here: Info shows it as an
+    equivalent inductance. Shorter, wider connections and more vias lower it.</li>
+  <li><b>Sharp peaks at high frequency</b>: plane-pair cavity resonances. Their frequencies come
+    from the board's dimensions and stackup.</li>
+  <li><b>Phase</b> near −90° is capacitive, near +90° inductive, near 0° resistive.</li>
+</ul>
+</div>
+</details>
+
+<!-- ================================================================== WORKFLOWS -->
+<h2 id="workflows">Step-by-step workflows</h2>
+
+<details id="wf-first-dc">
+<summary>1. A first DC IR-drop check of one rail</summary>
+<div class="body">
+<ol class="steps">
+  <li>Tick the rail and its ground in the Nets list; untick everything else.</li>
+  <li>VRMs tab: <b>Add</b> a <b>Source</b> on the regulator's output pins at the set voltage.
+    Add its ground pins.</li>
+  <li>Loads tab: <b>Add</b> each consumer with its current, tolerance and ground pins.</li>
+  <li><b>Solve all</b>. Check the Loads table. For a FAIL, double-click the row, choose
+    <b>Voltage</b>, and click around the load's pins to see where the drop comes from.</li>
+  <li>Switch to <b>Current density</b> with <b>Arrows</b> to find the bottleneck, change the
+    layout in KiCad, and use <b>Load from KiCad</b> and <b>Solve all</b> again.</li>
+</ol>
+</div>
+</details>
+
+<details id="wf-tree">
+<summary>2. A full power tree (input → switcher → LDO)</summary>
+<div class="body">
+<ol class="steps">
+  <li>Tick every rail in the chain and the ground.</li>
+  <li>Add the input as a <b>Source</b> (e.g. the 12 V connector).</li>
+  <li>Add the switcher as <b>Switcher</b> with its efficiency, output pins (inductor),
+    <b>Input pins</b> on the 12 V net, and ground pins.</li>
+  <li>Add the LDO as <b>LDO</b> with its quiescent current, dropout and <b>Input pins</b> on the
+    switcher's output.</li>
+  <li>Add loads on each rail and solve. The VRMs table shows each converter's input current,
+    which includes everything downstream, and its conversion loss.</li>
+  <li>Set <b>Input min/max</b> and <b>Dropout</b> to catch a regulator starved by upstream drop:
+    its loads show <span class="fail">VRM OUT OF REGULATION</span>.</li>
+</ol>
+</div>
+</details>
+
+<details id="wf-multiphase">
+<summary>3. A multi-phase regulator</summary>
+<div class="body">
+<ol class="steps">
+  <li>Add the VRM and set <b>Phases</b> to the number of phases.</li>
+  <li>Choose <b>Phase 1</b> in <b>Edit phase</b> and set its output pins (its inductor), input
+    pins and ground pins.</li>
+  <li>Choose each further phase. A new phase starts as a copy of the previous one: change its
+    part to the right inductor and input capacitor or power stage.</li>
+  <li>Set the shared set voltage, type, efficiency and sense pins once.</li>
+</ol>
+<p>Each phase carries an equal share of the output current and settles at whatever voltage its
+copper needs. The VRM regulates its sense pins or, without them, the average of its phase
+outputs. The VRMs table lists each phase under its VRM: unequal phase voltages show a layout
+imbalance.</p>
+</div>
+</details>
+
+<details id="wf-sense">
+<summary>4. Remote sense</summary>
+<div class="body">
+<ol class="steps">
+  <li>On the VRM, set <b>Sense pins</b> to the point the feedback trace connects to (often the
+    load's supply pins).</li>
+  <li>For differential sensing, also set <b>Ground sense pins</b> on the ground net (the VRM needs
+    ground pins too).</li>
+  <li>Solve. The sense point sits exactly at the set voltage; pins nearer the VRM read
+    <em>above</em> it (a boost). The tolerance check catches both directions.</li>
+</ol>
+</div>
+</details>
+
+<details id="wf-partial">
+<summary>5. Solving only part of the board</summary>
+<div class="body">
+<p>When some rails are not routed or modeled yet, open the <b>Solve</b> tab and untick their
+groups. The rest solves, with the substitutions described under
+<a href="#dc-solve-tab">Solve tab</a>. Untick the group a <b>Cannot solve</b> message names to get
+past a setup problem while you fix it.</p>
+</div>
+</details>
+
+<details id="wf-thermal">
+<summary>6. Thermal and current capacity checks</summary>
+<div class="body">
+<ol class="steps">
+  <li>Thermal tab: tick <b>Electro-thermal co-simulation</b>, set ambient and airflow, and limits
+    for maximum temperature and rise.</li>
+  <li>On the Vias results tab, set a <b>Current limit</b> per via (from your fab's via current
+    rating).</li>
+  <li><b>Solve all (electro-thermal)</b>. Read the Thermal tab for the hottest point per layer,
+    and sort the Vias tab by current for overloaded vias.</li>
+  <li>Use the <b>Temperature</b> field to see the map; double-click a Thermal row to jump to its
+    group.</li>
+</ol>
+</div>
+</details>
+
+<details id="wf-decoupling">
+<summary>7. Designing decoupling to a target impedance (AC)</summary>
+<div class="body">
+<ol class="steps">
+  <li>Make sure the rail has a VRM (Source is fine), and tick the rail, its ground and any
+    nets joined by series links.</li>
+  <li>Switch to <b>AC</b>. Capacitors tab: <b>Models from values</b>, then enter ESL and ESR for
+    each model from the datasheets.</li>
+  <li>Probes tab: add a probe on the device's power and ground pins. Use the calculator for the
+    target, or a custom mask from the device vendor.</li>
+  <li><b>Solve rail</b>. In the plot, put the cursor on the worst peak (the table's
+    <b>Worst |Z|</b> tells you where).</li>
+  <li>Change capacitor models (values, counts by re-assigning parts) or the layout, and solve
+    again. Each probe's margin in dB shows the improvement.</li>
+  <li>To compare rails, solve each and switch between them with <b>Rail</b>; each keeps its
+    last result for the session.</li>
+</ol>
+<p>Capacitors listed under "have no model and were left out" are not part of the result: give
+them a model or confirm they really do not belong on this rail.</p>
+</div>
+</details>
+
+<details id="wf-offline">
+<summary>8. Sharing a board and its results</summary>
+<div class="body">
+<ul>
+  <li><b>Save snapshot…</b> stores the board; anyone with KiPI can open it with <b>Open
+    snapshot…</b> without KiCad or your design files.</li>
+  <li>Keep <code>&lt;board&gt;.kipi-setup.json</code> in version control next to the board.</li>
+  <li>Tick <b>HTML report</b> for a single file you can email: it needs nothing but a
+    browser.</li>
+  <li><b>Export ▾ → Save results…</b> lets you reopen a long solve later with <b>Open
+    results…</b>.</li>
+</ul>
+</div>
+</details>
+
+<!-- ================================================================== FILES -->
+<h2 id="files">Files KiPI reads and writes</h2>
+<details>
+<summary>File reference</summary>
+<div class="body">
+<table>
+  <tr><th>File</th><th>What it is</th></tr>
+  <tr><td><code>&lt;board&gt;.kipi-setup.json</code></td><td class="wrap">The setup: ticked nets, VRMs,
+    loads, series links, mesh, copper and thermal settings, capacitor models, probes and the
+    sweep. Saved next to the board on <b>Save</b> and on every solve.</td></tr>
+  <tr><td><code>*.kipi.json.gz</code></td><td class="wrap">A board snapshot (copper, stackup,
+    pads, vias, parts).</td></tr>
+  <tr><td><code>*.kipi-results</code></td><td class="wrap">A saved DC solve (Python pickle).</td></tr>
+  <tr><td><code>&lt;board&gt;_kipi_report.html</code></td><td class="wrap">The DC HTML report.</td></tr>
+  <tr><td><code>*.csv</code></td><td class="wrap">DC tables, or an AC rail's impedance.</td></tr>
+  <tr><td><code>*.vtm</code></td><td class="wrap">DC 3D results for ParaView.</td></tr>
+  <tr><td><code>kipi-&lt;date&gt;-&lt;time&gt;-&lt;pid&gt;.log</code></td><td class="wrap">The session
+    log, in <code>kipi/</code> under the temporary folder, with a matching
+    <code>.crash.log</code>. The last 15 sessions are kept.</td></tr>
+</table>
+</div>
+</details>
+
+<!-- ================================================================== TROUBLESHOOTING -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+<details>
+<summary>The KiPI button does not appear in KiCad</summary>
+<div class="body"><p>Enable <b>Preferences → Plugins → Enable KiCad API</b> and restart the PCB
+editor. The first start builds a Python environment and downloads a few hundred MB, which can
+take several minutes. If the button never appears, right-click the action in <i>Preferences →
+Plugins</i> and choose <i>Recreate Plugin Environment</i>. On macOS, select a Python 3.10–3.13
+interpreter there.</p></div>
+</details>
+<details>
+<summary>A net is missing from the pin pickers</summary>
+<div class="body"><p>Pickers only offer nets ticked in the <a href="#nets">Nets</a> list. Tick it
+(untick <b>Power &amp; ground only</b> or use the filter to find a signal net).</p></div>
+</details>
+<details>
+<summary>"No copper path" between a VRM and a load</summary>
+<div class="body"><p>Usually unrouted copper, an unfilled zone (keep <b>Refill zones</b> on), or a
+part in series that needs a <a href="#dc-links">series link</a>. Show the net in 3D and look
+for the gap.</p></div>
+</details>
+<details>
+<summary>The drop is larger than expected</summary>
+<div class="body"><p>Thermal reliefs, necked traces and too few vias dominate DC drop. Use
+<b>Current density</b> with <b>Arrows</b>, and the Vias table sorted by current. Compare the 3D
+copper with KiCad: KiPI only sees filled copper.</p></div>
+</details>
+<details>
+<summary>NOT CONVERGED</summary>
+<div class="body"><p>The iterative solver did not reach its tolerance on a very large group.
+Raise <b>Max edge</b> to shrink the problem, or install the optional PARDISO solver (see the
+README) for a direct solve of up to 1M unknowns.</p></div>
+</details>
+<details>
+<summary>Solves are slow</summary>
+<div class="body"><p>Raise <b>Max edge</b>, analyze fewer nets at once, and untick unneeded groups
+in the Solve tab. In AC, lower <b>Field solves per decade</b> or raise <b>Min edge</b>. Large planes
+are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
+x86-64).</p></div>
+</details>
+<details>
+<summary>An AC curve looks wrong</summary>
+<div class="body"><ul>
+  <li>Check the notes for capacitors left out for having no model.</li>
+  <li>Check every model's ESL and ESR units (nH and mΩ).</li>
+  <li>Check the probe's ground pins are on the ground being simulated.</li>
+  <li>Remember the VRM is not modeled: the low-frequency rise is expected.</li>
+  <li>Raise <b>Field solves per decade</b> if resonances look jagged.</li>
+</ul></div>
+</details>
+<details>
+<summary>Reporting a bug</summary>
+<div class="body"><p>Open an issue at <a href="https://github.com/drewsum/KiPI/issues">github.com/drewsum/KiPI/issues</a>.
+Attach the session's <code>.log</code> and <code>.crash.log</code>, the text from <b>About → Copy
+version info</b>, and if you can, a board snapshot and setup file that show the problem.</p></div>
+</details>
+
+<!-- ================================================================== GLOSSARY -->
+<h2 id="glossary">Glossary</h2>
+<details>
+<summary>Terms used in KiPI</summary>
+<div class="body">
+<table>
+  <tr><th>Term</th><th>Meaning</th></tr>
+  <tr><td>PI</td><td class="wrap">Power integrity: delivering clean, correct supply voltage.</td></tr>
+  <tr><td>PDN</td><td class="wrap">Power distribution network: regulators, copper, vias and
+    capacitors between a supply and its loads.</td></tr>
+  <tr><td>VRM</td><td class="wrap">Voltage regulator module: any regulator or supply.</td></tr>
+  <tr><td>IR drop</td><td class="wrap">Voltage lost to current flowing through copper
+    resistance.</td></tr>
+  <tr><td>Net group</td><td class="wrap">Nets solved together because series links join them.</td></tr>
+  <tr><td>Remote sense</td><td class="wrap">A VRM regulating the voltage at a point other than its
+    output.</td></tr>
+  <tr><td>PTH</td><td class="wrap">Plated through hole (pads with plated drills).</td></tr>
+  <tr><td>ESR / ESL</td><td class="wrap">Equivalent series resistance / inductance of a part.</td></tr>
+  <tr><td>DCR</td><td class="wrap">DC resistance of a series part.</td></tr>
+  <tr><td>Target impedance</td><td class="wrap">The highest PDN impedance that keeps supply ripple
+    within tolerance for the expected load steps.</td></tr>
+  <tr><td>Anti-resonance</td><td class="wrap">An impedance peak where one capacitor bank's
+    inductance resonates with another's capacitance.</td></tr>
+  <tr><td>TCR</td><td class="wrap">Temperature coefficient of resistance.</td></tr>
+</table>
+</div>
+</details>
+
+<p style="margin-top:40px;color:var(--muted);font-size:0.85em">KiPI is free software under the GNU
+GPL v3 or later. Source and issues: <a href="https://github.com/drewsum/KiPI">github.com/drewsum/KiPI</a>.</p>
+</main>
+</div>
+
+<script>
+(function () {
+  var all = function () { return document.querySelectorAll("main details"); };
+  document.getElementById("expand-all").onclick = function () {
+    all().forEach(function (d) { d.open = true; });
+  };
+  document.getElementById("collapse-all").onclick = function () {
+    all().forEach(function (d) { d.open = false; });
+  };
+  var root = document.documentElement;
+  try {
+    var saved = localStorage.getItem("kipi-help-theme");
+    if (saved) root.setAttribute("data-theme", saved);
+  } catch (e) {}
+  document.getElementById("theme").onclick = function () {
+    var dark = root.getAttribute("data-theme") === "dark" || (!root.getAttribute("data-theme") &&
+      window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("kipi-help-theme", next); } catch (e) {}
+  };
+  // Following a link into a closed section opens it and everything around it.
+  function reveal() {
+    var id = decodeURIComponent(location.hash.slice(1));
+    var el = id && document.getElementById(id);
+    if (!el) return;
+    for (var n = el; n; n = n.parentElement) {
+      if (n.tagName === "DETAILS") n.open = true;
+    }
+    el.scrollIntoView();
+  }
+  window.addEventListener("hashchange", reveal);
+  reveal();
+})();
+</script>
+</body>
+</html>
