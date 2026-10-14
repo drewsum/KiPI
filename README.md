@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/kipi_256.png" alt="KiPI logo" width="128">
+  <img src="resources/kipi.gif" alt="KiPI logo" width="128">
 </p>
 
 # KiPI — DC power integrity for KiCad
