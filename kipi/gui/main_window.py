@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):
         self.views.addTab(self.plot, "Impedance")
         self.setCentralWidget(self.views)
         self.viewer.on_click(self._on_click)
+        self.plot.cursor_moved.connect(self._show_cursor)
         self._set_plot_tab_shown(False)
 
         self._build_toolbar()
@@ -835,6 +836,14 @@ class MainWindow(QMainWindow):
     def _show_ac_result(self, result):
         self.plot.set_result(result)
         self.views.setCurrentWidget(self.plot)
+
+    def _show_cursor(self, text: str):
+        """The impedance plot's cursor values, in the Info pane in place of the last pick."""
+        if not text:
+            return
+        self._picked = None
+        self.btn_select_kicad.setEnabled(False)
+        self.info.setHtml(text)
 
     def _cut_changed(self, *_):
         axis = self.cmb_cut.currentText().lower()
