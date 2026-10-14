@@ -76,6 +76,14 @@ class _Pads:
         return [p.id for p in pads_for(self.snap, ref.net, ref.ref, ref.pins or None)]
 
 
+def fmt_hz(f: float) -> str:
+    """A frequency for the log: 4 significant digits in Hz, kHz, MHz or GHz."""
+    for scale, unit in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")):
+        if f >= scale * 0.9995:
+            return f"{f / scale:.4g} {unit}"
+    return f"{f:.4g} Hz"
+
+
 def element_impedance(port: PortDef, omega: np.ndarray) -> np.ndarray:
     if port.kind == "cap":
         return port.element.impedance(omega)
@@ -176,6 +184,7 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     t1 = time.perf_counter()
     for k, f in enumerate(f_field):
         progress.check_cancel()
+        progress.info(f"  [{k + 1}/{len(f_field)}] solving {fmt_hz(f)}")
         zb[k] = system.port_impedance(2 * np.pi * f, progress)
         progress.fraction((k + 1) / len(f_field))
         if k == 0:
