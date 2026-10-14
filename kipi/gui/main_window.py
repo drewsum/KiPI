@@ -123,7 +123,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(QLabel("Mode: ", tb))
         self.mode_buttons = QButtonGroup(self)
         tips = {"dc": "DC power integrity: IR drop, current density, electro-thermal",
-                "ac": "AC power integrity: PDN impedance over frequency (not available yet)"}
+                "ac": "AC power integrity: PDN impedance over frequency at probe points"}
         for key, label, _ in MODES:
             rb = QRadioButton(label, tb)
             rb.setObjectName(f"mode_{key}")
@@ -145,6 +145,11 @@ class MainWindow(QMainWindow):
             return
         self.mode = mode
         self._check_mode_button(mode)
+        # VRMs and series links are shared: show the other panel's edits.
+        if mode == "dc":
+            self.solve_panel.reload_shared()
+        else:
+            self.ac_panel.reload()
         self.setup_stack.setCurrentWidget(self.solve_panel if mode == "dc" else self.ac_panel)
         self.solve_dock.setWindowTitle(next(t for k, _, t in MODES if k == mode))
         self.act_open_results.setEnabled(mode == "dc")
@@ -153,6 +158,8 @@ class MainWindow(QMainWindow):
                 self._show_group(self.solve_panel.cmb_group.currentText())
         else:
             self.viewer.clear_result()        # DC results do not apply; show the copper
+            self.plot_dock.show()
+            self.plot_dock.raise_()
         self.log(f"Analysis mode: {mode.upper()}")
 
     def _check_mode_button(self, mode: str):
@@ -282,6 +289,9 @@ class MainWindow(QMainWindow):
         self._scenes = {}
         self._setup_path = None
         self.ac_panel = ACPanel(self)
+        self.ac_panel.save_requested.connect(self._save_setup)
+        self.ac_panel.solve_requested.connect(self.run_ac_solve)
+        self.ac_panel.result_selected.connect(self._show_ac_result)
         # One setup dock; it shows the panel of the current analysis mode.
         self.setup_stack = QStackedWidget(self)
         self.setup_stack.addWidget(self.solve_panel)
@@ -294,6 +304,18 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(420)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self._result = None
+
+        # AC impedance plot, tabbed with the log.
+        from kipi.ac.gui.plot import ImpedancePlot
+        self.plot = ImpedancePlot(self)
+        pd = QDockWidget("Impedance", self)
+        pd.setObjectName("impedance_dock")
+        pd.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        pd.setWidget(self.plot)
+        self.addDockWidget(Qt.BottomDockWidgetArea, pd)
+        self.tabifyDockWidget(self.log_dock, pd)
+        self.log_dock.raise_()
+        self.plot_dock = pd
 
     def _build_log_dock(self):
         w = QWidget(self)
@@ -319,6 +341,7 @@ class MainWindow(QMainWindow):
         lay.addLayout(row)
         lay.addWidget(self.log_view)
         dock = QDockWidget("Log", self)
+        self.log_dock = dock
         dock.setObjectName("log_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         dock.setWidget(w)
@@ -395,7 +418,9 @@ class MainWindow(QMainWindow):
         kipi_app.watchdog_stop()
         log.info("Task finished")
         self.solve_panel.set_busy(False)
+        self.ac_panel.set_busy(False)
         pending, self._pending_solve = getattr(self, "_pending_solve", None), None
+        pending_ac, self._pending_ac = getattr(self, "_pending_ac", None), None
         self.btn_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
         self.progress_bar.setRange(0, 1000)
@@ -407,6 +432,8 @@ class MainWindow(QMainWindow):
             self._sync_timer.start()
         if pending is not None:
             QTimer.singleShot(0, lambda: self.run_solve(pending))
+        elif pending_ac is not None:
+            QTimer.singleShot(0, lambda: self.run_ac_solve(*pending_ac))
 
     def _on_task_failed(self, name: str, tb: str):
         log.error(tb)
@@ -597,6 +624,7 @@ class MainWindow(QMainWindow):
         if self.snapshot is None:
             return
         self.solve_panel.set_nets(list(self._checked_set()))
+        self.ac_panel.set_nets(list(self._checked_set()))
         self.solve_panel.setup.nets = self._checked_nets()   # saved with the setup
         if self._busy():
             self._resync_pending = True
@@ -669,6 +697,8 @@ class MainWindow(QMainWindow):
                 label = f"Could not read {path.name}; starting empty"
         self._setup_path = path
         self.solve_panel.set_board(snap, setup, label)
+        self.ac_panel.set_board(snap, setup, label)
+        self.plot.clear()
         return setup
 
     def _save_setup(self):
@@ -679,6 +709,7 @@ class MainWindow(QMainWindow):
         try:
             self.solve_panel.setup.save(self._setup_path)
             self.solve_panel.lbl_file.setText(f"Setup: {self._setup_path}")
+            self.ac_panel.set_label(f"Setup: {self._setup_path}")
             self.log(f"Saved PI setup to {self._setup_path}")
         except OSError as e:
             self.log(f"Could not save the setup: {e}", logging.WARNING)
@@ -749,6 +780,45 @@ class MainWindow(QMainWindow):
 
         if self._run(work, done, "Solving power tree") is not None:
             self.solve_panel.set_busy(True)
+
+    # ------------------------------------------------------------ AC solve
+    def run_ac_solve(self, setup, vrm_name: str, gnd: str):
+        snap = self.snapshot
+        if snap is None:
+            return
+        if self._busy():
+            self._pending_ac = (setup, vrm_name, gnd)
+            self.ac_panel.set_busy(True, queued=True)
+            self.log("AC solve queued until the current task finishes")
+            return
+        self._save_setup()
+        import copy
+        frozen = copy.deepcopy(setup)
+
+        def work(progress):
+            from kipi.ac.solver import ACError, solve_ac
+            from kipi.core.mesh.mesher import MeshError
+            from kipi.dc.solver import SolveError
+            try:
+                return solve_ac(snap, frozen, vrm_name, gnd, progress), None
+            except (ACError, MeshError, SolveError) as e:
+                progress.warn(str(e))
+                return None, str(e)
+
+        def done(out):
+            result, error = out
+            if result is None:
+                self.ac_panel.show_error(error)
+                return
+            self.ac_panel.show_result(result)
+
+        if self._run(work, done, "AC impedance solve") is not None:
+            self.ac_panel.set_busy(True)
+
+    def _show_ac_result(self, result):
+        self.plot.set_result(result)
+        self.plot_dock.show()
+        self.plot_dock.raise_()
 
     def _cut_changed(self, *_):
         axis = self.cmb_cut.currentText().lower()

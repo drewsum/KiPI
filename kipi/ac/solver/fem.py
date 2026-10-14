@@ -1,0 +1,554 @@
+"""2.5D AC model of one rail and its ground: copper sheets with two faces, the capacitance
+between facing rail and ground copper, and plated barrels.
+
+Every copper sheet has two faces (top and bottom). A triangle couples their potentials
+through the 2x2 sheet impedance
+
+    Z = [[Z11 + jωμ₀h_top/2, Z12], [Z12, Z11 + jωμ₀h_bot/2]]   (ohms per square)
+
+where Z11, Z12 are the slab's internal impedance (:func:`physics.slab_impedance`: the DC
+sheet resistance at low frequency, independent skin-effect faces at high frequency) and
+μ₀h/2 is half the loop inductance per square of the cavity that face looks into: h is the
+gap to the nearest copper of the *other* side (rail <-> ground) across that face's
+dielectric. A face that sees only copper of its own side, or nothing, gets h = board
+thickness, unless the sheet's other face sees a return: then it is shielded and carries
+almost no high-frequency current. The element matrix is inv(Z) ⊗ (bbᵀ+ccᵀ)/4A, the DC
+conduction element with a complex 2x2 sheet admittance.
+
+For two facing planes this is exactly the plane-pair (cavity) model: loop inductance
+μ₀h per square, capacitance ε/h per area, so the plane capacitance, spreading inductance
+and cavity resonances come out of the mesh. Via inductance comes out the same way: the
+current spreading from a barrel on the faces around it gives μ₀h/(2π)·ln(R/r).
+
+The two faces meet wherever current can pass from one to the other around the copper:
+on the copper boundary (plane edges, antipads, trace edges), drill rings and terminal
+pads. Capacitance ε₀ε_r/h·(1 − j·tanδ) per facing area is lumped onto the rail face nodes
+and tied to the nearest node of the facing ground face.
+
+Unknowns: each node has the mean of its face potentials, c = (φ_top + φ_bot)/2, and their
+difference, d = φ_top − φ_bot; where the faces meet, d = 0 and the node has no d unknown.
+(Per face, the low-frequency system holds large, nearly cancelling face-to-face terms that
+direct solvers cannot pivot through accurately; in c and d they separate into a DC-sized
+block and a large, diagonally dominant one.)
+
+Lumped parts (capacitors, series links, the probe) are ports: each side's pads are one
+node. :meth:`ACSystem.port_impedance` returns the board's port impedance matrix at one
+frequency; the parts are attached afterwards (:mod:`.sweep`), which keeps the expensive
+field solve independent of the part values.
+"""
+
+from __future__ import annotations
+
+import math
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List, Sequence, Tuple
+
+import numpy as np
+import scipy.sparse as sp
+import shapely
+from scipy.sparse.csgraph import connected_components
+from scipy.spatial import cKDTree
+
+from kipi.ac.solver.physics import (
+    EPS0_F_PER_MM, MU0_H_PER_MM, slab_difference, slab_impedance,
+)
+from kipi.core.geometry.copper import net_layer_copper
+from kipi.core.mesh.mesher import NetMesh, combine_meshes, mesh_net
+from kipi.core.model.board import BoardSnapshot
+from kipi.core.progress import NULL, ProgressReporter
+from kipi.core.solver import direct
+from kipi.dc.solver.fem import _merge_groups, triangle_geometry
+
+TIE_ADMITTANCE_S = 1e-9     # weak tie for copper reached only through parts
+PORT_CHUNK = 16             # right-hand sides solved together
+SHIELDED_FACE_HEIGHT = 1000  # x board thickness: the inductance height of a shielded face
+
+
+class ACError(RuntimeError):
+    pass
+
+
+@dataclass
+class PortDef:
+    """A two-terminal port: current enters the board at ``plus`` and leaves at ``minus``."""
+    name: str
+    kind: str                     # "cap", "link" or "probe"
+    plus_pads: List[str]
+    minus_pads: List[str]
+    element: object = None        # CapModel, DcLink or Probe
+
+
+@dataclass
+class ACStats:
+    n_nodes: int = 0
+    n_tris: int = 0
+    n_unknowns: int = 0
+    nnz: int = 0
+    n_ports: int = 0
+    method: str = ""
+    times: Dict[str, float] = field(default_factory=dict)
+
+
+def _boundary_nodes(tris: np.ndarray) -> np.ndarray:
+    """Nodes on edges that belong to only one triangle."""
+    e = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]])
+    e.sort(axis=1)
+    uniq, counts = np.unique(e, axis=0, return_counts=True)
+    return np.unique(uniq[counts == 1].ravel())
+
+
+class ACSystem:
+    """The assembled AC model of one rail (``rail_nets``) against ``gnd_net``.
+
+    ``ports`` lists the parts and probes; ``short_links`` are pairs of pad lists merged
+    into one node (series links with neither resistance nor inductance). The minus side
+    of port ``reference_port`` is the 0 V reference.
+    """
+
+    def __init__(self, snap: BoardSnapshot, rail_nets: Sequence[str], gnd_net: str,
+                 ports: List[PortDef], short_links: List[Tuple[List[str], List[str]]],
+                 dc_settings, ac_settings, progress: ProgressReporter = NULL,
+                 reference_port: int = 0):
+        t0 = time.perf_counter()
+        self.snap, self.ports = snap, ports
+        self.rail_nets = list(rail_nets)
+        self.gnd = gnd_net
+        self.dc, self.ac = dc_settings, ac_settings
+        self.stats = ACStats(n_ports=len(ports))
+        self.warnings: List[str] = []
+        st = snap.stackup
+        if not ports:
+            raise ACError("Nothing to solve: no probe on this rail")
+
+        # ------------------------------------------------------------ mesh
+        terminal_ids = list(dict.fromkeys(
+            [pid for p in ports for pid in (*p.plus_pads, *p.minus_pads)]
+            + [pid for a, b in short_links for pid in (*a, *b)]))
+        pad_net = {p.id: p.net for p in snap.pads}
+        nets = [*self.rail_nets, gnd_net]
+        stray = [pid for pid in terminal_ids if pad_net.get(pid) not in nets]
+        if stray:
+            raise ACError(f"Pads are not on the rail or its ground: {stray}")
+        meshes: List[NetMesh] = []
+        kinds = []
+        with progress.timed("Meshing rail and ground"):
+            for net in nets:
+                progress.check_cancel()
+                progress.info(f"-- {net}")
+                mine = [pid for pid in terminal_ids if pad_net.get(pid) == net]
+                meshes.append(mesh_net(
+                    snap, net, mine, max_edge_mm=ac_settings.max_edge_mm,
+                    min_angle_deg=dc_settings.min_angle_deg,
+                    simplify_mm=dc_settings.simplify_mm,
+                    circle_quad_segs=dc_settings.circle_quad_segs,
+                    min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
+                    progress=progress))
+                kinds.append(1 if net == gnd_net else 0)
+        mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in st.copper])
+        self.mesh = mesh
+        node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)
+                                    for m, k in zip(meshes, kinds)])
+        n = mesh.n_nodes
+        self.stats.n_nodes, self.stats.n_tris = n, mesh.n_tris
+        progress.info(f"AC mesh: {n} nodes, {mesh.n_tris} triangles")
+
+        with progress.timed("Building the AC model"):
+            self._build(node_kind, short_links, progress, reference_port)
+        self.stats.times["setup"] = time.perf_counter() - t0
+        for w in self.warnings:
+            progress.warn(w)
+
+    # ================================================================ build
+    # Unknown ids before merging: c of node n = 2n, d of node n = 2n + 1.
+    def _build(self, node_kind, short_links, progress, reference_port):
+        mesh, st = self.mesh, self.snap.stackup
+        n = mesh.n_nodes
+        tris = mesh.tris
+        tri_kind = node_kind[tris[:, 0]]
+
+        bnodes = _boundary_nodes(tris)
+        no_d = np.zeros(n, dtype=bool)              # faces meet: d = 0
+        no_d[bnodes] = True
+        groups: List[np.ndarray] = []               # c unknowns tied together
+        for bar in mesh.barrels:
+            for nodes in bar.ring_nodes.values():
+                groups.append(2 * nodes)
+                no_d[nodes] = True
+        pad_nodes = {pid: np.concatenate(list(per.values()))
+                     for pid, per in mesh.pad_nodes.items()}
+        for nodes in pad_nodes.values():
+            groups.append(2 * nodes)
+            no_d[nodes] = True
+
+        def side(pads):
+            missing = [p for p in pads if p not in pad_nodes]
+            if missing:
+                raise ACError(f"Pads have no meshed copper: {missing}")
+            return 2 * np.concatenate([pad_nodes[p] for p in pads])
+        for p in self.ports:
+            groups.extend([side(p.plus_pads), side(p.minus_pads)])
+        for a, b in short_links:
+            groups.append(np.concatenate([side(a), side(b)]))
+        merged_of, nm = _merge_groups(2 * n, groups)
+        self.merged_of, self.nm = merged_of, nm
+        dead = np.zeros(nm, dtype=bool)             # d unknowns fixed at zero
+        dead[merged_of[2 * np.flatnonzero(no_d) + 1]] = True
+
+        def unknown(pads):
+            return int(merged_of[side(pads)[0]])
+        self.port_nodes = [(unknown(p.plus_pads), unknown(p.minus_pads)) for p in self.ports]
+        for p, (a, b) in zip(self.ports, self.port_nodes):
+            if a == b:
+                raise ACError(f"{p.name}: its two sides are connected directly (the same "
+                              "copper or a short series link)")
+
+        # --- triangle geometry
+        b, c, two_a = triangle_geometry(mesh.points, tris)
+        area = np.abs(two_a) / 2
+        if np.any(area <= 0):
+            raise ACError("Degenerate triangles in the AC mesh")
+        S = (b[:, :, None] * b[:, None, :] + c[:, :, None] * c[:, None, :]) \
+            / (4 * area)[:, None, None]
+        self._S = S.reshape(len(tris), 9)
+
+        # --- what each face looks into
+        self._facing(tri_kind, area, node_kind, progress)
+
+        # --- sparsity pattern: c/d blocks per triangle, barrels, capacitance
+        rows, cols = [], []
+        for s_ in (0, 1):
+            for t_ in (0, 1):
+                ms = merged_of[2 * tris + s_]
+                mt = merged_of[2 * tris + t_]
+                rows.append(np.repeat(ms, 3, axis=1).ravel())
+                cols.append(np.tile(mt, (1, 3)).ravel())
+
+        # Barrels: resistors between ring unknowns of consecutive layers (as in DC).
+        order = {cu.id: i for i, cu in enumerate(st.copper)}
+        tp = self.dc.plating_mm
+        bar_a, bar_b, bar_g = [], [], []
+        for bar in mesh.barrels:
+            layers = sorted(bar.ring_nodes, key=order.get)
+            d = bar.drill_mm
+            a_barrel = math.pi * (d * tp - tp * tp) if d > 2 * tp else math.pi * d * d / 4
+            for la, lb in zip(layers[:-1], layers[1:]):
+                dz = abs(st.layer(la).z_mid_mm - st.layer(lb).z_mid_mm)
+                ua = merged_of[2 * bar.ring_nodes[la][0]]
+                ub = merged_of[2 * bar.ring_nodes[lb][0]]
+                if ua != ub:
+                    bar_a.append(ua)
+                    bar_b.append(ub)
+                    bar_g.append(a_barrel / (self.dc.rho_ohm_mm * max(dz, 1e-6)))
+        bar_a, bar_b = np.asarray(bar_a, dtype=np.int64), np.asarray(bar_b, dtype=np.int64)
+        self._bar_g = np.asarray(bar_g, dtype=float)
+        rows += [bar_a, bar_b, bar_a, bar_b]
+        cols += [bar_a, bar_b, bar_b, bar_a]
+
+        # Capacitance between a rail face and a ground face: the face potentials are
+        # c ± d/2, so each coupling stamps y·v·vᵀ with v over (c_r, d_r, c_g, d_g).
+        u = np.stack([merged_of[2 * self._cap_rn], merged_of[2 * self._cap_rn + 1],
+                      merged_of[2 * self._cap_gn], merged_of[2 * self._cap_gn + 1]], axis=1)
+        sr = np.where(self._cap_face == 0, 0.5, -0.5)      # top face: c + d/2
+        sg = -sr                                            # the ground face is the other one
+        v = np.stack([np.ones_like(sr), sr, -np.ones_like(sr), -sg], axis=1)
+        self._cap_coef = (v[:, :, None] * v[:, None, :]).reshape(-1, 16)
+        rows.append(np.repeat(u, 4, axis=1).ravel())
+        cols.append(np.tile(u, (1, 4)).ravel())
+
+        rows = np.concatenate(rows).astype(np.int64)
+        cols = np.concatenate(cols).astype(np.int64)
+        live_entry = ~(dead[rows] | dead[cols])
+
+        # --- connectivity: copper the reference cannot reach is left out; copper that
+        # holds a port terminal but is reached only through parts is tied weakly.
+        graph = sp.coo_matrix((np.ones(int(live_entry.sum())),
+                               (rows[live_entry], cols[live_entry])), shape=(nm, nm)).tocsr()
+        ncomp, comp = connected_components(graph, directed=False)
+        ref = self.port_nodes[reference_port][1]
+        self.ref = ref
+        live_comps = {comp[ref]}
+        ties = []
+        for p, (a, bb) in zip(self.ports, self.port_nodes):
+            for uu in (a, bb):
+                if comp[uu] not in live_comps:
+                    live_comps.add(comp[uu])
+                    ties.append(uu)
+                    self.warnings.append(f"{p.name}: its copper reaches the rest of the rail "
+                                         "only through parts (tied weakly for the solve)")
+        in_live = np.isin(comp, list(live_comps))
+        isolated = {int(comp[k]) for k in np.flatnonzero(~in_live & ~dead)}
+        if isolated:
+            self.warnings.append(f"{len(isolated)} copper island(s) touch neither the rail's "
+                                 "parts nor its ground and were left out")
+        keep = in_live & ~dead
+        keep[ref] = False
+
+        # --- conductors: pieces of copper joined by conduction (sheets, barrels, merged
+        # pads), not by capacitance. Every conductor but the reference's floats, tied to
+        # the rest only by the plane capacitance (and parts): at low frequency that is
+        # ~1e-9 S against ~1e3 S of copper, which no direct solver handles accurately.
+        # Each floating conductor is held at one *anchor* unknown (a mean potential c);
+        # port_impedance solves the grounded, well-conditioned system for the rest and
+        # finds the anchor potentials from each conductor's total current (KCL summed
+        # over the conductor), which involves only the capacitive and part currents.
+        n_cond = len(rows) - 16 * len(self._cap_c)
+        is_cond = np.zeros(len(rows), dtype=bool)
+        is_cond[:n_cond] = True
+        sel = is_cond & live_entry
+        cgraph = sp.coo_matrix((np.ones(int(sel.sum())), (rows[sel], cols[sel])),
+                               shape=(nm, nm)).tocsr()
+        _, ccomp = connected_components(cgraph, directed=False)
+        is_c = np.zeros(nm, dtype=bool)
+        is_c[merged_of[2 * np.arange(n)]] = True
+        terminals = [u for pn in self.port_nodes for u in pn]
+        anchor_of: Dict[int, int] = {}                       # conductor -> anchor unknown
+        for u in terminals:                                  # prefer a port terminal
+            if keep[u] and ccomp[u] != ccomp[ref]:
+                anchor_of.setdefault(int(ccomp[u]), u)
+        for u in np.flatnonzero(keep & is_c):
+            if ccomp[u] != ccomp[ref]:
+                anchor_of.setdefault(int(ccomp[u]), int(u))
+        anchors = np.array(sorted(anchor_of.values()), dtype=np.int64)
+        free = keep.copy()
+        free[anchors] = False
+
+        new_index = np.full(nm, -1, dtype=np.int64)
+        self.n_free = int(free.sum())
+        new_index[free] = np.arange(self.n_free)             # free unknowns first,
+        new_index[anchors] = self.n_free + np.arange(len(anchors))   # anchors last
+        self.n = int(keep.sum())
+        self.index = new_index
+        self._ties = new_index[np.asarray(ties, dtype=np.int64)]
+        # KCL rows: the c unknowns of each floating conductor, summed.
+        cond_ids = sorted(anchor_of)
+        which = {c_: i for i, c_ in enumerate(cond_ids)}
+        members = np.flatnonzero(keep & is_c)
+        members = members[np.isin(ccomp[members], cond_ids)]
+        self._R = sp.csr_matrix(
+            (np.ones(len(members)), ([which[int(c_)] for c_ in ccomp[members]],
+                                     new_index[members])), shape=(len(cond_ids), self.n))
+        # Cross-conductor entries (capacitance), for those sums.
+        cap_ok = keep[rows[n_cond:]] & keep[cols[n_cond:]]
+        self._x_sel = np.flatnonzero(cap_ok)
+        self._x_rows = new_index[rows[n_cond:][cap_ok]]
+        self._x_cols = new_index[cols[n_cond:][cap_ok]]
+        self.n_conductors = len(cond_ids)
+
+        # Entries between kept unknowns, mapped to the reduced numbering, then CSR with a
+        # fixed order: per frequency only the values are recomputed (bincount).
+        ok = keep[rows] & keep[cols]
+        self._ok = ok
+        r, cc = new_index[rows[ok]], new_index[cols[ok]]
+        diag = np.arange(self.n)
+        r = np.concatenate([r, diag])          # every kept unknown gets a diagonal entry
+        cc = np.concatenate([cc, diag])
+        key = r * self.n + cc
+        uniq, inv = np.unique(key, return_inverse=True)
+        self._inv = inv
+        self._n_entries = len(uniq)
+        ur, uc = uniq // self.n, uniq % self.n
+        self._indices = uc.astype(np.int32 if self.n < 2**31 else np.int64)
+        self._indptr = np.concatenate([[0], np.cumsum(np.bincount(ur, minlength=self.n))])
+        self._tie_pos = np.searchsorted(uniq, self._ties * self.n + self._ties)
+        self.stats.n_unknowns, self.stats.nnz = self.n, self._n_entries
+        progress.info(f"{self.n} unknowns (faces meet at {int(no_d.sum())} of {n} nodes), "
+                      f"{self._n_entries} non-zeros, {len(self._bar_g)} barrel segments, "
+                      f"{len(self._cap_c)} capacitance couplings, {len(self.ports)} ports, "
+                      f"{self.n_conductors} floating conductor(s)")
+
+    def _facing(self, tri_kind, area, node_kind, progress):
+        """Per triangle and face: the external inductance height and, on rail faces that
+        look at ground copper, the capacitance to the nearest ground node."""
+        snap, mesh, st = self.snap, self.mesh, self.snap.stackup
+        tris = mesh.tris
+        layers = st.copper
+        idx_of = {cu.id: i for i, cu in enumerate(layers)}
+        cen = mesh.points[tris].mean(axis=1)
+        tri_li = np.array([idx_of[l] for l in mesh.tri_layer])
+
+        # Rail / ground copper per layer, for point-in-copper tests.
+        def side_geom(nets):
+            out = {}
+            for cu in layers:
+                parts = [net_layer_copper(snap, nt, cu.id, cut_drills=False,
+                                          quad_segs=self.dc.circle_quad_segs) for nt in nets]
+                parts = [g for g in parts if not g.is_empty]
+                if parts:
+                    g = shapely.union_all(parts)
+                    shapely.prepare(g)
+                    out[cu.id] = g
+            return out
+        geom = (side_geom(self.rail_nets), side_geom([self.gnd]))
+
+        h_far = max(st.board_thickness_mm, 0.5)
+        h_ext = np.full((len(tris), 2), h_far)
+        cap_tri, cap_face, cap_layer, cap_c = [], [], [], []
+        for li in np.unique(tri_li):
+            sel = np.flatnonzero(tri_li == li)
+            for face, step in ((0, -1), (1, +1)):          # top looks up, bottom down
+                todo = sel
+                j = li + step
+                while len(todo) and 0 <= j < len(layers):
+                    lj = layers[j].id
+                    hit_r = (shapely.contains_xy(geom[0][lj], cen[todo, 0], cen[todo, 1])
+                             if lj in geom[0] else np.zeros(len(todo), bool))
+                    hit_g = (shapely.contains_xy(geom[1][lj], cen[todo, 0], cen[todo, 1])
+                             if lj in geom[1] else np.zeros(len(todo), bool))
+                    hit = hit_r | hit_g
+                    if hit.any():
+                        tri_here = todo[hit]
+                        opposite = np.where(tri_kind[tri_here] == 0, hit_g[hit], hit_r[hit])
+                        gap, er = self._gap(li, j)
+                        h_ext[tri_here[opposite], face] = gap
+                        rail_faces = tri_here[opposite & (tri_kind[tri_here] == 0)]
+                        if len(rail_faces):
+                            cap_tri.append(rail_faces)
+                            cap_face.append(face)
+                            cap_layer.append(lj)
+                            cap_c.append(EPS0_F_PER_MM * er / gap * area[rail_faces])
+                    todo = todo[~hit]
+                    j += step
+        # A face that sees no return while the sheet's other face does is shielded: the
+        # field lives in the cavity on the other side, so it carries almost no current at
+        # high frequency (on a plane pair, the outer faces). Splitting the current in
+        # inverse proportion to a "board thickness" height there made the loop inductance
+        # of a plane pair about 12% low.
+        facing = h_ext < h_far
+        one_sided = facing.any(axis=1) & ~facing.all(axis=1)
+        h_ext[one_sided & ~facing[:, 0], 0] = SHIELDED_FACE_HEIGHT * h_far
+        h_ext[one_sided & ~facing[:, 1], 1] = SHIELDED_FACE_HEIGHT * h_far
+        self._h_ext = h_ext
+        self._tri_li = tri_li
+
+        # Capacitance: each rail face triangle's share goes to its three nodes, tied to
+        # the nearest node of the ground copper it faces (that copper's facing face).
+        gnd_trees: Dict[int, Tuple[cKDTree, np.ndarray]] = {}
+        rn_all, gn_all, face_all, c_all = [], [], [], []
+        for tri_sel, face, lj, cvals in zip(cap_tri, cap_face, cap_layer, cap_c):
+            if lj not in gnd_trees:
+                nodes = np.flatnonzero((node_kind == 1) & (mesh.node_layer == lj))
+                gnd_trees[lj] = (cKDTree(mesh.points[nodes]), nodes)
+            tree, gnodes = gnd_trees[lj]
+            for k in range(3):
+                rn = tris[tri_sel, k]
+                _, nearest = tree.query(mesh.points[rn])
+                rn_all.append(rn)
+                gn_all.append(gnodes[nearest])
+                face_all.append(np.full(len(rn), face))
+                c_all.append(cvals / 3)
+        if rn_all:
+            rn, gn = np.concatenate(rn_all), np.concatenate(gn_all)
+            fc, cv = np.concatenate(face_all), np.concatenate(c_all)
+            key = (rn.astype(np.int64) * 2 + fc) * mesh.n_nodes + gn
+            _, first, inv = np.unique(key, return_index=True, return_inverse=True)
+            self._cap_rn, self._cap_gn, self._cap_face = rn[first], gn[first], fc[first]
+            self._cap_c = np.bincount(inv, weights=cv)
+        else:
+            self._cap_rn = self._cap_gn = self._cap_face = np.zeros(0, dtype=np.int64)
+            self._cap_c = np.zeros(0)
+            self.warnings.append("No rail copper faces ground copper: the planes add no "
+                                 "capacitance")
+        self.total_plane_capacitance = float(self._cap_c.sum())
+        progress.info(f"Rail-to-ground plane capacitance "
+                      f"{self.total_plane_capacitance * 1e9:.3f} nF")
+
+    def _gap(self, i: int, j: int) -> Tuple[float, float]:
+        """Distance between the facing faces of copper layers i and j (stack indices) and
+        the effective dielectric constant of what lies between."""
+        st = self.snap.stackup
+        a, b = (i, j) if i < j else (j, i)                 # a above b
+        upper, lower = st.copper[a], st.copper[b]
+        gap = max(upper.z_bottom_mm - lower.z_top_mm, 1e-4)
+        ids_between = {cu.id for cu in st.copper[a:b]}
+        diels = [d for d in st.dielectrics if d.above_layer in ids_between]
+        t_sum = sum(d.thickness_mm for d in diels)
+        dflt = self.ac.default_er
+        if t_sum <= 0:
+            return gap, dflt
+        # Series combination; intermediate copper counts as the default dielectric.
+        acc = sum(d.thickness_mm / (d.epsilon_r if d.epsilon_r > 0 else dflt) for d in diels)
+        acc += max(gap - t_sum, 0.0) / dflt
+        return gap, gap / acc
+
+    # ============================================================== solve
+    def matrix(self, omega: float):
+        """The reduced system matrix (admittance form) at angular frequency ``omega``, and
+        its cross-conductor part (capacitance and weak ties) on its own."""
+        st = self.snap.stackup
+        jw = 1j * omega
+        nl = len(st.copper)
+        z11, zd = np.zeros(nl, complex), np.zeros(nl, complex)
+        for i, cu in enumerate(st.copper):
+            rho = self.dc.rho_for(cu.name)
+            z11[i] = slab_impedance(rho, cu.thickness_mm, omega)[0]
+            zd[i] = slab_difference(rho, cu.thickness_mm, omega)
+        z11, zd = z11[self._tri_li], zd[self._tri_li]
+        zs = 2 * z11 - zd                                  # Z11 + Z12
+        a = jw * MU0_H_PER_MM * self._h_ext[:, 0] / 2      # top face, external
+        b = jw * MU0_H_PER_MM * self._h_ext[:, 1] / 2      # bottom face
+        det = zd * zs + (a + b) * z11 + a * b              # (Z11+a)(Z11+b) − Z12²
+        y_cc = (2 * zd + a + b) / det
+        y_cd = (b - a) / (2 * det)
+        y_dd = (2 * zs + a + b) / (4 * det)
+        tri = [(y[:, None] * self._S).ravel() for y in (y_cc, y_cd, y_cd, y_dd)]
+        g = self._bar_g.astype(complex)
+        yc = self._cap_c * omega * (self.ac.loss_tangent + 1j)
+        cap = (yc[:, None] * self._cap_coef).ravel()
+        data = np.concatenate(tri + [g, g, -g, -g, cap])
+        data = np.concatenate([data[self._ok], np.zeros(self.n, complex)])
+        vals = (np.bincount(self._inv, weights=data.real, minlength=self._n_entries)
+                + 1j * np.bincount(self._inv, weights=data.imag, minlength=self._n_entries))
+        vals[self._tie_pos] += TIE_ADMITTANCE_S
+        A = sp.csr_matrix((vals, self._indices, self._indptr), shape=(self.n, self.n))
+        xr = np.concatenate([self._x_rows, self._ties])
+        xc = np.concatenate([self._x_cols, self._ties])
+        xd = np.concatenate([cap[self._x_sel], np.full(len(self._ties), TIE_ADMITTANCE_S)])
+        X = sp.csr_matrix((xd, (xr, xc)), shape=(self.n, self.n))
+        return A, X
+
+    def port_impedance(self, omega: float, progress: ProgressReporter = NULL) -> np.ndarray:
+        """The board's port impedance matrix (ports x ports, ohms) at ``omega``.
+
+        The free unknowns (every floating conductor held at its anchor) are solved
+        directly. With x_F = y_F − W x_A (y_F = A_FF⁻¹ b_F, W = A_FF⁻¹ A_FA), the anchor
+        potentials x_A follow from KCL summed over each floating conductor, where the
+        copper's own currents cancel exactly and only the capacitive ones remain:
+        R X [x_A; x_F] = R b.
+        """
+        A, X = self.matrix(omega)
+        nf = self.n_free
+        AFF = A[:nf, :nf].tocsr()
+        AFA = A[:nf, nf:].toarray()
+        factor = direct.factorize_complex(AFF, progress.warn)
+        self.stats.method = factor.name
+        W = factor(AFA).reshape(nf, -1) if AFA.shape[1] else np.zeros((nf, 0), complex)
+        RX = (self._R @ X).tocsr()
+        RX_A = RX[:, nf:].toarray()
+        RX_F = RX[:, :nf]
+        G = RX_A - RX_F @ W                                 # k x k
+
+        P = len(self.ports)
+        plus = np.array([self.index[a] for a, _ in self.port_nodes])    # -1: the reference
+        minus = np.array([self.index[b] for _, b in self.port_nodes])
+        Z = np.zeros((P, P), complex)
+        for k0 in range(0, P, PORT_CHUNK):
+            progress.check_cancel()
+            ks = range(k0, min(P, k0 + PORT_CHUNK))
+            rhs = np.zeros((self.n, len(ks)), complex)
+            for col, k in enumerate(ks):
+                if plus[k] >= 0:
+                    rhs[plus[k], col] += 1.0
+                if minus[k] >= 0:
+                    rhs[minus[k], col] -= 1.0
+            yF = factor(rhs[:nf]).reshape(nf, len(ks))
+            if G.shape[0]:
+                xA = np.linalg.solve(G, self._R @ rhs - RX_F @ yF)
+                xF = yF - W @ xA
+                x = np.vstack([xF, xA])
+            else:
+                x = yF
+            xp = np.where(plus[:, None] >= 0, x[np.maximum(plus, 0)], 0)
+            xm = np.where(minus[:, None] >= 0, x[np.maximum(minus, 0)], 0)
+            Z[:, k0:k0 + len(ks)] = xp - xm
+        return 0.5 * (Z + Z.T)              # symmetric up to round-off

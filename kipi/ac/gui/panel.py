@@ -1,32 +1,717 @@
 """The AC setup panel, shown in place of the DC power-tree panel in AC mode.
 
-A placeholder until AC analysis exists: it says what the mode will do and that the DC
-setup (VRMs, loads, thermal settings) is kept and comes back in DC mode.
+It edits the same :class:`~kipi.dc.pi.model.PISetup` as the DC panel. The VRMs and series
+links are shared (with the fields only DC uses grayed out); capacitor models, probes and
+the sweep belong to the AC analysis. A solve covers one rail (picked by its VRM) against
+one ground net.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+import html
+import re
+from typing import List, Optional
 
-from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QLabel, QVBoxLayout, QWidget
+import numpy as np
+from qtpy.QtCore import Qt, Signal
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import (
+    QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox, QTableWidget,
+    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+)
+
+from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
+from kipi.ac.model import CapModel, Probe
+from kipi.core.model.board import BoardSnapshot
+from kipi.core.model.nets import classify_nets, sorted_nets
+from kipi.core.model.parts import parse_capacitance
+from kipi.dc.gui.pi_panel import (
+    ItemList, LinkEditor, PIPanel, VrmEditor, _Editor, _spin, _unique, make_searchable,
+    parts_on_net,
+)
+from kipi.dc.pi.model import PinRef, PISetup
+from kipi.gui.sortable import make_sortable, reset_sort, set_row
 
 TITLE = "AC setup"
+CALCULATOR_NOTE = ("The target impedance / frequency calculator is coming in a later "
+                   "version of KiPI. For now, a common estimate is Z_target = V_rail x "
+                   "allowed ripple / transient current, flat up to the frequency the "
+                   "device's own package and die capacitance take over.")
 
+
+# ---------------------------------------------------------------------------
+# Capacitor models
+# ---------------------------------------------------------------------------
+
+class CapEditor(_Editor):
+    """A capacitor model's values, and which capacitors use it.
+
+    The table lists the capacitors a model can apply to: parts C<n> whose pads are all on
+    nets ticked in the Board panel (so, between two power/ground nets). Ticking a part
+    assigns it to this model (moving it from another model if it had one).
+    """
+    COLS = ("", "Part", "Value", "Nets", "Model")
+
+    def __init__(self, panel: "ACPanel", parent=None):
+        super().__init__(panel, parent)
+        f = self.form
+        self.name = QLineEdit()
+        self.cap = _spin(0, 1e6, 0, 4, " µF", 0.1)
+        self.cap.setSpecialValueText("required")
+        self.esl = _spin(0, 1e4, 0, 3, " nH", 0.05)
+        self.esl.setSpecialValueText("required")
+        self.esl.setToolTip("Equivalent series inductance of the part itself (from its "
+                            "datasheet); the board's mounting inductance is simulated")
+        self.esr = _spin(0, 1e6, 0, 3, " mΩ", 0.5)
+        self.esr.setSpecialValueText("required")
+        f.addRow("Name", self.name)
+        f.addRow("Capacitance", self.cap)
+        f.addRow("ESL", self.esl)
+        f.addRow("ESR", self.esr)
+        self._watch(self.name, self.cap, self.esl, self.esr)
+
+        self.filter = QLineEdit()
+        self.filter.setPlaceholderText("Filter parts (reference, value or net)…")
+        self.filter.textChanged.connect(self._apply_filter)
+        f.addRow(self.filter)
+        self.table = QTableWidget(0, len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setMinimumHeight(140)
+        self.table.itemChanged.connect(self._item_changed)
+        f.addRow(self.table)
+        row = QHBoxLayout()
+        b_val = QPushButton("Tick same value")
+        b_val.setToolTip("Tick every listed part with the value of the selected row")
+        b_val.clicked.connect(self._tick_same_value)
+        b_all = QPushButton("Tick shown")
+        b_all.clicked.connect(lambda: self._tick_shown(True))
+        b_none = QPushButton("Untick shown")
+        b_none.clicked.connect(lambda: self._tick_shown(False))
+        for b in (b_val, b_all, b_none):
+            row.addWidget(b)
+        f.addRow(row)
+        self.lbl_count = QLabel()
+        self.lbl_count.setStyleSheet("color: #999;")
+        f.addRow(self.lbl_count)
+        self._filling = False
+
+    # ------------------------------------------------------------ values
+    def _load(self, m: CapModel):
+        self.name.setText(m.name)
+        self.cap.setValue(m.capacitance_f * 1e6)
+        self.esl.setValue(m.esl_h * 1e9)
+        self.esr.setValue(m.esr_ohm * 1e3)
+        self.fill_table()
+
+    def _save(self, m: CapModel):
+        m.name = self.name.text().strip() or m.name
+        m.capacitance_f = self.cap.value() * 1e-6
+        m.esl_h = self.esl.value() * 1e-9
+        m.esr_ohm = self.esr.value() * 1e-3
+
+    # ------------------------------------------------------------ parts
+    def fill_table(self):
+        panel: ACPanel = self.panel
+        t = self.table
+        self._filling = True
+        t.setRowCount(0)
+        snap = panel.snapshot
+        cands = capacitor_candidates(snap, panel.nets()) if snap is not None else []
+        owner = {ref: m for m in panel.setup.caps for ref in m.refs}
+        t.setRowCount(len(cands))
+        for r, c in enumerate(cands):
+            chk = QTableWidgetItem()
+            chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            mine = self.obj is not None and owner.get(c.ref) is self.obj
+            chk.setCheckState(Qt.Checked if mine else Qt.Unchecked)
+            chk.setData(Qt.UserRole, c.ref)
+            t.setItem(r, 0, chk)
+            other = owner.get(c.ref)
+            cells = (c.ref, c.value, " / ".join(c.nets), other.name if other else "")
+            for col, text in enumerate(cells, start=1):
+                it = QTableWidgetItem(text)
+                if other is not None and not mine:
+                    it.setForeground(QColor("#999"))
+                t.setItem(r, col, it)
+        self._filling = False
+        self._apply_filter()
+        self._update_count(len(cands))
+
+    def _update_count(self, n_cands: Optional[int] = None):
+        if n_cands is None:
+            n_cands = self.table.rowCount()
+        n = len(self.obj.refs) if self.obj is not None else 0
+        self.lbl_count.setText(f"{n} part(s) use this model; {n_cands} capacitor(s) between "
+                               "ticked nets")
+
+    def _apply_filter(self, *_):
+        text = self.filter.text().strip().lower()
+        for r in range(self.table.rowCount()):
+            row_text = " ".join(self.table.item(r, c).text().lower()
+                                for c in range(1, len(self.COLS)))
+            self.table.setRowHidden(r, bool(text) and text not in row_text)
+
+    def _item_changed(self, item):
+        if self._filling or item.column() != 0 or self.obj is None:
+            return
+        self._assign([item.data(Qt.UserRole)], item.checkState() == Qt.Checked)
+
+    def _assign(self, refs: List[str], on: bool):
+        """Put ``refs`` in this model (taking them from any other) or take them out."""
+        for m in self.panel.setup.caps:
+            if m is not self.obj or not on:
+                m.refs = [r for r in m.refs if r not in refs]
+        if on:
+            self.obj.refs = sorted(set(self.obj.refs) | set(refs), key=_natural)
+        self.fill_table()
+        self.changed.emit()
+
+    def _tick_shown(self, on: bool):
+        if self.obj is None:
+            return
+        refs = [self.table.item(r, 0).data(Qt.UserRole) for r in range(self.table.rowCount())
+                if not self.table.isRowHidden(r)]
+        self._assign(refs, on)
+
+    def _tick_same_value(self):
+        if self.obj is None:
+            return
+        r = self.table.currentRow()
+        if r < 0:
+            QMessageBox.information(self, "KiPI", "Select a part in the list first.")
+            return
+        value = self.table.item(r, 2).text()
+        refs = [self.table.item(k, 0).data(Qt.UserRole) for k in range(self.table.rowCount())
+                if self.table.item(k, 2).text() == value]
+        self._assign(refs, True)
+
+
+def _fmt_farads(f: float) -> str:
+    for scale, unit in ((1e-3, "mF"), (1e-6, "µF"), (1e-9, "nF"), (1e-12, "pF")):
+        if f >= scale * 0.999:
+            return f"{f / scale:.4g} {unit}"
+    return f"{f:.3g} F"
+
+
+def _natural(ref: str):
+    m = re.match(r"([A-Za-z_]*)(\d*)(.*)", ref)
+    return (m.group(1), int(m.group(2)) if m.group(2) else -1, m.group(3))
+
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+
+class ProbeEditor(_Editor):
+    calculator_requested = Signal()
+
+    def __init__(self, panel, parent=None):
+        super().__init__(panel, parent)
+        f = self.form
+        self.name = QLineEdit()
+        self.rail = self._picker()
+        self.ground = self._picker()
+        self.target = _spin(0, 1e6, 0, 3, " mΩ", 1)
+        self.target.setSpecialValueText("none")
+        self.target.setToolTip("Target impedance: PASS if |Z| stays at or below this up to "
+                               "the target frequency")
+        self.target_f = _spin(0, 1e7, 0, 1, " kHz", 100)
+        self.target_f.setSpecialValueText("none")
+        self.target_f.setToolTip("Frequency up to which the target impedance applies "
+                                 "(none: the whole sweep)")
+        self.btn_calc = QPushButton("Target Impedance/Frequency Calculator…")
+        self.btn_calc.setToolTip("Work out a target impedance and frequency from the "
+                                 "device's supply tolerance and transient current")
+        self.btn_calc.clicked.connect(self._calculator)
+        f.addRow("Name", self.name)
+        f.addRow("Supply pins", self.rail)
+        f.addRow("Ground pins", self.ground)
+        f.addRow("Target |Z|", self.target)
+        f.addRow("Target frequency", self.target_f)
+        f.addRow(self.btn_calc)
+        hint = QLabel("The impedance is looked into between the supply pins and the ground "
+                      "pins of the device (each set shorted together, as the die does).")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #999;")
+        f.addRow(hint)
+        self._watch(self.name, self.target, self.target_f)
+        self.rail.cmb_part.currentIndexChanged.connect(self._follow_part)
+
+    def _calculator(self):
+        # TODO(AC milestone 5): the Target Impedance/Frequency Calculator window.
+        QMessageBox.information(self, "KiPI", CALCULATOR_NOTE)
+
+    def _follow_part(self, _i):
+        """Picking the supply part picks the same part's ground pins, if it has any."""
+        if self._loading or self.obj is None:
+            return
+        ref = self.rail.cmb_part.currentData()
+        gnd = self.ground.net()
+        if ref and gnd and self.panel.snapshot is not None:
+            if any(r == ref for r, _, _ in parts_on_net(self.panel.snapshot, gnd)):
+                i = self.ground.cmb_part.findData(ref)
+                if i >= 0:
+                    self.ground.cmb_part.setCurrentIndex(i)
+
+    def _load(self, p: Probe):
+        self.name.setText(p.name)
+        self.rail.set_value(p.rail)
+        self.ground.set_value(p.ground)
+        self.target.setValue((p.target_ohm or 0.0) * 1e3)
+        self.target_f.setValue((p.target_hz or 0.0) / 1e3)
+
+    def _save(self, p: Probe):
+        new_rail = self.rail.value() or p.rail
+        typed = self.name.text().strip() or p.name
+        if typed == p.rail.ref and new_rail.ref != p.rail.ref:
+            typed = new_rail.ref              # the default name follows the picked part
+            self.name.setText(typed)
+        p.name = typed
+        p.rail = new_rail
+        p.ground = self.ground.value() or p.ground
+        p.target_ohm = self.target.value() / 1e3 or None
+        p.target_hz = self.target_f.value() * 1e3 or None
+
+
+# ---------------------------------------------------------------------------
+# Panel
+# ---------------------------------------------------------------------------
 
 class ACPanel(QWidget):
+    solve_requested = Signal(object, str, str)     # PISetup, VRM name, ground net
+    save_requested = Signal()
+    result_selected = Signal(object)               # ACResult shown in the plot
+
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        text = QLabel(self)
-        text.setTextFormat(Qt.RichText)
-        text.setWordWrap(True)
-        text.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        text.setText(
-            "<h3>AC analysis is coming in a later version</h3>"
-            "<p>AC mode will compute the impedance of the power distribution network, "
-            "seen from probe points on the copper, swept over frequency.</p>"
-            "<p>VRMs, loads and thermal settings belong to the DC analysis. Your DC setup "
-            "is kept as it is; switch back to <b>DC</b> in the toolbar to use it.</p>")
+        self.snapshot: Optional[BoardSnapshot] = None
+        self.setup = PISetup()
+        self._nets: List[str] = []
+        self.result = None
         lay = QVBoxLayout(self)
-        lay.addWidget(text)
-        lay.addStretch(1)
+        lay.setContentsMargins(4, 4, 4, 4)
+
+        row = QHBoxLayout()
+        self.lbl_file = QLabel("No board", self)
+        self.lbl_file.setStyleSheet("color: #999;")
+        self.lbl_file.setWordWrap(True)
+        b_save = QPushButton("Save", self)
+        b_save.setToolTip("Save the setup next to the board (DC and AC share one file)")
+        b_save.clicked.connect(self.save_requested.emit)
+        row.addWidget(self.lbl_file, 1)
+        row.addWidget(b_save)
+        lay.addLayout(row)
+
+        self.tabs = QTabWidget(self)
+        self.vrm_list = ItemList(lambda: self.setup.vrms, VrmEditor(self, mode="ac"),
+                                 self._new_vrm, PIPanel._describe_vrm)
+        self.link_list = ItemList(lambda: self.setup.links, LinkEditor(self, mode="ac"),
+                                  self._new_link, self._describe_link)
+        self.cap_list = ItemList(lambda: self.setup.caps, CapEditor(self), self._new_cap,
+                                 self._describe_cap)
+        b_values = QPushButton("Models from values")
+        b_values.setToolTip("Make one model per distinct value of the capacitors that have "
+                            "none yet (capacitance read from the value; enter ESL and ESR)")
+        b_values.clicked.connect(self._models_from_values)
+        self.cap_list.layout().insertWidget(0, b_values)
+        self.probe_list = ItemList(lambda: self.setup.probes, ProbeEditor(self),
+                                   self._new_probe, self._describe_probe)
+        self.tabs.addTab(self.vrm_list, "VRMs")
+        self.tabs.addTab(self.link_list, "Series links")
+        self.tabs.addTab(self.cap_list, "Capacitors")
+        self.tabs.addTab(self.probe_list, "Probes")
+        self.tabs.addTab(self._sweep_tab(), "Sweep")
+        self.tabs.addTab(self._mesh_tab(), "Mesh")
+        for il in self._lists():
+            il.changed.connect(self._on_changed)
+        lay.addWidget(self.tabs, 3)
+
+        self.lbl_errors = QLabel(self)
+        self.lbl_errors.setWordWrap(True)
+        self.lbl_errors.setStyleSheet("color: #ff8080;")
+        lay.addWidget(self.lbl_errors)
+
+        row = QHBoxLayout()
+        self.cmb_rail = QComboBox(self)
+        self.cmb_rail.setToolTip("The rail to simulate: the nets its VRM drives, plus the "
+                                 "nets series links join to them")
+        self.cmb_rail.currentIndexChanged.connect(self._rail_changed)
+        self.cmb_gnd = QComboBox(self)
+        make_searchable(self.cmb_gnd)
+        self.cmb_gnd.setToolTip("The ground net the rail is simulated against")
+        self.cmb_gnd.currentIndexChanged.connect(self._gnd_changed)
+        self.btn_solve = QPushButton("Solve rail", self)
+        self.btn_solve.setStyleSheet("font-weight: bold; padding: 6px;")
+        self.btn_solve.clicked.connect(self._solve)
+        row.addWidget(QLabel("Rail"))
+        row.addWidget(self.cmb_rail, 2)
+        row.addWidget(QLabel("Ground"))
+        row.addWidget(self.cmb_gnd, 2)
+        row.addWidget(self.btn_solve, 1)
+        lay.addLayout(row)
+
+        g_res = QGroupBox("Results", self)
+        lr = QVBoxLayout(g_res)
+        self.tbl_probes = QTableWidget(0, 6, g_res)
+        self.tbl_probes.setHorizontalHeaderLabels(
+            ["Probe", "Min |Z| (mΩ)", "Worst |Z| (mΩ)", "at (MHz)", "Target (mΩ)", ""])
+        self.tbl_probes.verticalHeader().setVisible(False)
+        self.tbl_probes.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_probes.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_probes.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tbl_probes.setToolTip("Worst |Z|: the highest impedance up to the probe's "
+                                   "target frequency (the whole sweep without one)")
+        make_sortable(self.tbl_probes)
+        self.txt_notes = QLabel(g_res)
+        self.txt_notes.setWordWrap(True)
+        self.txt_notes.setTextFormat(Qt.RichText)
+        self.txt_notes.setStyleSheet("color: #bbb;")
+        row = QHBoxLayout()
+        self.btn_export = QPushButton("Export CSV…", g_res)
+        self.btn_export.setEnabled(False)
+        self.btn_export.clicked.connect(self._export_csv)
+        row.addStretch(1)
+        row.addWidget(self.btn_export)
+        lr.addWidget(self.tbl_probes)
+        lr.addWidget(self.txt_notes)
+        lr.addLayout(row)
+        lay.addWidget(g_res, 1)
+        self.setEnabled(False)
+
+    def _lists(self):
+        return (self.vrm_list, self.link_list, self.cap_list, self.probe_list)
+
+    # ------------------------------------------------------------------ tabs
+    def _sweep_tab(self) -> QWidget:
+        w = QWidget()
+        f = QFormLayout(w)
+        s = self.setup.ac
+        self.spin_fstart = _spin(0.001, 1e6, s.f_start_hz / 1e3, 3, " kHz", 1)
+        self.spin_fstop = _spin(0.001, 1e5, s.f_stop_hz / 1e6, 3, " MHz", 10)
+        self.spin_ppd = QSpinBox()
+        self.spin_ppd.setRange(1, 2000)
+        self.spin_ppd.setValue(s.points_per_decade)
+        self.spin_ppd.setToolTip("Frequencies per decade in the plotted sweep")
+        self.spin_fpd = QSpinBox()
+        self.spin_fpd.setRange(0, 2000)
+        self.spin_fpd.setValue(s.field_points_per_decade)
+        self.spin_fpd.setSpecialValueText("every point")
+        self.spin_fpd.setToolTip("Copper (field) solves per decade. The parts are evaluated "
+                                 "at every sweep point; the copper's response in between "
+                                 "is interpolated. 'Every point' solves the copper at each "
+                                 "sweep frequency (slowest, exact).")
+        f.addRow("Start", self.spin_fstart)
+        f.addRow("Stop", self.spin_fstop)
+        f.addRow("Points per decade", self.spin_ppd)
+        f.addRow("Field solves per decade", self.spin_fpd)
+        for wdg in (self.spin_fstart, self.spin_fstop, self.spin_ppd, self.spin_fpd):
+            wdg.valueChanged.connect(self._ac_settings_changed)
+        return w
+
+    def _mesh_tab(self) -> QWidget:
+        w = QWidget()
+        f = QFormLayout(w)
+        s = self.setup.ac
+        self.spin_edge = _spin(0.05, 10.0, s.max_edge_mm, 2, " mm", 0.1)
+        self.spin_grading = _spin(0.0, 2.0, s.grading, 2, "", 0.05)
+        self.spin_min_edge = _spin(0.005, 1.0, s.min_edge_mm, 3, " mm", 0.01)
+        self.spin_tand = _spin(0.0, 0.2, s.loss_tangent, 4, "", 0.001)
+        self.spin_tand.setToolTip("Dielectric loss tangent (FR4 is about 0.02)")
+        self.spin_er = _spin(1.0, 20.0, s.default_er, 2, "", 0.1)
+        self.spin_er.setToolTip("Dielectric constant used where the board stackup gives none")
+        f.addRow("Max edge", self.spin_edge)
+        f.addRow("Via grading", self.spin_grading)
+        f.addRow("Min edge (at holes)", self.spin_min_edge)
+        f.addRow("Loss tangent", self.spin_tand)
+        f.addRow("Default εr", self.spin_er)
+        note = QLabel("The mesh decides the plane spreading and via inductance: elements grow "
+                      "from 'min edge' at plated holes by 'via grading' per mm, up to 'max "
+                      "edge'. Copper resistivity and barrel plating come from the DC setup.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #999;")
+        f.addRow(note)
+        for wdg in (self.spin_edge, self.spin_grading, self.spin_min_edge, self.spin_tand,
+                    self.spin_er):
+            wdg.valueChanged.connect(self._ac_settings_changed)
+        return w
+
+    def _ac_settings_changed(self, *_):
+        s = self.setup.ac
+        s.f_start_hz = self.spin_fstart.value() * 1e3
+        s.f_stop_hz = self.spin_fstop.value() * 1e6
+        s.points_per_decade = self.spin_ppd.value()
+        s.field_points_per_decade = self.spin_fpd.value()
+        s.max_edge_mm = self.spin_edge.value()
+        s.grading = self.spin_grading.value()
+        s.min_edge_mm = self.spin_min_edge.value()
+        s.loss_tangent = self.spin_tand.value()
+        s.default_er = self.spin_er.value()
+        self._on_changed()
+
+    def _load_ac_settings(self):
+        s = self.setup.ac
+        for wdg, v in ((self.spin_fstart, s.f_start_hz / 1e3), (self.spin_fstop, s.f_stop_hz / 1e6),
+                       (self.spin_ppd, s.points_per_decade),
+                       (self.spin_fpd, s.field_points_per_decade),
+                       (self.spin_edge, s.max_edge_mm), (self.spin_grading, s.grading),
+                       (self.spin_min_edge, s.min_edge_mm), (self.spin_tand, s.loss_tangent),
+                       (self.spin_er, s.default_er)):
+            wdg.blockSignals(True)
+            wdg.setValue(v)
+            wdg.blockSignals(False)
+
+    # ------------------------------------------------------------------ data
+    def nets(self) -> List[str]:
+        return list(self._nets)
+
+    def set_board(self, snap: BoardSnapshot, setup: PISetup, file_label: str):
+        self.snapshot = snap
+        self.setup = setup
+        self.lbl_file.setText(file_label)
+        self._load_ac_settings()
+        self.clear_results()
+        self.setEnabled(True)
+        self.reload()
+
+    def set_label(self, text: str):
+        self.lbl_file.setText(text)
+
+    def set_nets(self, nets: List[str]):
+        """Nets offered in the pin pickers (the ones ticked in the Board panel)."""
+        if self.snapshot is None:
+            return
+        order = {n: i for i, n in enumerate(sorted_nets(self.snapshot))}
+        nets = sorted(set(nets), key=lambda n: order.get(n, len(order)))
+        if nets == self._nets:
+            return
+        self._nets = nets
+        self.reload()
+
+    def reload(self):
+        """Refill everything from the setup (the DC panel may have edited the shared VRMs
+        and series links)."""
+        for il in self._lists():
+            il.editor.refresh_nets(self._nets)
+        for il in self._lists():
+            il.reload()
+        self._fill_rails()
+        self._on_changed()
+
+    def _fill_rails(self):
+        s = self.setup.ac
+        want = s.rail or self.cmb_rail.currentData()
+        self.cmb_rail.blockSignals(True)
+        self.cmb_rail.clear()
+        for v in self.setup.vrms:
+            self.cmb_rail.addItem(f"{v.name}: {v.output.net}", v.name)
+        i = self.cmb_rail.findData(want)
+        self.cmb_rail.setCurrentIndex(i if i >= 0 else (0 if self.setup.vrms else -1))
+        self.cmb_rail.blockSignals(False)
+        self._fill_grounds()
+
+    def _fill_grounds(self):
+        s = self.setup.ac
+        vrm = self._vrm()
+        want = s.ground or default_ground(vrm)
+        kinds = classify_nets(self.snapshot) if self.snapshot is not None else {}
+        nets = sorted(self._nets, key=lambda n: (kinds.get(n) != "ground",
+                                                 self._nets.index(n)))
+        if want and want not in nets:
+            nets.append(want)
+        self.cmb_gnd.blockSignals(True)
+        self.cmb_gnd.clear()
+        self.cmb_gnd.addItems(nets)
+        i = self.cmb_gnd.findText(want, Qt.MatchFixedString) if want else -1
+        if i < 0:
+            i = next((k for k, n in enumerate(nets) if kinds.get(n) == "ground"), -1)
+        self.cmb_gnd.setCurrentIndex(i)
+        self.cmb_gnd.blockSignals(False)
+        s.ground = self.ground()
+        s.rail = self.cmb_rail.currentData() or ""
+
+    def _vrm(self):
+        name = self.cmb_rail.currentData()
+        return next((v for v in self.setup.vrms if v.name == name), None)
+
+    def ground(self) -> str:
+        i = self.cmb_gnd.currentIndex()
+        return self.cmb_gnd.itemText(i) if i >= 0 else ""
+
+    def _rail_changed(self, _i):
+        self.setup.ac.rail = self.cmb_rail.currentData() or ""
+        self.setup.ac.ground = ""                      # follow the new VRM's ground
+        self._fill_grounds()
+        self._on_changed()
+
+    def _gnd_changed(self, _i):
+        self.setup.ac.ground = self.ground()
+        self._on_changed()
+
+    def _on_changed(self):
+        if self.cmb_rail.count() != len(self.setup.vrms) or any(
+                self.cmb_rail.itemData(i) != v.name for i, v in enumerate(self.setup.vrms)):
+            self._fill_rails()                         # a VRM was added, removed or renamed
+            return
+        errors = validate_ac(self.setup, self.cmb_rail.currentData() or "", self.ground())
+        self.lbl_errors.setText("\n".join(f"• {e}" for e in errors))
+        self.btn_solve.setEnabled(not errors)
+
+    def _solve(self):
+        self.solve_requested.emit(self.setup, self.cmb_rail.currentData() or "",
+                                  self.ground())
+
+    def set_busy(self, busy: bool, queued: bool = False):
+        self.btn_solve.setEnabled(not busy and not self.lbl_errors.text())
+        self.btn_solve.setText(("Queued…" if queued else "Solving…") if busy else "Solve rail")
+
+    # ------------------------------------------------------------------ new items
+    def _first_net(self) -> Optional[str]:
+        if not self._nets:
+            self.lbl_errors.setText("• Tick nets in the Board panel first")
+            return None
+        return self._nets[0]
+
+    def _first_part(self, net) -> str:
+        parts = parts_on_net(self.snapshot, net)
+        return parts[0][0] if parts else ""
+
+    def _new_vrm(self):
+        from kipi.core.model.nets import guess_voltage
+        from kipi.dc.pi.model import Vrm
+        net = self._first_net()
+        if net is None:
+            return None
+        name = _unique("VRM1", [x.name for x in self.setup.vrms])
+        return Vrm(name, PinRef(self._first_part(net), net), guess_voltage(net), "source")
+
+    def _new_link(self):
+        from kipi.dc.pi.model import DcLink
+        net = self._first_net()
+        if net is None:
+            return None
+        other = self._nets[1] if len(self._nets) > 1 else net
+        ref = self._first_part(net)
+        return DcLink(_unique(ref or "R1", [x.name for x in self.setup.links]),
+                      PinRef(ref, net), PinRef(self._first_part(other), other), 0.0)
+
+    def _new_cap(self):
+        return CapModel(_unique("Model1", [m.name for m in self.setup.caps]))
+
+    def _new_probe(self):
+        vrm = self._vrm()
+        net = vrm.output.net if vrm is not None else self._first_net()
+        if net is None:
+            return None
+        gnd = self.ground() or next((n for n in self._nets if n != net), net)
+        ref = self._first_part(net)
+        gnd_parts = {r for r, _, _ in parts_on_net(self.snapshot, gnd)}
+        # The busiest part on the rail that also has ground pins: most likely the load.
+        for r, _, _ in parts_on_net(self.snapshot, net):
+            if r in gnd_parts:
+                ref = r
+                break
+        gref = ref if ref in gnd_parts else self._first_part(gnd)
+        return Probe(_unique(ref or "PROBE1", [p.name for p in self.setup.probes]),
+                     PinRef(ref, net), PinRef(gref, gnd))
+
+    def _models_from_values(self):
+        if self.snapshot is None:
+            return
+        assigned = {ref for m in self.setup.caps for ref in m.refs}
+        by_value = {}
+        for c in capacitor_candidates(self.snapshot, self._nets):
+            if c.ref not in assigned:
+                by_value.setdefault(c.value or "(no value)", []).append(c.ref)
+        if not by_value:
+            QMessageBox.information(self, "KiPI", "Every capacitor between ticked nets "
+                                                  "already has a model.")
+            return
+        taken = [m.name for m in self.setup.caps]
+        for value, refs in sorted(by_value.items()):
+            name = _unique(value, taken)
+            taken.append(name)
+            farads = parse_capacitance(value) or 0.0
+            self.setup.caps.append(CapModel(name, farads, 0.0, 0.0, refs))
+        self.cap_list.reload()
+        self._on_changed()
+
+    # ------------------------------------------------------------------ describe
+    @staticmethod
+    def _describe_link(k) -> str:
+        r = "short" if k.resistance <= 0 else f"{k.resistance * 1e3:g} mΩ"
+        esl = f", {k.esl_h * 1e9:g} nH" if k.esl_h else ""
+        return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r}{esl})"
+
+    @staticmethod
+    def _describe_cap(m: CapModel) -> str:
+        vals = (f"{_fmt_farads(m.capacitance_f)}, {m.esl_h * 1e9:g} nH, {m.esr_ohm * 1e3:g} mΩ"
+                if m.capacitance_f and m.esl_h and m.esr_ohm else "values needed")
+        return f"{m.name}: {vals} ({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})"
+
+    @staticmethod
+    def _describe_probe(p: Probe) -> str:
+        target = f", target {p.target_ohm * 1e3:g} mΩ" if p.target_ohm else ""
+        return f"{p.name}: {p.rail.net} / {p.ground.net} ({p.rail.label()}){target}"
+
+    # ------------------------------------------------------------------ results
+    def clear_results(self):
+        self.result = None
+        reset_sort(self.tbl_probes)
+        self.tbl_probes.setRowCount(0)
+        self.txt_notes.clear()
+        self.btn_export.setEnabled(False)
+
+    def show_error(self, message: str):
+        self.txt_notes.setText(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
+                               f'{html.escape(message).replace(chr(10), "<br>")}</span>')
+
+    def show_result(self, result):
+        self.result = result
+        t = self.tbl_probes
+        reset_sort(t)
+        t.setRowCount(len(result.probes))
+        for r, c in enumerate(result.probes):
+            zmax, fmax = c.worst(result.freqs)
+            ok = c.passed(result.freqs)
+            set_row(t, r, [c.name, (f"{np.min(c.mag) * 1e3:.4g}", float(np.min(c.mag))),
+                           (f"{zmax * 1e3:.4g}", zmax), (f"{fmax / 1e6:.4g}", fmax),
+                           "" if c.target_ohm is None else f"{c.target_ohm * 1e3:g}",
+                           {None: "", True: "PASS", False: "FAIL"}[ok]])
+            if ok is not None:
+                t.item(r, 5).setForeground(QColor("#60d060" if ok else "#ff6060"))
+        st = result.stats
+        notes = [f"<b>{html.escape(result.rail)}</b>: {html.escape(', '.join(result.rail_nets))} "
+                 f"against {html.escape(result.ground)}; {len(result.caps)} capacitor(s), "
+                 f"{len(result.links)} series link(s); plane capacitance "
+                 f"{result.plane_capacitance_f * 1e9:.3g} nF",
+                 f"{st.n_unknowns} unknowns, {len(result.field_freqs)} field solves "
+                 f"({st.method}), {len(result.freqs)} sweep points in {result.solve_s:.1f} s"]
+        if result.missing_caps:
+            notes.append(f"⚠ {len(result.missing_caps)} capacitor(s) on this rail have no "
+                         f"model and were left out: "
+                         f"{html.escape(', '.join(result.missing_caps[:12]))}"
+                         f"{'…' if len(result.missing_caps) > 12 else ''}")
+        notes += [f"⚠ {html.escape(w)}" for w in result.warnings]
+        self.txt_notes.setText("<br>".join(notes))
+        self.btn_export.setEnabled(True)
+        self.result_selected.emit(result)
+
+    def _export_csv(self):
+        if self.result is None:
+            return
+        from kipi.ac.report import write_csv
+        start = self.snapshot.project_dir if self.snapshot is not None else ""
+        stem = f"{self.result.rail}_impedance.csv"
+        path, _ = QFileDialog.getSaveFileName(self, "Export impedance", f"{start}/{stem}"
+                                              if start else stem, "CSV (*.csv)")
+        if path:
+            try:
+                write_csv(path, self.result)
+            except OSError as e:
+                QMessageBox.warning(self, "KiPI", f"Export failed: {e}")

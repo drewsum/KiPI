@@ -1,7 +1,11 @@
-"""Power-integrity setup panel: VRMs, loads and DC connections, all user-defined.
+"""Power-integrity setup panel: VRMs, loads and series links, all user-defined.
 
 Each tab is a list of items with an editor form. Edits go straight into the
 :class:`~kipi.dc.pi.model.PISetup`, which is validated after every change.
+
+The VRM and series link editors are shared with the AC panel (:mod:`kipi.ac.gui.panel`):
+both analyses use the same VRMs and links, and each editor grays out the fields that do
+not apply to its analysis (``mode``).
 """
 
 from __future__ import annotations
@@ -282,9 +286,24 @@ class _Editor(QWidget):
         self.changed.emit()
 
 
+def _gray(widgets, on: bool, why: str):
+    """Enable ``widgets`` or gray them out, saying why in their tooltip."""
+    for w in widgets:
+        w.setEnabled(on)
+        tip = w.property("kipi_tip")
+        if tip is None:
+            tip = w.toolTip()
+            w.setProperty("kipi_tip", tip)
+        w.setToolTip(tip if on else (f"{tip}\n\n{why}" if tip else why))
+
+
 class VrmEditor(_Editor):
-    def __init__(self, panel, parent=None):
+    """``mode`` "dc" or "ac": the analysis this editor is shown in. Every field is shown;
+    the ones the other analysis uses are grayed out."""
+
+    def __init__(self, panel, parent=None, mode: str = "dc"):
         super().__init__(panel, parent)
+        self.mode = mode
         f = self.form
         self.name = QLineEdit()
         self.kind = QComboBox()
@@ -314,6 +333,9 @@ class VrmEditor(_Editor):
         self.cmb_phase = QComboBox()
         self.cmb_phase.setToolTip("The phase whose pins are shown below")
         self._phase = 0
+        self.bandwidth = _spin(0, 1e6, 0, 2, " kHz", 1)
+        self.bandwidth.setSpecialValueText("none")
+        self.bandwidth.setToolTip("Control loop bandwidth of the converter (AC analysis)")
         f.addRow("Name", self.name)
         f.addRow("Type", self.kind)
         f.addRow("Set voltage", self.voltage)
@@ -323,6 +345,7 @@ class VrmEditor(_Editor):
         f.addRow("Dropout", self.dropout)
         f.addRow("Input min", self.vin_min)
         f.addRow("Input max", self.vin_max)
+        f.addRow("Control loop bandwidth", self.bandwidth)
         f.addRow("Phases", self.n_phases)
         f.addRow("Edit phase", self.cmb_phase)
         f.addRow("Output pins", self.output)
@@ -331,7 +354,7 @@ class VrmEditor(_Editor):
         f.addRow("Sense pins", self.sense)
         f.addRow("Ground sense pins", self.ground_sense)
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
-                    self.dropout, self.vin_min, self.vin_max)
+                    self.dropout, self.vin_min, self.vin_max, self.bandwidth)
         self.kind.currentIndexChanged.connect(self._kind_rows)
         self.n_phases.valueChanged.connect(self._phase_count_changed)
         self.cmb_phase.currentIndexChanged.connect(self._phase_selected)
@@ -346,6 +369,11 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.dropout, kind == "ldo")
         self.form.setRowVisible(self.vin_min, kind != "source")
         self.form.setRowVisible(self.vin_max, kind != "source")
+        dc = self.mode == "dc"
+        _gray((self.kind, self.eff, self.iq, self.i_limit, self.n_phases, self.input,
+               self.sense, self.ground_sense, self.dropout, self.vin_min,
+               self.vin_max), dc, "Used by the DC analysis only")
+        _gray((self.bandwidth,), not dc, "Used by the AC analysis only")
 
     def _guess_voltage(self, net):
         if not self._loading and net and self._phase == 0:
@@ -395,6 +423,7 @@ class VrmEditor(_Editor):
         self.eff.setValue(v.efficiency * 100)
         self.iq.setValue(v.quiescent_a * 1e3)
         self.i_limit.setValue(v.current_limit_a or 0.0)
+        self.bandwidth.setValue(v.bandwidth_khz or 0.0)
         self.n_phases.setValue(len(v.phases) + 1)
         self._phase = 0
         self._phase_rows()
@@ -416,6 +445,7 @@ class VrmEditor(_Editor):
         v.dropout_v = self.dropout.value()
         v.vin_min = _get_optional(self.vin_min)
         v.vin_max = _get_optional(self.vin_max)
+        v.bandwidth_khz = self.bandwidth.value() or None
         v.sense = self.sense.value()
         v.ground_sense = self.ground_sense.value()
         phases = v.all_phases()
@@ -579,30 +609,38 @@ class LoadEditor(_Editor):
 
 
 class LinkEditor(_Editor):
-    def __init__(self, panel, parent=None):
+    def __init__(self, panel, parent=None, mode: str = "dc"):
         super().__init__(panel, parent)
+        self.mode = mode
         f = self.form
         self.name = QLineEdit()
         self.a = self._picker()
         self.b = self._picker()
         self.r = _spin(0, 1e9, 0, 3, " mΩ", 1)
         self.r.setSpecialValueText("0 (short)")
+        self.r.setToolTip("DC resistance (DCR), used by both analyses")
+        self.esl = _spin(0, 1e6, 0, 3, " nH", 0.1)
+        self.esl.setSpecialValueText("none")
+        self.esl.setToolTip("Series inductance (ESL) of the part")
         f.addRow("Name", self.name)
         f.addRow("Side A pins", self.a)
         f.addRow("Side B pins", self.b)
-        f.addRow("Resistance", self.r)
-        hint = QLabel("A part that passes DC between two nets (sense resistor, ferrite, "
-                      "fuse, load switch…). The nets it joins are simulated together.")
+        f.addRow("Resistance (DCR)", self.r)
+        f.addRow("ESL", self.esl)
+        hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
+                      "load switch…). The nets it joins are simulated together.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
-        self._watch(self.name, self.r)
+        self._watch(self.name, self.r, self.esl)
+        _gray((self.esl,), mode == "ac", "Used by the AC analysis only")
 
     def _load(self, k: DcLink):
         self.name.setText(k.name)
         self.a.set_value(k.side_a)
         self.b.set_value(k.side_b)
         self.r.setValue(k.resistance * 1e3)
+        self.esl.setValue((k.esl_h or 0.0) * 1e9)
 
     def _save(self, k: DcLink):
         new_a = self.a.value() or k.side_a
@@ -615,6 +653,7 @@ class LinkEditor(_Editor):
         k.side_a = new_a
         k.side_b = self.b.value() or k.side_b
         k.resistance = self.r.value() / 1e3
+        k.esl_h = self.esl.value() * 1e-9 or None
         # Both sides just became the same resistor: take its resistance from its value.
         if (k.side_a.ref, k.side_b.ref) != parts and k.side_a.ref == k.side_b.ref:
             ohms = resistor_ohms(self.panel.snapshot, k.side_a.ref)
@@ -763,7 +802,7 @@ class PIPanel(QWidget):
                                   self._describe_link)
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.load_list, "Loads")
-        self.tabs.addTab(self.link_list, "DC connections")
+        self.tabs.addTab(self.link_list, "Series links")
         self.tabs.addTab(self._settings_tab(), "Mesh")
         self.tabs.addTab(self._copper_tab(), "Copper")
         self.tabs.addTab(self._thermal_tab(), "Thermal")
@@ -841,7 +880,7 @@ class PIPanel(QWidget):
         self.txt_notes = QTextBrowser(g_res)
         self.res_tabs.addTab(self.tbl_loads, "Loads")
         self.res_tabs.addTab(self.tbl_vrms, "VRMs")
-        self.res_tabs.addTab(self.tbl_links, "DC connections")
+        self.res_tabs.addTab(self.tbl_links, "Series links")
         self.res_tabs.addTab(self._vias_tab(), "Vias")
         self.tbl_losses = self._table(["Group"], sortable=True)
         self.res_tabs.addTab(self.tbl_losses, "Losses")
@@ -1168,6 +1207,15 @@ class PIPanel(QWidget):
         self._refresh_pickers()
         for il in (self.vrm_list, self.load_list, self.link_list):
             il.reload()
+
+    def reload_shared(self):
+        """Show edits made in the AC panel to the shared VRMs and series links."""
+        if self.snapshot is None:
+            return
+        self._refresh_pickers()
+        for il in (self.vrm_list, self.load_list, self.link_list):
+            il.reload()
+        self._on_changed()
 
     def _refresh_pickers(self):
         for il in (self.vrm_list, self.load_list, self.link_list):

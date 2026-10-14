@@ -15,6 +15,9 @@ The board is 60 x 40 mm, four layers (1 oz everywhere):
 * In2.Cu: VIN plane under the power stages.
 * B.Cu: VCORE pour, stitched to F.Cu next to each inductor and under the load.
 
+Decoupling for AC mode: eight 1 µF capacitors C1-C8 around the load and a 100 µF bulk
+capacitor C10-C13 after each inductor, each on F.Cu with a GND via next to its GND pad.
+
 The phases sit in a column at y = 5, 15, 25 and 35 mm. Each phase is a power stage
 Qn (VIN pad 1, GND pad 2) and an inductor Ln (output pad 2 on VCORE); the switch node
 lives inside the VRM model and is not drawn. The load U10 sits near the top at
@@ -37,6 +40,7 @@ from kipi.core.kicad_io.snapshot import save  # noqa: E402
 from kipi.core.model.board import (  # noqa: E402
     BoardSnapshot, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup, Via, Zone,
 )
+from kipi.ac.model import CapModel, Probe  # noqa: E402
 from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm, VrmPhase  # noqa: E402
 from kipi.dc.solver.setup import SolveSettings  # noqa: E402
 
@@ -136,6 +140,18 @@ def build() -> BoardSnapshot:
             net = "VCORE" if (i + j) % 2 == 0 else "GND"
             b.pad("U10", f"{'ABCDEF'[j]}{i + 1}", net, box(x - 0.3, y - 0.3, x + 0.3, y + 0.3))
             b.via(net, x, y, drill=0.2, dia=0.45)
+    # Decoupling: 1 µF around the load, 100 µF bulk after each inductor. Pad 1 on VCORE
+    # (F.Cu pour), pad 2 on GND with a via down to the In1 plane.
+    def cap(ref, value, x, y, size):
+        values[ref] = value
+        b.pad(ref, "1", "VCORE", box(x - size, y - size, x + size, y + size))
+        b.pad(ref, "2", "GND", box(x + 1.2 - size, y - size, x + 1.2 + size, y + size))
+        b.via("GND", x + 1.2 + size, y)
+    for k, (x, y) in enumerate([(39.5, 25.0), (39.5, 30.0), (39.5, 35.0), (44.0, 22.5),
+                                (48.0, 22.5), (51.0, 25.0), (51.0, 30.0), (51.0, 35.0)], 1):
+        cap(f"C{k}", "1u", x, y, 0.3)
+    for k, y in enumerate(PHASE_Y, start=10):
+        cap(f"C{k}", "100u", 23.0, y, 0.6)
     # VCORE stitching on the way to the load.
     for x in (26, 32, 38):
         for y in (8, 16, 24, 32):
@@ -160,7 +176,8 @@ def build() -> BoardSnapshot:
 
 def make_setup() -> PISetup:
     """J1 feeds 12 V to U1, a 4-phase switcher regulating 0.9 V at the load's balls
-    (remote sense C3, ground sense C4); U10 draws 40 A."""
+    (remote sense C3, ground sense C4); U10 draws 40 A. For AC mode, capacitor models for
+    the decoupling and a probe at the load's balls with a 2 mΩ target up to 20 MHz."""
     gnd = lambda ref, pins=None: PinRef(ref, "GND", pins or [])   # noqa: E731
     j1 = Vrm("J1", PinRef("J1", "VIN", ["1"]), 12.0, "source", ground=gnd("J1", ["2"]))
     phases = [VrmPhase(PinRef(f"L{k}", "VCORE", ["2"]), PinRef(f"Q{k}", "VIN", ["1"]),
@@ -168,9 +185,14 @@ def make_setup() -> PISetup:
     u1 = Vrm("U1", phases[0].output, 0.9, "smps", efficiency=0.9, quiescent_a=0.01,
              input=phases[0].input, ground=phases[0].ground,
              sense=PinRef("U10", "VCORE", ["C3"]), ground_sense=gnd("U10", ["C4"]),
-             phases=phases[1:])
+             phases=phases[1:], bandwidth_khz=100.0)
     load = Load("U10", PinRef("U10", "VCORE"), 40.0, ground=gnd("U10"), tolerance_pct=3.0)
-    return PISetup([j1, u1], [load], [], SolveSettings(), nets=["VIN", "VCORE", "GND"])
+    setup = PISetup([j1, u1], [load], [], SolveSettings(), nets=["VIN", "VCORE", "GND"])
+    setup.caps = [CapModel("1u", 1e-6, 0.3e-9, 10e-3, [f"C{k}" for k in range(1, 9)]),
+                  CapModel("100u", 100e-6, 0.8e-9, 3e-3, [f"C{k}" for k in range(10, 14)])]
+    setup.probes = [Probe("U10", PinRef("U10", "VCORE"), gnd("U10"), 2e-3, 20e6)]
+    setup.ac.rail, setup.ac.ground = "U1", "GND"
+    return setup
 
 
 if __name__ == "__main__":

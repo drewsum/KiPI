@@ -1,8 +1,8 @@
-"""The user's power-integrity setup: VRMs, loads and DC connections.
+"""The user's power-integrity setup: VRMs, loads and series links, plus the AC setup.
 
 Everything here is entered by the user; nothing is inferred from the board:
 
-* **DC connections** (series resistors, ferrites, fuses, load switches...) join nets.
+* **Series links** (series resistors, ferrites, fuses, load switches...) join nets.
   Nets joined this way form one *group* that is simulated as a single problem.
 * **VRMs** drive one group from their output pins. A group may have only one VRM.
   A VRM's input pins (LDO / switcher) make it a load on the group feeding it; that is
@@ -10,6 +10,9 @@ Everything here is entered by the user; nothing is inferred from the board:
   per phase; the phases share its output current equally.
 * **Loads** draw a current from their supply pins, optionally returning it through
   ground pins.
+* **AC setup** (:mod:`kipi.ac.model`): capacitor models, probe points and sweep settings.
+  VRMs and series links are shared with the AC analysis; some of their fields apply to
+  only one of the two (see each field).
 
 Pins are referenced by footprint reference + pad numbers on a net, so a setup
 survives re-extracting the board from KiCad (pad ids are not stable across sessions).
@@ -23,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from kipi.ac.model import ACSettings, CapModel, Probe
 from kipi.dc.solver.setup import SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
 
@@ -69,6 +73,8 @@ class Vrm:
     dropout_v: float = 0.0               # LDO: least input-output difference it regulates at
     vin_min: Optional[float] = None      # input range it regulates over (LDO / switcher)
     vin_max: Optional[float] = None
+    # AC only: control loop bandwidth, kHz (None = not given).
+    bandwidth_khz: Optional[float] = None
 
     def all_phases(self) -> List[VrmPhase]:
         return [VrmPhase(self.output, self.input, self.ground), *self.phases]
@@ -109,7 +115,8 @@ class DcLink:
     name: str
     side_a: PinRef
     side_b: PinRef
-    resistance: float                       # ohms; 0 = short
+    resistance: float                       # ohms; 0 = short (DC and AC)
+    esl_h: Optional[float] = None           # series inductance, henries (AC only)
 
 
 @dataclass
@@ -124,12 +131,17 @@ class PISetup:
     # Nets ticked in the Board panel (the nets in scope). None = never chosen, so the
     # GUI guesses the main power and ground planes; [] = the user unticked them all.
     nets: Optional[List[str]] = None
+    # AC analysis
+    caps: List[CapModel] = field(default_factory=list)
+    probes: List[Probe] = field(default_factory=list)
+    ac: ACSettings = field(default_factory=ACSettings)
 
     def pin_nets(self) -> set:
-        """Nets the VRMs, loads and DC connections have pins on."""
+        """Nets the VRMs, loads, series links and probes have pins on."""
         refs = [r for v in self.vrms for r in v.pin_refs()]
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
+        refs += [r for p in self.probes for r in (p.rail, p.ground) if r]
         return {r.net for r in refs}
 
     # ------------------------------------------------------------------ JSON
@@ -157,7 +169,8 @@ class PISetup:
                                        pin(ph.get("ground"))) for ph in v.get("phases", [])],
                       current_limit_a=v.get("current_limit_a"),
                       dropout_v=v.get("dropout_v", 0.0), vin_min=v.get("vin_min"),
-                      vin_max=v.get("vin_max"))
+                      vin_max=v.get("vin_max"),
+                      bandwidth_khz=v.get("bandwidth_khz"))
                   for v in d.get("vrms", [])],
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), tolerance_pct=l.get("tolerance_pct"),
@@ -165,7 +178,8 @@ class PISetup:
                                 for g in l.get("groups", [])])
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
-                          resistance=k["resistance"]) for k in d.get("links", [])],
+                          resistance=k["resistance"], esl_h=k.get("esl_h"))
+                   for k in d.get("links", [])],
             via_current_limit_a=d.get("via_current_limit_a"),
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
@@ -173,6 +187,13 @@ class PISetup:
             nets=list(d["nets"]) if d.get("nets") is not None else None,
             settings=SolveSettings(**{k: v for k, v in d.get("settings", {}).items()
                                       if k in known}),
+            caps=[CapModel(c["name"], c.get("capacitance_f", 0.0), c.get("esl_h", 0.0),
+                           c.get("esr_ohm", 0.0), list(c.get("refs", [])))
+                  for c in d.get("caps", [])],
+            probes=[Probe(p["name"], pin(p["rail"]), pin(p["ground"]), p.get("target_ohm"),
+                          p.get("target_hz")) for p in d.get("probes", [])],
+            ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
+                             if k in {f.name for f in dataclasses.fields(ACSettings)}}),
         )
 
     def save(self, path) -> Path:
@@ -192,11 +213,11 @@ def setup_path(board_file_or_name: str, project_dir: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Groups of nets joined by DC connections
+# Groups of nets joined by series links
 # ---------------------------------------------------------------------------
 
 def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
-    """Map every net mentioned in the setup to its group (nets joined by DC links)."""
+    """Map every net mentioned in the setup to its group (nets joined by series links)."""
     parent: Dict[str, str] = {}
 
     def find(n):

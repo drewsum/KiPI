@@ -39,3 +39,34 @@ def resistor_ohms(snap: Optional[BoardSnapshot], ref: str) -> Optional[float]:
         return None
     value = next((f.value for f in snap.footprints if f.reference == ref), "")
     return parse_resistance(value)
+
+
+# "100n", "4.7uF", "10 µF 6.3V X5R", "1u0", "4n7", "0.1", "22p". A bare number is farads
+# only if it has a unit; "0.1" alone is read as microfarads (the usual schematic shorthand).
+_CAP_PREFIX = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "µ": 1e-6, "μ": 1e-6, "m": 1e-3, "": None}
+_CAP_RE = re.compile(r"^\s*(\d*\.?\d+)?\s*([pnuµμm]?)(\d*)\s*(F|f)?(?=$|[\s,;/_(])")
+_CAPACITOR_REF_RE = re.compile(r"^C\d")
+
+
+def parse_capacitance(value: str) -> Optional[float]:
+    """Farads from a capacitor's value field, or None if it isn't a capacitance."""
+    m = _CAP_RE.match(value or "")
+    if not m:
+        return None
+    num, prefix, frac, unit = m.groups()
+    if frac:                                  # "4n7", "1u0": the letter is the decimal point
+        if not prefix or (num is not None and "." in num):
+            return None
+        base = float(f"{num or '0'}.{frac}")
+    elif num is not None:
+        base = float(num)
+    else:
+        return None
+    scale = _CAP_PREFIX[prefix]
+    if scale is None:
+        scale = 1.0 if unit else 1e-6
+    return base * scale
+
+
+def is_capacitor_ref(ref: str) -> bool:
+    return bool(_CAPACITOR_REF_RE.match(ref or ""))

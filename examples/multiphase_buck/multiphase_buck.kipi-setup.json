@@ -27,7 +27,8 @@
       "current_limit_a": null,
       "dropout_v": 0.0,
       "vin_min": null,
-      "vin_max": null
+      "vin_max": null,
+      "bandwidth_khz": null
     },
     {
       "name": "U1",
@@ -144,7 +145,8 @@
       "current_limit_a": null,
       "dropout_v": 0.0,
       "vin_min": null,
-      "vin_max": null
+      "vin_max": null,
+      "bandwidth_khz": 100.0
     }
   ],
   "loads": [
@@ -191,9 +193,69 @@
   },
   "html_report": false,
   "nets": [
-    "VIN",
     "VCORE",
+    "VIN",
     "GND"
   ],
+  "caps": [
+    {
+      "name": "1u",
+      "capacitance_f": 1e-06,
+      "esl_h": 3e-10,
+      "esr_ohm": 0.01,
+      "refs": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7",
+        "C8"
+      ]
+    },
+    {
+      "name": "100u",
+      "capacitance_f": 0.0001,
+      "esl_h": 8e-10,
+      "esr_ohm": 0.003,
+      "refs": [
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "name": "U10",
+      "rail": {
+        "ref": "U10",
+        "net": "VCORE",
+        "pins": []
+      },
+      "ground": {
+        "ref": "U10",
+        "net": "GND",
+        "pins": []
+      },
+      "target_ohm": 0.002,
+      "target_hz": 20000000.0
+    }
+  ],
+  "ac": {
+    "f_start_hz": 1000.0,
+    "f_stop_hz": 300000000.0,
+    "points_per_decade": 250,
+    "field_points_per_decade": 20,
+    "max_edge_mm": 1.0,
+    "grading": 0.3,
+    "min_edge_mm": 0.03,
+    "loss_tangent": 0.02,
+    "default_er": 4.3,
+    "rail": "U1",
+    "ground": "GND"
+  },
   "format_version": 1
 }

@@ -26,6 +26,9 @@ log = logging.getLogger("kipi")
 # A factorization is checked against one right-hand side; PARDISO results worse than this
 # relative residual are discarded in favor of SuperLU.
 CHECK_TOL = 1e-8
+# The same check for complex (AC) systems. PARDISO solves them through an indefinite real
+# system with pivot perturbation, which lands around 1e-8; impedances need far less.
+CHECK_TOL_COMPLEX = 1e-6
 # Set KIPI_DIRECT_SOLVER=superlu to keep the multithreaded backend out (e.g. to compare).
 _ENV = "KIPI_DIRECT_SOLVER"
 
@@ -125,3 +128,78 @@ def factorize(A: sp.spmatrix, warn: Optional[Callable[[str], None]] = None) -> D
         if warn is not None:
             warn(msg)
     return _superlu(A)
+
+
+# ---------------------------------------------------------------------------
+# Complex symmetric systems (AC analysis)
+# ---------------------------------------------------------------------------
+
+class ComplexFactor:
+    """A factorization of a complex symmetric A; call it with (n,) or (n, k) right-hand
+    sides to get the solutions."""
+
+    def __init__(self, solve: Callable[[np.ndarray], np.ndarray], name: str):
+        self._solve = solve
+        self.name = name
+
+    def __call__(self, b: np.ndarray) -> np.ndarray:
+        return self._solve(np.asarray(b, dtype=complex))
+
+
+def _superlu_complex(A: sp.spmatrix) -> ComplexFactor:
+    from scipy.sparse.linalg import splu
+    lu = splu(sp.csc_matrix(A, dtype=complex), permc_spec="COLAMD")
+    return ComplexFactor(lu.solve, "superlu")
+
+
+def _pardiso_complex(pypardiso, A: sp.spmatrix) -> ComplexFactor:
+    """PARDISO through pypardiso, which takes real matrices only: solve the equivalent
+    real system [[Ar, Ai], [Ai, -Ar]] [xr; -xi] = [br; bi], which is symmetric (indefinite)
+    when A is complex symmetric."""
+    A = sp.csr_matrix(A)
+    n = A.shape[0]
+    Ar, Ai = A.real, A.imag
+    big = sp.bmat([[Ar, Ai], [Ai, -Ar]], format="csr")
+    solver = pypardiso.PyPardisoSolver(mtype=-2)     # real symmetric indefinite
+    # Symmetric scaling and weighted matching (iparm 11, 13), which MKL recommends for
+    # highly indefinite systems, plus more iterative refinement (iparm 8): the AC system
+    # is badly scaled at low frequency, where the rail is tied to ground only by the
+    # plane capacitance.
+    solver.set_iparm(11, 1)
+    solver.set_iparm(13, 1)
+    solver.set_iparm(8, 20)
+    upper = sp.triu(big, format="csr")
+    upper.sort_indices()
+    solver.factorize(upper)
+
+    def solve(b):
+        rhs = np.concatenate([b.real, b.imag], axis=0)
+        x = np.asarray(solver.solve(upper, np.ascontiguousarray(rhs)))
+        x = x.reshape(rhs.shape)
+        return x[:n] - 1j * x[n:]
+    factor = ComplexFactor(solve, "pardiso")
+    weakref.finalize(factor, _free_pardiso, solver)
+    return factor
+
+
+def factorize_complex(A: sp.spmatrix,
+                      warn: Optional[Callable[[str], None]] = None) -> ComplexFactor:
+    """Factorize a complex symmetric A with the best backend that works here (PARDISO on
+    the real-equivalent system, checked; otherwise SuperLU on A itself)."""
+    pypardiso = _pardiso_module()
+    if pypardiso is not None and A.shape[0] > 0:
+        try:
+            factor = _pardiso_complex(pypardiso, A)
+            b = np.ones(A.shape[0], dtype=complex)
+            x = factor(b)
+            rel = float(np.linalg.norm(b - A @ x) / np.linalg.norm(b))
+            if np.isfinite(rel) and rel <= CHECK_TOL_COMPLEX:
+                return factor
+            reason = f"relative residual {rel:.1e}"
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+        msg = f"PARDISO factorization failed ({reason}); using SuperLU for this system"
+        log.warning(msg)
+        if warn is not None:
+            warn(msg)
+    return _superlu_complex(A)
