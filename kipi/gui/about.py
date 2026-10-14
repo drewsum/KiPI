@@ -9,8 +9,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QGuiApplication, QPixmap
+from qtpy.QtCore import QSize, Qt
+from qtpy.QtGui import QGuiApplication, QMovie, QPixmap
 from qtpy.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
@@ -32,9 +32,19 @@ _DEPS = ["kicad-python", "PySide6-Essentials", "pyvista", "pyvistaqt", "numpy", 
          "shapely", "triangle", "pyamg", "pypardiso", "mkl", "plotly", "matplotlib"]
 
 
+_RESOURCES = Path(__file__).resolve().parents[2] / "resources"
+ICON_SIZE = 96
+
+
 def icon_path() -> Optional[Path]:
     """The plugin icon, which lives beside the package in the plugin folder."""
-    p = Path(__file__).resolve().parents[2] / "resources" / "kipi_256.png"
+    p = _RESOURCES / "kipi_256.png"
+    return p if p.is_file() else None
+
+
+def animated_icon_path() -> Optional[Path]:
+    """The icon with its planes flashing through the result maps (also the README logo)."""
+    p = _RESOURCES / "kipi.gif"
     return p if p.is_file() else None
 
 
@@ -66,10 +76,11 @@ class AboutDialog(QDialog):
         self.setWindowTitle(f"About {NAME}")
 
         icon = QLabel(self)
+        self.movie = self._animate(icon)
         path = icon_path()
-        if path is not None:
+        if self.movie is None and path is not None:
             icon.setPixmap(QPixmap(str(path)).scaled(
-                96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                ICON_SIZE, ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         icon.setAlignment(Qt.AlignTop)
 
         dep_rows = "".join(f"<tr><td>{html.escape(k)}</td><td>&nbsp;&nbsp;{html.escape(v)}</td></tr>"
@@ -105,3 +116,17 @@ class AboutDialog(QDialog):
         lay.addLayout(top)
         lay.addWidget(buttons)
         self.setMinimumWidth(520)
+
+    def _animate(self, label: QLabel) -> Optional[QMovie]:
+        """Play the animated icon, or None to fall back to the still one: the GIF can be
+        missing, and some Qt builds ship without the GIF image plugin."""
+        path = animated_icon_path()
+        if path is None:
+            return None
+        movie = QMovie(str(path), parent=self)
+        if not movie.isValid():
+            return None
+        movie.setScaledSize(QSize(ICON_SIZE, ICON_SIZE))
+        label.setMovie(movie)
+        movie.start()
+        return movie
