@@ -34,10 +34,6 @@ from kipi.dc.pi.model import PinRef, PISetup
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
 
 TITLE = "AC setup"
-CALCULATOR_NOTE = ("The target impedance / frequency calculator is coming in a later "
-                   "version of KiPI. For now, a common estimate is Z_target = V_rail x "
-                   "allowed ripple / transient current, flat up to the frequency the "
-                   "device's own package and die capacitance take over.")
 
 
 # ---------------------------------------------------------------------------
@@ -209,8 +205,6 @@ def _natural(ref: str):
 # ---------------------------------------------------------------------------
 
 class ProbeEditor(_Editor):
-    calculator_requested = Signal()
-
     def __init__(self, panel, parent=None):
         super().__init__(panel, parent)
         f = self.form
@@ -235,8 +229,9 @@ class ProbeEditor(_Editor):
         f.addRow("Target |Z|", self.target)
         f.addRow("Target frequency", self.target_f)
         f.addRow(self.btn_calc)
-        hint = QLabel("The impedance is looked into between the supply pins and the ground "
-                      "pins of the device (each set shorted together, as the die does).")
+        hint = QLabel("The PDN impedance solution is the impedance from the probe point "
+                      "looking out into the power distribution network through all loop "
+                      "paths (power planes, vias, capacitors, series links).")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
@@ -244,8 +239,15 @@ class ProbeEditor(_Editor):
         self.rail.cmb_part.currentIndexChanged.connect(self._follow_part)
 
     def _calculator(self):
-        # TODO(AC milestone 5): the Target Impedance/Frequency Calculator window.
-        QMessageBox.information(self, "KiPI", CALCULATOR_NOTE)
+        from kipi.ac.gui.target_calc import TargetCalculator
+        dlg = TargetCalculator(self, self.name.text().strip())
+        if dlg.exec() and dlg.target() is not None:
+            self.apply_target(dlg.target())
+
+    def apply_target(self, t):
+        """Fill the target fields from a calculator result (which saves them)."""
+        self.target.setValue(t.z_ohm * 1e3)
+        self.target_f.setValue(t.f_hz / 1e3)
 
     def _follow_part(self, _i):
         """Picking the supply part picks the same part's ground pins, if it has any."""

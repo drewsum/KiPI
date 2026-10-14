@@ -241,8 +241,8 @@
         "net": "GND",
         "pins": []
       },
-      "target_ohm": 0.002,
-      "target_hz": 20000000.0
+      "target_ohm": 0.015,
+      "target_hz": 318300.0
     }
   ],
   "ac": {
