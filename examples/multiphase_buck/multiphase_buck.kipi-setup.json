@@ -189,7 +189,9 @@
     "iterations": 1,
     "airflow_m_s": 10.0,
     "grid_mm": 0.0,
-    "laminate_k_w_mk": 0.0
+    "laminate_k_w_mk": 0.0,
+    "max_temp_c": null,
+    "max_rise_c": null
   },
   "html_report": false,
   "nets": [

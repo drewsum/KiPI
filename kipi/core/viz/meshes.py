@@ -202,6 +202,26 @@ def pad_tops(snap: BoardSnapshot, nets: List[str]) -> Dict[int, pv.PolyData]:
     return out
 
 
+BODY_GAP_FRACTION = 0.01    # body inset from the outer copper, as a share of its span
+
+
+def _body_span(stackup) -> Tuple[float, float]:
+    """``(z_bottom, thickness)`` of the laminate body.
+
+    The body sits inside the outer copper with a small gap: a face coplanar with copper
+    z-fights with it (speckle that shifts as the view rotates). Falls back to the full
+    board thickness when the stackup leaves no room between the outer copper.
+    """
+    t = stackup.board_thickness_mm
+    tol = 1e-6
+    lo = max([c.z_top_mm for c in stackup.copper if c.z_bottom_mm <= tol], default=0.0)
+    hi = min([c.z_bottom_mm for c in stackup.copper if c.z_top_mm >= t - tol], default=t)
+    if hi - lo <= 0:
+        return 0.0, t
+    gap = BODY_GAP_FRACTION * (hi - lo)
+    return lo + gap, hi - lo - 2 * gap
+
+
 def board_body(snap: BoardSnapshot) -> Tuple[Optional[pv.PolyData], Optional[pv.PolyData]]:
     """Translucent laminate body and its outline edges."""
     if not snap.outline:
@@ -209,7 +229,7 @@ def board_body(snap: BoardSnapshot) -> Tuple[Optional[pv.PolyData], Optional[pv.
     geoms = [poly_to_shapely(p) for p in snap.outline]
     geom = shapely.union_all([g for g in geoms if g is not None])
     t = snap.stackup.board_thickness_mm
-    body = slab(geom, 0.0, t)
+    body = slab(geom, *_body_span(snap.stackup))
     lines = []
     for poly in iter_polygons(geom):
         for ring in [poly.exterior, *poly.interiors]:
