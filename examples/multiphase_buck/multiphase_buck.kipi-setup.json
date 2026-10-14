@@ -28,7 +28,7 @@
       "dropout_v": 0.0,
       "vin_min": null,
       "vin_max": null,
-      "bandwidth_khz": null
+      "bandwidth_khz": 100.0
     },
     {
       "name": "U1",

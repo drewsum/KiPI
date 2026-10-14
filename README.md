@@ -10,7 +10,7 @@
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#requirements)
 [![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab.svg?logo=python&logoColor=white)](#requirements)
 
-KiPI is a HyperLynx-PI-style DC drop analyzer that runs as a KiCad 9 and 10 IPC plugin:
+KiPI is a power integrity analyzer for DC voltage drop that runs as a KiCad 9 and 10 IPC plugin:
 
 1. Define voltage regulators (VRMs), loads (current into pins) and DC series elements (beads, resistors, load switches).
 2. Simulate voltage drop net by net, across every copper layer, with live solver progress.
@@ -19,7 +19,7 @@ KiPI is a HyperLynx-PI-style DC drop analyzer that runs as a KiCad 9 and 10 IPC 
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
-**Status: 0.7.0 (alpha)** ([changelog](docs/CHANGELOG.md)). This entire project was vibe coded with Claude Opus 5.5. I make no assurances that any of this works or is accurate; however, for my use cases (decently complex PCB layouts, windows 11 machine, KiCad 10.0.7), it seems stable. Results have been found to be in line with what Hyperlynx PI produces by myself and other users. The solver itself will yield close results to professional tools, it's the modelling of vias, power supplies, and the bridging of layers that's the difficult part. Please leave any comments, concerns or bugs as a github issue. I am used to the Hyperlynx PI workflow and wanted to create a free open source alternative for KiCad, which I think this project accomplishes. I'm open to suggestons for improvements.
+**Status: 0.7.0 (alpha)** ([changelog](docs/CHANGELOG.md)). This entire project was vibe coded with Claude Opus 5.5. I make no assurances that any of this works or is accurate; however, for my use cases (decently complex PCB layouts, windows 11 machine, KiCad 10.0.7), it seems stable. The solver is a 2.5D finite element model of the copper, checked against closed-form results (the resistance of a straight trace, current spreading radially into a via). Solving the field is the well-understood part. The modelling of vias, power supplies and the bridging of layers is where the approximations are. Please leave any comments, concerns or bugs as a github issue. I wanted a free, open source power integrity tool for KiCad, which I think this project accomplishes. I'm open to suggestions for improvements.
 
 ## Install
 

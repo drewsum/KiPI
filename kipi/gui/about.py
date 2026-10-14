@@ -18,9 +18,9 @@ from qtpy.QtWidgets import (
 from kipi import __version__
 
 NAME = "KiPI"
-DESCRIPTION = ("DC power integrity analysis for KiCad: IR drop, current density, "
-               "via currents and electro-thermal co-simulation in 3D."
-               "Inspired by not wanting to pay Siemens EDA even more money")
+DESCRIPTION = ("Power integrity analysis for KiCad: DC IR drop, current density, "
+               "via currents and electro-thermal co-simulation in 3D, and AC PDN impedance "
+               "over frequency.")
 AUTHOR = "Drew Maatman"
 EMAIL = "drewmaatman@gmail.com"
 REPO = "https://github.com/drewsum/KiPI"

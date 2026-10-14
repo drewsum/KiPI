@@ -29,7 +29,8 @@ The same approach as atx/padne (GPL-3.0). Its FEM core is about 40 lines on SciP
 * **Pads.** Each pad is an equipotential terminal region (star coupling, as in padne).
 * **Sources.** Eliminate Dirichlet nodes properly to keep the system SPD. Loads become current
   injections. DC series parts (R, ferrite, fuse) become lumped conductances. Nets joined by
-  series parts are solved as one "extended net", as HyperLynx does.
+  series parts are solved as one "extended net", so the drop through the part and the copper
+  on both sides of it come out of one solve.
 * **Solver.** `pyamg` smoothed-aggregation preconditioned CG with a per-iteration callback
   that reports the residual live. SuperLU (or optional pypardiso) is the fallback.
 * **Post-processing.** Per triangle, J = −σ∇V and P = |J|²/σ · t · A. Via current = g·ΔV. Also
@@ -39,8 +40,8 @@ The same approach as atx/padne (GPL-3.0). Its FEM core is about 40 lines on SciP
 ## KiCad 10 IPC API facts (verified against KiCad 10.0.7 + kicad-python 0.8.0)
 
 * Plugins live in `${KICAD_DOCUMENTS_HOME}/10.0/plugins/<dir>/plugin.json`.
-  **On this machine Documents is redirected to OneDrive**, so the folder is
-  `C:\Users\drewm\OneDrive\Documents\KiCad\10.0\plugins`.
+  If the Documents folder is redirected to a synced folder, the plugins folder moves with
+  it, so go by `KICAD_DOCUMENTS_HOME` rather than the default path.
 * `runtime.type = python`. KiCad creates `%LOCALAPPDATA%\KiCad\10.0\python-environments\<identifier>`
   with `--system-site-packages` on its bundled Python 3.11 and pip-installs `requirements.txt`.
   numpy, shapely and wx already exist in the base interpreter.
@@ -57,7 +58,7 @@ The same approach as atx/padne (GPL-3.0). Its FEM core is about 40 lines on SciP
   leaves the slits as `LineString`s, which `geometry/copper.py` drops. The solver mesher must
   run on the repaired polygons, not the raw rings.
 * Footprints can contain unnumbered, net-less pads with no copper (paste or mask apertures,
-  e.g. 12 on an INA231 WCSP). KiCad reports no copper shape for them, which is correct.
+  e.g. 12 on a wafer-level chip-scale package). KiCad reports no copper shape for them, which is correct.
 * `get_stackup()` gives copper and dielectric thicknesses. Dielectric layers can have sub-layers.
 * Requests go through KiCad's UI thread, so expect `AS_BUSY` and retry. Use one connection per process.
 * From 10.0.1, plugin stdout/stderr shows in the KiCad status bar.
