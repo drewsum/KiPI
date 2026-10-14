@@ -37,6 +37,7 @@ class ImpedancePlot(QWidget):
         self.ax = self.figure.add_subplot(111)
         self.lbl = QLabel("Solve a rail in AC mode to see its impedance here.", self)
         self.lbl.setStyleSheet("color: #999;")
+        self.lbl.setWordWrap(True)          # else its text sets the window's minimum width
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         top = QHBoxLayout()

@@ -22,9 +22,9 @@ from qtpy.QtCore import QSettings, Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QSpinBox, QSplitter,
-    QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QToolButton, QVBoxLayout,
-    QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea,
+    QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from kipi.core.model.board import BoardSnapshot
@@ -688,7 +688,13 @@ class ItemList(QWidget):
         tl.addWidget(self.lst)
         tl.addLayout(row)
         split.addWidget(top)
-        split.addWidget(editor)
+        # The editor scrolls rather than setting the window's minimum height: a VRM's form
+        # alone is taller than a 1080p screen leaves once the rest of the window is laid out.
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(editor)
+        split.addWidget(scroll)
         split.setSizes([120, 280])
         lay.addWidget(split)
         editor.changed.connect(self._edited)

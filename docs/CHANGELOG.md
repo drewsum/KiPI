@@ -33,6 +33,11 @@ milestones rather than versions that were ever set.
 - Saving results after an electro-thermal solve failed ("Can't pickle local object").
   Saved problems now leave out the live temperature field, keeping its effect on
   resistivity and the temperature map itself.
+- **The window fits a 1080p screen again.** Its minimum size had grown to 1764 × 1106 px,
+  so maximized on a 1080p screen its bottom was cut off, and dragging the log taller pushed
+  more of it off the screen. The VRM, load and other setup editors now scroll instead of
+  setting the window's height, and the impedance plot's hint text wraps. The minimum is
+  now about 1280 × 790.
 
 ### Development
 - CI also runs the tests on Windows with PARDISO installed.
@@ -42,6 +47,47 @@ milestones rather than versions that were ever set.
   views, setup panel) moved to `kipi.dc`; `kipi.ac` holds the AC placeholder. The
   direct / AMG-CG solver moved out of the DC FEM into `kipi.core.solver.spd`. Results
   files saved by earlier versions still open (`kipi.compat` maps the old module paths).
+
+## Merged after 0.6.5 (2026-10-14): Regulation checks and copper shapes
+
+Merged to main as PR #39 (contributed by CJ Clark) without a version number of its own;
+it ships with 0.7.0.
+
+### Added
+- **LDO dropout and VRM input range.** Beside the output current limit, a VRM takes a
+  dropout (LDOs) and an optional minimum and maximum input voltage. A VRM that cannot hold
+  its set point marks every load it feeds, directly or downstream, **VRM OUT OF
+  REGULATION** (FAIL). A multi-phase VRM is judged on its worst phase.
+- **Copper graphic shapes are copper.** Lines, arcs, circles, rectangles, polygons and
+  Béziers on a copper layer that carry a net, on the board or inside a footprint, are
+  solved as filled copper. Shapes with no net are left out, and a warning counts them.
+
+### Changed
+- **LDOs are checked against their input.** An LDO whose input sits below its output plus
+  its dropout now fails its loads. With the default dropout of 0 V, a part modelled as an
+  LDO that passes a lower voltage through (a load switch, say) now fails where it passed
+  before. Model such parts as a DC connection instead.
+- **One verdict for each load** feeds the results table, the CSV export and the HTML
+  report, so the three always agree, including the new VRM OUT OF REGULATION and NOT
+  CONVERGED.
+- **Stricter setup checks.** Negative quiescent current, dropout or DC connection
+  resistance, and an input range whose minimum is above its maximum, are setup errors.
+
+### Fixed
+- **Loads on a rail that did not converge** could read PASS. They now read **NOT
+  CONVERGED** and are not judged.
+- **The board's stackup was ignored on KiCad 10.0.1**, which leaves every layer's
+  enabled flag unset. A default 1.6 mm stackup with 17.5 µm inner copper replaced the
+  board's own. Disabled layers are now skipped only when KiCad reports the flag.
+- **Electro-thermal iteration 1** solved the copper at the 20 °C reference rather than at
+  ambient.
+- The log no longer reports the ground sense as converged when it was not.
+
+### Development
+- `solve_tree` is split into `_TreeSolver`, one method per step. The result classes moved
+  to `pi/results.py` and can still be imported from `pi/tree.py`, so saved results open.
+- The kicad-python geometry converters moved to `kicad_io/convert.py`, shared by the board
+  reader and the new copper-shape reader (`kicad_io/copper_shapes.py`).
 
 ## 0.6.5 (2026-10-13): Drop and boost, limits and fixes
 
