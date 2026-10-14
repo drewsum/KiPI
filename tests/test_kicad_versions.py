@@ -16,11 +16,11 @@ from kipy.proto.common.envelope_pb2 import ApiStatusCode  # noqa: E402
 from shapely.geometry import box  # noqa: E402
 
 from kicad_fake import VERSIONS, FakeKiCad, parse  # noqa: E402
-from kipi.geometry.copper import drill_holes  # noqa: E402
-from kipi.kicad_io.extract import (  # noqa: E402
+from kipi.core.geometry.copper import drill_holes  # noqa: E402
+from kipi.core.kicad_io.extract import (  # noqa: E402
     _PAD_TYPES, _VIA_TYPES, extract_board, refill_and_wait,
 )
-from kipi.kicad_io.snapshot import from_dict, to_dict  # noqa: E402
+from kipi.core.kicad_io.snapshot import from_dict, to_dict  # noqa: E402
 
 COPPER = [L.BL_F_Cu, L.BL_In1_Cu, L.BL_In2_Cu, L.BL_B_Cu]
 
@@ -148,7 +148,7 @@ def test_kicad_enum_values_match():
 def test_old_kicad_is_named_in_the_log(version, warned):
     from types import SimpleNamespace as NS
 
-    from kipi.kicad_io.extract import _warn_old_kicad
+    from kipi.core.kicad_io.extract import _warn_old_kicad
 
     said = []
     major, minor, patch = parse(version)

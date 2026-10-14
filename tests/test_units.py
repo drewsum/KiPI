@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("qtpy")
 
-from kipi.gui.pi_panel import format_thickness  # noqa: E402
+from kipi.dc.gui.pi_panel import format_thickness  # noqa: E402
 
 
 @pytest.mark.parametrize("mm, unit, text", [

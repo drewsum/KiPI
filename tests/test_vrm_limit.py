@@ -4,8 +4,8 @@ import pickle
 
 import pytest
 
-from kipi.pi.model import PISetup, validate
-from kipi.pi.tree import VrmReport, solve_tree
+from kipi.dc.pi.model import PISetup, validate
+from kipi.dc.pi.tree import VrmReport, solve_tree
 from test_multiphase import board, by_name, two_phase
 
 
@@ -47,7 +47,7 @@ def test_results_saved_before_the_limit_still_load():
 
 def test_csv_and_html_show_the_verdict(tmp_path):
     import csv
-    from kipi.pi.report import export_csv
+    from kipi.dc.pi.report import export_csv
     snap, s = board(), two_phase()
     s.vrms[1].current_limit_a = 1.5
     tree = solve_tree(snap, s)
@@ -59,8 +59,8 @@ def test_csv_and_html_show_the_verdict(tmp_path):
 
     pytest.importorskip("plotly")
     pytest.importorskip("matplotlib")
-    from kipi.report.html import write_report
-    from kipi.viz.results import build_result_scene
+    from kipi.dc.report.html import write_report
+    from kipi.dc.viz.results import build_result_scene
     scenes = {n: build_result_scene(snap, g.result) for n, g in tree.groups.items()}
     text = write_report(tmp_path / "r.html", tree, scenes, snap, s).read_text(encoding="utf-8")
     assert "I limit (A)" in text and '<span class="fail">FAIL</span>' in text

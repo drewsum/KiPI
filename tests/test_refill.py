@@ -6,7 +6,7 @@ pytest.importorskip("kipy")
 from kipy.errors import ApiError  # noqa: E402
 from kipy.proto.common.envelope_pb2 import ApiStatusCode  # noqa: E402
 
-from kipi.kicad_io.extract import ExtractionError, refill_and_wait  # noqa: E402
+from kipi.core.kicad_io.extract import ExtractionError, refill_and_wait  # noqa: E402
 
 
 class FakeBoard:
@@ -53,7 +53,7 @@ class FakeClock:
 
 
 def test_quick_fill_returns_after_grace(monkeypatch):
-    monkeypatch.setattr("kipi.kicad_io.extract.time", FakeClock())
+    monkeypatch.setattr("kipi.core.kicad_io.extract.time", FakeClock())
     b = FakeBoard([])
     refill_and_wait(b, poll_s=1, grace_s=5)
     assert b.polls == 5

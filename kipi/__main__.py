@@ -25,9 +25,9 @@ def main(argv=None) -> int:
     setup_logging(logging.DEBUG if args.debug else logging.INFO)
 
     if args.dump:
-        from kipi.kicad_io.extract import connect, extract_board
-        from kipi.kicad_io.snapshot import save
-        from kipi.progress import ProgressReporter
+        from kipi.core.kicad_io.extract import connect, extract_board
+        from kipi.core.kicad_io.snapshot import save
+        from kipi.core.progress import ProgressReporter
         prog = ProgressReporter()
         kicad, board = connect(progress=prog)
         snap = extract_board(board, refill_zones=args.refill, progress=prog)
@@ -38,15 +38,15 @@ def main(argv=None) -> int:
 
     if args.snapshot:
         from kipi.gui.app import run
-        from kipi.kicad_io.snapshot import load
+        from kipi.core.kicad_io.snapshot import load
         return run(snapshot=load(args.snapshot))
     return _run_live()
 
 
 def _run_live() -> int:
     from kipi.gui.app import run
-    from kipi.kicad_io.extract import ExtractionError, connect
-    from kipi.progress import ProgressReporter
+    from kipi.core.kicad_io.extract import ExtractionError, connect
+    from kipi.core.progress import ProgressReporter
     try:
         kicad, board = connect(progress=ProgressReporter())
     except ExtractionError as e:

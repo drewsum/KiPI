@@ -14,25 +14,28 @@ import numpy as np
 from qtpy.QtCore import Qt, QTimer
 from qtpy.QtGui import QAction, QColor, QIcon, QPixmap, QTextCursor
 from qtpy.QtWidgets import (
-    QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QSlider, QSplitter, QTextBrowser, QToolBar,
-    QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QSizePolicy, QSlider,
+    QSplitter, QStackedWidget, QTextBrowser, QToolBar, QVBoxLayout, QWidget,
 )
 
 from kipi import __version__
+from kipi.ac.gui.panel import ACPanel
+from kipi.core.model.board import BoardSnapshot
+from kipi.core.model.nets import classify_nets, sorted_nets
+from kipi.dc.gui.pi_panel import PIPanel
+from kipi.dc.pi.tree import fmt_drop
 from kipi.gui.viewer3d import Viewer3D
-from kipi.gui.pi_panel import PIPanel
 from kipi.gui.worker import QtProgress, Task
-from kipi.model.board import BoardSnapshot
-from kipi.model.nets import classify_nets, sorted_nets
-from kipi.pi.tree import fmt_drop
 
 log = logging.getLogger("kipi")
 
 _KIND_TAG = {"power": "PWR", "ground": "GND", "signal": ""}
 _KIND_COLOR = {"power": "#e07050", "ground": "#70a0e0", "signal": "#a0a0a0"}
 MAX_AUTO_NETS = 4
+# Analysis modes, chosen in the toolbar: (key, label, setup dock title).
+MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"))
 VIA_PICK_PX = 10      # a click this close to a via barrel on screen selects it
 
 
@@ -63,6 +66,7 @@ class MainWindow(QMainWindow):
         self._checked_cache: Optional[frozenset] = None  # None = recompute from the list
         self._last_fraction_t = 0.0
         self._picked = None   # ("pad"|"via", id)
+        self.mode = "dc"
 
         self.viewer = Viewer3D(self)
         self.setCentralWidget(self.viewer)
@@ -107,9 +111,56 @@ class MainWindow(QMainWindow):
         act("Iso", self.viewer.view_iso)
         act("Screenshot…", self.save_screenshot)
         tb.addSeparator()
-        act("Open results…", self.open_results, "Reopen a saved power-tree solve")
+        self.act_open_results = act("Open results…", self.open_results,
+                                    "Reopen a saved power-tree solve")
         tb.addSeparator()
         self.act_about = act("About", self.show_about, "Version, author and project links")
+
+        # Analysis mode, at the far right.
+        spacer = QWidget(tb)
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        tb.addWidget(QLabel("Mode: ", tb))
+        self.mode_buttons = QButtonGroup(self)
+        tips = {"dc": "DC power integrity: IR drop, current density, electro-thermal",
+                "ac": "AC power integrity: PDN impedance over frequency (not available yet)"}
+        for key, label, _ in MODES:
+            rb = QRadioButton(label, tb)
+            rb.setObjectName(f"mode_{key}")
+            rb.setToolTip(tips[key])
+            rb.setChecked(key == self.mode)
+            rb.toggled.connect(lambda on, k=key: on and self.set_mode(k))
+            self.mode_buttons.addButton(rb)
+            tb.addWidget(rb)
+
+    def set_mode(self, mode: str):
+        """Switch the analysis mode: the setup dock shows that mode's panel. The DC setup
+        and results are kept while in AC mode, and come back with DC."""
+        if mode == self.mode:
+            return
+        if self._busy():
+            QMessageBox.information(self, "KiPI", "Wait for the current operation to finish "
+                                                  "before changing the analysis mode.")
+            self._check_mode_button(self.mode)
+            return
+        self.mode = mode
+        self._check_mode_button(mode)
+        self.setup_stack.setCurrentWidget(self.solve_panel if mode == "dc" else self.ac_panel)
+        self.solve_dock.setWindowTitle(next(t for k, _, t in MODES if k == mode))
+        self.act_open_results.setEnabled(mode == "dc")
+        if mode == "dc":
+            if self._tree:
+                self._show_group(self.solve_panel.cmb_group.currentText())
+        else:
+            self.viewer.clear_result()        # DC results do not apply; show the copper
+        self.log(f"Analysis mode: {mode.upper()}")
+
+    def _check_mode_button(self, mode: str):
+        rb = self.findChild(QRadioButton, f"mode_{mode}")
+        if rb is not None and not rb.isChecked():
+            rb.blockSignals(True)
+            rb.setChecked(True)          # the group unchecks the other button
+            rb.blockSignals(False)
 
     def show_about(self):
         from kipi.gui.about import AboutDialog
@@ -230,10 +281,16 @@ class MainWindow(QMainWindow):
         self._tree = None
         self._scenes = {}
         self._setup_path = None
-        dock = QDockWidget("PI setup", self)
+        self.ac_panel = ACPanel(self)
+        # One setup dock; it shows the panel of the current analysis mode.
+        self.setup_stack = QStackedWidget(self)
+        self.setup_stack.addWidget(self.solve_panel)
+        self.setup_stack.addWidget(self.ac_panel)
+        dock = QDockWidget(MODES[0][2], self)
         dock.setObjectName("solve_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        dock.setWidget(self.solve_panel)
+        dock.setWidget(self.setup_stack)
+        self.solve_dock = dock
         dock.setMinimumWidth(420)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self._result = None
@@ -365,7 +422,7 @@ class MainWindow(QMainWindow):
         refill = self.chk_refill.isChecked()
 
         def work(progress):
-            from kipi.kicad_io.extract import connect, extract_board
+            from kipi.core.kicad_io.extract import connect, extract_board
             if self._board is None:
                 self._kicad, self._board = connect(progress=progress)
             snap = extract_board(self._board, refill_zones=refill, progress=progress)
@@ -382,7 +439,7 @@ class MainWindow(QMainWindow):
                                               "KiPI snapshot (*.json *.json.gz)")
         if not path:
             return
-        from kipi.kicad_io.snapshot import load
+        from kipi.core.kicad_io.snapshot import load
 
         self._run(lambda progress: load(path), self._set_snapshot, "Opening snapshot")
 
@@ -395,7 +452,7 @@ class MainWindow(QMainWindow):
                                               "KiPI snapshot (*.json.gz *.json)")
         if not path:
             return
-        from kipi.kicad_io.snapshot import save
+        from kipi.core.kicad_io.snapshot import save
         save(self.snapshot, path)
         self.log(f"Snapshot saved to {path}")
 
@@ -423,13 +480,13 @@ class MainWindow(QMainWindow):
         setup = self._load_setup(snap)
         self._populate_nets(keep if keep is not None else setup.nets, setup)
         self._show_board_summary()
-        from kipi.viz.meshes import board_body
+        from kipi.core.viz.meshes import board_body
         self.viewer.set_board(*board_body(snap))
         self.sync_nets()
 
     # ============================================================ lists
     def _populate_layers(self):
-        from kipi.viz.meshes import layer_color
+        from kipi.core.viz.meshes import layer_color
         st = self.snapshot.stackup
         self.layer_list.blockSignals(True)
         self.layer_list.clear()
@@ -556,8 +613,8 @@ class MainWindow(QMainWindow):
         cache = self._copper_cache
 
         def work(progress):
-            from kipi.geometry.copper import net_copper
-            from kipi.viz.meshes import build_net_scene
+            from kipi.core.geometry.copper import net_copper
+            from kipi.core.viz.meshes import build_net_scene
             built = 0
             with progress.timed(f"Building {len(todo)} net(s)"):
                 for i, net in enumerate(todo):
@@ -595,7 +652,7 @@ class MainWindow(QMainWindow):
     # ============================================================ solve
     # ------------------------------------------------------------ setup file
     def _load_setup(self, snap):
-        from kipi.pi.model import PISetup, setup_path
+        from kipi.dc.pi.model import PISetup, setup_path
         project_dir = snap.project_dir
         if not project_dir and snap.source and snap.source != "kicad":
             project_dir = str(Path(snap.source).parent)
@@ -646,13 +703,13 @@ class MainWindow(QMainWindow):
             report_path = self._setup_path.parent / f"{self._results_stem()}_kipi_report.html"
 
         def work(progress):
-            from kipi.mesh.mesher import MeshError
-            from kipi.pi.tree import solve_tree
-            from kipi.solver import SolveError
-            from kipi.viz.results import build_result_scene
+            from kipi.core.mesh.mesher import MeshError
+            from kipi.dc.pi.tree import solve_tree
+            from kipi.dc.solver import SolveError
+            from kipi.dc.viz.results import build_result_scene
             try:
                 if frozen.thermal.enabled:
-                    from kipi.thermal.cosim import solve_electrothermal
+                    from kipi.dc.thermal.cosim import solve_electrothermal
                     tree = solve_electrothermal(snap, frozen, frozen.thermal, progress)
                 else:
                     tree = solve_tree(snap, frozen, progress)
@@ -667,7 +724,7 @@ class MainWindow(QMainWindow):
                     progress.info(f"  {name}: {g.result.mesh.n_tris} triangles")
                     scenes[name] = build_result_scene(snap, g.result, temperature=temp)
             if report_path is not None:
-                from kipi.report.html import write_report
+                from kipi.dc.report.html import write_report
                 with progress.timed("Writing HTML report"):
                     try:
                         tree.report_path = write_report(report_path, tree, scenes, snap, frozen,
@@ -720,7 +777,7 @@ class MainWindow(QMainWindow):
     def _export(self, kind: str):
         if not self._tree:
             return
-        from kipi.pi import report
+        from kipi.dc.pi import report
         start = str(self._setup_path.parent) if self._setup_path else ""
         try:
             if kind == "results":
@@ -746,7 +803,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "KiPI", f"Export failed: {e}")
 
     def open_results(self):
-        from kipi.pi import report
+        from kipi.dc.pi import report
         if self.snapshot is None:
             # The tables and probing need the board (pads, layers); results files hold
             # only the solution.
@@ -895,7 +952,7 @@ class MainWindow(QMainWindow):
 
         pad_hit = pth_obj
         from shapely.geometry import Point
-        from kipi.geometry.copper import poly_to_shapely
+        from kipi.core.geometry.copper import poly_to_shapely
         p0 = Point(x, y)
         for p in ([] if pad_hit is not None or best_via is not None else s.pads):
             if p.net not in shown or cu.id not in p.shapes:

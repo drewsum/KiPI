@@ -5,13 +5,13 @@ import math
 import pytest
 from shapely.geometry import box
 
-from kipi.model.board import (
+from kipi.core.model.board import (
     BoardSnapshot, CopperLayer, DielectricLayer, Net, Pad, Poly, Stackup, Zone,
 )
-from kipi.pi.model import DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate
-from kipi.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, solve_tree
-from kipi.solver.fem import SolveError
-from kipi.solver.setup import RHO_CU_OHM_MM as RHO, SolveSettings
+from kipi.dc.pi.model import DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate
+from kipi.dc.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, solve_tree
+from kipi.dc.solver.fem import SolveError
+from kipi.dc.solver.setup import RHO_CU_OHM_MM as RHO, SolveSettings
 
 F, B = 3, 34
 T = 0.035
@@ -166,7 +166,7 @@ def test_validation_rules():
 def test_setup_json_round_trip(tmp_path):
     s = setup(kind="smps", eff=0.85, sense=True, ground=True, gsense=True)
     s.links.append(DcLink("FB1", PinRef("U2", "+3V3", ["1"]), PinRef("U2", "+3V3", ["1"]), 0.05))
-    from kipi.pi.model import PinGroup
+    from kipi.dc.pi.model import PinGroup
     s.loads[0].groups = [PinGroup(["1"], 0.4, "a")]
     s.settings.rho_by_layer = {"In1.Cu": 1.9e-5}
     s.settings.tcr_per_c = 0.0038
@@ -192,7 +192,7 @@ def board_two_pin():
 
 
 def test_per_pin_group_currents():
-    from kipi.pi.model import PinGroup
+    from kipi.dc.pi.model import PinGroup
     s = setup("ldo")
     s.loads[0] = Load("U2", PinRef("U2", "+3V3", []), 0.0, tolerance_pct=0.05,
                       groups=[PinGroup(["3"], 0.3, "mid"), PinGroup(["1"], 0.7, "end")])
@@ -224,7 +224,7 @@ def _sensed_at_end(*loads):
 
 
 def test_pins_before_the_sense_point_are_boosted():
-    from kipi.pi.tree import fmt_drop
+    from kipi.dc.pi.tree import fmt_drop
     boost = 1.0 * R(4)               # END's 1 A flows from the mid pin (x 17) to the end (x 21)
     pct = 100 * boost / 3.3
     for tol, ok in ((0.9 * pct, False), (1.1 * pct, True)):
@@ -251,7 +251,7 @@ def test_worst_pin_is_furthest_from_nominal_either_way():
 
 def test_results_saved_before_boosts_still_load():
     import pickle
-    from kipi.pi.tree import LoadReport
+    from kipi.dc.pi.tree import LoadReport
     old = LoadReport("U2", "+3V3", 1.0, 3.3, 3.29, 3.28, None, 3.29, 0.01, 1.0, True, 3.28,
                      [("a", 1.0, 3.29, 3.28)])
     del old.v_low, old.v_high                               # as a file from before them
@@ -261,7 +261,7 @@ def test_results_saved_before_boosts_still_load():
 
 
 def test_pin_group_validation():
-    from kipi.pi.model import PinGroup
+    from kipi.dc.pi.model import PinGroup
     s = setup()
     s.loads[0].groups = [PinGroup(["1"], 0.5), PinGroup(["1"], 0.5)]
     assert any("more than one group" in e for e in validate(s))
@@ -330,7 +330,7 @@ def test_switcher_below_its_input_minimum_fails_the_loads_it_feeds():
 
 
 def test_unconverged_group_leaves_its_loads_unjudged(monkeypatch):
-    import kipi.pi.tree as tree
+    import kipi.dc.pi.tree as tree
     monkeypatch.setattr(tree, "MAX_TREE_ITERATIONS", 1)
     s = setup("smps", eff=0.9)
     s.loads.append(Load("U1in", PinRef("U1", "VIN", ["1"]), 0.0, tolerance_pct=50.0))

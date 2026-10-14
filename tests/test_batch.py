@@ -2,7 +2,7 @@ import pytest
 
 pv = pytest.importorskip("pyvista")
 
-from kipi.viz.batch import MeshBatcher
+from kipi.core.viz.batch import MeshBatcher
 
 RED, BLUE = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
 

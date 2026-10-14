@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
-from kipi.gui.pi_panel import PIPanel  # noqa: E402
+from kipi.dc.gui.pi_panel import PIPanel  # noqa: E402
 from test_multiphase import board, two_phase  # noqa: E402
 
 
@@ -35,7 +35,7 @@ def test_ticking_nets_does_not_edit_the_selected_items(app):
 
 
 def test_vrm_current_limit_edits_and_shows_in_results(app):
-    from kipi.pi.tree import solve_tree
+    from kipi.dc.pi.tree import solve_tree
     setup = two_phase()
     panel = PIPanel()
     panel.set_board(board(), setup, "test")
@@ -56,7 +56,7 @@ def test_vrm_current_limit_edits_and_shows_in_results(app):
 
 
 def _board_with_bridges():
-    from kipi.model.board import Footprint, Net, Pad
+    from kipi.core.model.board import Footprint, Net, Pad
     from synthetic import make_board
     snap = make_board()
     snap.nets.append(Net(4, "VSNS"))
@@ -69,7 +69,7 @@ def _board_with_bridges():
 
 
 def test_dc_connection_takes_a_resistors_value(app):
-    from kipi.pi.model import PISetup
+    from kipi.dc.pi.model import PISetup
     setup = PISetup()
     panel = PIPanel()
     panel.set_board(_board_with_bridges(), setup, "test")

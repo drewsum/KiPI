@@ -2,8 +2,8 @@
 
 import pytest
 
-from kipi.model.board import Footprint
-from kipi.model.parts import parse_resistance, resistor_ohms
+from kipi.core.model.board import Footprint
+from kipi.core.model.parts import parse_resistance, resistor_ohms
 from synthetic import make_board
 
 

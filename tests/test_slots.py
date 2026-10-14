@@ -6,9 +6,9 @@ import pytest
 from shapely.affinity import rotate
 from shapely.geometry import Point, box
 
-from kipi.geometry.copper import drill_holes, iter_polygons, net_layer_copper, slot_axis
-from kipi.kicad_io.snapshot import from_dict, to_dict
-from kipi.model.board import Pad
+from kipi.core.geometry.copper import drill_holes, iter_polygons, net_layer_copper, slot_axis
+from kipi.core.kicad_io.snapshot import from_dict, to_dict
+from kipi.core.model.board import Pad
 from synthetic import F, make_board
 from test_tree import poly
 

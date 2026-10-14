@@ -8,8 +8,8 @@ from kipy.board_types import BoardCircle, BoardRectangle, BoardSegment, Net  # n
 from kipy.geometry import Vector2  # noqa: E402
 from kipy.proto.board.board_types_pb2 import BoardLayer  # noqa: E402
 
-from kipi.kicad_io.copper_shapes import copper_shape_zones, shape_geometry  # noqa: E402
-from kipi.progress import NULL  # noqa: E402
+from kipi.core.kicad_io.copper_shapes import copper_shape_zones, shape_geometry  # noqa: E402
+from kipi.core.progress import NULL  # noqa: E402
 
 NM = 1_000_000
 

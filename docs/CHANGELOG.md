@@ -4,9 +4,13 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.7.0 (in development): Faster solves
+## 0.7.0 (in development): Faster solves, groundwork for AC analysis
 
 ### Added
+- **Analysis mode switch.** The right end of the toolbar has *Mode: DC / AC*. DC is the
+  default and works as before. AC is a placeholder for a planned PDN impedance analysis;
+  choosing it swaps the PI setup panel for an AC one, and the DC setup and results come
+  back when DC is chosen again.
 - **Optional multithreaded solver.** If `pypardiso` is installed (Windows and Linux on
   x86-64), KiPI solves with Intel MKL's PARDISO, and directly for rails of up to 1M
   unknowns. A 645k-unknown rail solves in 1.2 s instead of about 8 s.
@@ -25,8 +29,19 @@ milestones rather than versions that were ever set.
   only the copper's resistivity has changed (89 s → 78 s for four iterations at 645k
   unknowns; 34 s with PARDISO).
 
+### Fixed
+- Saving results after an electro-thermal solve failed ("Can't pickle local object").
+  Saved problems now leave out the live temperature field, keeping its effect on
+  resistivity and the temperature map itself.
+
 ### Development
 - CI also runs the tests on Windows with PARDISO installed.
+- **Package restructured for more than one analysis.** Code shared by every analysis
+  (board model and extraction, geometry, meshing, sparse solvers, copper views) moved to
+  `kipi.core`; the DC analysis (power tree, conduction solver, thermal, reports, result
+  views, setup panel) moved to `kipi.dc`; `kipi.ac` holds the AC placeholder. The
+  direct / AMG-CG solver moved out of the DC FEM into `kipi.core.solver.spd`. Results
+  files saved by earlier versions still open (`kipi.compat` maps the old module paths).
 
 ## 0.6.5 (2026-10-13): Drop and boost, limits and fixes
 

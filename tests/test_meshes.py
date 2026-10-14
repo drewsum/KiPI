@@ -2,8 +2,8 @@ import pytest
 
 pv = pytest.importorskip("pyvista")
 
-from kipi.geometry.copper import net_copper
-from kipi.viz.meshes import build_scene, triangulate
+from kipi.core.geometry.copper import net_copper
+from kipi.core.viz.meshes import build_scene, triangulate
 from synthetic import F, IN1, make_board
 
 

@@ -14,10 +14,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from qtpy.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
 from shapely.geometry import box  # noqa: E402
 
-from kipi.model.board import Net, Zone  # noqa: E402
-from kipi.pi.model import DcLink, Load, PinRef  # noqa: E402
-from kipi.pi.tree import solve_tree  # noqa: E402
-from kipi.viz.results import build_result_scene  # noqa: E402
+from kipi.core.model.board import Net, Zone  # noqa: E402
+from kipi.dc.pi.model import DcLink, Load, PinRef  # noqa: E402
+from kipi.dc.pi.tree import solve_tree  # noqa: E402
+from kipi.dc.viz.results import build_result_scene  # noqa: E402
 from test_tree import F, board, pad, poly, setup  # noqa: E402
 
 

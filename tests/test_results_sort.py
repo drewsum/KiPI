@@ -11,8 +11,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
-from kipi.pi.tree import solve_tree  # noqa: E402
-from kipi.solver.post import ViaResult  # noqa: E402
+from kipi.dc.pi.tree import solve_tree  # noqa: E402
+from kipi.dc.solver.post import ViaResult  # noqa: E402
 from test_multiphase import board, two_phase  # noqa: E402
 
 
@@ -30,7 +30,7 @@ def column(t, col):
 
 
 def test_numbers_sort_by_value_and_clicks_alternate(app):
-    from kipi.gui.pi_panel import PIPanel
+    from kipi.dc.gui.pi_panel import PIPanel
     currents = [0.009, 0.1, 0.02, 0.0005]           # as text, "9.00" > "100.00"
     vias = [ViaResult(f"v{i}", "via", (float(i), 0.0), 0.3, a, 1e-6)
             for i, a in enumerate(currents)]
@@ -54,7 +54,7 @@ def test_numbers_sort_by_value_and_clicks_alternate(app):
 
 
 def test_phases_stay_under_their_vrm_and_totals_stay_last(app):
-    from kipi.gui.pi_panel import PIPanel
+    from kipi.dc.gui.pi_panel import PIPanel
     snap = board()
     tree = solve_tree(snap, two_phase())
     p = PIPanel()

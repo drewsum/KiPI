@@ -4,11 +4,11 @@ import csv
 
 import pytest
 
-from kipi.pi.report import (
+from kipi.dc.pi.report import (
     export_csv, export_vtk, load_results, loss_rows, save_results, via_rows,
 )
-from kipi.pi.tree import solve_tree
-from kipi.viz.results import build_result_scene
+from kipi.dc.pi.tree import solve_tree
+from kipi.dc.viz.results import build_result_scene
 from test_tree import board, setup
 
 
@@ -31,12 +31,12 @@ def test_loss_rows_add_up_to_each_groups_loss(solved):
 
 
 def test_via_rows_ranked_with_limit(tmp_path):
-    from kipi.model.board import Via
+    from kipi.core.model.board import Via
     snap = board()
     # Feed the +3V3 load from B.Cu through a via: add B.Cu copper and a via.
     from shapely.geometry import box
     from test_tree import F, B, poly
-    from kipi.model.board import Zone
+    from kipi.core.model.board import Zone
     snap.zones.append(Zone("vb", "+3V3", "", 0, {B: [poly(box(12, 2, 22, 3))]}))
     snap.vias.append(Via("v1", "+3V3", (17.0, 0.5), 0.3, 0.6, [F, B]))
     snap.invalidate_index()

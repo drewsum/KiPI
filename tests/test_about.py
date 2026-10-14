@@ -34,6 +34,6 @@ def test_toolbar_has_about_after_open_results(app, no_3d):
     from qtpy.QtWidgets import QToolBar
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
-    names = [a.text() for a in w.findChild(QToolBar).actions() if not a.isSeparator()]
+    names = [a.text() for a in w.findChild(QToolBar).actions() if a.text()]
     assert names[-2:] == ["Open results…", "About"]
     w.close()

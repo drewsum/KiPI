@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import LineString, box
 
-import kipi.mesh.mesher as M
+import kipi.core.mesh.mesher as M
 
 MAX_AREA = math.sqrt(3) / 4 * 0.5 ** 2
 

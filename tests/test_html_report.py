@@ -5,11 +5,11 @@ import pytest
 pytest.importorskip("plotly")
 pytest.importorskip("matplotlib")
 
-from kipi.pi.tree import solve_tree
-from kipi.report.html import write_report
-from kipi.thermal.cosim import solve_electrothermal
-from kipi.thermal.model import ThermalSettings
-from kipi.viz.results import build_result_scene
+from kipi.dc.pi.tree import solve_tree
+from kipi.dc.report.html import write_report
+from kipi.dc.thermal.cosim import solve_electrothermal
+from kipi.dc.thermal.model import ThermalSettings
+from kipi.dc.viz.results import build_result_scene
 from test_tree import board, setup
 
 

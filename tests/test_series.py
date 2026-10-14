@@ -3,15 +3,15 @@
 import pytest
 from shapely.geometry import box
 
-from kipi.mesh.mesher import mesh_nets
-from kipi.model.board import (
+from kipi.core.mesh.mesher import mesh_nets
+from kipi.core.model.board import (
     BoardSnapshot, CopperLayer, DielectricLayer, Net, Pad, Poly, Stackup, Zone,
 )
-from kipi.solver import (
+from kipi.dc.solver import (
     CurrentLoad, NetProblem, SeriesLink, SolveError, SolveSettings, VoltageSource, run,
 )
-from kipi.solver.fem import LinearSystem
-from kipi.solver.setup import RHO_CU_OHM_MM as RHO
+from kipi.dc.solver.fem import LinearSystem
+from kipi.dc.solver.setup import RHO_CU_OHM_MM as RHO
 
 F, B = 3, 34
 T = 0.035

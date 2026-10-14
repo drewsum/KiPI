@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
-from kipi.pi.model import PISetup, setup_path  # noqa: E402
+from kipi.dc.pi.model import PISetup, setup_path  # noqa: E402
 from test_multiphase import board, two_phase  # noqa: E402
 
 pytestmark = pytest.mark.usefixtures("no_3d")

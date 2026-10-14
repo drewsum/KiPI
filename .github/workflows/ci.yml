@@ -80,13 +80,13 @@ jobs:
         if: matrix.pardiso
         run: |
           pip install pypardiso
-          python -c "from kipi.solver import direct; assert direct.backend() == 'pardiso', direct.backend_note()"
+          python -c "from kipi.core.solver import direct; assert direct.backend() == 'pardiso', direct.backend_note()"
 
       - name: Validate plugin manifest
         run: python -m kipy.packaging validate .
 
       - name: Import GUI modules
-        run: python -c "import kipi.gui.main_window, kipi.gui.viewer3d, kipi.gui.pi_panel, kipi_entry"
+        run: python -c "import kipi.gui.main_window, kipi.gui.viewer3d, kipi.dc.gui.pi_panel, kipi_entry"
 
       - name: Run tests
         run: python -m pytest -v

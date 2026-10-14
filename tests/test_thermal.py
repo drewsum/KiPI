@@ -5,12 +5,12 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from kipi.model.board import (
+from kipi.core.model.board import (
     BoardSnapshot, CopperLayer, DielectricLayer, Net, Poly, Stackup, Zone,
 )
-from kipi.solver import CurrentLoad, NetProblem, SolveSettings, VoltageSource, run
-from kipi.thermal.cosim import solve_electrothermal
-from kipi.thermal.model import BoardThermalModel, ThermalSettings
+from kipi.dc.solver import CurrentLoad, NetProblem, SolveSettings, VoltageSource, run
+from kipi.dc.thermal.cosim import solve_electrothermal
+from kipi.dc.thermal.model import BoardThermalModel, ThermalSettings
 from test_tree import F, B, board, setup, by_name, R
 
 TCR = 0.00393
@@ -116,14 +116,14 @@ def test_first_iteration_solves_copper_at_ambient():
     ("", 0.8, True),
 ])
 def test_dielectric_lookup(name, k, assumed):
-    from kipi.thermal.materials import lookup
+    from kipi.dc.thermal.materials import lookup
     d = lookup(name)
     assert d.k_w_mk == pytest.approx(k) and d.assumed == assumed
 
 
 def test_laminate_conductance_follows_stackup_materials():
-    from kipi.model.board import DielectricLayer
-    from kipi.thermal.materials import laminate_conductance
+    from kipi.core.model.board import DielectricLayer
+    from kipi.dc.thermal.materials import laminate_conductance
     st = plate().stackup
     g_fr4, rows = laminate_conductance(st)
     assert g_fr4 == pytest.approx(0.8e-3 * 1.5)

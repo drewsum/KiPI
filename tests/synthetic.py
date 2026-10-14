@@ -1,7 +1,7 @@
 """A tiny hand-built 4-layer board with easily computed copper areas."""
 
-from kipi.kicad_io.extract import DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM  # noqa: F401
-from kipi.model.board import (
+from kipi.core.kicad_io.extract import DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM  # noqa: F401
+from kipi.core.model.board import (
     BoardSnapshot, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup, Track,
     Via, Zone,
 )

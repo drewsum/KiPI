@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from qtpy.QtWidgets import QApplication, QHeaderView  # noqa: E402
 
-from kipi.solver.post import ViaResult  # noqa: E402
+from kipi.dc.solver.post import ViaResult  # noqa: E402
 from test_multiphase import board  # noqa: E402
 
 
@@ -22,7 +22,7 @@ def app():
 
 
 def _panel(app, n):
-    from kipi.gui.pi_panel import PIPanel
+    from kipi.dc.gui.pi_panel import PIPanel
     vias = [ViaResult(f"v{i}", "via", (float(i), 0.0), 0.3, 0.001 * i, 1e-6) for i in range(n)]
     p = PIPanel()
     p.snapshot = board()

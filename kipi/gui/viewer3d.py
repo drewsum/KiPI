@@ -11,9 +11,9 @@ from vtkmodules.vtkCommonDataModel import vtkPlane
 from vtkmodules.vtkRenderingCore import vtkActor, vtkCellPicker, vtkPolyDataMapper
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
-from kipi.viz.batch import Chunk, MeshBatcher
-from kipi.viz.results import FIELDS, ResultScene
-from kipi.viz.meshes import NetScene
+from kipi.core.viz.batch import Chunk, MeshBatcher
+from kipi.dc.viz.results import FIELDS, ResultScene
+from kipi.core.viz.meshes import NetScene
 
 _NET_COLORS = [(0.90, 0.35, 0.25), (0.25, 0.60, 0.90), (0.95, 0.75, 0.20), (0.40, 0.80, 0.45),
                (0.80, 0.45, 0.85), (0.30, 0.80, 0.80), (0.95, 0.55, 0.30), (0.65, 0.65, 0.65)]

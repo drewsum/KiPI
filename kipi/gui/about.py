@@ -19,7 +19,8 @@ from kipi import __version__
 
 NAME = "KiPI"
 DESCRIPTION = ("DC power integrity analysis for KiCad: IR drop, current density, "
-               "via currents and electro-thermal co-simulation in 3D.")
+               "via currents and electro-thermal co-simulation in 3D."
+               "Inspired by not wanting to pay Siemens EDA even more money")
 AUTHOR = "Drew Maatman"
 EMAIL = "drewmaatman@gmail.com"
 REPO = "https://github.com/drewsum/KiPI"
@@ -45,7 +46,7 @@ def versions() -> List[Tuple[str, str]]:
         except metadata.PackageNotFoundError:
             pass
     try:
-        from kipi.solver import direct
+        from kipi.core.solver import direct
         rows.append(("Direct solver", direct.backend_note()))
     except Exception:          # the dialog must open whatever state the solver stack is in
         pass

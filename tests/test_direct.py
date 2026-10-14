@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from kipi.progress import NULL
-from kipi.solver import direct, fem
-from kipi.solver.setup import SolveSettings
+from kipi.core.progress import NULL
+from kipi.core.solver import direct, spd
+from kipi.dc.solver.setup import SolveSettings
 
 
 def _poisson(n=60, scale=None):
@@ -117,8 +117,8 @@ def test_pardiso_when_installed():
 
 @pytest.fixture
 def amg_only(monkeypatch):
-    monkeypatch.setattr(fem, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
-    monkeypatch.setattr(fem, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
+    monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
+    monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
 
 
 def _hot_spot(n):
@@ -131,39 +131,39 @@ def test_previous_amg_hierarchy_preconditions_a_warmer_matrix(amg_only):
     A0 = _poisson()
     n = A0.shape[0]
     b = np.random.default_rng(2).standard_normal(n)
-    first = fem._Factor(A0, s, NULL, {})
+    first = spd.SpdSolver(A0, s, NULL, {})
     first.solve(b, NULL)
     A1 = _poisson(scale=_hot_spot(n))
     stats = {}
-    second = fem._Factor(A1, s, NULL, stats, previous=first)
+    second = spd.SpdSolver(A1, s, NULL, stats, previous=first)
     assert second.reused
     x = second.solve(b, NULL)
     assert stats["method"] == "amg-cg (reused hierarchy)"
     assert stats["iterations"] > 0
-    assert _rel(A1, x, b) <= s.tol * fem.CG_ACCEPT_FACTOR
+    assert _rel(A1, x, b) <= s.tol * spd.CG_ACCEPT_FACTOR
 
 
 def test_direct_factorization_is_not_reused():
     s = SolveSettings()
     A0 = _poisson()
-    first = fem._Factor(A0, s, NULL, {})
+    first = spd.SpdSolver(A0, s, NULL, {})
     assert first.lu is not None
     A1 = _poisson(scale=_hot_spot(A0.shape[0]))
-    second = fem._Factor(A1, s, NULL, {}, previous=first)
+    second = spd.SpdSolver(A1, s, NULL, {}, previous=first)
     assert not second.reused and second.lu is not None
     b = np.ones(A0.shape[0])
     assert _rel(A1, second.solve(b, NULL), b) < 1e-12
 
 
 def test_reused_hierarchy_that_fails_sets_up_afresh(amg_only, monkeypatch):
-    monkeypatch.setattr(fem, "CG_REUSED_MAX_ITERATIONS", 2)
+    monkeypatch.setattr(spd, "CG_REUSED_MAX_ITERATIONS", 2)
     s = SolveSettings()
     A0 = _poisson()
-    first = fem._Factor(A0, s, NULL, {})
+    first = spd.SpdSolver(A0, s, NULL, {})
     A1 = _poisson(scale=np.random.default_rng(3).uniform(0.2, 1.0, A0.shape[0]))
     b = np.ones(A0.shape[0])
     stats = {}
-    second = fem._Factor(A1, s, NULL, stats, previous=first)
+    second = spd.SpdSolver(A1, s, NULL, stats, previous=first)
     x = second.solve(b, NULL)
     assert not second.reused
     assert _rel(A1, x, b) < 1e-10
@@ -173,6 +173,6 @@ def test_reused_hierarchy_that_fails_sets_up_afresh(amg_only, monkeypatch):
 
 def test_different_size_is_not_reused(amg_only):
     s = SolveSettings()
-    first = fem._Factor(_poisson(30), s, NULL, {})
-    second = fem._Factor(_poisson(31), s, NULL, {}, previous=first)
+    first = spd.SpdSolver(_poisson(30), s, NULL, {})
+    second = spd.SpdSolver(_poisson(31), s, NULL, {}, previous=first)
     assert not second.reused

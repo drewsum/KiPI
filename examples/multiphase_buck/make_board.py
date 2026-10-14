@@ -33,12 +33,12 @@ from shapely.ops import unary_union
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
 
-from kipi.kicad_io.snapshot import save  # noqa: E402
-from kipi.model.board import (  # noqa: E402
+from kipi.core.kicad_io.snapshot import save  # noqa: E402
+from kipi.core.model.board import (  # noqa: E402
     BoardSnapshot, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup, Via, Zone,
 )
-from kipi.pi.model import Load, PinRef, PISetup, Vrm, VrmPhase  # noqa: E402
-from kipi.solver.setup import SolveSettings  # noqa: E402
+from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm, VrmPhase  # noqa: E402
+from kipi.dc.solver.setup import SolveSettings  # noqa: E402
 
 F, IN1, IN2, B = 3, 4, 5, 34
 ALL = [F, IN1, IN2, B]

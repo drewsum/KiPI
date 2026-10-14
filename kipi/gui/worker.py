@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from qtpy.QtCore import QObject, QThread, Signal
 
-from kipi.progress import Canceled, ProgressReporter
+from kipi.core.progress import Canceled, ProgressReporter
 
 
 class QtProgress(QObject, ProgressReporter):

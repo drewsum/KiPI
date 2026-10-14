@@ -114,6 +114,8 @@ stage as it runs.
   (save first if you have unsaved changes).
 * **Save snapshot… / Open snapshot…** store the extracted board as a file that KiPI can open
   later without KiCad.
+* **Mode: DC / AC** (right end of the toolbar) picks the analysis. Everything below is DC,
+  the default. AC (PDN impedance over frequency) is planned and not available yet.
 
 ### 2. Pick the nets
 
@@ -353,17 +355,24 @@ The tests also solve the example board and check that its committed setup still 
 | Path | Purpose |
 |---|---|
 | `kipi_entry.py`, `plugin.json` | KiCad IPC plugin action |
-| `kipi/kicad_io/` | kipy → `BoardSnapshot` extraction, JSON snapshot save/load |
-| `kipi/model/` | Toolkit-independent board model, power-net heuristics |
-| `kipi/geometry/` | Per-net, per-layer copper union (shapely) |
-| `kipi/mesh/` | Conforming per-layer triangle mesh (Triangle), graded around plated holes |
-| `kipi/solver/` | 2.5D FEM: sheet conductance, via/PTH barrels, series parts, sources, loads; LU / AMG-CG |
-| `kipi/pi/` | User power-tree setup (VRMs, loads, DC connections), JSON, validation, tree solver, results tables |
-| `kipi/thermal/` | Board heat model, stackup material conductivities, electro-thermal iteration |
-| `kipi/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
-| `kipi/viz/` | PyVista mesh building and batching, result meshes (no Qt) |
-| `kipi/gui/` | PySide6 main window, embedded 3D viewer, worker threads |
-| `kipi/progress.py` | Progress/log reporting used by every pipeline stage |
+| `kipi/core/` | Shared by every analysis; no Qt and no analysis-specific physics: |
+| `kipi/core/kicad_io/` | kipy → `BoardSnapshot` extraction, JSON snapshot save/load |
+| `kipi/core/model/` | Toolkit-independent board model, power-net heuristics |
+| `kipi/core/geometry/` | Per-net, per-layer copper union (shapely) |
+| `kipi/core/mesh/` | Conforming per-layer triangle mesh (Triangle), graded around plated holes |
+| `kipi/core/solver/` | Sparse linear algebra: direct backends (PARDISO / SuperLU), direct or AMG-CG SPD solver |
+| `kipi/core/viz/` | PyVista copper meshes and batching (no Qt) |
+| `kipi/core/progress.py` | Progress/log reporting used by every pipeline stage |
+| `kipi/dc/` | DC analysis: |
+| `kipi/dc/solver/` | 2.5D DC conduction FEM: sheet conductance, via/PTH barrels, series parts, sources, loads |
+| `kipi/dc/pi/` | User power-tree setup (VRMs, loads, DC connections), JSON, validation, tree solver, results tables |
+| `kipi/dc/thermal/` | Board heat model, stackup material conductivities, electro-thermal iteration |
+| `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
+| `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
+| `kipi/dc/gui/` | The PI setup and results panel |
+| `kipi/ac/` | AC analysis (planned): PDN impedance over frequency; for now a placeholder panel |
+| `kipi/gui/` | PySide6 application shell shared by both modes: main window, mode switch, 3D viewer, worker threads |
+| `kipi/compat.py` | Opens results files saved by earlier versions, from before modules moved |
 | `examples/` | Example boards as snapshots with their PI setups, and the scripts that generate them |
 
 ## License
@@ -380,7 +389,7 @@ in the OSI sense. Its author's terms allow free use and redistribution, but it *
 sold or included in commercial products without a license from its author**. Using KiPI for
 your own design work is fine. If you want to ship KiPI, or anything built on it, as part of
 a commercial product, you will need to arrange a license for Triangle with its author or
-swap in another mesher. The meshing code is isolated in `kipi/mesh/` for that reason.
+swap in another mesher. The meshing code is isolated in `kipi/core/mesh/` for that reason.
 
 The other dependencies are under permissive licenses, apart from PySide6 (LGPL-3.0). All of
 them are compatible with the GPL.

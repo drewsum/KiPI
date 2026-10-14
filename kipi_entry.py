@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 def main() -> int:
     from kipi.gui import app as kipi_app
     from kipi.gui.app import run, setup_logging
-    from kipi.kicad_io.extract import ExtractionError, connect
-    from kipi.progress import ProgressReporter
+    from kipi.core.kicad_io.extract import ExtractionError, connect
+    from kipi.core.progress import ProgressReporter
 
     setup_logging(console=False)
     # KiCad captures plugin stdout/stderr through a pipe it does not always drain; a full

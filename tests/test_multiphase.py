@@ -14,12 +14,12 @@ from pathlib import Path
 import pytest
 from shapely.geometry import box
 
-from kipi.model.board import (
+from kipi.core.model.board import (
     BoardSnapshot, CopperLayer, DielectricLayer, Net, Stackup, Zone,
 )
-from kipi.pi.model import Load, PinRef, PISetup, Vrm, VrmPhase, validate
-from kipi.pi.tree import solve_tree
-from kipi.solver.setup import SolveSettings
+from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm, VrmPhase, validate
+from kipi.dc.pi.tree import solve_tree
+from kipi.dc.solver.setup import SolveSettings
 from test_tree import B, F, T, R, by_name, pad, poly
 
 I_LOAD = 2.0
@@ -175,7 +175,7 @@ def test_phases_round_trip_through_json(tmp_path):
 
 
 def test_phase_csv_and_html_report(tmp_path):
-    from kipi.pi.report import export_csv
+    from kipi.dc.pi.report import export_csv
     snap, s = board(), two_phase("smps", ground=True)
     tree = solve_tree(snap, s)
     (csv,) = [p for p in export_csv(tree, snap, tmp_path, stem="t")
@@ -186,15 +186,15 @@ def test_phase_csv_and_html_report(tmp_path):
 
     pytest.importorskip("plotly")
     pytest.importorskip("matplotlib")
-    from kipi.report.html import write_report
-    from kipi.viz.results import build_result_scene
+    from kipi.dc.report.html import write_report
+    from kipi.dc.viz.results import build_result_scene
     scenes = {n: build_result_scene(snap, g.result) for n, g in tree.groups.items()}
     text = write_report(tmp_path / "r.html", tree, scenes, snap, s).read_text(encoding="utf-8")
     assert "VRM phases" in text
 
 
 def test_single_phase_results_skip_the_phase_csv(tmp_path):
-    from kipi.pi.report import export_csv
+    from kipi.dc.pi.report import export_csv
     s = two_phase()
     s.vrms[1].phases = []
     paths = export_csv(solve_tree(board(), s), board(), tmp_path, stem="t")
@@ -203,7 +203,7 @@ def test_single_phase_results_skip_the_phase_csv(tmp_path):
 
 def test_results_saved_before_phases_still_load():
     import pickle
-    from kipi.pi.tree import VrmReport
+    from kipi.dc.pi.tree import VrmReport
     r = VrmReport("U1", "ldo", "VOUT", 1.0, 1.0, None, 2.0, None, None, 2.0, None)
     blob = pickle.dumps(r)
     old = pickle.loads(blob.replace(b"phases", b"phasez"))    # as if the field never existed
@@ -227,7 +227,7 @@ def test_example_setup_matches_its_generator():
 
 
 def test_example_board_solves():
-    from kipi.kicad_io.snapshot import load
+    from kipi.core.kicad_io.snapshot import load
     folder = EXAMPLE
     snap = load(folder / "multiphase_buck.kipi.json.gz")
     s = PISetup.load(folder / "multiphase_buck.kipi-setup.json")
