@@ -32,5 +32,6 @@ def test_report_contents(tmp_path, thermal):
     for l in tree.loads:
         assert l.name in text
     assert ("Electro-thermal" in text) == thermal
+    assert ("Copper temperature by layer" in text) == thermal
     import re
     assert not re.search(r"<script[^>]+src=", text)        # plotly.js embedded: works offline

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
 import scipy.sparse as sp
@@ -46,6 +46,20 @@ class ThermalSettings:
     airflow_m_s: float = 0.0
     grid_mm: float = 0.0        # 0 = automatic (~250 cells across the board)
     laminate_k_w_mk: float = 0.0  # 0 = from the stackup's dielectric materials
+    # PASS / FAIL limits on the solved copper's temperature, per layer (None = no limit)
+    max_temp_c: Optional[float] = None
+    max_rise_c: Optional[float] = None      # above ambient
+
+    def limits_set(self) -> bool:
+        return self.max_temp_c is not None or self.max_rise_c is not None
+
+    def temp_passed(self, t_c: float, ambient_c: float) -> Optional[bool]:
+        """``t_c`` against the limits, with the rise taken over ``ambient_c``; None
+        without limits."""
+        if not self.limits_set():
+            return None
+        return ((self.max_temp_c is None or t_c <= self.max_temp_c)
+                and (self.max_rise_c is None or t_c - ambient_c <= self.max_rise_c))
 
     def h_w_mm2_k(self) -> float:
         return (H_NATURAL_W_M2K + H_PER_M_S * max(self.airflow_m_s, 0.0)) * 1e-6

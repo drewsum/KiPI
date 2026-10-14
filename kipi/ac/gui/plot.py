@@ -13,6 +13,7 @@ from qtpy.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 COLORS = ("#4fa3ff", "#ffa040", "#60d060", "#ff6080", "#c080ff", "#40d0d0", "#e0e060")
 CURSOR_COLOR = "#e8e8e8"
+EMPTY = "Solve a rail in AC mode to see its impedance here."
 HINT = ("Click a curve to place the cursor. Drag to move it along the curve, ←/→ to step "
         "(Shift: ×10), ↑/↓ to change curve, Esc or right-click to remove it.")
 
@@ -55,7 +56,7 @@ class ImpedancePlot(QWidget):
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.setFocusPolicy(Qt.ClickFocus)     # for the cursor's arrow keys
         self.ax = self.figure.add_subplot(111)
-        self.lbl = QLabel("Solve a rail in AC mode to see its impedance here.", self)
+        self.lbl = QLabel(EMPTY, self)
         self.lbl.setStyleSheet("color: #999;")
         self.lbl.setWordWrap(True)          # else its text sets the window's minimum width
         lay = QVBoxLayout(self)
@@ -88,6 +89,7 @@ class ImpedancePlot(QWidget):
 
     def clear(self):
         self.result = None
+        self.lbl.setText(EMPTY)
         self.ax.clear()
         self._style()
         self._drop_cursor()
@@ -104,10 +106,10 @@ class ImpedancePlot(QWidget):
         for i, c in enumerate(result.probes):
             color = COLORS[i % len(COLORS)]
             ax.loglog(f, c.mag, color=color, lw=1.6, label=c.name)
-            if c.target_ohm:
-                f_end = c.target_hz or f[-1]
-                ax.loglog([f[0], f_end], [c.target_ohm, c.target_ohm], color=color, lw=1.2,
-                          ls="--", alpha=0.8, label=f"{c.name} target")
+            t = c.target_at(f)
+            if t is not None:                 # NaN where no target applies: not drawn
+                ax.loglog(f, t, color=color, lw=1.2, ls="--", alpha=0.8,
+                          label=f"{c.name} target")
         ax.set_xlim(f[0], f[-1])
         ax.set_xlabel("Frequency")
         ax.set_ylabel("|Z|")
@@ -238,14 +240,16 @@ class ImpedancePlot(QWidget):
             rows.append(("as L", _eng(z.imag / w, "H")))
         elif z.imag < 0:
             rows.append(("as C", _eng(-1 / (w * z.imag), "F")))
-        if c.target_ohm:
-            if c.target_hz and fk > c.target_hz:
+        t = c.target_at(r.freqs)
+        if t is not None:
+            tk = float(t[k])
+            if not math.isfinite(tk):
                 rows.append(("Target", f"{_eng(c.target_ohm, 'Ω')} (not above "
                                        f"{_eng_hz(c.target_hz)})"))
             else:
-                ok = mag <= c.target_ohm
-                margin = 20 * math.log10(c.target_ohm / mag) if mag > 0 else math.inf
-                rows.append(("Target", f"{_eng(c.target_ohm, 'Ω')}: "
+                ok = mag <= tk
+                margin = 20 * math.log10(tk / mag) if mag > 0 else math.inf
+                rows.append(("Target", f"{_eng(tk, 'Ω')}: "
                                        f'<span style="color:{"#60d060" if ok else "#ff6060"}">'
                                        f'{"PASS" if ok else "FAIL"}</span> ({margin:+.1f} dB)'))
         body = "".join(f"<tr><td>{a}&nbsp;&nbsp;</td><td>{b}</td></tr>" for a, b in rows)

@@ -124,7 +124,17 @@ def validate_ac(setup: PISetup, vrm_name: str, gnd: str) -> List[str]:
         if p.ground and gnd and p.ground.net != gnd:
             errors.append(f"Probe {p.name}: its ground pins are on {p.ground.net}, not on "
                           f"the ground being simulated ({gnd})")
-        if p.target_ohm is not None and not p.target_ohm > 0:
+        if p.target_custom:
+            fs = [f for f, _ in p.target_points]
+            if not p.target_points:
+                errors.append(f"Probe {p.name}: add at least one point to its custom target")
+            elif not all(f > 0 and z > 0 for f, z in p.target_points):
+                errors.append(f"Probe {p.name}: every custom target point needs a frequency "
+                              "and an impedance above zero")
+            elif len(set(fs)) != len(fs):
+                errors.append(f"Probe {p.name}: two custom target points are at the same "
+                              "frequency")
+        elif p.target_ohm is not None and not p.target_ohm > 0:
             errors.append(f"Probe {p.name}: the target impedance must be positive")
     if not on_rail:
         errors.append(f"Add a probe on {' / '.join(sorted(rail))} (the device whose supply "

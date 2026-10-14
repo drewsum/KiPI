@@ -834,6 +834,11 @@ class MainWindow(QMainWindow):
             self.ac_panel.set_busy(True)
 
     def _show_ac_result(self, result):
+        """The AC panel's shown result: a new solve, or another rail's earlier one (None:
+        that rail has not been solved)."""
+        if result is None:
+            self.plot.clear()
+            return
         self.plot.set_result(result)
         self.views.setCurrentWidget(self.plot)
 
@@ -890,7 +895,8 @@ class MainWindow(QMainWindow):
                 return
             if kind == "csv":
                 paths = report.export_csv(self._tree, self.snapshot, folder, self._results_stem(),
-                                          self.solve_panel.setup.via_current_limit_a)
+                                          self.solve_panel.setup.via_current_limit_a,
+                                          self.solve_panel.setup.thermal)
             else:
                 paths = report.export_vtk(self._tree, self._scenes, self.snapshot, folder,
                                           self._results_stem())

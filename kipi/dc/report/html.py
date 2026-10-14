@@ -221,7 +221,9 @@ nav a { margin-right: 12px; }
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,
                  progress=None) -> Path:
     import plotly.offline
-    from kipi.dc.pi.report import loss_rows, via_rows
+    from kipi.dc.pi.report import (
+        layer_temps, limits_text, loss_rows, thermal_passed, via_rows,
+    )
 
     def info(t):
         if progress is not None:
@@ -321,6 +323,17 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         parts.append(f"<p>{th.heat_w:.3g} W into the board; peak <b>{tmax:.1f} °C</b> at "
                      f"({x:.1f}, {y:.1f}) mm. Ambient {th.settings.ambient_c:g} °C, airflow "
                      f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
+        temps = layer_temps(tree, snap, setup.thermal)
+        if temps:
+            verdict = thermal_passed(temps)
+            parts.append("<h3>Copper temperature by layer</h3>" + _table(
+                ["Layer", "Peak (°C)", "Rise (°C)", "x (mm)", "y (mm)", "Group", "Result"],
+                [[_e(r.layer), _num(r.t_max, ".1f"), _num(r.rise, ".1f"), _num(r.x, ".1f"),
+                  _num(r.y, ".1f"), _e(r.group), _verdict(r.passed)] for r in temps]))
+            lim = limits_text(setup.thermal)
+            parts.append("<p class='note'>The hottest solved copper on each layer. "
+                         + (f"Limits: {lim}; overall {_verdict(verdict)}." if lim
+                            else "No temperature limits were set.") + "</p>")
         parts.append(f"<div class='maps'><figure><img src='{_thermal_map(th, outline)}'>"
                      "</figure></div>")
         if th.dielectrics:

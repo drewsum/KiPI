@@ -184,10 +184,10 @@
   },
   "via_current_limit_a": null,
   "thermal": {
-    "enabled": false,
+    "enabled": true,
     "ambient_c": 25.0,
-    "iterations": 3,
-    "airflow_m_s": 0.0,
+    "iterations": 1,
+    "airflow_m_s": 10.0,
     "grid_mm": 0.0,
     "laminate_k_w_mk": 0.0
   },
@@ -242,7 +242,73 @@
         "pins": []
       },
       "target_ohm": 0.015,
-      "target_hz": 318300.0
+      "target_hz": 318300.0,
+      "target_custom": true,
+      "target_points": [
+        [
+          318300.0,
+          0.015
+        ],
+        [
+          1000000.0,
+          0.03
+        ],
+        [
+          2000000.0,
+          0.03
+        ]
+      ]
+    },
+    {
+      "name": "Q1",
+      "rail": {
+        "ref": "Q1",
+        "net": "VIN",
+        "pins": []
+      },
+      "ground": {
+        "ref": "Q1",
+        "net": "GND",
+        "pins": []
+      },
+      "target_ohm": null,
+      "target_hz": null,
+      "target_custom": false,
+      "target_points": []
+    },
+    {
+      "name": "Q2",
+      "rail": {
+        "ref": "Q2",
+        "net": "VIN",
+        "pins": []
+      },
+      "ground": {
+        "ref": "Q2",
+        "net": "GND",
+        "pins": []
+      },
+      "target_ohm": null,
+      "target_hz": null,
+      "target_custom": false,
+      "target_points": []
+    },
+    {
+      "name": "Q3",
+      "rail": {
+        "ref": "Q3",
+        "net": "VIN",
+        "pins": []
+      },
+      "ground": {
+        "ref": "Q3",
+        "net": "GND",
+        "pins": []
+      },
+      "target_ohm": null,
+      "target_hz": null,
+      "target_custom": false,
+      "target_points": []
     }
   ],
   "ac": {
@@ -255,7 +321,7 @@
     "min_edge_mm": 0.03,
     "loss_tangent": 0.02,
     "default_er": 4.3,
-    "rail": "U1",
+    "rail": "J1",
     "ground": "GND"
   },
   "format_version": 1

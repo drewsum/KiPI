@@ -2,7 +2,9 @@
 
 * :func:`via_rows`   every via / PTH barrel across all groups, highest current first
 * :func:`loss_rows`  copper loss per group, split by layer, vias and DC connections
-* :func:`export_csv` loads, VRMs, DC connections, vias and losses as CSV files
+* :func:`layer_temps` the hottest copper per layer after an electro-thermal solve
+* :func:`export_csv` loads, VRMs, DC connections, vias, losses and copper temperature
+  as CSV files
 * :func:`export_vtk` each group's 3D results as a ParaView multiblock (.vtm)
 * :func:`save_results` / :func:`load_results`  reopen a solve without re-solving
 """
@@ -60,6 +62,65 @@ def via_rows(tree, snap: BoardSnapshot, limit_a: Optional[float] = None) -> List
 
 
 # ---------------------------------------------------------------------------
+# Copper temperature
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LayerTempRow:
+    layer: str
+    t_max: float              # degC, the hottest solved copper on the layer
+    rise: float               # above ambient
+    x: float                  # where, KiCad mm
+    y: float
+    group: str                # the net group that copper belongs to
+    passed: Optional[bool]    # vs the limits, if any were given
+
+
+def layer_temps(tree, snap: BoardSnapshot, limits=None) -> List[LayerTempRow]:
+    """The hottest solved copper on each layer, from an electro-thermal solve (empty
+    without one). ``limits`` is a ThermalSettings whose max temperature / rise grade
+    each layer; the rise is taken over the ambient the solve used."""
+    th = getattr(tree, "thermal", None)
+    if th is None:
+        return []
+    T = th.sampler()
+    ambient = th.settings.ambient_c
+    best: Dict[int, tuple] = {}             # layer id -> (t, x, y, group)
+    for g in tree.groups.values():
+        mesh = g.result.mesh
+        for lid in np.unique(mesh.tri_layer):
+            nodes = np.unique(mesh.tris[mesh.tri_layer == lid])
+            pts = mesh.points[nodes]
+            t = np.asarray(T(pts), dtype=float)
+            k = int(np.argmax(t))
+            if lid not in best or t[k] > best[lid][0]:
+                best[lid] = (float(t[k]), float(pts[k, 0]), float(pts[k, 1]), g.name)
+    rows = []
+    for cu in snap.stackup.copper:          # top to bottom
+        if cu.id in best:
+            t, x, y, group = best[cu.id]
+            rows.append(LayerTempRow(cu.name, t, t - ambient, x, y, group,
+                                     None if limits is None else limits.temp_passed(t, ambient)))
+    return rows
+
+
+def thermal_passed(rows: List[LayerTempRow]) -> Optional[bool]:
+    """FAIL if any layer is over a limit; None when nothing was judged."""
+    judged = [r.passed for r in rows if r.passed is not None]
+    return all(judged) if judged else None
+
+
+def limits_text(thermal) -> str:
+    """The copper temperature limits in words, or "" without any."""
+    out = []
+    if thermal.max_temp_c is not None:
+        out.append(f"copper at most {thermal.max_temp_c:g} °C")
+    if thermal.max_rise_c is not None:
+        out.append(f"at most {thermal.max_rise_c:g} °C above ambient")
+    return ", ".join(out)
+
+
+# ---------------------------------------------------------------------------
 # Losses
 # ---------------------------------------------------------------------------
 
@@ -113,7 +174,8 @@ def _fmt(x):
 
 
 def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
-               via_limit_a: Optional[float] = None) -> List[Path]:
+               via_limit_a: Optional[float] = None, thermal_limits=None) -> List[Path]:
+    """``thermal_limits``: a ThermalSettings whose temperature limits grade the copper."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     out = []
@@ -171,6 +233,16 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
                        "total_W"],
                       [[r.group, *[r.by_layer.get(n, 0.0) for n in layers], r.vias, r.links,
                         r.total] for r in losses]))
+    temps = layer_temps(tree, snap, thermal_limits)
+    if temps:
+        lim = thermal_limits
+        out.append(_write(folder / f"{stem}_copper_temperature.csv",
+                          ["layer", "t_max_C", "rise_C", "x_mm", "y_mm", "group",
+                           "limit_C", "rise_limit_C", "result"],
+                          [[r.layer, r.t_max, r.rise, r.x, r.y, r.group,
+                            lim and lim.max_temp_c, lim and lim.max_rise_c,
+                            "" if r.passed is None else ("PASS" if r.passed else "FAIL")]
+                           for r in temps]))
     return out
 
 

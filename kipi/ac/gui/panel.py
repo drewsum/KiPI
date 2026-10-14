@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import html
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 from qtpy.QtCore import Qt, Signal
@@ -18,7 +18,7 @@ from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
@@ -195,6 +195,15 @@ def _fmt_farads(f: float) -> str:
     return f"{f:.3g} F"
 
 
+def _target_text(c) -> str:
+    """A result's target for the table: its level, or a custom mask's range."""
+    if c.target_points:
+        zs = [z * 1e3 for _, z in c.target_points]
+        lo, hi = min(zs), max(zs)
+        return f"{lo:g} (custom)" if lo == hi else f"{lo:g}–{hi:g} (custom)"
+    return f"{c.target_ohm * 1e3:g}" if c.target_ohm else ""
+
+
 def _natural(ref: str):
     m = re.match(r"([A-Za-z_]*)(\d*)(.*)", ref)
     return (m.group(1), int(m.group(2)) if m.group(2) else -1, m.group(3))
@@ -223,20 +232,89 @@ class ProbeEditor(_Editor):
         self.btn_calc.setToolTip("Work out a target impedance and frequency from the "
                                  "device's supply tolerance and transient current")
         self.btn_calc.clicked.connect(self._calculator)
+        self.target_kind = QComboBox()
+        self.target_kind.addItem("Flat, up to a frequency", "flat")
+        self.target_kind.addItem("Custom (piecewise linear)", "custom")
+        self.target_kind.setToolTip("Custom: a target mask through frequency/impedance "
+                                    "points, in place of the flat target")
+        self.points = QTableWidget(0, 3)
+        self.points.setHorizontalHeaderLabels(["Frequency", "Target |Z|", ""])
+        hdr = self.points.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.Fixed)
+        self.points.setColumnWidth(2, 28)
+        self.points.verticalHeader().setVisible(False)
+        self.points.setMinimumHeight(130)
+        self.btn_point = QPushButton("Add point")
+        self.btn_point.setToolTip("Add a point a decade above the last one")
+        self.btn_point.clicked.connect(self._add_point)
+        self.lbl_points = QLabel("Points are joined by straight lines on the log-log plot; "
+                                 "the target holds the first point's |Z| below it and the "
+                                 "last point's |Z| above it.")
+        self.lbl_points.setWordWrap(True)
+        self.lbl_points.setStyleSheet("color: #999;")
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.rail)
         f.addRow("Ground pins", self.ground)
+        f.addRow("Target", self.target_kind)
         f.addRow("Target |Z|", self.target)
         f.addRow("Target frequency", self.target_f)
         f.addRow(self.btn_calc)
+        f.addRow(self.points)
+        f.addRow(self.btn_point)
+        f.addRow(self.lbl_points)
         hint = QLabel("The PDN impedance solution is the impedance from the probe point "
                       "looking out into the power distribution network through all loop "
                       "paths (power planes, vias, capacitors, series links).")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
-        self._watch(self.name, self.target, self.target_f)
+        self._watch(self.name, self.target, self.target_f, self.target_kind)
+        self.target_kind.currentIndexChanged.connect(self._target_rows)
         self.rail.cmb_part.currentIndexChanged.connect(self._follow_part)
+        self._target_rows()
+
+    def _target_rows(self, *_):
+        custom = self.target_kind.currentData() == "custom"
+        for w in (self.target, self.target_f, self.btn_calc):
+            self.form.setRowVisible(w, not custom)
+        for w in (self.points, self.btn_point, self.lbl_points):
+            self.form.setRowVisible(w, custom)
+
+    def _add_point_row(self, f_hz: float, z_ohm: float):
+        r = self.points.rowCount()
+        self.points.insertRow(r)
+        sf = _spin(0, 1e7, f_hz / 1e3, 3, " kHz", 100)
+        sz = _spin(0, 1e6, z_ohm * 1e3, 3, " mΩ", 1)
+        for col, sp in ((0, sf), (1, sz)):
+            sp.setSpecialValueText("required")
+            sp.valueChanged.connect(self._store)
+            self.points.setCellWidget(r, col, sp)
+        btn = QToolButton()
+        btn.setText("✕")
+        btn.setAutoRaise(True)
+        btn.setToolTip("Remove this point")
+        btn.clicked.connect(lambda _=False, b=btn: self._remove_point_of(b))
+        self.points.setCellWidget(r, 2, btn)
+
+    def _add_point(self):
+        pts = self._points_value()
+        f_hz, z_ohm = max(pts) if pts else (1e5, self.target.value() / 1e3 or 0.01)
+        self._add_point_row(min(f_hz * 10, 1e10), z_ohm)
+        self._store()
+
+    def _remove_point_of(self, widget):
+        for r in range(self.points.rowCount()):
+            if self.points.cellWidget(r, 2) is widget:
+                self.points.removeRow(r)
+                self._store()
+                return
+
+    def _points_value(self):
+        return [(self.points.cellWidget(r, 0).value() * 1e3,
+                 self.points.cellWidget(r, 1).value() / 1e3)
+                for r in range(self.points.rowCount())]
 
     def _calculator(self):
         from kipi.ac.gui.target_calc import TargetCalculator
@@ -267,6 +345,11 @@ class ProbeEditor(_Editor):
         self.ground.set_value(p.ground)
         self.target.setValue((p.target_ohm or 0.0) * 1e3)
         self.target_f.setValue((p.target_hz or 0.0) / 1e3)
+        self.points.setRowCount(0)
+        for f_hz, z_ohm in sorted(p.target_points):
+            self._add_point_row(f_hz, z_ohm)
+        self.target_kind.setCurrentIndex(1 if p.target_custom else 0)
+        self._target_rows()
 
     def _save(self, p: Probe):
         new_rail = self.rail.value() or p.rail
@@ -279,6 +362,11 @@ class ProbeEditor(_Editor):
         p.ground = self.ground.value() or p.ground
         p.target_ohm = self.target.value() / 1e3 or None
         p.target_hz = self.target_f.value() * 1e3 or None
+        p.target_custom = self.target_kind.currentData() == "custom"
+        if p.target_custom and self.points.rowCount() == 0:
+            # Switching to custom: start from the flat target's level.
+            self._add_point_row(p.target_hz or 1e6, p.target_ohm or 0.01)
+        p.target_points = self._points_value()
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +376,7 @@ class ProbeEditor(_Editor):
 class ACPanel(QWidget):
     solve_requested = Signal(object, str, str)     # PISetup, VRM name, ground net
     save_requested = Signal()
-    result_selected = Signal(object)               # ACResult shown in the plot
+    result_selected = Signal(object)               # ACResult shown in the plot; None clears it
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -296,6 +384,7 @@ class ACPanel(QWidget):
         self.setup = PISetup()
         self._nets: List[str] = []
         self.result = None
+        self._results: Dict[str, object] = {}     # the last ACResult of each rail (VRM name)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
 
@@ -367,8 +456,9 @@ class ACPanel(QWidget):
         self.tbl_probes.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_probes.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_probes.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.tbl_probes.setToolTip("Worst |Z|: the highest impedance up to the probe's "
-                                   "target frequency (the whole sweep without one)")
+        self.tbl_probes.setToolTip("Worst |Z|: where the impedance comes closest to (or "
+                                   "furthest over) the probe's target; the highest impedance "
+                                   "in the sweep without one")
         make_sortable(self.tbl_probes)
         self.txt_notes = QLabel(g_res)
         self.txt_notes.setWordWrap(True)
@@ -507,7 +597,8 @@ class ACPanel(QWidget):
 
     def _fill_rails(self):
         s = self.setup.ac
-        want = s.rail or self.cmb_rail.currentData()
+        was = self.cmb_rail.currentData()
+        want = s.rail or was
         self.cmb_rail.blockSignals(True)
         self.cmb_rail.clear()
         for v in self.setup.vrms:
@@ -515,7 +606,13 @@ class ACPanel(QWidget):
         i = self.cmb_rail.findData(want)
         self.cmb_rail.setCurrentIndex(i if i >= 0 else (0 if self.setup.vrms else -1))
         self.cmb_rail.blockSignals(False)
+        names = {v.name for v in self.setup.vrms}
+        for gone in set(self._results) - names:        # a VRM was removed or renamed
+            del self._results[gone]
         self._fill_grounds()
+        if self.cmb_rail.currentData() != was or (self.result is not None
+                                                  and self.result.rail not in names):
+            self._show_rail_result()
 
     def _fill_grounds(self):
         s = self.setup.ac
@@ -550,6 +647,7 @@ class ACPanel(QWidget):
         self.setup.ac.ground = ""                      # follow the new VRM's ground
         self._fill_grounds()
         self._on_changed()
+        self._show_rail_result()
 
     def _gnd_changed(self, _i):
         self.setup.ac.ground = self.ground()
@@ -658,11 +756,20 @@ class ACPanel(QWidget):
 
     @staticmethod
     def _describe_probe(p: Probe) -> str:
-        target = f", target {p.target_ohm * 1e3:g} mΩ" if p.target_ohm else ""
+        if p.target_custom:
+            n = len(p.target_points)
+            target = f", custom target ({n} point{'s' if n != 1 else ''})"
+        else:
+            target = f", target {p.target_ohm * 1e3:g} mΩ" if p.target_ohm else ""
         return f"{p.name}: {p.rail.net} / {p.ground.net} ({p.rail.label()}){target}"
 
     # ------------------------------------------------------------------ results
     def clear_results(self):
+        """Forget every rail's results (a new board)."""
+        self._results.clear()
+        self._clear_table()
+
+    def _clear_table(self):
         self.result = None
         reset_sort(self.tbl_probes)
         self.tbl_probes.setRowCount(0)
@@ -673,7 +780,27 @@ class ACPanel(QWidget):
         self.txt_notes.setText(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
                                f'{html.escape(message).replace(chr(10), "<br>")}</span>')
 
+    def _show_rail_result(self):
+        """Show the selected rail's last results, or nothing if it has not been solved."""
+        result = self._results.get(self.cmb_rail.currentData() or "")
+        if result is not None:
+            self._display(result)
+        elif self.result is not None or self.txt_notes.text():
+            self._clear_table()
+            self.result_selected.emit(None)
+
     def show_result(self, result):
+        """A finished solve: kept for its rail, and shown if that rail is still selected."""
+        self._results[result.rail] = result
+        if result.rail == (self.cmb_rail.currentData() or ""):
+            self._display(result)
+        else:                                          # the rail was changed while solving
+            note = (f"<b>{html.escape(result.rail)}</b> solved: select it under Rail to see "
+                    f"its results.")
+            text = self.txt_notes.text() if self.result is not None else ""
+            self.txt_notes.setText(f"{text}<br>{note}" if text else note)
+
+    def _display(self, result):
         self.result = result
         t = self.tbl_probes
         reset_sort(t)
@@ -683,7 +810,7 @@ class ACPanel(QWidget):
             ok = c.passed(result.freqs)
             set_row(t, r, [c.name, (f"{np.min(c.mag) * 1e3:.4g}", float(np.min(c.mag))),
                            (f"{zmax * 1e3:.4g}", zmax), (f"{fmax / 1e6:.4g}", fmax),
-                           "" if c.target_ohm is None else f"{c.target_ohm * 1e3:g}",
+                           _target_text(c),
                            {None: "", True: "PASS", False: "FAIL"}[ok]])
             if ok is not None:
                 t.item(r, 5).setForeground(QColor("#60d060" if ok else "#ff6060"))

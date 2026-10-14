@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 
 from kipi.ac.checks import rail_caps, rail_nets, validate_ac
 from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
+from kipi.ac.target import target_at
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.dc.pi.model import PISetup
@@ -31,24 +32,38 @@ class ProbeCurve:
     z: np.ndarray                         # complex ohms at ACResult.freqs
     target_ohm: Optional[float] = None
     target_hz: Optional[float] = None
+    target_points: Optional[List[Tuple[float, float]]] = None   # custom mask, in place of
+                                                                 # the flat target
 
     @property
     def mag(self) -> np.ndarray:
         return np.abs(self.z)
 
+    @property
+    def has_target(self) -> bool:
+        return bool(self.target_points or self.target_ohm)
+
+    def target_at(self, freqs) -> Optional[np.ndarray]:
+        """The target at each of ``freqs`` (NaN where none applies); None without one."""
+        return target_at(freqs, self.target_ohm, self.target_hz, self.target_points)
+
     def worst(self, freqs: np.ndarray):
-        """(|Z|, f) of the highest impedance up to the target frequency (whole sweep if
-        none)."""
-        sel = freqs <= self.target_hz if self.target_hz else np.ones(len(freqs), bool)
-        if not sel.any():
-            sel[:] = True
-        i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel]))]
+        """(|Z|, f) where the impedance comes closest to (or furthest over) the target, up
+        to where the target applies; the highest impedance in the sweep without one."""
+        t = self.target_at(freqs)
+        if t is None:
+            i = int(np.argmax(self.mag))
+        else:
+            sel = np.isfinite(t)
+            i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel] / t[sel]))]
         return float(self.mag[i]), float(freqs[i])
 
     def passed(self, freqs: np.ndarray) -> Optional[bool]:
-        if self.target_ohm is None:
+        t = self.target_at(freqs)
+        if t is None:
             return None
-        return self.worst(freqs)[0] <= self.target_ohm
+        sel = np.isfinite(t)
+        return bool(np.all(self.mag[sel] <= t[sel]))
 
 
 @dataclass
@@ -196,8 +211,8 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     with progress.timed(f"Sweep: {len(freqs)} frequencies"):
         z = terminate(_interpolate(f_field, zb, freqs), freqs, ports)
     probe_ports = [p for p in ports if p.kind == "probe"]
-    curves = [ProbeCurve(p.name, z[:, i], p.element.target_ohm, p.element.target_hz)
-              for i, p in enumerate(probe_ports)]
+    curves = [ProbeCurve(p.name, z[:, i], p.element.target_ohm, p.element.target_hz,
+                         p.element.target_mask()) for i, p in enumerate(probe_ports)]
     for c in curves:
         zmax, fmax = c.worst(freqs)
         verdict = {None: "", True: " PASS", False: " FAIL"}[c.passed(freqs)]

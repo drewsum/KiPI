@@ -8,7 +8,7 @@ imports the DC model, so the setup can import this module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:                       # PinRef lives in the setup model, which imports us
     from kipi.dc.pi.model import PinRef
@@ -43,6 +43,14 @@ class Probe:
     ground: "PinRef"
     target_ohm: Optional[float] = None    # target impedance, flat up to target_hz
     target_hz: Optional[float] = None
+    # A custom target mask in place of the flat one: (f_hz, z_ohm) corner points, joined
+    # by straight lines on the log-log plot. The flat values are kept while it is in use.
+    target_custom: bool = False
+    target_points: List[Tuple[float, float]] = field(default_factory=list)
+
+    def target_mask(self) -> Optional[List[Tuple[float, float]]]:
+        """The custom mask's points, sorted by frequency, when it is in use."""
+        return sorted(self.target_points) if self.target_custom and self.target_points             else None
 
 
 @dataclass

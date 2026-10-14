@@ -894,6 +894,7 @@ class PIPanel(QWidget):
         self.res_tabs.addTab(self._vias_tab(), "Vias")
         self.tbl_losses = self._table(["Group"], sortable=True)
         self.res_tabs.addTab(self.tbl_losses, "Losses")
+        self.thermal_res = self._thermal_results_tab()   # shown after an electro-thermal solve
         self.res_tabs.addTab(self.txt_notes, "Notes")
         self.tbl_loads.cellDoubleClicked.connect(self._row_to_group)
         lr.addWidget(self.res_tabs)
@@ -926,6 +927,85 @@ class PIPanel(QWidget):
         self.chk_arrows.setEnabled(on)
         self.chk_arrows.setToolTip("Show current-flow arrows over the copper" if on else
                                    "Current arrows are shown with Current density")
+
+    def _thermal_results_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0)
+        self.lbl_thermal = QLabel()
+        self.lbl_thermal.setWordWrap(True)
+        self.lbl_thermal.setTextFormat(Qt.RichText)
+        v.addWidget(self.lbl_thermal)
+        self.tbl_temps = self._table(["Layer", "Peak (°C)", "Rise (°C)", "x (mm)", "y (mm)",
+                                      "Group", ""], sortable=True)
+        self.tbl_temps.setToolTip("The hottest solved copper on each layer. Double-click a "
+                                  "row to show its group's temperature.")
+        self.tbl_temps.cellDoubleClicked.connect(self._temp_row_clicked)
+        v.addWidget(self.tbl_temps, 1)
+        self.lbl_thermal_details = QLabel()
+        self.lbl_thermal_details.setWordWrap(True)
+        self.lbl_thermal_details.setTextFormat(Qt.RichText)
+        self.lbl_thermal_details.setStyleSheet("color: #999;")
+        v.addWidget(self.lbl_thermal_details)
+        return w
+
+    def _show_thermal_tab(self, on: bool):
+        """The Thermal results tab is there only after an electro-thermal solve."""
+        i = self.res_tabs.indexOf(self.thermal_res)
+        if on and i < 0:
+            self.res_tabs.insertTab(self.res_tabs.indexOf(self.txt_notes), self.thermal_res,
+                                    "Thermal")
+        elif not on and i >= 0:
+            self.res_tabs.removeTab(i)
+
+    def _fill_thermal(self):
+        from kipi.dc.pi.report import layer_temps, limits_text, thermal_passed
+        th = getattr(self._tree, "thermal", None)
+        self._show_thermal_tab(th is not None)
+        if th is None:
+            return
+        limits = self.setup.thermal
+        rows = layer_temps(self._tree, self.snapshot, limits)
+        t = self.tbl_temps
+        reset_sort(t)
+        t.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            status = "" if row.passed is None else ("PASS" if row.passed else "FAIL")
+            set_row(t, r, [row.layer, (f"{row.t_max:.1f}", row.t_max),
+                           (f"{row.rise:.1f}", row.rise), f"{row.x:.1f}", f"{row.y:.1f}",
+                           row.group, status])
+            if row.passed is not None:
+                t.item(r, 6).setForeground(QColor("#60d060" if row.passed else "#ff6060"))
+        x, y, tmax = th.hottest()
+        ambient = th.settings.ambient_c
+        verdict = thermal_passed(rows)
+        if verdict is None:
+            judged = "No temperature limits set (see the Thermal settings tab)."
+        else:
+            color = "#60d060" if verdict else "#ff6060"
+            judged = (f'<span style="color:{color}"><b>{"PASS" if verdict else "FAIL"}</b>'
+                      f"</span>: {html.escape(limits_text(limits))}.")
+        self.lbl_thermal.setText(
+            f"Peak board temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
+            f"({x:.1f}, {y:.1f}) mm; {th.heat_w:.3g} W into the board, ambient {ambient:g} °C, "
+            f"airflow {th.settings.airflow_m_s:g} m/s.<br>{judged}")
+        details = ["Iterations: " + ", ".join(
+            f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history)]
+        if th.dielectrics:
+            details.append("Dielectrics: " + "; ".join(
+                f"{html.escape(m or '(unnamed)')} {d:.3f} mm → {html.escape(i.matched)}, "
+                f"{i.k_w_mk:g} W/m·K{' ⚠ assumed' if i.assumed else ''}"
+                for m, d, i in th.dielectrics))
+        self.lbl_thermal_details.setText("<br>".join(details))
+
+    def _temp_row_clicked(self, row, _col):
+        it = self.tbl_temps.item(row, 5)
+        if it is None:
+            return
+        self.cmb_group.setCurrentText(it.text())
+        i = self.cmb_field.findData("temperature")
+        if i >= 0:
+            self.cmb_field.setCurrentIndex(i)
 
     def _vias_tab(self) -> QWidget:
         w = QWidget()
@@ -1140,6 +1220,15 @@ class PIPanel(QWidget):
         f.addRow("Airflow", self.spin_airflow)
         f.addRow("Grid", self.spin_tgrid)
         f.addRow("Laminate k", self.spin_lam_k)
+        self.spin_max_t = _spin(0, 500, t.max_temp_c or 0.0, 1, " °C", 5)
+        self.spin_max_t.setSpecialValueText("none")
+        self.spin_max_t.setToolTip("Copper hotter than this, on any layer, is marked FAIL")
+        self.spin_max_rise = _spin(0, 500, t.max_rise_c or 0.0, 1, " °C", 5)
+        self.spin_max_rise.setSpecialValueText("none")
+        self.spin_max_rise.setToolTip("Copper this much hotter than ambient, on any layer, is "
+                                      "marked FAIL")
+        f.addRow("Max copper temperature", self.spin_max_t)
+        f.addRow("Max rise above ambient", self.spin_max_rise)
         note = QLabel("Heat from every net and layer (copper, vias, DC parts, VRM conversion "
                       "loss) spreads through the board's copper and laminate and leaves both "
                       "faces by convection: h = 10 + 3.8·v W/m²K per face.")
@@ -1147,7 +1236,8 @@ class PIPanel(QWidget):
         note.setStyleSheet("color: #999;")
         f.addRow(note)
         self.chk_thermal.toggled.connect(self._thermal_changed)
-        for wdg in (self.spin_ambient, self.spin_airflow, self.spin_tgrid, self.spin_lam_k):
+        for wdg in (self.spin_ambient, self.spin_airflow, self.spin_tgrid, self.spin_lam_k,
+                    self.spin_max_t, self.spin_max_rise):
             wdg.valueChanged.connect(self._thermal_changed)
         self.spin_iters.valueChanged.connect(self._thermal_changed)
         return w
@@ -1160,10 +1250,14 @@ class PIPanel(QWidget):
         t.airflow_m_s = self.spin_airflow.value()
         t.grid_mm = self.spin_tgrid.value()
         t.laminate_k_w_mk = self.spin_lam_k.value()
+        t.max_temp_c = self.spin_max_t.value() or None
+        t.max_rise_c = self.spin_max_rise.value() or None
         for wdg in (self.spin_ambient, self.spin_iters, self.spin_airflow, self.spin_tgrid,
-                    self.spin_lam_k):
+                    self.spin_lam_k, self.spin_max_t, self.spin_max_rise):
             wdg.setEnabled(t.enabled)
         self.btn_solve.setText(self._solve_label())
+        if getattr(self, "_tree", None) is not None:
+            self._fill_thermal()        # the limits grade the last solve straight away
 
     def _solve_tab(self) -> QWidget:
         w = QWidget()
@@ -1261,6 +1355,8 @@ class PIPanel(QWidget):
         for wdg, val in ((self.spin_ambient, t.ambient_c), (self.spin_iters, t.iterations),
                          (self.spin_airflow, t.airflow_m_s), (self.spin_tgrid, t.grid_mm),
                          (self.spin_lam_k, t.laminate_k_w_mk),
+                         (self.spin_max_t, t.max_temp_c or 0.0),
+                         (self.spin_max_rise, t.max_rise_c or 0.0),
                          (self.chk_thermal, t.enabled), (self.chk_report, setup.html_report)):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
@@ -1379,8 +1475,10 @@ class PIPanel(QWidget):
         self._tree = None
         if hasattr(self, "btn_export"):
             self.btn_export.setEnabled(False)
-        for t in (self.tbl_loads, self.tbl_vrms, self.tbl_links, self.tbl_vias, self.tbl_losses):
+        for t in (self.tbl_loads, self.tbl_vrms, self.tbl_links, self.tbl_vias, self.tbl_losses,
+                  self.tbl_temps):
             t.setRowCount(0)
+        self._show_thermal_tab(False)
         self.txt_notes.clear()
         self.cmb_group.blockSignals(True)
         self.cmb_group.clear()
@@ -1443,13 +1541,8 @@ class PIPanel(QWidget):
             x, y, tmax = th.hottest()
             notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board, peak "
                             f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
-                            f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s")
-            notes.insert(1, "&nbsp;&nbsp;iterations: " + ", ".join(
-                f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history))
-            notes.insert(2, "&nbsp;&nbsp;dielectrics: " + "; ".join(
-                f"{html.escape(m or '(unnamed)')} {t:.3f} mm → {html.escape(i.matched)}, "
-                f"{i.k_w_mk:g} W/m·K{' ⚠ assumed' if i.assumed else ''}"
-                for m, t, i in th.dielectrics))
+                            f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s "
+                            "(details in the Thermal tab)")
         for g in tree.groups.values():
             role = f"driven by {g.driver}" if g.kind == "rail" else f"ground, referenced at {g.driver}"
             notes.append(f"&nbsp;&nbsp;<b>{html.escape(g.name)}</b> ({role}): "
@@ -1473,6 +1566,7 @@ class PIPanel(QWidget):
         self._tree = tree
         self._fill_vias()
         self._fill_losses()
+        self._fill_thermal()
         self.btn_export.setEnabled(True)
         self.res_tabs.setCurrentWidget(self.tbl_loads)
 
