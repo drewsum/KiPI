@@ -78,11 +78,16 @@ def test_watchdog_dumps_a_running_task_from_python(tmp_path):
         t = threading.Thread(target=busy_solver_step, name="worker")
         t.start()
         app.watchdog_start(seconds=0.2)
-        time.sleep(1.0)
+        # Wait for a second dump rather than a fixed time: on a slow CI runner the busy
+        # thread can hold off the watchdog's thread for most of a second.
+        crash = log.with_suffix(".crash.log")
+        deadline = time.monotonic() + 30
+        while crash.read_text().count("Task still running") < 2 and time.monotonic() < deadline:
+            time.sleep(0.05)
         app.watchdog_stop()
         stop.set()
         t.join()
-        text = log.with_suffix(".crash.log").read_text()
+        text = crash.read_text()
         open(sys.argv[1], "w").write(f"{text.count('Task still running')} "
                                      f"{'busy_solver_step' in text} {'Timeout' in text}")
     """, tmp_path)
