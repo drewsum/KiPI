@@ -101,8 +101,9 @@ def test_watchdog_reports_a_stalled_ui_thread_with_its_stack(tmp_path):
         def slow_slot():
             time.sleep(1.5)              # the UI thread stuck in one call
         slow_slot()
-        app.ui_alive()
-        time.sleep(0.5)
+        for _ in range(10):              # back to the QTimer's regular heartbeat
+            app.ui_alive()
+            time.sleep(0.05)
         app.watchdog_stop()
         text = log.read_text()
         open(sys.argv[1], "w").write(f"{text.count('UI thread has not responded')} "
