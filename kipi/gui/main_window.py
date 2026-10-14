@@ -17,7 +17,7 @@ from qtpy.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QSizePolicy, QSlider,
-    QSplitter, QStackedWidget, QTextBrowser, QToolBar, QVBoxLayout, QWidget,
+    QSplitter, QStackedWidget, QTabWidget, QTextBrowser, QToolBar, QVBoxLayout, QWidget,
 )
 
 from kipi import __version__
@@ -68,9 +68,17 @@ class MainWindow(QMainWindow):
         self._picked = None   # ("pad"|"via", id)
         self.mode = "dc"
 
-        self.viewer = Viewer3D(self)
-        self.setCentralWidget(self.viewer)
+        # The central area: the 3D view and, in AC mode, the impedance plot as a second tab.
+        from kipi.ac.gui.plot import ImpedancePlot
+        self.views = QTabWidget(self)
+        self.views.setDocumentMode(True)
+        self.viewer = Viewer3D(self.views)
+        self.plot = ImpedancePlot(self.views)
+        self.views.addTab(self.viewer, "3D view")
+        self.views.addTab(self.plot, "Impedance")
+        self.setCentralWidget(self.views)
         self.viewer.on_click(self._on_click)
+        self._set_plot_tab_shown(False)
 
         self._build_toolbar()
         self._build_left_panel()
@@ -106,9 +114,9 @@ class MainWindow(QMainWindow):
         self.act_save = act("Save snapshot…", self.save_snapshot,
                             "Save the extracted board for offline use")
         tb.addSeparator()
-        act("Top", self.viewer.view_top)
-        act("Bottom", self.viewer.view_bottom)
-        act("Iso", self.viewer.view_iso)
+        act("Top", lambda: self._show_3d(self.viewer.view_top))
+        act("Bottom", lambda: self._show_3d(self.viewer.view_bottom))
+        act("Iso", lambda: self._show_3d(self.viewer.view_iso))
         act("Screenshot…", self.save_screenshot)
         tb.addSeparator()
         self.act_open_results = act("Open results…", self.open_results,
@@ -153,14 +161,32 @@ class MainWindow(QMainWindow):
         self.setup_stack.setCurrentWidget(self.solve_panel if mode == "dc" else self.ac_panel)
         self.solve_dock.setWindowTitle(next(t for k, _, t in MODES if k == mode))
         self.act_open_results.setEnabled(mode == "dc")
+        self._set_plot_tab_shown(mode == "ac")
         if mode == "dc":
             if self._tree:
                 self._show_group(self.solve_panel.cmb_group.currentText())
         else:
             self.viewer.clear_result()        # DC results do not apply; show the copper
-            self.plot_dock.show()
-            self.plot_dock.raise_()
+            if self.plot.result is not None:
+                self.views.setCurrentWidget(self.plot)
         self.log(f"Analysis mode: {mode.upper()}")
+
+    def _set_plot_tab_shown(self, shown: bool):
+        """Show the impedance tab only in AC mode. QTabWidget.setTabVisible needs Qt 5.15;
+        older Qt disables the tab instead."""
+        i = self.views.indexOf(self.plot)
+        if hasattr(self.views, "setTabVisible"):
+            self.views.setTabVisible(i, shown)
+        else:
+            self.views.setTabEnabled(i, shown)
+        if not shown and self.views.currentIndex() == i:
+            self.views.setCurrentWidget(self.viewer)
+
+    def _show_3d(self, then=None):
+        """Bring the 3D view to the front (from the impedance tab), then run ``then``."""
+        self.views.setCurrentWidget(self.viewer)
+        if then is not None:
+            then()
 
     def _check_mode_button(self, mode: str):
         rb = self.findChild(QRadioButton, f"mode_{mode}")
@@ -304,18 +330,6 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(420)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self._result = None
-
-        # AC impedance plot, tabbed with the log.
-        from kipi.ac.gui.plot import ImpedancePlot
-        self.plot = ImpedancePlot(self)
-        pd = QDockWidget("Impedance", self)
-        pd.setObjectName("impedance_dock")
-        pd.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        pd.setWidget(self.plot)
-        self.addDockWidget(Qt.BottomDockWidgetArea, pd)
-        self.tabifyDockWidget(self.log_dock, pd)
-        self.log_dock.raise_()
-        self.plot_dock = pd
 
     def _build_log_dock(self):
         w = QWidget(self)
@@ -486,7 +500,10 @@ class MainWindow(QMainWindow):
     def save_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save screenshot", "kipi.png", "PNG (*.png)")
         if path:
-            self.viewer.screenshot(path)
+            if self.views.currentWidget() is self.plot:
+                self.plot.save_png(path)
+            else:
+                self.viewer.screenshot(path)
             self.log(f"Screenshot saved to {path}")
 
     def _set_snapshot(self, snap: BoardSnapshot):
@@ -817,8 +834,7 @@ class MainWindow(QMainWindow):
 
     def _show_ac_result(self, result):
         self.plot.set_result(result)
-        self.plot_dock.show()
-        self.plot_dock.raise_()
+        self.views.setCurrentWidget(self.plot)
 
     def _cut_changed(self, *_):
         axis = self.cmb_cut.currentText().lower()
@@ -829,6 +845,7 @@ class MainWindow(QMainWindow):
 
     def _show_via(self, group: str, owner_id: str):
         """Jump to a via from the results table: show its group, center and select it."""
+        self._show_3d()
         if self.solve_panel.cmb_group.currentText() != group:
             self.solve_panel.cmb_group.setCurrentText(group)
         elif self.viewer.result is None:          # the copper view is up ("Show copper")

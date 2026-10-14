@@ -66,3 +66,19 @@ def test_mode_does_not_change_while_a_task_runs(window, monkeypatch):
     assert window.mode == "dc"
     assert _mode(window, "dc").isChecked() and not _mode(window, "ac").isChecked()
     assert window.setup_stack.currentWidget() is window.solve_panel
+
+
+def _plot_tab_shown(w) -> bool:
+    i = w.views.indexOf(w.plot)
+    return w.views.isTabVisible(i) if hasattr(w.views, "isTabVisible") else w.views.isTabEnabled(i)
+
+
+def test_impedance_plot_is_a_tab_beside_the_3d_view_in_ac_only(window):
+    assert window.views.indexOf(window.viewer) == 0 and window.views.indexOf(window.plot) == 1
+    assert not _plot_tab_shown(window)
+    _mode(window, "ac").setChecked(True)
+    assert _plot_tab_shown(window)
+    window.views.setCurrentWidget(window.plot)
+    _mode(window, "dc").setChecked(True)
+    assert not _plot_tab_shown(window)
+    assert window.views.currentWidget() is window.viewer
