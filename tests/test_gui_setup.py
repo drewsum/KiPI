@@ -95,3 +95,22 @@ def test_dc_connection_takes_a_resistors_value(app):
     pick("R5")
     assert k.resistance == pytest.approx(0.01) and ed.r.value() == pytest.approx(10.0)
     panel.close()
+
+
+def test_solve_tab_excludes_unticked_groups(app):
+    from qtpy.QtCore import Qt
+
+    from kipi.dc.pi.model import Load, PinRef
+    setup = two_phase(ground=True, sense=True)
+    setup.loads.append(Load("U9", PinRef("U9", "+5V"), 0.5))   # no VRM drives +5V
+    panel = PIPanel()
+    panel.set_board(board(), setup, "test")
+    assert not panel.btn_solve.isEnabled()
+    lst = panel.lst_groups
+    row = next(i for i in range(lst.count()) if lst.item(i).text().startswith("+5V"))
+    lst.item(row).setCheckState(Qt.Unchecked)
+    assert setup.excluded_nets == ["+5V"]
+    assert panel.btn_solve.isEnabled(), panel.lbl_errors.text()
+    assert panel.btn_solve.text() == f"Solve {lst.count() - 1} of {lst.count()} net groups"
+    panel._tick_all_groups(True)
+    assert setup.excluded_nets == [] and panel.btn_solve.text() == "Solve all"

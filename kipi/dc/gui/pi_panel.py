@@ -1,7 +1,8 @@
 """Power-integrity setup panel: VRMs, loads and series links, all user-defined.
 
 Each tab is a list of items with an editor form. Edits go straight into the
-:class:`~kipi.dc.pi.model.PISetup`, which is validated after every change.
+:class:`~kipi.dc.pi.model.PISetup`, which is validated after every change. The Solve tab
+picks which net groups are solved; only those are validated.
 
 The VRM and series link editors are shared with the AC panel (:mod:`kipi.ac.gui.panel`):
 both analyses use the same VRMs and links, and each editor grays out the fields that do
@@ -22,15 +23,17 @@ from qtpy.QtCore import QSettings, Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea,
-    QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QToolButton,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
+    QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
+    QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import guess_voltage, sorted_nets
 from kipi.core.model.parts import resistor_ohms
-from kipi.dc.pi.model import DcLink, Load, PinRef, PISetup, Vrm, validate
+from kipi.dc.pi.model import (
+    DcLink, Load, PinRef, PISetup, Vrm, active_setup, group_name, net_groups, validate,
+)
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS
@@ -809,6 +812,7 @@ class PIPanel(QWidget):
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.load_list, "Loads")
         self.tabs.addTab(self.link_list, "Series links")
+        self.tabs.addTab(self._solve_tab(), "Solve")
         self.tabs.addTab(self._settings_tab(), "Mesh")
         self.tabs.addTab(self._copper_tab(), "Copper")
         self.tabs.addTab(self._thermal_tab(), "Thermal")
@@ -1159,7 +1163,74 @@ class PIPanel(QWidget):
         for wdg in (self.spin_ambient, self.spin_iters, self.spin_airflow, self.spin_tgrid,
                     self.spin_lam_k):
             wdg.setEnabled(t.enabled)
-        self.btn_solve.setText("Solve all (electro-thermal)" if t.enabled else "Solve all")
+        self.btn_solve.setText(self._solve_label())
+
+    def _solve_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        note = QLabel("Net groups to solve. Untick the ones that are not modeled or routed yet "
+                      "to solve the rest.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #999;")
+        v.addWidget(note)
+        self.lst_groups = QListWidget(w)
+        self.lst_groups.itemChanged.connect(self._store_ticks)
+        v.addWidget(self.lst_groups, 1)
+        row = QHBoxLayout()
+        for text, on in (("All", True), ("None", False)):
+            b = QPushButton(text, w)
+            b.clicked.connect(partial(self._tick_all_groups, on))
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        return w
+
+    def _fill_groups(self):
+        """One checkable row per net group in the setup: rails, then grounds, then the rest."""
+        setup = self.setup
+        groups = net_groups(setup)
+        driver = {groups[v.output.net]: v for v in setup.vrms}
+        grounds = {groups[r.net] for r in [*(v.ground for v in setup.vrms),
+                                           *(l.ground for l in setup.loads)] if r}
+        off = set(setup.excluded_nets)
+
+        def role(g):
+            if g in driver:
+                return 0, f"rail from {driver[g].name}"
+            if g in grounds:
+                return 1, "ground"
+            return 2, "no VRM drives it"
+        rows = sorted((role(g), group_name(g), g) for g in set(groups.values()))
+        self.lst_groups.blockSignals(True)
+        self.lst_groups.clear()
+        for (_, what), name, g in rows:
+            it = QListWidgetItem(f"{name}  ({what})")
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Unchecked if g & off else Qt.Checked)
+            it.setData(Qt.UserRole, sorted(g))
+            self.lst_groups.addItem(it)
+        self.lst_groups.blockSignals(False)
+
+    def _store_ticks(self, *_):
+        """Exclude the nets of every unticked group."""
+        lst = self.lst_groups
+        self.setup.excluded_nets = sorted(
+            n for i in range(lst.count()) if lst.item(i).checkState() != Qt.Checked
+            for n in lst.item(i).data(Qt.UserRole))
+        self._on_changed()
+
+    def _tick_all_groups(self, on: bool):
+        self.lst_groups.blockSignals(True)
+        for i in range(self.lst_groups.count()):
+            self.lst_groups.item(i).setCheckState(Qt.Checked if on else Qt.Unchecked)
+        self.lst_groups.blockSignals(False)
+        self._store_ticks()
+
+    def _solve_label(self) -> str:
+        n = self.lst_groups.count()
+        on = sum(self.lst_groups.item(i).checkState() == Qt.Checked for i in range(n))
+        text = "Solve all" if on == n else f"Solve {on} of {n} net groups"
+        return text + (" (electro-thermal)" if self.setup.thermal.enabled else "")
 
     def _settings_changed(self, *_):
         s = self.setup.settings
@@ -1228,11 +1299,16 @@ class PIPanel(QWidget):
             il.editor.refresh_nets(self._nets)
 
     def _on_changed(self):
-        errors = validate(self.setup) if (self.setup.vrms or self.setup.loads) else []
+        self._fill_groups()
+        active, _ = active_setup(self.setup)
+        errors = validate(active) if (active.vrms or active.loads) else []
         if not self.setup.vrms:
             errors.insert(0, "Add a VRM (the source of a net) to start")
+        elif not active.vrms:
+            errors.insert(0, "Tick a net group driven by a VRM in the Solve tab")
         self.lbl_errors.setText("\n".join(f"• {e}" for e in errors))
         self.btn_solve.setEnabled(not errors)
+        self.btn_solve.setText(self._solve_label())
 
     # ------------------------------------------------------------------ new items
     def _first_net(self) -> Optional[str]:
@@ -1293,7 +1369,7 @@ class PIPanel(QWidget):
     # ------------------------------------------------------------------ results
     def set_busy(self, busy: bool, queued: bool = False):
         self.btn_solve.setEnabled(not busy and not self.lbl_errors.text())
-        idle = "Solve all (electro-thermal)" if self.setup.thermal.enabled else "Solve all"
+        idle = self._solve_label()
         self.btn_solve.setText(("Queued…" if queued else "Solving…") if busy else idle)
 
     def current_field(self) -> str:
@@ -1313,7 +1389,9 @@ class PIPanel(QWidget):
     def show_error(self, message: str):
         self.res_tabs.setCurrentWidget(self.txt_notes)
         self.txt_notes.setHtml(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
-                               f'{html.escape(message).replace(chr(10), "<br>")}</span>')
+                               f'{html.escape(message).replace(chr(10), "<br>")}</span>'
+                               "<br><br>To solve the other nets first, untick the net group "
+                               "with the problem in the Solve tab.")
 
     def show_results(self, tree, initial_group: str):
         for t in (self.tbl_loads, self.tbl_vrms, self.tbl_links):

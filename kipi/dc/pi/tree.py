@@ -24,6 +24,9 @@ output delivers, and its input pins are a load on the group feeding it.
 After the solve each VRM's input is checked against its dropout and input range. A VRM
 that cannot hold its set point fails every load it feeds, directly or downstream; a
 group whose iteration did not converge leaves its loads unjudged.
+
+Excluded nets: only the net groups kept by :func:`~kipi.dc.pi.model.active_setup` are
+solved; its notes on what was left out become warnings.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ import numpy as np
 
 from kipi.core.mesh.mesher import mesh_nets
 from kipi.core.model.board import BoardSnapshot
-from kipi.dc.pi.model import Load, PISetup, PinRef, Vrm, net_groups, validate
+from kipi.dc.pi.model import Load, PISetup, PinRef, Vrm, active_setup, net_groups, validate
 from kipi.dc.pi.results import (  # also importable from here, where they were defined
     NOT_CONVERGED,
     OUT_OF_REGULATION,
@@ -141,6 +144,9 @@ class _TreeSolver:
     def __init__(self, snap: BoardSnapshot, setup: PISetup, progress: ProgressReporter,
                  temperature, mesh_cache: Optional[dict],
                  factor_cache: Optional[dict] = None):
+        setup, self.notes = active_setup(setup)
+        if not setup.vrms:
+            raise SolveError("Nothing to solve: no VRM drives a selected net group")
         errors = validate(setup)
         if errors:
             raise SolveError("Setup problems:\n- " + "\n- ".join(errors))
@@ -385,7 +391,7 @@ class _TreeSolver:
     # ------------------------------------------------------------ run
     def run(self) -> TreeResult:
         t0 = time.perf_counter()
-        out = TreeResult()
+        out = TreeResult(warnings=list(self.notes))
         for tree_pass in range(1, MAX_TREE_ITERATIONS + 1):
             warnings: List[str] = []
             self.not_converged = set()
@@ -516,9 +522,9 @@ def solve_tree(snap: BoardSnapshot, setup: PISetup,
                progress: ProgressReporter = NULL, temperature=None,
                mesh_cache: Optional[dict] = None,
                factor_cache: Optional[dict] = None) -> TreeResult:
-    """Solve every rail and ground group. ``temperature`` (optional) maps KiCad xy (mm) to
-    copper temperature in degC for temperature-dependent resistivity. ``mesh_cache`` (a
-    dict) lets repeated solves of the same setup reuse their meshes; ``factor_cache`` (a
+    """Solve every rail and ground group that is not excluded. ``temperature`` (optional)
+    maps KiCad xy (mm) to copper temperature in degC for temperature-dependent resistivity.
+    ``mesh_cache`` (a dict) lets repeated solves of the same setup reuse their meshes; ``factor_cache`` (a
     dict) keeps each group's solver so the next solve can reuse its AMG hierarchy as the
     preconditioner, which pays off when only the temperature has changed."""
     return _TreeSolver(snap, setup, progress, temperature, mesh_cache, factor_cache).run()

@@ -11,6 +11,16 @@ milestones rather than versions that were ever set.
   default and works as before. AC is a placeholder for a planned PDN impedance analysis;
   choosing it swaps the PI setup panel for an AC one, and the DC setup and results come
   back when DC is chosen again.
+- **Solve only some nets (restored).** The DC setup's Solve tab lists every net group with
+  a checkbox, so rails that are not modeled or routed yet can be left out while the rest is
+  solved. It was written for 0.6.0 but never reached a release. Only the ticked groups are
+  validated, and the choice is saved with the setup. Where a solved group meets an
+  excluded one:
+  - A VRM whose output is excluded becomes a constant load on its input pins, drawing the
+    input current its rail would need at nominal voltages.
+  - A VRM whose input is excluded is treated as an ideal source.
+  - Ground pins on an excluded ground are ignored.
+  - The Notes tab lists what was left out and these substitutions.
 - **Optional multithreaded solver.** If `pypardiso` is installed (Windows and Linux on
   x86-64), KiPI solves with Intel MKL's PARDISO, and directly for rails of up to 1M
   unknowns. A 645k-unknown rail solves in 1.2 s instead of about 8 s.

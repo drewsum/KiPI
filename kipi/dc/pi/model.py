@@ -10,6 +10,8 @@ Everything here is entered by the user; nothing is inferred from the board:
   per phase; the phases share its output current equally.
 * **Loads** draw a current from their supply pins, optionally returning it through
   ground pins.
+* **Excluded nets** leave their net groups out of the DC solve (see :func:`active_setup`),
+  so part of a board can be solved before the rest is modeled or routed.
 * **AC setup** (:mod:`kipi.ac.model`): capacitor models, probe points and sweep settings.
   VRMs and series links are shared with the AC analysis; some of their fields apply to
   only one of the two (see each field).
@@ -20,11 +22,12 @@ survives re-extracting the board from KiCad (pad ids are not stable across sessi
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from kipi.ac.model import ACSettings, CapModel, Probe
 from kipi.dc.solver.setup import SolveSettings
@@ -131,6 +134,8 @@ class PISetup:
     # Nets ticked in the Board panel (the nets in scope). None = never chosen, so the
     # GUI guesses the main power and ground planes; [] = the user unticked them all.
     nets: Optional[List[str]] = None
+    # DC: net groups with any of these nets are left out of the solve (see active_setup).
+    excluded_nets: List[str] = field(default_factory=list)
     # AC analysis
     caps: List[CapModel] = field(default_factory=list)
     probes: List[Probe] = field(default_factory=list)
@@ -185,6 +190,7 @@ class PISetup:
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
             html_report=bool(d.get("html_report", False)),
             nets=list(d["nets"]) if d.get("nets") is not None else None,
+            excluded_nets=list(d.get("excluded_nets", [])),
             settings=SolveSettings(**{k: v for k, v in d.get("settings", {}).items()
                                       if k in known}),
             caps=[CapModel(c["name"], c.get("capacitance_f", 0.0), c.get("esl_h", 0.0),
@@ -367,7 +373,8 @@ def validate(setup: PISetup) -> List[str]:
         if not any(v.kind == "source" and v.ground and groups[v.ground.net] == g
                    for v in setup.vrms):
             errors.append(f"Ground {group_name(g)} needs a reference: set the ground pins of "
-                          "the source VRM that returns current through it")
+                          "the source VRM that returns current through it (and solve that "
+                          "VRM's rail)")
 
     # The power tree must not loop (A feeds B feeds A).
     feeds = {groups[v.output.net]: set() for v in setup.vrms}
@@ -395,3 +402,93 @@ def validate(setup: PISetup) -> List[str]:
     if bad:
         errors.append(f"Resistivity must be positive on {', '.join(bad)}")
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Solving only some net groups
+# ---------------------------------------------------------------------------
+
+def _supplied_current(setup: PISetup, groups, g, seen) -> float:
+    """Current drawn from rail group ``g`` at nominal voltages, ignoring copper losses:
+    its loads plus the input current of every VRM it feeds."""
+    amps = sum(l.total_current() for l in setup.loads if groups[l.supply.net] == g)
+    for v in setup.vrms:
+        if v.input and groups[v.input.net] == g:
+            amps += _estimated_input(setup, groups, v, seen)
+    return amps
+
+
+def _estimated_input(setup: PISetup, groups, v: Vrm, seen=frozenset()) -> float:
+    """Input current of VRM ``v`` (all phases) from the nominal voltages of its rails."""
+    if v.name in seen:                       # a power-tree loop; validate() reports it
+        return 0.0
+    i_out = _supplied_current(setup, groups, groups[v.output.net], seen | {v.name})
+    if v.kind == "smps":
+        feed = next((u for u in setup.vrms if groups[u.output.net] == groups[v.input.net]),
+                    None)
+        if feed is None or feed.voltage <= 0:
+            return v.quiescent_a
+        return v.voltage * i_out / (v.efficiency * feed.voltage) + v.quiescent_a
+    return i_out + v.quiescent_a
+
+
+def active_setup(setup: PISetup) -> Tuple[PISetup, List[str]]:
+    """The part of ``setup`` that is DC-solved, and notes on what was left out.
+
+    Net groups with an excluded net are dropped with their loads, VRMs and series
+    links. Where the two halves meet:
+
+    * A VRM whose output is excluded but whose input is solved becomes a constant load
+      on its input pins (one per phase), drawing the input current its rail would need
+      at nominal voltages, without that rail's copper losses.
+    * A VRM whose input is excluded becomes an ideal source.
+    * Ground pins on an excluded ground are dropped: that ground is not simulated.
+    """
+    if not setup.excluded_nets:
+        return setup, []
+    groups = net_groups(setup)
+    off = set(setup.excluded_nets)
+
+    def solved(net: str) -> bool:
+        return not (groups[net] & off)
+
+    def kept(ref: Optional[PinRef]) -> Optional[PinRef]:
+        return ref if ref and solved(ref.net) else None
+
+    out = copy.deepcopy(setup)
+    out.excluded_nets = []
+    skipped = sorted({group_name(g) for g in groups.values() if g & off})
+    notes = [f"Not solved (excluded): {'; '.join(skipped)}"] if skipped else []
+    out.links = [k for k in out.links if solved(k.side_a.net)]
+    loads = []
+    for l in out.loads:
+        if solved(l.supply.net):
+            l.ground = kept(l.ground)
+            loads.append(l)
+    vrms = []
+    for v in out.vrms:
+        phases = v.all_phases()
+        if not solved(v.output.net):
+            if v.input and solved(v.input.net):
+                amps = _estimated_input(setup, groups, v)
+                n = len(phases)
+                for k, ph in enumerate(phases, start=1):
+                    name = f"{v.name} (input)" if n == 1 else f"{v.name} (input, phase {k})"
+                    loads.append(Load(name, ph.input, amps / n, ground=kept(ph.ground)))
+                notes.append(f"{v.name}: its output ({group_name(groups[v.output.net])}) is "
+                             f"not solved, so its input draws an estimated {amps:.4g} A "
+                             "(nominal voltages, no copper losses on that rail)")
+            continue
+        if v.input and not solved(v.input.net):
+            notes.append(f"{v.name}: its input ({group_name(groups[v.input.net])}) is not "
+                         "solved, so it is treated as an ideal source")
+            v.kind, v.input = "source", None
+            for ph in v.phases:
+                ph.input = None
+        if v.ground and not solved(v.ground.net):
+            v.ground = v.ground_sense = None
+            for ph in v.phases:
+                ph.ground = None
+        vrms.append(v)
+    out.vrms, out.loads = vrms, loads
+    return out, notes
