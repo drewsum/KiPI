@@ -48,6 +48,7 @@ class MainWindow(QMainWindow):
         self._kicad = kicad
         self._board = board
         self.snapshot: Optional[BoardSnapshot] = None
+        self.power_tree_window = None
         self._copper_cache: Dict[str, Dict[int, object]] = {}
         self._task: Optional[Task] = None
         self._resync_pending = False   # net checkboxes changed while a task was running
@@ -152,6 +153,9 @@ class MainWindow(QMainWindow):
         self.act_stackup = act("Stackup", self.show_stackup,
                                "The board's layers: thicknesses, εr and copper resistivity, "
                                "for every analysis. Unlock to try another stackup.")
+        self.act_power_tree = act("Power tree", self.show_power_tree,
+                                  "Block diagram of the setup: VRMs (by type), rails, series "
+                                  "links, loads and capacitors, in the direction power flows")
         tb.addSeparator()
         self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser (F1)")
         self.act_help.setShortcut("F1")
@@ -243,6 +247,17 @@ class MainWindow(QMainWindow):
         self.stackup_window.show()
         self.stackup_window.raise_()
         self.stackup_window.activateWindow()
+
+    def show_power_tree(self):
+        from kipi.gui.power_tree import PowerTreeWindow
+        if self.power_tree_window is None:
+            self.power_tree_window = PowerTreeWindow(self)
+        self.power_tree_window.show_tree(self.solve_panel.setup, self.snapshot)
+
+    def _refresh_power_tree(self):
+        w = self.power_tree_window
+        if w is not None and w.isVisible():
+            w.set_source(self.solve_panel.setup, self.snapshot)
 
     def show_help(self):
         from kipi.gui.help import open_help
@@ -407,6 +422,7 @@ class MainWindow(QMainWindow):
         self.ac_panel.results_saved.connect(lambda path: self.log(f"Saved AC results to {path}"))
         for panel in (self.solve_panel, self.ac_panel):
             panel.setup_changed.connect(self._model_timer.start)
+            panel.setup_changed.connect(self._refresh_power_tree)
         # One setup dock; it shows the panel of the current analysis mode.
         self.setup_stack = QStackedWidget(self)
         self.setup_stack.addWidget(self.solve_panel)
@@ -937,6 +953,7 @@ class MainWindow(QMainWindow):
         self._setup_path = path
         self.solve_panel.set_board(snap, setup, label)
         self.ac_panel.set_board(snap, setup, label)
+        self._refresh_power_tree()
         self.plot.clear()
         self.board_map.clear()
         return setup

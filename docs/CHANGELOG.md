@@ -7,6 +7,9 @@ milestones rather than versions that were ever set.
 ## 0.7.2 (in development)
 
 ### Added
+- **Power tree** toolbar button: a block diagram of the VRMs (each type in its own colour, tag and
+  outline), rails, series links, loads and capacitors, laid out in the direction power flows,
+  saveable as a PNG (#58).
 - Thermal settings: **Include load power dissipation** (off by default) heats the board
   with each load's power, the sum over its supply and ground pins of pin current × pin
   voltage, spread over those pins. The DC report lists each load's and DC connection's

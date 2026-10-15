@@ -164,6 +164,11 @@ Below that:
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
   via in the PCB editor.
 
+The **Power tree** toolbar button opens a block diagram of the setup, left to right in
+the direction power flows: sources and regulators (each VRM type in its own colour, tag
+and outline), the rails they drive, series links, and the loads and capacitor models on
+each rail. It redraws as the setup changes and saves as a PNG.
+
 The **Stackup** toolbar button opens a window listing every copper and dielectric layer
 with its thickness (in µm, mm, mil or oz), each dielectric's material, εr and thermal
 conductivity, and each copper layer's conductor and resistivity, with the copper

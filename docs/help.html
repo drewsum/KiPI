@@ -343,6 +343,14 @@ of decimals, plus more when a small typed value needs them.</p>
     mode, the rails saved with the AC panel's <b>Save results…</b>.</td></tr>
   <tr><td><b>Stackup</b></td><td class="wrap">Opens the <a href="#stackup">Stackup
     window</a>: the board's layers with their thicknesses, εr and copper resistivity.</td></tr>
+  <tr><td><b>Power tree</b></td><td class="wrap">Opens a block diagram of the setup, drawn
+    left to right in the direction power flows: each source and regulator, the rails they
+    drive, series links between rails, and the loads and capacitor models on each rail
+    (capacitors are grouped per model and rail, with a dashed line). VRM types differ in
+    colour, tag and outline: a <b>SOURCE</b> has a double border, an <b>LDO</b> a plain one
+    and an <b>SMPS</b> a dashed one. Ground nets are left out. Hover a block for its pins;
+    drag to pan, <kbd>Ctrl</kbd> + wheel to zoom, <b>Save image…</b> for a PNG. It redraws
+    as the setup changes.</td></tr>
   <tr><td><b>Help</b> <kbd>F1</kbd></td><td class="wrap">Opens this guide in your web
     browser.</td></tr>
   <tr><td><b>About</b></td><td class="wrap">Version, author and project links, and how often
