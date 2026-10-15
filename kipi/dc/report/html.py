@@ -362,9 +362,27 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         info("Report: thermal map")
         x, y, tmax = th.hottest()
         parts.append("<h2 id='thermal'>Electro-thermal</h2>")
-        parts.append(f"<p>{th.heat_w:.3g} W into the board; peak <b>{tmax:.1f} °C</b> at "
+        loads_w = getattr(th, "load_heat_w", {}) or {}
+        with_loads = getattr(th.settings, "load_power", False)
+        parts.append(f"<p>{th.heat_w:.3g} W into the board"
+                     + (f" ({sum(max(v, 0.0) for v in loads_w.values()):.3g} W of it from the "
+                        "loads)" if with_loads else ", load power not included")
+                     + f"; peak <b>{tmax:.1f} °C</b> at "
                      f"({x:.1f}, {y:.1f}) mm. Ambient {th.settings.ambient_c:g} °C, airflow "
                      f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
+        heat_rows = ([[_e(k), "load", _num(v)] for k, v in loads_w.items()] if with_loads
+                     else [])
+        heat_rows += [[_e(s.name), "DC connection", _num(s.power)]
+                      for g in tree.groups.values() for s in g.result.fields.series
+                      if s.power > 0]
+        if heat_rows:
+            parts.append("<h3>Component power dissipation</h3>" + _table(
+                ["Part", "Kind", "Power (W)"], heat_rows))
+            parts.append("<p class='note'>Heat put into the board at each part's pins. A DC "
+                         "connection dissipates I²R. "
+                         + ("A load dissipates the sum over its supply and ground pins of pin "
+                            "current × pin voltage." if with_loads else
+                            "Load power is not included (Thermal settings tab).") + "</p>")
         temps = layer_temps(tree, snap, setup.thermal)
         if temps:
             verdict = thermal_passed(temps)

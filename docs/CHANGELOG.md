@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.7.2 (in development)
 
 ### Added
+- Thermal settings: **Include load power dissipation** (off by default) heats the board
+  with each load's power, the sum over its supply and ground pins of pin current × pin
+  voltage, spread over those pins. The DC report lists each load's and DC connection's
+  heat in a new Component power dissipation table (#62).
 - **SI prefixes in value fields** (#60). A value can be typed with a prefix and unit, which
   is converted to the field's unit. For example, `10n` or `10 nF` in a µF field, `2 mOhm`
   or `4k7` for a resistance, `1.2 MHz` in a kHz field, or `3.3 V` in a mV field. This

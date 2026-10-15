@@ -287,6 +287,9 @@ the board and the warmer copper become more resistive. Set:
   material in your KiCad stackup (FR4, prepreg types, polyimide, Kapton, PTFE, Rogers,
   ceramic, aluminum…). Unrecognized names fall back to FR4 with a warning. Enter a value
   here to override.
+* **Include load power dissipation** (off by default): each load also heats the board with
+  the power it draws, the sum over its supply and ground pins of pin current × pin voltage,
+  spread over those pins. DC connection (series link) I²R losses always heat their pins.
 * **Max copper temperature** and **Max rise above ambient** (optional): copper hotter than
   either limit, on any layer, is marked FAIL in the Thermal results tab. Changing them grades
   the last solve straight away.

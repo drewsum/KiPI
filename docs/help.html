@@ -780,11 +780,17 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     ceramic, aluminum…), falling back to FR4 with a warning. The
     <a href="#stackup">Stackup window</a> shows each dielectric's k and lets you choose
     another material.</td></tr>
+  <tr><td>Include load power dissipation</td><td class="wrap">Off by default. When ticked,
+    each load heats the board with the power it draws: the sum over its supply and ground
+    pins of pin current × pin voltage, spread over those pins. A load without ground pins is
+    taken as returning at 0 V.</td></tr>
   <tr><td>Max copper temperature</td><td class="wrap">Optional limit: copper hotter than this
     on any layer is FAIL.</td></tr>
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
 </table>
-<p>Heat comes from every solved net and layer, vias, series parts and VRM conversion loss. The
+<p>Heat comes from every solved net and layer, vias, DC connections (I²R, at their pins), VRM
+conversion loss and, with <b>Include load power dissipation</b>, the loads. The report's
+<b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
 </div>

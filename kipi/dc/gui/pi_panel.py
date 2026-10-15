@@ -134,6 +134,15 @@ def parts_on_net(snap: BoardSnapshot, net: str):
 # Pin picker: net + part + pin numbers
 # ---------------------------------------------------------------------------
 
+
+def _load_heat(th) -> str:
+    """' (of which x W from loads)' when the solve heated the board with the loads (#62)."""
+    loads = getattr(th, "load_heat_w", {}) or {}
+    if not getattr(th.settings, "load_power", False):
+        return ""
+    return f" (of which {sum(max(v, 0.0) for v in loads.values()):.3g} W from loads)"
+
+
 class PinPicker(QWidget):
     changed = Signal()
 
@@ -1194,8 +1203,8 @@ class PIPanel(QWidget):
                       f"</span>: {html.escape(limits_text(limits))}.")
         self.lbl_thermal.setText(
             f"Peak board temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
-            f"({x:.1f}, {y:.1f}) mm; {th.heat_w:.3g} W into the board, ambient {ambient:g} °C, "
-            f"airflow {th.settings.airflow_m_s:g} m/s.<br>{judged}")
+            f"({x:.1f}, {y:.1f}) mm; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
+            f"ambient {ambient:g} °C, airflow {th.settings.airflow_m_s:g} m/s.<br>{judged}")
         details = ["Iterations: " + ", ".join(
             f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history)]
         if th.dielectrics:
@@ -1359,6 +1368,13 @@ class PIPanel(QWidget):
         f.addRow("Airflow", self.spin_airflow)
         f.addRow("Grid", self.spin_tgrid)
         f.addRow("Laminate k", self.spin_lam_k)
+        self.chk_load_power = QCheckBox("Include load power dissipation")
+        self.chk_load_power.setChecked(t.load_power)
+        self.chk_load_power.setToolTip(
+            "Heat the board with the power each load draws too: the sum over its supply and "
+            "ground pins of pin current × pin voltage, spread over those pins. Off: only "
+            "copper, via, DC connection and VRM conversion losses heat the board.")
+        f.addRow(self.chk_load_power)
         tip(f, self.spin_ambient, "Temperature of the air around the board")
         tip(f, self.spin_iters, "Electrical and thermal solves to alternate. Three is usually "
                                 "enough; the Notes tab shows how much each one changed.")
@@ -1379,12 +1395,14 @@ class PIPanel(QWidget):
         for sp in (self.spin_max_t, self.spin_max_rise):
             f.labelForField(sp).setToolTip(sp.toolTip())
         note = QLabel("Heat from every net and layer (copper, vias, DC parts, VRM conversion "
-                      "loss) spreads through the board's copper and laminate and leaves both "
-                      "faces by convection: h = 10 + 3.8·v W/m²K per face.")
+                      "loss and, if ticked, load power) spreads through the board's copper "
+                      "and laminate and leaves both faces by convection: h = 10 + 3.8·v W/m²K "
+                      "per face.")
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
         f.addRow(note)
         self.chk_thermal.toggled.connect(self._thermal_changed)
+        self.chk_load_power.toggled.connect(self._thermal_changed)
         for wdg in (self.spin_ambient, self.spin_airflow, self.spin_tgrid, self.spin_lam_k,
                     self.spin_max_t, self.spin_max_rise):
             wdg.valueChanged.connect(self._thermal_changed)
@@ -1399,10 +1417,11 @@ class PIPanel(QWidget):
         t.airflow_m_s = self.spin_airflow.value()
         t.grid_mm = self.spin_tgrid.value()
         t.laminate_k_w_mk = self.spin_lam_k.value()
+        t.load_power = self.chk_load_power.isChecked()
         t.max_temp_c = self.spin_max_t.value() or None
         t.max_rise_c = self.spin_max_rise.value() or None
         for wdg in (self.spin_ambient, self.spin_iters, self.spin_airflow, self.spin_tgrid,
-                    self.spin_lam_k, self.spin_max_t, self.spin_max_rise):
+                    self.spin_lam_k, self.chk_load_power, self.spin_max_t, self.spin_max_rise):
             wdg.setEnabled(t.enabled)
         self.btn_solve.setText(self._solve_label())
         if getattr(self, "_tree", None) is not None:
@@ -1507,7 +1526,8 @@ class PIPanel(QWidget):
                          (self.spin_lam_k, t.laminate_k_w_mk),
                          (self.spin_max_t, t.max_temp_c or 0.0),
                          (self.spin_max_rise, t.max_rise_c or 0.0),
-                         (self.chk_thermal, t.enabled), (self.chk_report, setup.html_report)):
+                         (self.chk_thermal, t.enabled), (self.chk_load_power, t.load_power),
+                         (self.chk_report, setup.html_report)):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
             wdg.blockSignals(False)
@@ -1677,7 +1697,8 @@ class PIPanel(QWidget):
         th = getattr(tree, "thermal", None)
         if th is not None:
             x, y, tmax = th.hottest()
-            notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board, peak "
+            notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board"
+                            f"{_load_heat(th)}, peak "
                             f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
                             f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s "
                             "(details in the Thermal tab)")

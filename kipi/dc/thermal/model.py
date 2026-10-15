@@ -47,6 +47,9 @@ class ThermalSettings:
     airflow_m_s: float = 0.0
     grid_mm: float = 0.0        # 0 = automatic (~250 cells across the board)
     laminate_k_w_mk: float = 0.0  # 0 = from the stackup's dielectric materials
+    # Heat the loads themselves: each load dissipates the sum over its supply and ground
+    # pins of pin current x pin voltage, spread over those pins (#62).
+    load_power: bool = False
     # PASS / FAIL limits on the solved copper's temperature, per layer (None = no limit)
     max_temp_c: Optional[float] = None
     max_rise_c: Optional[float] = None      # above ambient
