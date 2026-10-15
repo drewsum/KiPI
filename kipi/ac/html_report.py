@@ -3,7 +3,7 @@
 One ``.html`` file with:
 * a summary and the probe table (worst impedance against each target, PASS / FAIL),
 * an interactive impedance plot (Plotly: zoom, pan, hover, click a legend entry to hide a
-  curve): |Z| and phase at every probe, the targets, and each capacitor model on its own,
+  curve): |Z| at every probe, the targets, and each capacitor model on its own,
 * a board map of the rail's copper with the probes and the capacitors in the model,
 * the capacitor models, series links, sweep and mesh settings, and solver statistics.
 
@@ -32,6 +32,22 @@ COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf", "#bc
 COPPER_SIMPLIFY_MM = 0.05            # outline tolerance for the board map
 MAX_COPPER_POINTS = 200_000          # beyond this the map shows the board outline only
 MAP_WIDTH_PX = 1100                  # about the page width, for the map's height
+MAP_MIN_PX, MAP_MAX_PX = 320, 900     # the map's plot height, before the page sizes it
+MAP_EXTRA_PX = 110                   # margins, axis title and legend
+MAP_MARGIN_L, MAP_MARGIN_R = 50, 20
+# Run once the map is drawn and on every resize: fit its height to its width.
+MAP_FIT_JS = """(function () {
+  var d = document.getElementById('{plot_id}');
+  function fit() {
+    var h = Math.round(Math.min(Math.max((d.clientWidth - %(side)d) * %(aspect).6f, %(lo)d),
+                                %(hi)d)) + %(extra)d;
+    if (Math.abs(h - d.clientHeight) < 2) return;
+    d.parentElement.style.height = h + 'px';
+    Plotly.relayout(d, {height: h});
+  }
+  fit();
+  window.addEventListener('resize', fit);
+})();"""
 CSS_EXTRA = ".caps td:not(:last-child) { white-space: nowrap; } .caps td:last-child " \
             "{ text-align: left; }"
 
@@ -86,15 +102,13 @@ def _target_text(c) -> str:
 # ---------------------------------------------------------------------------
 
 def _impedance_plot(result, models: List, div_id: str) -> str:
-    """|Z| (log-log) and phase against frequency at every probe, with the targets and,
-    hidden until clicked in the legend, each capacitor model's own impedance."""
+    """|Z| (log-log) against frequency at every probe, with the targets and, hidden until
+    clicked in the legend, each capacitor model's own impedance. Hover gives R and X."""
     import plotly.graph_objects as go
     import plotly.io as pio
-    from plotly.subplots import make_subplots
 
     f = result.freqs
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28],
-                        vertical_spacing=0.04)
+    fig = go.Figure()
     hover = ("%{customdata[0]}<br>f %{customdata[1]}<br>|Z| %{customdata[2]}"
              "<br>R %{customdata[3]}<br>X %{customdata[4]}<extra></extra>")
     for i, c in enumerate(result.probes):
@@ -103,21 +117,14 @@ def _impedance_plot(result, models: List, div_id: str) -> str:
                            for fk, z in zip(f, c.z)], dtype=object)
         fig.add_trace(go.Scatter(x=f, y=c.mag, name=c.name, legendgroup=c.name,
                                  line=dict(color=color, width=2), customdata=custom,
-                                 hovertemplate=hover), row=1, col=1)
+                                 hovertemplate=hover))
         t = c.target_at(f)
         if t is not None:
             fig.add_trace(go.Scatter(x=f, y=t, name=f"{c.name} target", legendgroup=c.name,
                                      line=dict(color=color, width=1.5, dash="dash"),
                                      connectgaps=False,
                                      hovertemplate=(f"{_e(c.name)} target<br>f %{{x:.4s}}Hz"
-                                                    "<br>%{y:.4s}Ω<extra></extra>")),
-                          row=1, col=1)
-        fig.add_trace(go.Scatter(x=f, y=np.degrees(np.angle(c.z)), name=f"{c.name} phase",
-                                 legendgroup=c.name, showlegend=False,
-                                 line=dict(color=color, width=1.5),
-                                 hovertemplate=(f"{_e(c.name)}<br>f %{{x:.4s}}Hz"
-                                                "<br>phase %{y:.1f}°<extra></extra>")),
-                      row=2, col=1)
+                                                    "<br>%{y:.4s}Ω<extra></extra>")))
     omega = 2 * np.pi * f
     for k, (m, n) in enumerate(models):
         if not (m.capacitance_f > 0 and m.esl_h > 0 and m.esr_ohm > 0):
@@ -127,24 +134,20 @@ def _impedance_plot(result, models: List, div_id: str) -> str:
             visible="legendonly", legendgroup=f"cap{k}",
             line=dict(color="#999", width=1, dash="dot"),
             hovertemplate=(f"{_e(m.name)}, one of {n}<br>f %{{x:.4s}}Hz<br>%{{y:.4s}}Ω"
-                           "<extra></extra>")), row=1, col=1)
+                           "<extra></extra>")))
     bw = getattr(result, "bandwidth_hz", None)
     if bw and f[0] < bw < f[-1]:
         # Below the converter's control loop bandwidth the loop holds the rail: shade it.
-        fig.add_vrect(x0=f[0], x1=bw, fillcolor="#888", opacity=0.08, line_width=0,
-                      row="all", col=1)
-        fig.add_vline(x=bw, line=dict(color="#888", width=1, dash="dot"), row="all", col=1)
+        fig.add_vrect(x0=f[0], x1=bw, fillcolor="#888", opacity=0.08, line_width=0)
+        fig.add_vline(x=bw, line=dict(color="#888", width=1, dash="dot"))
         fig.add_annotation(x=math.log10(bw), y=1, xref="x", yref="paper", xanchor="right",
                            yanchor="top", showarrow=False, font=dict(size=11, color="#666"),
                            text=f"VRM bandwidth {_hz(bw)} ")
     fig.update_xaxes(type="log", exponentformat="SI", ticksuffix="Hz", showgrid=True,
-                     gridcolor="#e6e6e6")
-    fig.update_xaxes(title_text="Frequency", row=2, col=1)
+                     gridcolor="#e6e6e6", title_text="Frequency")
     fig.update_yaxes(type="log", exponentformat="SI", ticksuffix="Ω", title_text="|Z|",
-                     gridcolor="#e6e6e6", row=1, col=1)
-    fig.update_yaxes(title_text="Phase (°)", range=[-95, 95], dtick=45, gridcolor="#e6e6e6",
-                     row=2, col=1)
-    fig.update_layout(height=640, margin=dict(l=60, r=20, t=20, b=50),
+                     gridcolor="#e6e6e6")
+    fig.update_layout(height=560, margin=dict(l=60, r=20, t=20, b=50),
                       plot_bgcolor="white", hovermode="closest",
                       legend=dict(orientation="h", y=-0.12))
     return pio.to_html(fig, include_plotlyjs=False, full_html=False, div_id=div_id,
@@ -249,24 +252,31 @@ def _board_map(result, setup, snap: BoardSnapshot, div_id: str) -> str:
     # lock alone, Plotly widens the x range and leaves the board small in a tall box.
     xy = [np.asarray(p.outline) for p in snap.outline if p.outline] if snap.outline else []
     xy += [np.array([f.position for f in snap.footprints])] if snap.footprints else []
+    post_script = None
     if xy:
         pts = np.vstack(xy)
         (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
         pad = 0.03 * max(x1 - x0, y1 - y0, 1.0)
         x0, x1, y0, y1 = x0 - pad, x1 + pad, y0 - pad, y1 + pad
-        height = int(np.clip(MAP_WIDTH_PX * (y1 - y0) / (x1 - x0), 320, 900)) + 110
+        aspect = (y1 - y0) / (x1 - x0)
+        height = int(np.clip(MAP_WIDTH_PX * aspect, MAP_MIN_PX, MAP_MAX_PX)) + MAP_EXTRA_PX
         fig.update_xaxes(range=[x0, x1], constrain="domain")
         fig.update_yaxes(range=[y1, y0], constrain="domain")
+        # The page may be narrower than MAP_WIDTH_PX: size the map to the width it gets, so
+        # the 1:1 aspect does not leave blank bands above and below the board.
+        post_script = MAP_FIT_JS % dict(aspect=aspect, lo=MAP_MIN_PX, hi=MAP_MAX_PX,
+                                        extra=MAP_EXTRA_PX, side=MAP_MARGIN_L + MAP_MARGIN_R)
     else:
         height = 560
         fig.update_yaxes(autorange="reversed")
-    fig.update_layout(height=height, margin=dict(l=50, r=20, t=10, b=40), plot_bgcolor="white",
+    fig.update_layout(height=height, margin=dict(l=MAP_MARGIN_L, r=MAP_MARGIN_R, t=10, b=40),
+                      plot_bgcolor="white",
                       legend=dict(orientation="h", y=-0.06), hovermode="closest")
     fig.update_xaxes(title_text="x (mm)", showgrid=False, zeroline=False)
     fig.update_yaxes(title_text="y (mm)", scaleanchor="x", scaleratio=1, showgrid=False,
                      zeroline=False)
     return pio.to_html(fig, include_plotlyjs=False, full_html=False, div_id=div_id,
-                       config={"displaylogo": False})
+                       config={"displaylogo": False}, post_script=post_script)
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +362,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     # ---------------- board map
     info("Report: board map")
     parts.append("<h2 id='map'>Board map</h2>")
-    parts.append(_board_map(result, setup, snap, "map"))
+    parts.append(_board_map(result, setup, snap, "mapplot"))   # not "map": the heading's id
     parts.append("<p class='note'>Seen from the top, with the rail's copper on every layer "
                  "merged. Hover a marker for the part; click a legend entry to hide a "
                  "group.</p>")

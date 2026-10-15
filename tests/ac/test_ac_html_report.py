@@ -33,6 +33,10 @@ def test_report_has_every_section(solved, tmp_path):
     assert "Plotly.newPlot" in text and "<script src=" not in text     # works offline
     assert "100n (one part)" in text                                   # model curve
     assert "C3" in text and "no model" in text                         # left out, mapped
+    import re
+    ids = re.findall(r"""id=['"]([^'"]+)['"]""", text)
+    assert len(ids) == len(set(ids))      # else Plotly draws a plot into a heading
+    assert "phase" not in text.lower().split("<h2 id='impedance'>")[1].split("<h2")[0]
     verdict = "PASS" if result.probes[0].passed(result.freqs) else "FAIL"
     assert f"class=\"{verdict.lower()}\">{verdict}<" in text
 
