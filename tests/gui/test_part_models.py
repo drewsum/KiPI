@@ -35,7 +35,7 @@ def _view(zscale=1.0):
     v = NS(plotter=pv.Plotter(off_screen=True), _models={}, _model_actors={}, _board_top=0.0,
            _model_board=0.0,
            _zscale=zscale, _show_models=True, _show_models_result=False, _show_board=True,
-           _show_vias=True,
+           _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
     for name in ("set_models", "_remove_model_actors", "_place_models", "_apply_visibility",

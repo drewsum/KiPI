@@ -492,10 +492,16 @@ are shown, so one layer's outlier does not wash out the others.</p>
     layers beneath; vias stay solid.</td></tr>
   <tr><td><b>Vias / Pads / Board</b></td><td class="wrap">Show or hide via barrels, pads and
     the board body.</td></tr>
-  <tr><td id="models"><b>Models</b></td><td class="wrap">Shows the KiCad 3D models of the parts
+  <tr><td id="pi-models"><b>PI Models</b></td><td class="wrap">In DC mode, marks the setup's
+    parts on the copper: a dot on each pad of a <b>VRM</b> (green), <b>load</b> (cyan) or
+    <b>series link</b> (magenta), larger on the rail's pins and smaller on ground, with the
+    part's name above. Only pads on a net shown are marked, and the marks follow setup
+    edits. They are drawn over the plain copper only, not over results, and not in AC
+    mode.</td></tr>
+  <tr><td id="models"><b>3D Models</b></td><td class="wrap">Shows the KiCad 3D models of the parts
     in the setup (VRMs, loads, series links and the parts of capacitor models) that have a pad
     on a net shown. In the geometry view they are on to start with; over results they start
-    hidden, and ticking <b>Models</b> there shows them too. Each view remembers its own
+    hidden, and ticking <b>3D Models</b> there shows them too. Each view remembers its own
     setting. See <a href="#part-models">Part 3D models</a> below.</td></tr>
 </table>
 <h4 id="part-models">Part 3D models</h4>
@@ -1471,7 +1477,7 @@ and delete <code>kipi-&lt;user&gt;.lock</code> from the temporary folder.</p></d
 <details id="ts-models">
 <summary>No part models are drawn</summary>
 <div class="body"><ul>
-  <li>Check <b>Models</b> is ticked in <a href="#display">Display</a>. Over results it starts
+  <li>Check <b>3D Models</b> is ticked in <a href="#display">Display</a>. Over results it starts
     unticked.</li>
   <li>Only parts named in the setup with a pad on a ticked net get a model.</li>
   <li>The log says why. KiPI needs KiCad's <code>kicad-cli</code>: it looks in the connected

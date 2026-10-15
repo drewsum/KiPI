@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         self._model_timer.setSingleShot(True)
         self._model_timer.setInterval(300)
         self._model_timer.timeout.connect(self._sync_models)
+        self._model_timer.timeout.connect(self._sync_pi_markers)
         self._last_fraction_t = 0.0
         self._picked = None   # ("pad"|"via", id)
         self._imported_stackup = None     # as read from KiCad, before any edits
@@ -199,6 +200,7 @@ class MainWindow(QMainWindow):
         self.solve_dock.setWindowTitle(next(t for k, _, t in MODES if k == mode))
         self._set_open_results_tip()
         self._set_plot_tab_shown(mode == "ac")
+        self._sync_pi_markers()
         if mode == "dc":
             if self._tree:
                 self._show_group(self.solve_panel.cmb_group.currentText())
@@ -347,21 +349,32 @@ class MainWindow(QMainWindow):
         self.sld_opacity.valueChanged.connect(self._opacity_changed)
         opac.addWidget(self.sld_opacity, 1)
         opac.addWidget(self.lbl_opacity)
-        feats = QHBoxLayout()
+        feats = QVBoxLayout()
+        feat_rows = (QHBoxLayout(), QHBoxLayout())
+        for r in feat_rows:
+            feats.addLayout(r)
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate",
+                     "pi": "Mark the DC setup's VRMs (green), loads (cyan) and series "
+                           "links (magenta) on the nets shown: a dot on each of their "
+                           "pads, larger on the rail and smaller on ground, and the "
+                           "part's name. In DC mode, over the copper only, not over "
+                           "results.",
                      "models": "Show the 3D models of the parts in the setup (VRMs, loads, "
                                "series links and capacitors) on the nets shown. KiCad's "
                                "kicad-cli reads them from the saved board file. The copper "
                                "and result views each remember this; over results they "
                                "start off."}
-        for name, label in (("vias", "Vias"), ("pads", "Pads"), ("board", "Board"),
-                            ("models", "Models")):
+        for k, (name, label) in enumerate((("vias", "Vias"), ("pads", "Pads"),
+                                           ("board", "Board"), ("pi", "PI Models"),
+                                           ("models", "3D Models"))):
             cb = QCheckBox(label, g_view)
             cb.setChecked(True)
             cb.setToolTip(feat_tips[name])
             cb.toggled.connect(lambda v, n=name: self.viewer.set_feature_visible(n, v))
-            feats.addWidget(cb)
+            feat_rows[k // 3].addWidget(cb)
+            if name == "pi":
+                self.chk_pi = cb
         self.chk_models = cb
         self.chk_models.toggled.connect(lambda _: self._model_timer.start())
         # The copper and result views each keep their own Models setting.
@@ -839,6 +852,17 @@ class MainWindow(QMainWindow):
             # A canceled build leaves its nets unchecked so the list matches the view.
             task.canceled.connect(lambda: self._set_checked(
                 lambda it: it.data(Qt.UserRole) in self.viewer.nets()))
+
+    # ============================================================ PI Models markers
+    def _sync_pi_markers(self):
+        """Mark the DC setup's VRMs, loads and series links on the ticked nets (#84). The
+        markers belong to DC mode: AC mode's view has none."""
+        if self._closed:
+            return
+        from kipi.dc.viz.markers import pi_markers
+        markers = (pi_markers(self.snapshot, self.solve_panel.setup, self._checked_set())
+                   if self.mode == "dc" and self.snapshot is not None else [])
+        self.viewer.set_pi_markers(markers)
 
     # ============================================================ part models
     def _wanted_models(self) -> List[str]:

@@ -7,6 +7,11 @@ milestones rather than versions that were ever set.
 ## 0.7.2 (in development)
 
 ### Added
+- **PI Models in the 3D view** (#84): in DC mode, a new **PI Models** checkbox under
+  Display marks the setup's VRMs (green), loads (cyan) and series links (magenta) on the
+  copper, with a dot on each of their pads on the nets shown (smaller on ground) and the
+  part's name. The marks follow setup edits and are hidden over results. The **Models**
+  checkbox is now **3D Models**.
 - **Solver accuracy tests** (#70): eight validation boards in `examples/validation`
   (thin and arc tracks, right-angle routes, a layer change through vias, planes, a power
   chain with a series link, and AC plane, decoupling-capacitor and ferrite boards), each

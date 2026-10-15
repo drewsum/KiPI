@@ -28,6 +28,13 @@ _CATEGORY_LOOK = {"cu": (1.0, 0.4), "pad": (0.9, 0.0), "via": (1.0, 0.6)}
 _VIA_VIEW_COPPER_OPACITY = 0.35
 DEPTH_PEELS = 4          # see-through layers sorted per pixel (pyvista's default)
 _MODEL_SPECULAR = 0.3
+# PI Models markers (#84), by kind: (dot color, label color). Picked to stand out from
+# KiCad's red top and blue bottom copper and its yellow pads.
+_PI_COLORS = {"vrm": ((0.25, 1.0, 0.35), (0.10, 0.45, 0.16)),
+              "load": ((0.10, 0.95, 1.0), (0.04, 0.38, 0.45)),
+              "link": ((1.0, 0.35, 1.0), (0.48, 0.14, 0.48))}
+_PI_POINT_PX = {"power": 14, "ground": 9}       # rail pins, ground pins
+_PI_LABEL_LIFT_MM = 1.0
 
 
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
@@ -173,6 +180,9 @@ class Viewer3D(QWidget):
         self._show_board = True
         self._show_models = True            # in the copper (geometry) view
         self._show_models_result = False    # over results: off until asked for
+        self._show_pi = True                # PI Models markers, copper view only
+        self._pi_markers: list = []
+        self._pi_actors: Dict[str, object] = {}      # name -> actor
         self._models: Dict[str, Tuple[pv.PolyData, str]] = {}   # ref -> (mesh, side)
         self._model_actors: Dict[str, vtkActor] = {}             # side -> actor
         self._board_top = 0.0
@@ -216,6 +226,7 @@ class Viewer3D(QWidget):
         self._clear_result_actors()
         self._set_result(None)
         p.clear_actors()
+        self._pi_markers, self._pi_actors = [], {}
         self._board_actors.clear()
         self._hidden_layers.clear()
         self._next_color = 0
@@ -312,6 +323,49 @@ class Viewer3D(QWidget):
         if top is not None:
             top.SetPosition(0.0, 0.0, self._board_top * self._zscale - self._model_board)
 
+    # ------------------------------------------------------- PI Models markers
+    def set_pi_markers(self, markers):
+        """Mark the DC setup's VRMs, loads and series links: a point on each of their
+        pads and the part's name (see :func:`kipi.dc.viz.markers.pi_markers`). Shown over
+        the copper only, not over results."""
+        self._pi_markers = list(markers)
+        self._draw_pi_markers()
+        self._apply_visibility()
+
+    def _draw_pi_markers(self):
+        p = self.plotter
+        for actor in self._pi_actors.values():
+            p.remove_actor(actor, render=False)
+        self._pi_actors = {}
+
+        def view(pts):
+            return np.column_stack([pts[:, 0], -pts[:, 1], pts[:, 2] * self._zscale])
+
+        for kind, colors in _PI_COLORS.items():
+            parts = [m for m in self._pi_markers if m.kind == kind]
+            for which, size in _PI_POINT_PX.items():
+                pts = [getattr(m, which) for m in parts if len(getattr(m, which))]
+                if not pts:
+                    continue
+                name = f"pi_{kind}_{which}"
+                self._pi_actors[name] = p.add_points(
+                    view(np.vstack(pts)), color=colors[0], point_size=size,
+                    render_points_as_spheres=True, name=name, pickable=False,
+                    reset_camera=False, render=False)
+            if parts:
+                name = f"pi_{kind}_labels"
+                anchors = view(np.array([m.anchor for m in parts]))
+                anchors[:, 2] += _PI_LABEL_LIFT_MM        # clear of the part's dots
+                self._pi_actors[name] = p.add_point_labels(
+                    anchors, [m.name for m in parts], font_size=12, text_color="white",
+                    shape_color=colors[1], shape_opacity=0.75, show_points=False,
+                    always_visible=True, name=name, pickable=False, reset_camera=False,
+                    render=False)
+
+    @property
+    def pi_marker_names(self) -> List[str]:
+        return [m.name for m in self._pi_markers]
+
     def _flush(self):
         """Rebuild changed chunks and sync their actors."""
         renderer = self.plotter.renderer
@@ -401,6 +455,8 @@ class Viewer3D(QWidget):
         models = self._show_models_result if showing_result else self._show_models
         for a in self._model_actors.values():
             a.SetVisibility(models)
+        for a in self._pi_actors.values():
+            a.SetVisibility(self._show_pi and not showing_result)
         self.plotter.render()
 
     def set_zscale(self, s: float):
@@ -416,6 +472,9 @@ class Viewer3D(QWidget):
         for a in self._arrow_actors.values():
             a.SetScale(1.0, 1.0, self._zscale)
         self._place_models()
+        if self._pi_markers:
+            self._draw_pi_markers()
+            self._apply_visibility()
         self.plotter.reset_camera_clipping_range()
         self.plotter.render()
 
