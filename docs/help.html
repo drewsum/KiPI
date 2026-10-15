@@ -137,6 +137,7 @@ ol.steps > li { margin-bottom: 6px; }
     <li class="group">DC analysis</li>
     <li><a href="#dc-concepts">DC concepts</a></li>
     <li><a href="#pin-picker">The pin picker</a></li>
+    <li><a href="#autofill">Pre-filled fields</a></li>
     <li><a href="#dc-setup">DC setup tabs</a>
       <ol>
         <li><a href="#dc-vrms">VRMs</a></li>
@@ -284,18 +285,6 @@ and probes already set up. From a development checkout run</p>
 
 <!-- ================================================================== WINDOW -->
 <h2 id="window">The main window</h2>
-<div class="diagram">┌──────────────────────────────── Toolbar ─────────────────────────────── Mode: ◉ DC ○ AC ┐
-│┌ Board ───────┐┌ 3D view │ Impedance ─────────────────────┐┌ PI setup / AC setup ────────┐│
-││ Nets         ││                                           ││ [Save]                      ││
-││ Copper layers││         the board, or results,            ││ VRMs │ Loads │ Links │ …   ││
-││ Display      ││         in 3D                             ││ list + editor               ││
-││ Info         ││  (AC: the |Z| plot in the second tab)     ││ problems in red             ││
-││ [Select in   ││                                           ││ [Solve all] [HTML report]   ││
-││  KiCad]      ││                                           ││ Results: tables             ││
-│└──────────────┘└───────────────────────────────────────────┘└─────────────────────────────┘│
-│┌ Log ─── stage ▓▓▓▓▓▓░░░░ [Cancel] ─────────────────────────────────────────────────────┐ │
-│└───────────────────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────────────────┘</div>
 <figure><img src="images/overview.png" alt="KiPI main window with nets on the left, the board in 3D and the PI setup on the right">
 <figcaption>The main window in DC mode.</figcaption></figure>
 <p>The Board, setup and Log panels are dock widgets: drag their title bars to move them or
@@ -481,6 +470,48 @@ whichever direction.</p>
 </div>
 </details>
 
+<details id="autofill">
+<summary>Pre-filled fields <span class="hint">guesses from the board, always yours to change</span></summary>
+<div class="body">
+<p>As you pick pins, KiPI fills in the fields that usually follow from them. Each guess only
+fills a field you have not set yourself (an empty field, or one it filled in for the previous
+part), and when the board does not give an answer the field is left as it was. Change
+anything it fills in: your value is kept.</p>
+<table>
+  <tr><th>When you…</th><th>KiPI fills in</th></tr>
+  <tr><td class="wrap">pick a VRM's output net</td><td class="wrap"><b>Set voltage</b> from the
+    net's name: <code>+3V3</code>, <code>3.3V</code>, <code>V1P8</code>, <code>VDD_0V75</code>,
+    <code>+12V</code>, <code>-5V</code>, <code>VBUS</code> (5 V). A name with no voltage in it
+    (<code>VCORE</code>, <code>VIN</code>) leaves the voltage alone.</td></tr>
+  <tr><td class="wrap">pick a VRM's output pins</td><td class="wrap"><b>Ground pins</b>: the
+    same part's pins on its ground net. For an LDO or switcher, <b>Input pins</b>: the same
+    part's pins on its other rail, if it has exactly one. The VRM's <b>Name</b> follows the
+    part while it is still the part's reference.</td></tr>
+  <tr><td class="wrap">add phases to a VRM</td><td class="wrap">Each new phase repeats the last
+    one on the next parts in sequence: <code>L1 → L2</code>, <code>Q1 → Q2</code>, with the same
+    pin numbers. Without a next part, the phase copies the last one for you to edit.</td></tr>
+  <tr><td class="wrap">pick a load's supply pins</td><td class="wrap"><b>Ground pins</b>: the
+    same part's pins on its ground net.</td></tr>
+  <tr><td class="wrap">pick a series link's side A</td><td class="wrap"><b>Side B</b>: when the
+    part has pads on just two nets (a resistor, ferrite, fuse, inductor), its pins on the other
+    net. Not for capacitors, or when the other net is a ground. When both sides are on one
+    resistor, <b>Resistance</b> is read from its value.</td></tr>
+  <tr><td class="wrap">pick a probe's supply pins (AC)</td><td class="wrap"><b>Ground pins</b>:
+    the same part's pins on the probe's ground net, or on its own ground net.</td></tr>
+  <tr><td class="wrap"><b>Add</b> a VRM, load or series link</td><td class="wrap">The same
+    guesses for its first part. A new series link starts on a two-terminal part between the
+    first two ticked nets that are not grounds.</td></tr>
+</table>
+<p><b>How the ground net is found.</b> Ground nets are not always called GND, so KiPI tries, in
+order: ground nets the setup already uses (any VRM, load or probe ground pins), nets named like a
+ground (<code>GND</code>, <code>PGND</code>, <code>AGND</code>, <code>VSS</code>,
+<code>EARTH</code>…), then the board's biggest net (the one with the most pads) if it is not
+named like a rail. Only nets ticked in the Board panel are used, except grounds the setup
+already uses. Once one VRM or load has ground pins on an unusually named ground, every later
+guess uses it.</p>
+</div>
+</details>
+
 <!-- ================================================================== DC SETUP -->
 <h2 id="dc-setup">DC setup tabs</h2>
 <p>The <b>PI setup</b> dock on the right. <b>Save</b> at its top writes the setup next to the
@@ -498,7 +529,8 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     bench supply, battery). <b>LDO</b>: I<sub>in</sub> = I<sub>out</sub> + I<sub>q</sub>.
     <b>Switcher</b>: P<sub>in</sub> = P<sub>out</sub> / efficiency.</td></tr>
   <tr><td>Set voltage</td><td class="wrap">The voltage it holds at its output (or sense) pins.
-    Guessed from the net name when you pick the output net.</td></tr>
+    Read from the net name when you pick the output net (see
+    <a href="#autofill">pre-filled fields</a>).</td></tr>
   <tr><td>Efficiency</td><td class="wrap">Switcher only.</td></tr>
   <tr><td>Quiescent</td><td class="wrap">LDO and switcher: extra input current.</td></tr>
   <tr><td>Output current limit</td><td class="wrap">Optional. The VRM row shows PASS if its total
@@ -515,8 +547,10 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Output pins</td><td class="wrap">Where it drives the rail: the output pin, or for a
     switcher usually the inductor's output side.</td></tr>
   <tr><td>Input pins</td><td class="wrap">LDO and switcher: where it draws its input. This
-    links it into the power tree.</td></tr>
-  <tr><td>Ground pins</td><td class="wrap">Optional: solve the ground return as well.</td></tr>
+    links it into the power tree. Filled in from the output part when it has one other
+    rail.</td></tr>
+  <tr><td>Ground pins</td><td class="wrap">Optional: solve the ground return as well. Filled in
+    with the output part's ground pins.</td></tr>
   <tr><td>Sense pins</td><td class="wrap">Optional remote sense (positive).</td></tr>
   <tr><td>Ground sense pins</td><td class="wrap">Optional negative remote sense on the ground net
     (needs ground pins).</td></tr>
@@ -538,7 +572,8 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     different pins.</td></tr>
   <tr><td>Current</td><td class="wrap">The load's total current (equal split). Negative
     values are allowed for parts that source current.</td></tr>
-  <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return.</td></tr>
+  <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return. Filled in
+    with the supply part's ground pins.</td></tr>
   <tr><td>Tolerance</td><td class="wrap">±% of the VRM set voltage. PASS if every supply pin is
     within it.</td></tr>
 </table>
@@ -551,10 +586,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
 <div class="body">
 <p>Sense resistors, ferrite beads, fuses, load switches, 0 Ω links: any part that passes DC
 from one net to another. Give the part's <b>Side A pins</b> and <b>Side B pins</b> and its
-<b>Resistance (DCR)</b>; 0 is a short. When both sides are on the same resistor, the resistance
-is read from its value field (<code>10m</code>, <code>4k7</code>, <code>0R1</code>,
-<code>5 mΩ</code>…). <b>ESL</b> is used by AC only. A new link starts on a part that bridges
-the first two ticked nets, if there is one.</p>
+<b>Resistance (DCR)</b>; 0 is a short. Picking side A on a two-terminal part fills in side B
+on its other net, and when both sides are on the same resistor, the resistance is read from its
+value field (<code>10m</code>, <code>4k7</code>, <code>0R1</code>, <code>5 mΩ</code>…).
+<b>ESL</b> is used by AC only. A new link starts on a part that bridges the first two ticked
+nets that are not grounds, if there is one.</p>
 <p>The nets a link joins are solved together as one group, so a group can only hold one
 VRM. A net with no copper path to its VRM is reported, not guessed at.</p>
 </div>
@@ -1042,11 +1078,12 @@ at every frequency.</p>
 <summary>3. A multi-phase regulator</summary>
 <div class="body">
 <ol class="steps">
-  <li>Add the VRM and set <b>Phases</b> to the number of phases.</li>
-  <li>Choose <b>Phase 1</b> in <b>Edit phase</b> and set its output pins (its inductor), input
-    pins and ground pins.</li>
-  <li>Choose each further phase. A new phase starts as a copy of the previous one: change its
-    part to the right inductor and input capacitor or power stage.</li>
+  <li>Add the VRM and set phase 1's output pins (its inductor), input pins and ground pins.</li>
+  <li>Set <b>Phases</b> to the number of phases. Each new phase takes the next parts in
+    sequence (phase 1 on <code>L1</code> and <code>Q1</code> gives phase 2 <code>L2</code> and
+    <code>Q2</code>), or copies the previous phase when there is no next part.</li>
+  <li>Choose each phase in <b>Edit phase</b> to check its pins, and change any that are
+    wrong.</li>
   <li>Set the shared set voltage, type, efficiency and sense pins once.</li>
 </ol>
 <p>Each phase carries an equal share of the output current and settles at whatever voltage its

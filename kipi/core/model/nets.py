@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from kipi.core.model.board import BoardSnapshot
 
@@ -63,18 +63,30 @@ def sorted_nets(snap: BoardSnapshot) -> List[str]:
 
 
 _RAIL_RE = re.compile(r"(\d+)([vV.,pP])(\d*)")
+# A minus sign that starts the name or a hierarchical sheet's part of it: "-5V", "/AFE/-12V".
+_NEGATIVE_RE = re.compile("(^|/)[-\u2212]$")
 
 
-def guess_voltage(net: str) -> float:
-    """Best guess at a rail's voltage from its name, for pre-filling a source.
+def voltage_from_name(net: str) -> Optional[float]:
+    """A rail's voltage read from its name, or None if the name doesn't give one.
 
-    '+3.3V' -> 3.3, '3V3' -> 3.3, 'V3P3' -> 3.3, '1V8' -> 1.8, '+12V' -> 12,
-    'VBUS' -> 5, ground nets -> 0, anything else -> 1.
+    '+3.3V' -> 3.3, '3V3' -> 3.3, 'V3P3' -> 3.3, '1V8' -> 1.8, '+12V' -> 12, '-5V' -> -5,
+    'VDD_0V75' -> 0.75, 'VBUS' -> 5, ground nets -> 0.
     """
+    if not net:
+        return None
     if is_ground_name(net):
         return 0.0
     m = _RAIL_RE.search(net)
     if not m:
-        return 5.0 if "vbus" in net.lower() else 1.0
+        return 5.0 if "vbus" in net.lower() else None
     whole, frac = m.group(1), m.group(3)
-    return float(f"{whole}.{frac}") if frac else float(whole)
+    volts = float(f"{whole}.{frac}") if frac else float(whole)
+    return -volts if _NEGATIVE_RE.search(net[:m.start()]) else volts
+
+
+def guess_voltage(net: str) -> float:
+    """Best guess at a rail's voltage from its name, for pre-filling a new VRM: the
+    :func:`voltage_from_name`, or 1 V when the name doesn't give one."""
+    v = voltage_from_name(net)
+    return 1.0 if v is None else v

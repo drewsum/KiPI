@@ -28,6 +28,18 @@ milestones rather than versions that were ever set.
 - **User guide and tooltips.** *Help* in the toolbar (or F1) opens `docs/help.html`, an
   offline guide to every button, the workflows and the results, with collapsible sections.
   Every button, box and table in KiPI now has a tooltip.
+- **Pre-filled setup fields.** Picking pins fills in what usually follows from them, and
+  every guess can be overwritten:
+  - The ground pins of a VRM, load or probe, from the same part. The ground net is a
+    ground the setup already uses, a net named like a ground, or else the board's biggest
+    net.
+  - An LDO or switcher's input pins, when its output part has exactly one other rail.
+  - A series link's side B, when side A is on a two-terminal part (not a capacitor, and
+    not across to ground).
+  - New phases of a multi-phase VRM, on the next parts in sequence (`L1` → `L2`).
+  - VRM names follow the output part, as load and link names already did.
+  - The set voltage from the net name now reads negative rails (`-5V`) and leaves the
+    voltage alone when the name has none, instead of setting 1 V.
 - **Thermal limits.** *Max copper temperature* and *Max rise above ambient* grade an
   electro-thermal solve; a new Thermal results tab lists the hottest copper on each layer
   with PASS/FAIL.

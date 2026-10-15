@@ -1,6 +1,8 @@
 """The user's power-integrity setup: VRMs, loads and series links, plus the AC setup.
 
-Everything here is entered by the user; nothing is inferred from the board:
+Everything here is entered by the user. The editors pre-fill some fields with guesses
+from the board as parts are picked (:mod:`kipi.dc.pi.autofill`), but the setup holds only
+what the user kept, and nothing is inferred at solve time:
 
 * **Series links** (series resistors, ferrites, fuses, load switches...) join nets.
   Nets joined this way form one *group* that is simulated as a single problem.

@@ -28,7 +28,7 @@ from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.core.model.parts import parse_capacitance
 from kipi.dc.gui.pi_panel import (
     ItemList, LinkEditor, PIPanel, VrmEditor, _Editor, _spin, _unique, make_searchable,
-    parts_on_net, tip,
+    new_link, new_vrm, parts_on_net, tip,
 )
 from kipi.dc.pi.model import PinRef, PISetup
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
@@ -283,7 +283,8 @@ class ProbeEditor(_Editor):
         for w, text in (
                 (self.name, "A name for this probe, shown in the plot legend and the table"),
                 (self.rail, "The device's supply pins: where the impedance is looked into"),
-                (self.ground, "The device's ground pins, on the ground net being simulated"),
+                (self.ground, "The device's ground pins, on the ground net being simulated. "
+                              "Picking the supply pins fills in the same part's ground pins."),
                 (self.target_kind, "Flat: one impedance up to a frequency. Custom: a target "
                                    "mask through frequency/impedance points."),
                 (self.target, "Target impedance: PASS if |Z| stays at or below this up to "
@@ -293,7 +294,6 @@ class ProbeEditor(_Editor):
             tip(f, w, text)
         self._watch(self.name, self.target, self.target_f, self.target_kind)
         self.target_kind.currentIndexChanged.connect(self._target_rows)
-        self.rail.cmb_part.currentIndexChanged.connect(self._follow_part)
         self._target_rows()
 
     def _target_rows(self, *_):
@@ -348,18 +348,6 @@ class ProbeEditor(_Editor):
         self.target.setValue(t.z_ohm * 1e3)
         self.target_f.setValue(t.f_hz / 1e3)
 
-    def _follow_part(self, _i):
-        """Picking the supply part picks the same part's ground pins, if it has any."""
-        if self._loading or self.obj is None:
-            return
-        ref = self.rail.cmb_part.currentData()
-        gnd = self.ground.net()
-        if ref and gnd and self.panel.snapshot is not None:
-            if any(r == ref for r, _, _ in parts_on_net(self.panel.snapshot, gnd)):
-                i = self.ground.cmb_part.findData(ref)
-                if i >= 0:
-                    self.ground.cmb_part.setCurrentIndex(i)
-
     def _load(self, p: Probe):
         self.name.setText(p.name)
         self.rail.set_value(p.rail)
@@ -373,6 +361,7 @@ class ProbeEditor(_Editor):
         self._target_rows()
 
     def _save(self, p: Probe):
+        old = p.rail
         new_rail = self.rail.value() or p.rail
         typed = self.name.text().strip() or p.name
         if typed == p.rail.ref and new_rail.ref != p.rail.ref:
@@ -381,6 +370,14 @@ class ProbeEditor(_Editor):
         p.name = typed
         p.rail = new_rail
         p.ground = self.ground.value() or p.ground
+        # New supply pins bring the same part's ground pins, unless the user picked
+        # another part's: on the probe's ground net or the simulated one if it can, else
+        # on the part's own ground net (kipi.dc.pi.autofill.ground_net).
+        if (new_rail.ref, new_rail.net) != (old.ref, old.net) and p.ground.ref == old.ref:
+            gnd = self._guess_ground(new_rail, prefer=[p.ground.net, self.panel.ground()])
+            if gnd is not None and gnd != p.ground:
+                p.ground = gnd
+                self._show(self.ground, gnd)
         p.target_ohm = self.target.value() / 1e3 or None
         p.target_hz = self.target_f.value() * 1e3 or None
         p.target_custom = self.target_kind.currentData() == "custom"
@@ -725,23 +722,12 @@ class ACPanel(QWidget):
         return parts[0][0] if parts else ""
 
     def _new_vrm(self):
-        from kipi.core.model.nets import guess_voltage
-        from kipi.dc.pi.model import Vrm
         net = self._first_net()
-        if net is None:
-            return None
-        name = _unique("VRM1", [x.name for x in self.setup.vrms])
-        return Vrm(name, PinRef(self._first_part(net), net), guess_voltage(net), "source")
+        return None if net is None else new_vrm(self.snapshot, self.setup, self._nets, net)
 
     def _new_link(self):
-        from kipi.dc.pi.model import DcLink
         net = self._first_net()
-        if net is None:
-            return None
-        other = self._nets[1] if len(self._nets) > 1 else net
-        ref = self._first_part(net)
-        return DcLink(_unique(ref or "R1", [x.name for x in self.setup.links]),
-                      PinRef(ref, net), PinRef(self._first_part(other), other), 0.0)
+        return None if net is None else new_link(self.snapshot, self.setup, self._nets, net)
 
     def _new_cap(self):
         return CapModel(_unique("Model1", [m.name for m in self.setup.caps]))

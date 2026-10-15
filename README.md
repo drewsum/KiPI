@@ -159,9 +159,24 @@ libraries for a bug report.
 
 ### 3. Model the power system
 
-The **PI setup** panel on the right holds the power tree. KiPI infers nothing from the board,
-so every entry comes from you. Each list has **Add**, **Duplicate** and **Remove** buttons.
-Hover over any field for a tooltip saying what it does.
+The **PI setup** panel on the right holds the power tree. Each list has **Add**,
+**Duplicate** and **Remove** buttons. Hover over any field for a tooltip saying what it does.
+
+As you pick pins, KiPI pre-fills the fields that usually follow from them. Every guess can be
+changed, and a field the board gives no answer for is left as it was:
+
+* **VRM set voltage** from the output net's name: `+3V3`, `3.3V`, `V1P8`, `VDD_0V75`, `-5V`,
+  `VBUS` (5 V).
+* **Ground pins** of a VRM, load or AC probe: the same part's pins on its ground net. Grounds
+  aren't always called GND, so KiPI tries grounds the setup already uses, then names like
+  `GND`, `PGND` or `VSS`, then the board's biggest net if it isn't named like a rail.
+* **VRM input pins** (LDO or switcher): the output part's pins on its other rail, if it has
+  exactly one.
+* **Series link side B**: side A on a part with pads on just two nets (a resistor, ferrite or
+  fuse) puts side B on its other net, and a resistor's value becomes the resistance.
+* **New phases** of a multi-phase VRM take the next parts in sequence: `L1` → `L2`,
+  `Q1` → `Q2`.
+* **Names** follow the picked part while they are still its reference.
 Pins are chosen with a picker: pick the net, then the part (type to search), then optionally
 the pin numbers (e.g. `1,2,5`; blank means all of that part's pins on the net). Problems such
 as missing pins, or two VRMs on one group, are shown in red as you edit.
@@ -184,7 +199,8 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 
 **Multi-phase VRMs**: set **Phases** above 1, then choose each phase in **Edit phase** and
 give it its own output pins (e.g. its inductor), input pins and ground pins. A new phase
-starts as a copy of the previous one, so change its part. All phases share the VRM's set
+takes the next parts in sequence (`L1` → `L2`, `Q1` → `Q2`), or copies the previous one when
+there is no next part, so check its pins. All phases share the VRM's set
 voltage, type, efficiency and sense pins. Each phase carries an equal share of the output
 current and settles at whatever voltage its copper needs to deliver that share. The VRM
 regulates its sense pins or, without them, the average of its phase outputs. Each phase draws
@@ -214,8 +230,9 @@ To try it without a design of your own, open the example board in
 
 **Series links tab**: parts that pass DC from one net to another, such as sense
 resistors, ferrite beads, fuses, load switches and 0 Ω links. Give **Side A pins**,
-**Side B pins** and a **Resistance**. A new connection starts on a part that bridges the first
-two ticked nets, if there is one. When both sides are on the same resistor (reference `R…`),
+**Side B pins** and a **Resistance**. Side A on a two-terminal part fills in side B on its
+other net. A new link starts on a part that bridges the first two ticked nets that aren't
+grounds, if there is one. When both sides are on the same resistor (reference `R…`),
 the resistance is read from its value field: `10m`, `0.005`, `4k7`, `0R1`, `5 mΩ` and the like
 all work, and anything after the value (`1% 0603`) is ignored. You can still type your own.
 Nets joined this way are solved together as one group, and each group may hold only one VRM.
@@ -439,7 +456,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/core/progress.py` | Progress/log reporting used by every pipeline stage |
 | `kipi/dc/` | DC analysis: |
 | `kipi/dc/solver/` | 2.5D DC conduction FEM: sheet conductance, via/PTH barrels, series parts, sources, loads |
-| `kipi/dc/pi/` | User power-tree setup (VRMs, loads, series links), JSON, validation, tree solver, results tables |
+| `kipi/dc/pi/` | User power-tree setup (VRMs, loads, series links), JSON, validation, the guesses that pre-fill it, tree solver, results tables |
 | `kipi/dc/thermal/` | Board heat model, stackup material conductivities, electro-thermal iteration |
 | `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |

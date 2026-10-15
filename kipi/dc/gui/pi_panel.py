@@ -29,10 +29,15 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.core.model.board import BoardSnapshot
-from kipi.core.model.nets import guess_voltage, sorted_nets
-from kipi.core.model.parts import resistor_ohms
+from kipi.core.model.nets import guess_voltage, sorted_nets, voltage_from_name
+from kipi.core.model.parts import is_capacitor_ref, resistor_ohms
+from kipi.dc.pi.autofill import (
+    guess_ground_pins, guess_input_pins, guess_other_side, looks_like_ground,
+    next_phase_ref, other_net, setup_grounds,
+)
 from kipi.dc.pi.model import (
-    DcLink, Load, PinRef, PISetup, Vrm, active_setup, group_name, net_groups, validate,
+    DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup, group_name, net_groups,
+    validate,
 )
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
 from kipi.dc.pi.tree import fmt_drop
@@ -297,6 +302,20 @@ class _Editor(QWidget):
         finally:
             self._loading = loading
 
+    # Guesses from the board that pre-fill fields (kipi.dc.pi.autofill). They only ever
+    # replace a value the user hasn't chosen, and set nothing when they can't tell.
+    def _guess_ground(self, supply: Optional[PinRef], prefer=()) -> Optional[PinRef]:
+        p = self.panel
+        return guess_ground_pins(p.snapshot, p.setup, p._nets, supply, prefer)
+
+    def _show(self, picker: PinPicker, ref: Optional[PinRef]):
+        """Show a guessed value in ``picker`` without saving it back a second time."""
+        loading, self._loading = self._loading, True
+        try:
+            picker.set_value(ref)
+        finally:
+            self._loading = loading
+
     def load(self, obj):
         self._loading = True
         self.obj = obj
@@ -377,7 +396,8 @@ class VrmEditor(_Editor):
                             "supply).\nLDO: input current = output current + quiescent "
                             "current.\nSwitcher: input power = output power / efficiency."),
                 (self.voltage, "The voltage the VRM holds at its output pins, or at its sense "
-                               "pins if it has them"),
+                               "pins if it has them. Picking the output net fills it in from "
+                               "the net's name (3V3, +1.8V, V1P2, -5V...)."),
                 (self.eff, "Switcher efficiency: input power = output power / efficiency"),
                 (self.iq, "Quiescent current, drawn from the input on top of the load "
                           "current"),
@@ -393,15 +413,18 @@ class VrmEditor(_Editor):
                 (self.bandwidth, "Control loop bandwidth of the converter (AC analysis)"),
                 (self.n_phases, "Parallel phases of a multi-phase regulator. Each carries an "
                                 "equal share of the output current and has its own output, "
-                                "input and ground pins."),
+                                "input and ground pins. A new phase takes the next parts in "
+                                "sequence (L1 → L2, Q1 → Q2) where the board has them."),
                 (self.cmb_phase, "The phase whose output, input and ground pins are shown "
                                  "below"),
                 (self.output, "Where the VRM drives its rail: e.g. its output pin, or a "
                               "switcher's inductor"),
                 (self.input, "Where the VRM draws its input current from. This ties it to its "
-                             "upstream net and builds the power tree."),
+                             "upstream net and builds the power tree. Filled in from the "
+                             "output part when it has just one other rail (an LDO, say)."),
                 (self.ground, "Optional: the VRM's ground pins. With them, the ground return "
-                              "is solved too and drops are measured output to ground."),
+                              "is solved too and drops are measured output to ground. Picking "
+                              "the output pins fills in the same part's ground pins."),
                 (self.sense, "Optional remote sense: the VRM holds its set voltage at these "
                              "pins instead of at its output"),
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
@@ -431,8 +454,10 @@ class VrmEditor(_Editor):
         _gray((self.bandwidth,), not dc, "Used by the AC analysis only")
 
     def _guess_voltage(self, net):
-        if not self._loading and net and self._phase == 0:
-            self.voltage.setValue(guess_voltage(net))
+        """Picking the output net sets the voltage its name gives (3V3, +1.8V, V1P2...)."""
+        volts = voltage_from_name(net)
+        if not self._loading and volts is not None and self._phase == 0:
+            self.voltage.setValue(volts)
 
     def _phase_rows(self):
         """Fill the phase selector and label the per-phase pickers."""
@@ -491,7 +516,13 @@ class VrmEditor(_Editor):
         self._kind_rows()
 
     def _save(self, v: Vrm):
-        v.name = self.name.text().strip() or v.name
+        typed = self.name.text().strip() or v.name
+        # A name still equal to the output part's reference follows a newly picked part.
+        new_out = self.output.value() if self._phase == 0 else None
+        if new_out is not None and typed == v.output.ref and new_out.ref != v.output.ref:
+            typed = new_out.ref
+            self.name.setText(typed)
+        v.name = typed
         v.kind = self.kind.currentData()
         v.voltage = self.voltage.value()
         v.efficiency = self.eff.value() / 100
@@ -505,19 +536,46 @@ class VrmEditor(_Editor):
         v.ground_sense = self.ground_sense.value()
         phases = v.all_phases()
         ph = phases[min(self._phase, len(phases) - 1)]
+        old = ph.output
         ph.output = self.output.value() or ph.output
         ph.input = self.input.value()
         ph.ground = self.ground.value()
-        # New phases start as a copy of the last one; the user then picks their own pins.
+        self._autofill_phase(v, ph, old)
+        # A new phase repeats the last one on the next parts in sequence (L1 -> L2,
+        # Q1 -> Q2) where the board has them; otherwise on the same parts, for the user
+        # to change.
         n = self.n_phases.value()
+        snap = self.panel.snapshot
         while len(phases) < n:
-            phases.append(copy.deepcopy(phases[-1]))
+            last = phases[-1]
+            phases.append(VrmPhase(*(
+                next_phase_ref(snap, getattr(last, role),
+                               [getattr(q, role).ref for q in phases if getattr(q, role)])
+                for role in ("output", "input", "ground"))))
         del phases[n:]
         for ph in phases:
             if v.kind == "source":
                 ph.input = None
         v.output, v.input, v.ground = phases[0].output, phases[0].input, phases[0].ground
         v.phases = phases[1:]
+
+    def _autofill_phase(self, v: Vrm, ph: VrmPhase, old: PinRef):
+        """Pick the ground and input pins that go with newly picked output pins: the same
+        part's pins on its ground net and (for an LDO or switcher) its input rail. Pins
+        the user picked on another part are kept, and so is anything with no guess."""
+        old_ref = old.ref
+        moved = (ph.output.ref, ph.output.net) != (old.ref, old.net)
+        if moved and (ph.ground is None or ph.ground.ref == old_ref):
+            gnd = self._guess_ground(ph.output)
+            if gnd is not None and gnd != ph.ground:
+                ph.ground = gnd
+                self._show(self.ground, gnd)
+        if v.kind != "source" and (ph.input is None or (moved and ph.input.ref == old_ref)):
+            p = self.panel
+            vin = guess_input_pins(p.snapshot, p._nets, ph.output, ph.ground)
+            if vin is not None and vin != ph.input:
+                ph.input = vin
+                self._show(self.input, vin)
 
 
 class LoadEditor(_Editor):
@@ -572,7 +630,8 @@ class LoadEditor(_Editor):
                                "pins"),
                 (self.lbl_total, "Sum of the pin groups' currents"),
                 (self.ground, "Optional: the load's ground pins, to include the ground "
-                              "return in the solve"),
+                              "return in the solve. Picking the supply pins fills in the same "
+                              "part's ground pins."),
                 (self.tol, "PASS if every supply pin is within ± this % of the VRM set "
                            "voltage: no pin drops below it or is boosted above it by more")):
             tip(f, w, text)
@@ -657,6 +716,7 @@ class LoadEditor(_Editor):
         self._mode_rows()
 
     def _save(self, l: Load):
+        old = l.supply
         new_supply = self.supply.value() or l.supply
         typed = self.name.text().strip() or l.name
         # A name still equal to the old part's reference was the automatic default:
@@ -675,6 +735,14 @@ class LoadEditor(_Editor):
         else:
             l.groups = []
         l.ground = self.ground.value()
+        # A new supply part brings its own ground pins, unless the user picked another
+        # part's (see kipi.dc.pi.autofill.ground_net for how the ground net is found).
+        if ((new_supply.ref, new_supply.net) != (old.ref, old.net)
+                and (l.ground is None or l.ground.ref == old.ref)):
+            gnd = self._guess_ground(new_supply)
+            if gnd is not None:
+                l.ground = gnd
+                self._show(self.ground, gnd)
         l.tolerance_pct = self.tol.value() or None
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
@@ -699,7 +767,8 @@ class LinkEditor(_Editor):
         for w, text in (
                 (self.name, "A name for this part, used in the results tables"),
                 (self.a, "The part's pins on one net"),
-                (self.b, "The part's pins on the other net"),
+                (self.b, "The part's pins on the other net. Filled in when side A is on a "
+                         "part with pins on just two nets (a resistor, ferrite, fuse...)."),
                 (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
                          "read from the part's value when both sides are on it."),
                 (self.esl, "Series inductance (ESL) of the part")):
@@ -720,6 +789,7 @@ class LinkEditor(_Editor):
         self.esl.setValue((k.esl_h or 0.0) * 1e9)
 
     def _save(self, k: DcLink):
+        old_a = k.side_a
         new_a = self.a.value() or k.side_a
         typed = self.name.text().strip() or k.name
         if typed == k.side_a.ref and new_a.ref != k.side_a.ref:
@@ -729,6 +799,13 @@ class LinkEditor(_Editor):
         k.name = typed
         k.side_a = new_a
         k.side_b = self.b.value() or k.side_b
+        # Side A on a two-terminal part (one with pads on just two nets) puts side B on
+        # the same part's other net.
+        if (new_a.ref, new_a.net) != (old_a.ref, old_a.net):
+            other = guess_other_side(self.panel.snapshot, new_a, setup_grounds(self.panel.setup))
+            if other is not None and (other.ref, other.net) != (k.side_b.ref, k.side_b.net):
+                k.side_b = other
+                self._show(self.b, other)
         k.resistance = self.r.value() / 1e3
         k.esl_h = self.esl.value() * 1e-9 or None
         # Both sides just became the same resistor: take its resistance from its value.
@@ -817,7 +894,6 @@ class ItemList(QWidget):
         self.changed.emit()
 
     def _dup(self):
-        import copy
         row = self.lst.currentRow()
         if row < 0:
             return
@@ -835,6 +911,42 @@ class ItemList(QWidget):
         del self.items()[row]
         self.reload()
         self.changed.emit()
+
+
+def new_vrm(snap: BoardSnapshot, setup: PISetup, nets: List[str], net: str) -> Vrm:
+    """A new VRM on ``net``'s busiest part, named after it, with its voltage read from the
+    net's name and the part's ground pins if it has any."""
+    parts = parts_on_net(snap, net)
+    out = PinRef(parts[0][0] if parts else "", net)
+    return Vrm(_unique(out.ref or "VRM1", [x.name for x in setup.vrms]), out,
+               guess_voltage(net), "source",
+               ground=guess_ground_pins(snap, setup, nets, out))
+
+
+def new_link(snap: BoardSnapshot, setup: PISetup, nets: List[str], net: str) -> DcLink:
+    """A new series link from ``net``: on a part that bridges it to the next ticked net
+    that isn't a ground (a sense resistor between them, say), else on its busiest part.
+    A two-terminal part gets its other net as side B, and a resistor its value as the
+    resistance."""
+    grounds = setup_grounds(setup)
+    others = [n for n in nets if n != net]
+    other = next((n for n in others if not looks_like_ground(snap, n, grounds)),
+                 others[0] if others else net)
+    on_net = parts_on_net(snap, net)
+    ref = on_net[0][0] if on_net else ""
+    on_other = {r for r, _, _ in parts_on_net(snap, other)} if other != net else set()
+    # A two-terminal part (a sense resistor, say) is likelier a series part than an IC,
+    # and a capacitor is never one.
+    bridges = [r for r, _, _ in on_net if r in on_other and not is_capacitor_ref(r)]
+    bridge = next((r for r in bridges if other_net(snap, r, net) == other),
+                  bridges[0] if bridges else None)
+    a = PinRef(bridge or ref, net)
+    b = PinRef(bridge, other) if bridge else guess_other_side(snap, a, grounds)
+    if b is None:
+        b_parts = parts_on_net(snap, other)
+        b = PinRef(b_parts[0][0] if b_parts else "", other)
+    ohms = resistor_ohms(snap, a.ref) if a.ref == b.ref else None
+    return DcLink(_unique(a.ref or "R1", [x.name for x in setup.links]), a, b, ohms or 0.0)
 
 
 def _unique(base: str, taken: List[str]) -> str:
@@ -1548,33 +1660,20 @@ class PIPanel(QWidget):
 
     def _new_vrm(self):
         net = self._first_net()
-        if net is None:
-            return None
-        name = _unique("VRM1", [x.name for x in self.setup.vrms])
-        return Vrm(name, PinRef(self._first_part(net), net), guess_voltage(net), "source")
+        return None if net is None else new_vrm(self.snapshot, self.setup, self._nets, net)
 
     def _new_load(self):
         net = self._first_net()
         if net is None:
             return None
         ref = self._first_part(net)
-        return Load(_unique(ref or "LOAD1", [x.name for x in self.setup.loads]),
-                    PinRef(ref, net), 0.1)
+        supply = PinRef(ref, net)
+        return Load(_unique(ref or "LOAD1", [x.name for x in self.setup.loads]), supply, 0.1,
+                    ground=guess_ground_pins(self.snapshot, self.setup, self._nets, supply))
 
     def _new_link(self):
         net = self._first_net()
-        if net is None:
-            return None
-        other = self._nets[1] if len(self._nets) > 1 else net
-        ref, ref_b = self._first_part(net), self._first_part(other)
-        # Prefer a part that bridges the two nets, e.g. a sense resistor between them.
-        on_other = {r for r, _, _ in parts_on_net(self.snapshot, other)} if other != net else set()
-        bridge = next((r for r, _, _ in parts_on_net(self.snapshot, net) if r in on_other), None)
-        if bridge:
-            ref = ref_b = bridge
-        ohms = resistor_ohms(self.snapshot, ref) if bridge else None
-        return DcLink(_unique(ref or "R1", [x.name for x in self.setup.links]),
-                      PinRef(ref, net), PinRef(ref_b, other), ohms or 0.0)
+        return None if net is None else new_link(self.snapshot, self.setup, self._nets, net)
 
     @staticmethod
     def _describe_vrm(v: Vrm) -> str:

@@ -176,4 +176,5 @@ class BoardSnapshot:
 
     def invalidate_index(self):
         """Call after editing the item lists in place."""
-        self.__dict__.pop("_net_index", None)
+        for key in ("_net_index", "_ref_index", "_biggest_net", "_net_kinds"):
+            self.__dict__.pop(key, None)
