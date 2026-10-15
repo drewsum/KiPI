@@ -4,7 +4,12 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.7.1 (in development)
+## 0.7.2 (in development)
+
+### Changed
+- The version number is 0.7.2. The 0.7.1 release still reported itself as 0.7.0.
+
+## 0.7.1
 
 ### Added
 - **Save and open AC results** (#56). *Save results…* in the AC panel writes every rail
@@ -19,9 +24,12 @@ milestones rather than versions that were ever set.
   `stats` branch, so no token ships with the plugin; the dialog fetches them in the
   background once a session and shows the last ones fetched when offline.
 - Each release gets a `KiPI-<version>.zip` to unzip into KiCad's plugins folder, which is
-  also what makes its downloads countable.
+  also what makes its downloads countable. The README's install steps mention it as the
+  way to install without git.
+- The *Open results…* tooltip and the user guide describe what it opens in each mode, and
+  the guide's About entry explains where the statistics come from.
 
-## 0.7.0 (in development): AC impedance analysis, faster solves
+## 0.7.0: AC impedance analysis, faster solves
 
 ### Added
 - **AC analysis: PDN impedance over frequency.** The right end of the toolbar has
