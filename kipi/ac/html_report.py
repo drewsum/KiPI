@@ -26,7 +26,7 @@ from kipi.ac.model import caps_dict
 from kipi.ac.solver.fem import dielectric_summary
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.naming import timestamp
-from kipi.dc.report.html import CSS, _e, _table, _verdict
+from kipi.dc.report.html import CSS, SORT_JS, _e, _table, _verdict
 
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf", "#bcbd22",
           "#8c564b", "#e377c2", "#7f7f7f")
@@ -429,7 +429,8 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     js = plotly.offline.get_plotlyjs()
     doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
            f"<title>KiPI AC report — {_e(result.rail)} — {_e(snap.board_name)}</title>"
-           f"<style>{CSS}{CSS_EXTRA}</style><script type='text/javascript'>{js}</script></head><body>"
+           f"<style>{CSS}{CSS_EXTRA}</style><script type='text/javascript'>{js}</script>"
+           f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
            + "".join(parts) + "</body></html>")
     path.write_text(doc, encoding="utf-8")
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")

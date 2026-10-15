@@ -358,7 +358,9 @@ the results back.
 |---|---|
 | ![Via current, with the Vias table ranked by current](docs/images/via_current.png) | ![Board temperature from the electro-thermal solve, with the Notes tab](docs/images/temperature.png) |
 
-Result tabs (click a column header to sort by it; click again to reverse):
+Result tabs (click a column header to sort by it; click again to reverse). The setup's
+tables (capacitor parts, custom target points, load pin groups) and the HTML reports'
+tables sort the same way:
 
 | Tab | Shows |
 |---|---|
@@ -506,7 +508,8 @@ compares the results with hand calculations from each board's dimensions:
 
 Each one opens in KiPI like any snapshot
 (`python -m kipi --snapshot examples/validation/planes/planes.kipi.json.gz`). CI runs these
-last, in their own job, once lint and the other tests pass. The folder also checks that the
+last, in their own job, once lint and the other tests pass, for pull requests into `main`
+(or when the workflow is run by hand); run them locally with `pytest tests/accuracy`. The folder also checks that the
 committed files match `examples/validation/make_boards.py`: after changing a board there,
 rerun `python examples/validation/make_boards.py [name]` and commit its files.
 

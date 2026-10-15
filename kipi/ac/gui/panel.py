@@ -19,7 +19,7 @@ from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
@@ -32,7 +32,9 @@ from kipi.dc.gui.pi_panel import (
     new_link, new_vrm, parts_on_net, tip,
 )
 from kipi.dc.pi.model import PinRef, PISetup
-from kipi.gui.sortable import make_sortable, reset_sort, set_row
+from kipi.gui.sortable import (
+    SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
+)
 
 TITLE = "AC setup"
 
@@ -92,7 +94,9 @@ class CapEditor(_Editor):
         self.table.itemChanged.connect(self._item_changed)
         self.table.setToolTip("Capacitors between nets ticked in the Board panel. Tick a part "
                               "to give it this model (taking it from any other model); grayed "
-                              "rows already use another model.")
+                              "rows already use another model. Click a column header to "
+                              "sort by it.")
+        make_sortable(self.table)
         f.addRow(self.table)
         row = QHBoxLayout()
         b_val = QPushButton("Tick same value")
@@ -137,7 +141,8 @@ class CapEditor(_Editor):
         owner = {ref: m for m in panel.setup.caps for ref in m.refs}
         t.setRowCount(len(cands))
         for r, c in enumerate(cands):
-            chk = QTableWidgetItem()
+            chk = SortItem()
+            chk.row0 = r
             chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             mine = self.obj is not None and owner.get(c.ref) is self.obj
             chk.setCheckState(Qt.Checked if mine else Qt.Unchecked)
@@ -146,10 +151,12 @@ class CapEditor(_Editor):
             other = owner.get(c.ref)
             cells = (c.ref, c.value, " / ".join(c.nets), other.name if other else "")
             for col, text in enumerate(cells, start=1):
-                it = QTableWidgetItem(text)
+                it = SortItem(text)
+                it.row0 = r
                 if other is not None and not mine:
                     it.setForeground(QColor("#999"))
                 t.setItem(r, col, it)
+        resort(t)                    # ticking a part keeps the order the user sorted
         self._filling = False
         self._apply_filter()
         self._update_count(len(cands))
@@ -268,7 +275,8 @@ class ProbeEditor(_Editor):
         self.points.verticalHeader().setVisible(False)
         self.points.setMinimumHeight(130)
         self.points.setToolTip("Corner points of the custom target mask: a frequency and the "
-                               "target |Z| there")
+                               "target |Z| there. Click a column header to sort by it.")
+        make_sortable(self.points, self._sort_points, columns=(0, 1))
         self.btn_point = QPushButton("Add point")
         self.btn_point.setToolTip("Add a point a decade above the last one")
         self.btn_point.clicked.connect(self._add_point)
@@ -337,6 +345,15 @@ class ProbeEditor(_Editor):
         pts = self._points_value()
         f_hz, z_ohm = max(pts) if pts else (1e5, self.target.value() / 1e3 or 0.01)
         self._add_point_row(min(f_hz * 10, 1e10), z_ohm)
+        reset_sort(self.points)
+        self._store()
+
+    def _sort_points(self, col: int, descending: bool):
+        """Rebuild the point rows ordered by frequency (0) or |Z| (1)."""
+        pts = sorted_rows(self._points_value(), col, descending, keys={0: float, 1: float})
+        self.points.setRowCount(0)
+        for f_hz, z_ohm in pts:
+            self._add_point_row(f_hz, z_ohm)
         self._store()
 
     def _remove_point_of(self, widget):
@@ -369,6 +386,7 @@ class ProbeEditor(_Editor):
         self.target.setValue((p.target_ohm or 0.0) * 1e3)
         self.target_f.setValue((p.target_hz or 0.0) / 1e3)
         self.points.setRowCount(0)
+        reset_sort(self.points)
         for f_hz, z_ohm in sorted(p.target_points):
             self._add_point_row(f_hz, z_ohm)
         self.target_kind.setCurrentIndex(1 if p.target_custom else 0)

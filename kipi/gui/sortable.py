@@ -4,17 +4,55 @@ Each click on a header sorts by that column, alternating ascending and descendin
 sort by number where they hold one (or by an explicit key), otherwise by text, and blank
 cells go last either way. Rows can be kept together: a child row (e.g. a VRM phase) stays
 directly under its parent row, and pinned rows (e.g. a total) stay at the bottom.
+
+Numbers take SI prefixes (10 µF sorts above 100 nF, 4u7 is 4.7µ) and text sorts naturally
+(C9 before C10); a check box cell sorts ticked first. Tables of editors (cell widgets)
+sort through a ``sorter`` that rebuilds their rows in the clicked order (#85).
 """
 
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Callable, Iterable, Optional
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QTableWidget, QTableWidgetItem
 
 _NUMBER = re.compile(r"[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
+# An SI prefix right after the number: before a unit, the end, or digits (4u7 = 4.7µ).
+_PREFIX = re.compile(r"\s?([pnuµμmkKMG])(?=$|[FHΩRVAWsSz]|Hz|\d|\s)(\d*)")
+_SCALE = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "µ": 1e-6, "μ": 1e-6, "m": 1e-3, "k": 1e3,
+          "K": 1e3, "M": 1e6, "G": 1e9}
+
+
+def number(text: str) -> Optional[float]:
+    """The number ``text`` starts with, scaled by an SI prefix after it; None if none."""
+    m = _NUMBER.match(text)
+    if not m:
+        return None
+    x = float(m.group(0))
+    p = _PREFIX.match(text, m.end())
+    if p and m.group(2) is None:
+        frac = p.group(2)
+        if frac and "." not in m.group(0):
+            x = float(f"{m.group(0)}.{frac}")
+        x *= _SCALE[p.group(1)]
+    return x
+
+
+def natural(text: str):
+    """Text key that orders the numbers in it by value: C9 before C10."""
+    parts = re.split(r"(\d+)", text.casefold())
+    return tuple(int(t) if i % 2 else t for i, t in enumerate(parts))
+
+
+def sort_key(text: str):
+    """(0, number), (1, natural text) or (2, ()) for a blank: numbers first, blanks last."""
+    text = text.replace("±", "").strip()
+    if not text:
+        return (2, ())
+    x = number(text)
+    return (0, x) if x is not None else (1, natural(text))
 
 
 class SortItem(QTableWidgetItem):
@@ -29,14 +67,13 @@ class SortItem(QTableWidgetItem):
         self.row0 = 0                            # row when filled, to tell groups apart
 
     def value(self):
-        """(0, number), (1, text) or (2, "") for a blank cell."""
+        """(0, number), (1, natural text) or (2, ()) for a blank cell; a check box sorts
+        ticked first."""
         if self.key is not None:
             return (0, float(self.key))
-        text = self.text().replace("±", "").strip()
-        if not text:
-            return (2, "")
-        m = _NUMBER.match(text)
-        return (0, float(m.group(0))) if m else (1, text.casefold())
+        if self.flags() & Qt.ItemIsUserCheckable and not self.text():
+            return (0, 0.0 if self.checkState() == Qt.Checked else 1.0)
+        return sort_key(self.text())
 
     def __lt__(self, other):
         if not isinstance(other, SortItem):
@@ -59,21 +96,58 @@ class SortItem(QTableWidgetItem):
         return fixed(self.sub, other.sub)        # same group: parent first, then children
 
 
-def make_sortable(t: QTableWidget):
-    """Sort ``t`` by a column when its header is clicked, alternating the direction."""
+def make_sortable(t: QTableWidget, sorter: Optional[Callable[[int, bool], None]] = None,
+                  columns: Optional[Iterable[int]] = None):
+    """Sort ``t`` by a column when its header is clicked, alternating the direction.
+
+    ``sorter(column, descending)``, if given, does the sorting instead (for a table of
+    editors, which rebuilds its rows); ``columns`` limits the headers that sort."""
     header = t.horizontalHeader()
     header.setSectionsClickable(True)
     header.setSortIndicatorShown(True)
     reset_sort(t)
+    allowed = None if columns is None else set(columns)
 
+    # The direction is kept here, not read from the indicator: Qt flips the indicator
+    # itself on a click, before sectionClicked.
     def clicked(col):
-        same = header.property("kipi_sorted") == col
-        order = (Qt.DescendingOrder if same and header.sortIndicatorOrder() == Qt.AscendingOrder
-                 else Qt.AscendingOrder)
+        last, desc = header.property("kipi_sorted"), bool(header.property("kipi_desc"))
+        if allowed is not None and col not in allowed:
+            header.setSortIndicator(last, Qt.DescendingOrder if desc else Qt.AscendingOrder)
+            return
+        desc = last == col and not desc
+        order = Qt.DescendingOrder if desc else Qt.AscendingOrder
         header.setSortIndicator(col, order)
         header.setProperty("kipi_sorted", col)
-        t.sortItems(col, order)
+        header.setProperty("kipi_desc", desc)
+        if sorter is not None:
+            sorter(col, order == Qt.DescendingOrder)
+        else:
+            t.sortItems(col, order)
     header.sectionClicked.connect(clicked)
+
+
+def resort(t: QTableWidget):
+    """Sort a refilled table again by the column and direction last clicked, if any."""
+    header = t.horizontalHeader()
+    col = header.property("kipi_sorted")
+    if col is not None and col >= 0:
+        order = Qt.DescendingOrder if header.property("kipi_desc") else Qt.AscendingOrder
+        header.setSortIndicator(col, order)
+        t.sortItems(col, order)
+
+
+def sorted_rows(rows, col: int, descending: bool, keys=None):
+    """``rows`` (lists of cell values) ordered by column ``col`` for a sorter: by
+    ``keys[col](value)`` if given, else by :func:`sort_key` of the text; blanks last."""
+    def key(row):
+        v = row[col]
+        if keys is not None and col in keys:
+            return (0, keys[col](v))
+        return sort_key(str(v))
+    filled = [r for r in rows if key(r)[0] != 2]
+    blank = [r for r in rows if key(r)[0] == 2]
+    return sorted(filled, key=key, reverse=descending) + blank
 
 
 def reset_sort(t: QTableWidget):
@@ -81,6 +155,7 @@ def reset_sort(t: QTableWidget):
     header = t.horizontalHeader()
     header.setSortIndicator(-1, Qt.AscendingOrder)
     header.setProperty("kipi_sorted", -1)
+    header.setProperty("kipi_desc", False)
 
 
 def set_row(t: QTableWidget, r: int, cells, parent_row: Optional[int] = None, sub: int = 0,

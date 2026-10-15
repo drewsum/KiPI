@@ -113,6 +113,11 @@ jobs:
   accuracy:
     name: Solver accuracy (${{ matrix.os }})
     needs: [lint, test]
+    # Only for pull requests into main (and on demand): it guards a release's solver
+    # accuracy and takes longer than the other tests.
+    if: >-
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+      || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

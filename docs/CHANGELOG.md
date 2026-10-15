@@ -11,7 +11,12 @@ milestones rather than versions that were ever set.
   (thin and arc tracks, right-angle routes, a layer change through vias, planes, a power
   chain with a series link, and AC plane, decoupling-capacitor and ferrite boards), each
   solved and compared with hand calculations. They run in `tests/accuracy`, as a separate
-  final CI job, and open in KiPI like any snapshot.
+  final CI job on pull requests into `main`, and open in KiPI like any snapshot.
+- **Click-to-sort tables everywhere** (#85): the capacitor parts table, a probe's custom
+  target points and a load's pin groups sort by a clicked column header, as do every table
+  in the DC and AC HTML reports. Values with SI prefixes sort by value (100 nF before
+  10 µF, 4u7 as 4.7 µ), references sort naturally (C9 before C10), ticked parts can be
+  sorted first, and blanks go last. A table keeps its order when ticking a part refills it.
 - **Power tree** toolbar button: a block diagram of the VRMs (each type in its own colour and
   tag), rails, series links, loads and capacitors, laid out in the direction power flows,
   saveable as a PNG. Rails with many loads or capacitor groups pack them into grids shaped
@@ -86,6 +91,9 @@ milestones rather than versions that were ever set.
   other test files. CI shows each folder's results in its own log group.
 
 ### Fixed
+- Clicking a results table's column header a second time now reverses the sort; it used
+  to sort ascending every time, because Qt flips its own sort indicator before the click
+  reaches KiPI (#85).
 - The AC HTML report no longer leaves a large blank space between the board map and the
   capacitor models. The map's plot shared its id with the section heading, so Plotly drew
   the map inside the heading and left the map's own space empty. The map's height now also

@@ -39,7 +39,7 @@ from kipi.dc.pi.model import (
     DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup, group_name, net_groups,
     validate,
 )
-from kipi.gui.sortable import make_sortable, reset_sort, set_row
+from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS
@@ -601,7 +601,8 @@ class LoadEditor(_Editor):
         self.groups.setMinimumHeight(110)
         self.btn_group = QPushButton("Add pin group")
         self.btn_group.setToolTip("Add a group of supply pins with its own current")
-        self.btn_group.clicked.connect(lambda: (self._add_group_row("", "", 0.0), self._store()))
+        self.btn_group.clicked.connect(
+            lambda: (self._add_group_row("", "", 0.0), reset_sort(self.groups), self._store()))
         self.btn_each = QPushButton("One group per pin")
         self.btn_each.setToolTip("Replace the groups with one group per supply pin")
         self.btn_each.clicked.connect(self._group_per_pin)
@@ -638,7 +639,9 @@ class LoadEditor(_Editor):
                            "voltage: no pin drops below it or is boosted above it by more")):
             tip(f, w, text)
         self.groups.setToolTip("Pin groups: an optional name, the pin numbers (e.g. 15,28) "
-                               "and the current into those pins")
+                               "and the current into those pins. Click a column header to "
+                               "sort by it.")
+        make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
         self._watch(self.name, self.current, self.tol, self.mode)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
@@ -676,6 +679,15 @@ class LoadEditor(_Editor):
                 self._store()
                 return
 
+    def _sort_groups(self, col: int, descending: bool):
+        """Rebuild the pin group rows ordered by name, pins or current."""
+        rows = [[g.name, ",".join(g.pins), g.current] for g in self._groups_value()]
+        rows = sorted_rows(rows, col, descending)
+        self.groups.setRowCount(0)
+        for name, pins, current in rows:
+            self._add_group_row(name, pins, current)
+        self._store()
+
     def _supply_pins(self) -> List[str]:
         ref = self.supply.value()
         if ref is None or self.panel.snapshot is None:
@@ -686,6 +698,7 @@ class LoadEditor(_Editor):
     def _fill_per_pin(self, total: float):
         pins = self._supply_pins()
         self.groups.setRowCount(0)
+        reset_sort(self.groups)
         for pin in pins:
             self._add_group_row(f"pin {pin}", pin, total / max(1, len(pins)))
 
@@ -709,6 +722,7 @@ class LoadEditor(_Editor):
         self.supply.set_value(l.supply)
         self.current.setValue(l.current)
         self.groups.setRowCount(0)
+        reset_sort(self.groups)
         for g in l.groups:
             self._add_group_row(g.name, ",".join(g.pins), g.current)
         self.mode.setCurrentIndex(1 if l.groups else 0)

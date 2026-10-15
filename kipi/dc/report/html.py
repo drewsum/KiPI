@@ -47,7 +47,7 @@ def _num(x, fmt=".4g") -> str:
 
 
 def _table(headers: List[str], rows: List[List[str]], cls: str = "") -> str:
-    head = "".join(f"<th>{_e(h)}</th>" for h in headers)
+    head = "".join(f"<th title='Click to sort'>{_e(h)}</th>" for h in headers)
     body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     return f'<table class="{cls}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
 
@@ -218,6 +218,56 @@ th { background: #f0f0f0; } td:first-child, th:first-child { text-align: left; }
 .note { color: #666; font-size: 12px; }
 nav a { margin-right: 12px; }
 details > summary { cursor: pointer; margin: 6px 0; }
+thead th { cursor: pointer; user-select: none; }
+thead th[data-sort=asc]::after { content: " \\25B2"; } thead th[data-sort=desc]::after { content: " \\25BC"; }
+"""
+
+# Click a column header to sort the table by it; click again to reverse (#85). The keys
+# match the plugin's tables (kipi.gui.sortable): numbers with SI prefixes, natural text,
+# blanks last either way.
+SORT_JS = r"""
+(function () {
+  var NUM = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?/;
+  var PRE = /^\s?([pnuµμmkKMG])(?=$|[FHΩRVAWsSz]|\d|\s)(\d*)/;
+  var SCALE = {p: 1e-12, n: 1e-9, u: 1e-6, "µ": 1e-6, "μ": 1e-6, m: 1e-3, k: 1e3, K: 1e3,
+               M: 1e6, G: 1e9};
+  function key(text) {
+    var t = text.replace(/±/g, "").trim();
+    if (!t) return [2, 0];
+    var m = NUM.exec(t);
+    if (!m) return [1, t];
+    var x = parseFloat(m[0]), p = PRE.exec(t.slice(m[0].length));
+    if (p && m[2] === undefined) {
+      if (p[2] && m[0].indexOf(".") < 0) x = parseFloat(m[0] + "." + p[2]);
+      x *= SCALE[p[1]];
+    }
+    return [0, x];
+  }
+  function compare(a, b) {
+    if (a[0] !== b[0]) return a[0] - b[0];
+    if (a[0] === 0) return a[1] - b[1];
+    return a[1].localeCompare(b[1], undefined, {numeric: true, sensitivity: "base"});
+  }
+  document.addEventListener("click", function (e) {
+    var th = e.target.closest ? e.target.closest("thead th") : null;
+    if (!th) return;
+    var table = th.closest("table"), body = table.tBodies[0];
+    if (!body) return;
+    var col = th.cellIndex, desc = th.getAttribute("data-sort") === "asc";
+    table.querySelectorAll("thead th").forEach(function (h) { h.removeAttribute("data-sort"); });
+    th.setAttribute("data-sort", desc ? "desc" : "asc");
+    var rows = Array.prototype.map.call(body.rows, function (r, i) {
+      var c = r.cells[col];
+      return {row: r, i: i, k: key(c ? c.textContent : "")};
+    });
+    rows.sort(function (a, b) {
+      var blank = (a.k[0] === 2) - (b.k[0] === 2);
+      if (blank) return blank;                      // blanks last either way
+      return (desc ? -1 : 1) * compare(a.k, b.k) || a.i - b.i;
+    });
+    rows.forEach(function (r) { body.appendChild(r.row); });
+  });
+})();
 """
 
 
@@ -462,7 +512,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     js = plotly.offline.get_plotlyjs()
     doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
            f"<title>KiPI report — {_e(snap.board_name)}</title><style>{CSS}</style>"
-           f"<script type='text/javascript'>{js}</script></head><body>"
+           f"<script type='text/javascript'>{js}</script>"
+           f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
            + "".join(parts) + "</body></html>")
     path.write_text(doc, encoding="utf-8")
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")
