@@ -19,7 +19,10 @@ milestones rather than versions that were ever set.
   µm, mm, mil or oz. The stackup is locked to KiCad's values by default. Untick **Lock to
   imported values** to try other thicknesses, materials and εr. Each dielectric's material
   is a drop-down of the materials KiPI knows; choosing one sets its typical εr and thermal
-  conductivity. The layers restack, and every DC and AC analysis, the 3D view and the reports use the
+  conductivity. Each copper layer has a conductor drop-down too (annealed, electrodeposited
+  or rolled-annealed copper, silver, gold, aluminum, nickel or tin), which sets that
+  layer's resistivity, TCR and thermal conductivity; the DC solve and the electro-thermal
+  model use a TCR and a thermal conductivity per layer. The layers restack, and every DC and AC analysis, the 3D view and the reports use the
   edited stackup. The PI setup keeps it. KiCad's API cannot change a board's stackup yet, so
   edits stay in KiPI.
 

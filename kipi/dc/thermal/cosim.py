@@ -95,7 +95,8 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
                          progress: ProgressReporter = NULL) -> TreeResult:
     t0 = time.perf_counter()
     with progress.timed("Building the board thermal model"):
-        model = BoardThermalModel(snap, thermal, progress)
+        model = BoardThermalModel(snap, thermal, progress,
+                                  setup.settings.conductor_by_layer)
     temps = np.where(model.inside, thermal.ambient_c, np.nan)
     history: List[dict] = []
     tree: Optional[TreeResult] = None

@@ -105,12 +105,14 @@ def _merge_groups(n: int, groups: List[np.ndarray]) -> Tuple[np.ndarray, int]:
     return labels, count
 
 
-def _rho_factor(problem: NetProblem, xy: np.ndarray) -> Optional[np.ndarray]:
-    """rho(T) / rho(REF_TEMP_C) at the given points, or None when no temperature."""
+def _rho_factor(problem: NetProblem, xy: np.ndarray, tcr=None) -> Optional[np.ndarray]:
+    """rho(T) / rho(REF_TEMP_C) at the given points, or None when no temperature. ``tcr`` is
+    the temperature coefficient at each point (default: the setup's)."""
     if problem.temperature is None:
         return None
     t = np.asarray(problem.temperature(xy), dtype=float)
-    return np.maximum(1.0 + problem.settings.tcr_per_c * (t - REF_TEMP_C), 0.05)
+    tcr = problem.settings.tcr_per_c if tcr is None else tcr
+    return np.maximum(1.0 + tcr * (t - REF_TEMP_C), 0.05)
 
 
 def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
@@ -146,7 +148,11 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
         raise SolveError("Degenerate triangles in mesh")
     gs = np.array([sheet_g[l] for l in mesh.tri_layer]) if len(set(mesh.tri_layer)) > 1 \
         else np.full(len(mesh.tris), sheet_g[mesh.tri_layer[0]])
-    rho_factor = _rho_factor(problem, mesh.points[mesh.tris].mean(axis=1))
+    tcr = {lid: s.tcr_for(st.layer(lid).name) for lid in mesh.layers}
+    # One value for a single layer (or several alike), else one per triangle.
+    tri_tcr = (np.array([tcr[l] for l in mesh.tri_layer]) if len(set(tcr.values())) > 1
+               else next(iter(tcr.values()), None))
+    rho_factor = _rho_factor(problem, mesh.points[mesh.tris].mean(axis=1), tri_tcr)
     if rho_factor is not None:
         gs = gs / rho_factor
     coef = gs / (4 * area)

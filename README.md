@@ -166,12 +166,14 @@ Below that:
 
 The **Stackup** toolbar button opens a window listing every copper and dielectric layer
 with its thickness (in µm, mm, mil or oz), each dielectric's material, εr and thermal
-conductivity, and each copper layer's resistivity, with the copper **Resistivity** and **TCR** for the whole board. The stackup is
-locked to KiCad's values by default; untick **Lock to imported values** to try other
-thicknesses, materials and εr (choosing a material from the list sets its typical εr and
-thermal conductivity), which every DC and AC analysis then uses and the setup keeps. KiCad's
-API cannot change a board's stackup yet, so enter a stackup you settle on in KiCad's Board
-Setup yourself.
+conductivity, and each copper layer's conductor and resistivity, with the copper
+**Resistivity** and **TCR** for the whole board. The stackup is locked to KiCad's values by
+default; untick **Lock to imported values** to try other thicknesses, materials and εr
+(choosing a material from the list sets its typical εr and thermal conductivity). Every DC
+and AC analysis uses the edited stackup, and the setup keeps it. A copper layer's conductor
+(copper foils, silver, gold, aluminum, nickel or tin) sets its resistivity, TCR and thermal
+conductivity, and can be changed while the stackup is locked. KiCad's API cannot change a
+board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup yourself.
 
 Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. Drag to rotate,
 scroll to zoom and shift-drag (or middle-drag) to pan. **About** shows the KiPI version and

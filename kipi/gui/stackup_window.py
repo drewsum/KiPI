@@ -1,11 +1,12 @@
-"""The Stackup window: the board's layers with their thicknesses, dielectric materials and
-εr, and copper resistivity, for every analysis (#61).
+"""The Stackup window: the board's layers with their thicknesses, materials, εr and
+resistivity, for every analysis (#61).
 
 Locked (the default), the thicknesses, materials and εr are the ones read from KiCad.
 Unlocked, each can be changed to compare stackups (choosing a dielectric's material sets its
 typical εr and thermal conductivity); every analysis then uses the edited stackup. KiCad's
-API cannot change a board's stackup yet, so edits stay in KiPI. The copper resistivity and
-TCR are setup settings and can always be changed.
+API cannot change a board's stackup yet, so edits stay in KiPI. A copper layer's conductor,
+the copper resistivity and the TCR are setup settings and can always be changed: choosing a
+conductor sets the layer's resistivity, TCR and thermal conductivity.
 """
 
 from __future__ import annotations
@@ -22,21 +23,23 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.core.model.board import CopperLayer, Stackup
+from kipi.core.model.conductors import UOHM_CM, conductors, find, layer_k_w_mk
 from kipi.core.model.stackup import (
     dielectric_er, dielectric_materials, restack, stack_order, thicknesses,
 )
 from kipi.dc.thermal.materials import catalog, lookup
 from kipi.gui.unit_spin import UnitSpinBox
 
-UOHM_CM = 1e-5          # 1 µΩ·cm in Ω·mm, the unit the solver works in
 # Thickness units, as mm per unit. 1 oz/ft² is taken as 35 µm, the usual nominal value
 # (KiCad's default 35 µm and 17.5 µm foils read as 1 oz and ½ oz). Ounces are a copper
 # weight, so in "oz" the dielectrics show in mil.
 THICKNESS_UNITS = {"µm": 1e-3, "mm": 1.0, "mil": 0.0254, "oz": 0.035}
 UNIT_DECIMALS = {"µm": 1, "mm": 4, "mil": 2, "oz": 3}
 MIN_MM, MAX_MM = 0.001, 10.0
-COLS = ["Layer / material", "Thickness", "εr", "k (W/m·K)", "Resistivity at 20 °C"]
-C_NAME, C_THK, C_ER, C_K, C_RHO = range(len(COLS))
+COLS = ["Layer", "Material", "Thickness", "εr", "k (W/m·K)", "Resistivity at 20 °C"]
+C_NAME, C_MAT, C_THK, C_ER, C_K, C_RHO = range(len(COLS))
+BOARD_DEFAULT = "Copper (board Resistivity)"     # no conductor chosen: the settings below
+CUSTOM = "Custom resistivity"
 
 
 def row_unit(unit: str, copper: bool) -> str:
@@ -74,6 +77,7 @@ class StackupWindow(QDialog):
         self._er: List[float] = []                   # dielectrics, top to bottom
         self._mat: List[str] = []                    # dielectrics' materials, top to bottom
         self._mat_boxes: List[QComboBox] = []
+        self._cond_boxes: Dict[str, QComboBox] = {}  # copper layer name -> conductor
         self._thk_spins: List[UnitSpinBox] = []
         self._er_spins: List[UnitSpinBox] = []
         self._rho_spins: List[UnitSpinBox] = []
@@ -109,9 +113,9 @@ class StackupWindow(QDialog):
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, len(COLS)):
-            hdr.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        for c in range(len(COLS)):
+            hdr.setSectionResizeMode(c, QHeaderView.Stretch if c == C_MAT
+                                     else QHeaderView.ResizeToContents)
         self.table.setToolTip("The stackup, top to bottom. Values take units and prefixes, "
                               "like 35um or 0.2mm in a µm or mm field.")
         self.lbl_total = QLabel(self)
@@ -129,9 +133,10 @@ class StackupWindow(QDialog):
         for sp in (self.spin_rho, self.spin_tcr):
             f.labelForField(sp).setToolTip(sp.toolTip())
             sp.valueChanged.connect(self._copper_changed)
-        note = QLabel("A layer's own resistivity in the table overrides the value above, "
-                      "e.g. for thin electroplated or rolled-annealed foil; 'default' uses "
-                      "it. Resistivity and TCR are setup settings, not locked.", g_cu)
+        note = QLabel("These apply to every copper layer left at the board's copper, and "
+                      "to via plating. A layer's conductor, or a resistivity typed in the "
+                      "table, overrides them. Conductors, resistivity and TCR are setup "
+                      "settings, not locked.", g_cu)
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
         f.addRow(note)
@@ -153,7 +158,7 @@ class StackupWindow(QDialog):
         lay.addWidget(self.lbl_total)
         lay.addWidget(g_cu)
         lay.addLayout(row)
-        self.resize(760, 560)
+        self.resize(900, 560)
         self._update_enabled()
 
     # ------------------------------------------------------------------ state
@@ -211,6 +216,7 @@ class StackupWindow(QDialog):
         st = self._current
         self._thk_spins, self._er_spins, self._rho_spins = [], [], []
         self._mat_boxes = []
+        self._cond_boxes = {}
         self.table.setRowCount(0)
         if st is None:
             self._order, self._mm, self._er, self._mat = [], [], [], []
@@ -234,13 +240,20 @@ class StackupWindow(QDialog):
                     pm.fill(QColor.fromRgbF(*self._colors[e.id]))
                     item.setIcon(QIcon(pm))
                 self.table.setItem(i, C_NAME, item)
+                box = self._conductor_box(e.name)
+                self.table.setCellWidget(i, C_MAT, box)
+                self._cond_boxes[e.name] = box
             else:
+                between = (f"Between {names.get(e.above_layer, 'the top')} and "
+                           f"{names.get(e.below_layer, 'the bottom')}")
+                item = QTableWidgetItem("   Dielectric")
+                item.setToolTip(between)
+                self.table.setItem(i, C_NAME, item)
                 box = self._material_box(d, kicad_mats[d] if d < len(kicad_mats) else "")
-                box.setToolTip(f"Between {names.get(e.above_layer, 'the top')} and "
-                               f"{names.get(e.below_layer, 'the bottom')}. Choosing a "
-                               "material sets its typical εr and in-plane thermal "
-                               "conductivity (k, for the electro-thermal solve).")
-                self.table.setCellWidget(i, C_NAME, box)
+                box.setToolTip(f"{between}. Choosing a material sets its typical εr and "
+                               "in-plane thermal conductivity (k, for the electro-thermal "
+                               "solve).")
+                self.table.setCellWidget(i, C_MAT, box)
                 self._mat_boxes.append(box)
             thk = UnitSpinBox(self.table)
             thk.setFrame(False)
@@ -249,7 +262,9 @@ class StackupWindow(QDialog):
             self._thk_spins.append(thk)
             if copper:
                 self.table.setItem(i, C_ER, QTableWidgetItem(""))
-                self.table.setItem(i, C_K, QTableWidgetItem(""))
+                k = QTableWidgetItem()
+                k.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(i, C_K, k)
                 rho = _spin(0.0, 100.0, overrides.get(e.name, 0.0) / UOHM_CM, 3,
                             " µΩ·cm", 0.01)
                 rho.setSpecialValueText("default")
@@ -259,6 +274,7 @@ class StackupWindow(QDialog):
                 rho.valueChanged.connect(partial(self._layer_rho_changed, e.name))
                 self.table.setCellWidget(i, C_RHO, rho)
                 self._rho_spins.append(rho)
+                self._show_conductor(e.name, i)
             else:
                 er = _spin(0.0, 20.0, self._er[d], 2, "", 0.1)
                 er.setSpecialValueText("default")
@@ -274,6 +290,37 @@ class StackupWindow(QDialog):
                 self.table.setItem(i, C_RHO, QTableWidgetItem(""))
                 d += 1
         self._show_values()
+
+    def _conductor_box(self, layer: str) -> QComboBox:
+        """A copper layer's conductor: the setup's board-wide copper, or one KiPI knows."""
+        box = QComboBox(self.table)
+        box.setFrame(False)
+        box.addItem(BOARD_DEFAULT, "")
+        for c in conductors():
+            box.addItem(c.name, c.name)
+        box.setToolTip(f"What {layer} is made of. Choosing a conductor sets the layer's "
+                       "resistivity, TCR and thermal conductivity. Not part of KiCad's "
+                       "stackup, so the lock does not apply.")
+        settings = self._setup.settings if self._setup is not None else None
+        chosen = settings.conductor_by_layer.get(layer, "") if settings else ""
+        if find(chosen) is None:
+            chosen = ""
+            if settings is not None and layer in settings.rho_by_layer:
+                box.addItem(CUSTOM, CUSTOM)        # a resistivity typed in by hand
+                chosen = CUSTOM
+        box.setCurrentIndex(box.findData(chosen))
+        box.currentIndexChanged.connect(partial(self._conductor_chosen, layer, box))
+        box.setEnabled(self._setup is not None)
+        return box
+
+    def _show_conductor(self, layer: str, row: Optional[int] = None):
+        """A copper layer's thermal conductivity, from its conductor."""
+        if row is None:
+            row = next(i for i, e in enumerate(self._order)
+                       if isinstance(e, CopperLayer) and e.name == layer)
+        settings = self._setup.settings if self._setup is not None else None
+        k = layer_k_w_mk(settings.conductor_by_layer if settings else {}, layer)
+        self.table.item(row, C_K).setText(f"{k:g}")
 
     def _material_box(self, d: int, kicad_name: str) -> QComboBox:
         """A dielectric's material: the ones KiPI knows, and the name KiCad gives it when
@@ -415,11 +462,43 @@ class StackupWindow(QDialog):
         self.settings_changed.emit()
 
     def _layer_rho_changed(self, name: str, value: float):
+        """A resistivity typed for a layer; 'default' also drops its conductor."""
         if self._setup is None:
             return
-        overrides = self._setup.settings.rho_by_layer
+        s = self._setup.settings
         if value > 0:
-            overrides[name] = value * UOHM_CM
+            s.rho_by_layer[name] = value * UOHM_CM
         else:
-            overrides.pop(name, None)
+            s.rho_by_layer.pop(name, None)
+            s.tcr_by_layer.pop(name, None)
+            s.conductor_by_layer.pop(name, None)
+            box = self._cond_boxes.get(name)
+            if box is not None:
+                box.blockSignals(True)
+                box.setCurrentIndex(box.findData(""))
+                box.blockSignals(False)
+            self._show_conductor(name)
+        self.settings_changed.emit()
+
+    def _conductor_chosen(self, layer: str, box: QComboBox, _index: int):
+        """A conductor picked for a copper layer: its resistivity, TCR and thermal
+        conductivity, or the board-wide settings again."""
+        if self._setup is None:
+            return
+        s = self._setup.settings
+        c = find(box.currentData())
+        if c is not None:
+            s.conductor_by_layer[layer] = c.name
+            s.rho_by_layer[layer] = c.rho_ohm_mm
+            s.tcr_by_layer[layer] = c.tcr_per_c
+        elif box.currentData() == "":
+            for d in (s.conductor_by_layer, s.rho_by_layer, s.tcr_by_layer):
+                d.pop(layer, None)
+        else:                                       # "Custom resistivity": left as it is
+            return
+        spin = self._rho_spins[list(self._cond_boxes).index(layer)]
+        spin.blockSignals(True)
+        spin.setValue(s.rho_by_layer.get(layer, 0.0) / UOHM_CM)
+        spin.blockSignals(False)
+        self._show_conductor(layer)
         self.settings_changed.emit()

@@ -6,7 +6,8 @@ through the laminate, and leaves both faces by convection to ambient:
 
     div(G_th grad T) - 2 h (T - T_amb) + q'' = 0
 
-G_th (W/K per square) = sum over copper layers of k_cu * t_cu * coverage + sum over
+G_th (W/K per square) = sum over copper layers of k * t * coverage (k: the layer's conductor,
+copper unless the Stackup window says otherwise) + sum over
 dielectric layers of k(material) * t, with k looked up from each dielectric's material in
 the KiCad stackup (see :mod:`kipi.dc.thermal.materials`).
 Through the thickness the board is taken as isothermal: for FR4 the through-plane
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
 import numpy as np
 import scipy.sparse as sp
@@ -31,9 +32,9 @@ from scipy.interpolate import RegularGridInterpolator
 
 from kipi.core.geometry.copper import poly_to_shapely
 from kipi.core.model.board import BoardSnapshot
+from kipi.core.model.conductors import layer_k_w_mk
 from kipi.core.progress import NULL, ProgressReporter
 
-K_CU_W_MM_K = 0.39          # copper, 390 W/(m K)
 H_NATURAL_W_M2K = 10.0      # natural convection + radiation, per face
 H_PER_M_S = 3.8             # added per m/s of airflow, per face
 
@@ -69,7 +70,8 @@ class BoardThermalModel:
     """Grid, conductances and factorization; reused for every heat map."""
 
     def __init__(self, snap: BoardSnapshot, settings: ThermalSettings,
-                 progress: ProgressReporter = NULL):
+                 progress: ProgressReporter = NULL,
+                 conductor_by_layer: Optional[Dict[str, str]] = None):
         self.settings = settings
         st = snap.stackup
         board = _board_geometry(snap)
@@ -102,7 +104,8 @@ class BoardThermalModel:
             if copper is None:
                 continue
             cov = shapely.contains_xy(copper, X, Y)
-            g += cov * K_CU_W_MM_K * cu.thickness_mm
+            k = layer_k_w_mk(conductor_by_layer or {}, cu.name) * 1e-3     # W/(mm K)
+            g += cov * k * cu.thickness_mm
             progress.debug(f"  thermal: {cu.name} copper covers {cov[self.inside].mean():.0%}")
         self.g = g
 

@@ -252,7 +252,9 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  f"resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
                  f"(TCR {s.tcr_per_c:g}/°C)"
                  + ("; layer overrides: " + ", ".join(
-                     f"{_e(n)} {r * 1e-3:.4g} Ω·m" for n, r in sorted(s.rho_by_layer.items()))
+                     f"{_e(n)} {_e(s.conductor_by_layer.get(n, ''))} {r * 1e-3:.4g} Ω·m "
+                     f"(TCR {s.tcr_for(n):g}/°C)".replace("  ", " ")
+                     for n, r in sorted(s.rho_by_layer.items()))
                     if s.rho_by_layer else "")
                  + ".</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")

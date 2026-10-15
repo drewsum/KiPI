@@ -56,12 +56,20 @@ class SolveSettings:
     # Per-layer overrides of rho_ohm_mm, keyed by copper layer name (e.g. "In1.Cu").
     # Layers not listed, and via barrels, use rho_ohm_mm.
     rho_by_layer: Dict[str, float] = field(default_factory=dict)
+    # Per-layer overrides of tcr_per_c, and the conductor chosen for a layer in the Stackup
+    # window (a kipi.core.model.conductors name), keyed the same way.
+    tcr_by_layer: Dict[str, float] = field(default_factory=dict)
+    conductor_by_layer: Dict[str, str] = field(default_factory=dict)
     tol: float = 1e-10              # relative residual for the iterative solver
     max_iter: int = 2000
 
     def rho_for(self, layer_name: str) -> float:
         """Resistivity of a copper layer at REF_TEMP_C, in ohm*mm."""
         return self.rho_by_layer.get(layer_name, self.rho_ohm_mm)
+
+    def tcr_for(self, layer_name: str) -> float:
+        """Temperature coefficient of resistance of a copper layer, per °C."""
+        return self.tcr_by_layer.get(layer_name, self.tcr_per_c)
 
 
 @dataclass

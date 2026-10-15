@@ -16,7 +16,7 @@ from qtpy.QtWidgets import QApplication  # noqa: E402
 from kipi.core.model.stackup import dielectric_er, thicknesses  # noqa: E402
 from kipi.dc.pi.model import PISetup  # noqa: E402
 from kipi.gui.stackup_window import (  # noqa: E402
-    UOHM_CM, StackupWindow, row_unit,
+    C_K, UOHM_CM, StackupWindow, row_unit,
 )
 from phase_boards import board  # noqa: E402
 
@@ -239,7 +239,7 @@ def test_choosing_a_material_sets_its_er_and_k(app, unit_setting):
     row = _diel_rows(win)[0]
     box.setCurrentIndex(box.findData("Rogers RO4350B"))
     assert win._er_spins[0].value() == pytest.approx(3.48)
-    assert win.table.item(row, 3).text() == "0.69"
+    assert win.table.item(row, C_K).text() == "0.69"
     win.flush()
     edited = got[-1]
     assert dielectric_materials(edited)[0] == "Rogers RO4350B"
@@ -252,3 +252,41 @@ def test_choosing_a_material_sets_its_er_and_k(app, unit_setting):
     box.setCurrentIndex(box.findData("PTFE"))
     win.chk_lock.setChecked(True)
     assert box.currentData() == kicad_name and got[-1] is st
+
+
+def test_choosing_a_conductor_sets_rho_tcr_and_k(app, unit_setting):
+    st = board().stackup
+    setup = PISetup()
+    win = StackupWindow()
+    changed = []
+    win.settings_changed.connect(lambda: changed.append(1))
+    win.set_board(st, setup=setup)
+    name = st.copper[0].name
+    box = win._cond_boxes[name]
+    assert box.isEnabled() and win.chk_lock.isChecked()   # not part of the lock
+    assert box.currentData() == ""
+    row = _copper_rows(win)[0]
+    assert win.table.item(row, C_K).text() == "390"
+    box.setCurrentIndex(box.findData("Aluminum"))
+    s = setup.settings
+    assert s.conductor_by_layer == {name: "Aluminum"}
+    assert s.rho_for(name) == pytest.approx(2.65 * UOHM_CM)
+    assert s.tcr_for(name) == pytest.approx(0.00429)
+    assert s.tcr_for(st.copper[1].name) == s.tcr_per_c
+    assert win._rho_spins[0].value() == pytest.approx(2.65)
+    assert win.table.item(row, C_K).text() == "237"
+    win._rho_spins[0].setValue(0.0)                       # "default" drops the conductor
+    assert not (s.conductor_by_layer or s.rho_by_layer or s.tcr_by_layer)
+    assert box.currentData() == ""
+    box.setCurrentIndex(box.findData("Silver"))
+    box.setCurrentIndex(box.findData(""))                 # the board's copper again
+    assert not (s.conductor_by_layer or s.rho_by_layer or s.tcr_by_layer)
+    assert len(changed) == 4
+
+    # Saved and read back; a hand-typed resistivity shows as custom.
+    box.setCurrentIndex(box.findData("Gold"))
+    s.rho_by_layer[st.copper[1].name] = 1.9 * UOHM_CM
+    back = PISetup.from_dict(setup.to_dict())
+    win.set_board(st, setup=back)
+    assert win._cond_boxes[name].currentData() == "Gold"
+    assert win._cond_boxes[st.copper[1].name].currentText() == "Custom resistivity"

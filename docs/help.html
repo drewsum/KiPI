@@ -360,7 +360,7 @@ of decimals, plus more when a small typed value needs them.</p>
 <h2 id="stackup">Stackup window</h2>
 <p>The <b>Stackup</b> toolbar button opens a window with the board's layers top to bottom:
 each copper layer and each dielectric with its thickness, each dielectric's material, εr and
-in-plane thermal conductivity, and each copper layer's resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
+in-plane thermal conductivity, and each copper layer's conductor and resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
 draws it. The window can stay open beside the main window.</p>
 <details open>
 <summary>Controls</summary>
@@ -378,7 +378,7 @@ draws it. The window can stay open beside the main window.</p>
     mm, mil or oz (1 oz = 35 µm). Ounces are a copper weight, so in oz the dielectrics show
     in mil. In a µm or mm field a value can also carry its own unit, like <code>35um</code>
     or <code>0.2mm</code>. KiPI remembers the unit.</td></tr>
-  <tr><td><b>Material</b></td><td class="wrap">Each dielectric's material, from the list
+  <tr><td><b>Material</b> (dielectrics)</td><td class="wrap">Each dielectric's material, from the list
     KiPI knows: FR4 core and prepreg, polyimide, Kapton, Rogers RO4350B, RO4003C, RO3003 and
     RT/duroid, PTFE, polyolefin, alumina and aluminum nitride ceramics, and an aluminum metal
     core. KiCad's own name for the material is listed too when it is not one of these.
@@ -386,14 +386,24 @@ draws it. The window can stay open beside the main window.</p>
     your laminate's differs) and its in-plane thermal conductivity <b>k</b>, which the
     electro-thermal solve uses unless the Thermal tab's <b>Laminate k</b> overrides it. A ⚠
     beside k means KiPI did not recognize KiCad's name and took the layer as FR4.</td></tr>
+  <tr><td><b>Material</b> (copper layers)</td><td class="wrap">What each copper layer is
+    made of. <i>Copper (board Resistivity)</i> uses the <b>Resistivity</b> and <b>TCR</b> below.
+    Or choose annealed copper, electrodeposited or rolled-annealed copper foil (IPC-4562's
+    maximum resistivity), silver, gold, aluminum, nickel or tin: this sets the layer's
+    resistivity, its TCR for the electro-thermal solve, and its thermal conductivity
+    <b>k</b> for heat spreading. A resistivity typed in the table afterwards wins; setting it
+    back to <code>default</code> returns the layer to the board's copper. A layer given a
+    resistivity by hand in an earlier version shows as <i>Custom resistivity</i>. Copper
+    layer conductors are setup settings, so they can be changed while the stackup is
+    locked.</td></tr>
   <tr><td><b>εr</b></td><td class="wrap">Each dielectric's constant, for the AC solve.
     <code>default</code> means the stackup gives none (or the material is a metal), and the AC
     setup's <b>Default εr</b> applies.</td></tr>
   <tr><td><b>Resistivity at 20 °C</b> (table)</td><td class="wrap">A copper layer's own
-    resistivity, e.g. for electroplated or rolled foil; <code>default</code> uses the
+    resistivity, set by its conductor or typed in; <code>default</code> uses the
     <b>Resistivity</b> below.</td></tr>
   <tr><td><b>Resistivity</b>, <b>TCR</b></td><td class="wrap">Resistivity at 20 °C (annealed
-    copper, 1.724 µΩ·cm, by default) of every layer without its own value and of via
+    copper, 1.724 µΩ·cm, by default) of every layer left at the board's copper and of via
     plating, and its temperature coefficient (0.00393 /°C for copper), used by the
     electro-thermal solve. These are setup settings, so they can be changed while the
     stackup is locked.</td></tr>

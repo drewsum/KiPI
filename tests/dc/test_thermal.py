@@ -155,3 +155,25 @@ def test_every_listed_material_is_found_by_its_own_name():
     er = {m.material: m.er for m in mats}
     assert er["Rogers RO4350B"] == pytest.approx(3.48)
     assert er["aluminum (metal core)"] == 0.0           # a metal: Default εr applies
+
+
+def test_a_layers_own_tcr_is_used():
+    """A layer given another conductor heats up by its own TCR, not the setup's."""
+    snap = board()
+    layer = snap.stackup.layer(F).name
+    prob = lambda temp: NetProblem(
+        "VIN", [VoltageSource("J1", ["j1_1"], 12.0)], [CurrentLoad("U1", ["u1_1"], 1.0)],
+        SolveSettings(max_edge_mm=0.3, tcr_by_layer={layer: 0.006}), temperature=temp)
+    cold = run(snap, prob(None))
+    hot = run(snap, prob(lambda xy: np.full(len(xy), 120.0)))
+    drop = lambda r: 12.0 - r.fields.terminals[1].v_mean
+    assert drop(hot) / drop(cold) == pytest.approx(1 + 0.006 * 100, rel=1e-9)
+
+
+def test_a_layers_conductor_sets_its_heat_spreading():
+    copper = BoardThermalModel(plate(), ThermalSettings(enabled=True, grid_mm=1.0))
+    alu = BoardThermalModel(plate(), ThermalSettings(enabled=True, grid_mm=1.0),
+                            conductor_by_layer={"F.Cu": "Aluminum"})
+    lam = 0.8e-3 * 1.5
+    assert np.nanmax(copper.g) - lam == pytest.approx(0.39 * 0.035, rel=1e-6)
+    assert np.nanmax(alu.g) - lam == pytest.approx(0.237 * 0.035, rel=1e-6)

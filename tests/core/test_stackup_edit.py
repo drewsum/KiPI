@@ -106,3 +106,13 @@ def test_dielectric_materials_are_edited_and_kept():
     assert "Rogers RO4350B 200 µm εr 3.48" in summary(ed)
     with pytest.raises(ValueError):
         restack(st, thicknesses(st), materials=["FR4"])
+
+
+def test_conductors_are_listed_and_found():
+    from kipi.core.model.conductors import K_CU_W_MK, conductors, find, layer_k_w_mk
+    cs = conductors()
+    assert cs[0].name == "Copper, annealed (IACS)" and cs[0].rho_uohm_cm == pytest.approx(1.724)
+    assert len({c.name for c in cs}) == len(cs)
+    assert all(find(c.name) is c for c in cs) and find("Unobtainium") is None
+    assert layer_k_w_mk({"B.Cu": "Aluminum"}, "B.Cu") == pytest.approx(237.0)
+    assert layer_k_w_mk({"B.Cu": "Aluminum"}, "F.Cu") == K_CU_W_MK
