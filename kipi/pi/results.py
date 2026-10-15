@@ -9,6 +9,7 @@ from kipi.solver import NetResult
 
 NOT_CONVERGED = "NOT CONVERGED"
 OUT_OF_REGULATION = "VRM OUT OF REGULATION"
+INCOMPLETE = "INCOMPLETE"          # a current on this rail or downstream is not known
 
 
 @dataclass
@@ -59,6 +60,7 @@ class LoadReport:
     v_low: Optional[float] = None        # lowest supply pin minus highest ground pin
     v_high: Optional[float] = None       # highest supply pin minus lowest ground pin
     status: str = ""                     # why the load was not judged, or was failed outright
+    basis: str = ""                      # which current was solved: typ, max, typ (no max)...
 
     def __setstate__(self, state):
         # Results files saved before boosts were reported: only the lowest pin is known,
@@ -149,3 +151,4 @@ class TreeResult:
     solve_s: float = 0.0
     thermal: Optional[object] = None          # kipi.thermal.cosim.ThermalResult, if run
     report_path: Optional[object] = None      # HTML report written for this solve, if any
+    corner: str = "typ"                       # "typ" or "max": which values were solved

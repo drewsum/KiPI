@@ -235,8 +235,10 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     th = getattr(tree, "thermal", None)
 
     # ---------------- summary
+    case = ("worst case (maximum values)" if getattr(tree, "corner", "typ") == "max"
+            else "typical values")
     parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{_e(snap.board_name)} "
-                 f"· {now} · KiPI {__version__} · solved in {tree.solve_s:.1f} s</div>")
+                 f"· {now} · KiPI {__version__} · solved in {tree.solve_s:.1f} s · {case}</div>")
     nav = ["<a href='#loads'>Loads</a>", "<a href='#vrms'>VRMs</a>",
            "<a href='#losses'>Losses</a>", "<a href='#vias'>Vias</a>"]
     if th is not None:
@@ -257,13 +259,14 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     parts.append("<h2 id='loads'>Loads</h2>")
     parts.append(_table(
         ["Load", "Group", "I (A)", "Nominal (V)", "V effective (V)", "Drop / boost (mV)", "%",
-         "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance %", "Result"],
+         "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance %", "Current",
+         "Result"],
         [[_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
           _num(l.v_effective, ".6f"), fmt_drop(l.drop, unit=""), _num(abs(l.drop_pct), ".3f"),
           _num(l.v_worst, ".6f"), fmt_drop(l.drop_worst, unit=""),
           _num(abs(l.drop_worst_pct), ".3f"),
           "" if l.tolerance_pct is None else f"±{l.tolerance_pct:g}",
-          _verdict(l.passed, l.status)]
+          _e(getattr(l, "basis", "")), _verdict(l.passed, l.status)]
          for l in tree.loads]))
     parts.append("<p class='note'>Drop: below the VRM set point. Boost: above it, e.g. near a "
                  "remote-sensed VRM's output pins. The worst pin is the one furthest from the "

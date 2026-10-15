@@ -59,11 +59,15 @@ def _spin(lo, hi, value, decimals, suffix, step=None) -> QDoubleSpinBox:
     return s
 
 
-def _optional_spin(lo, hi, decimals, suffix, step) -> QDoubleSpinBox:
-    """A spin box whose lowest value, one step below ``lo``, reads "not set"."""
+def _optional_spin(lo, hi, decimals, suffix, step, empty="not set") -> QDoubleSpinBox:
+    """A spin box whose lowest value, one step below ``lo``, reads ``empty``."""
     s = _spin(lo - step, hi, lo - step, decimals, suffix, step)
-    s.setSpecialValueText("not set")
+    s.setSpecialValueText(empty)
     return s
+
+
+def _amps(value: Optional[float]) -> str:
+    return "not known" if value is None else f"{value:.4g} A"
 
 
 def _optional_volts() -> QDoubleSpinBox:
@@ -444,18 +448,24 @@ class LoadEditor(_Editor):
         self.mode = QComboBox()
         self.mode.addItem("Equal across the supply pins", "equal")
         self.mode.addItem("Per pin group", "groups")
-        self.current = _spin(-1000, 1000, 0.1, 4, " A", 0.01)
-        self.groups = QTableWidget(0, 4)
-        self.groups.setHorizontalHeaderLabels(["Group", "Pins", "Current", ""])
+        self.current = _optional_spin(-1000, 1000, 4, " A", 0.01, "not known")
+        self.current.setToolTip("Typical current. Not known: solved as 0 A, and every result "
+                                "on this rail, upstream, every rail those feed and its ground "
+                                "return is marked INCOMPLETE")
+        self.current_max = _optional_spin(-1000, 1000, 4, " A", 0.01)
+        self.current_max.setToolTip("Maximum current, used by a worst-case solve")
+        self.groups = QTableWidget(0, 5)
+        self.groups.setHorizontalHeaderLabels(["Group", "Pins", "Current", "Max", ""])
         hdr = self.groups.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.Stretch)
         hdr.setSectionResizeMode(1, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.Fixed)
-        self.groups.setColumnWidth(3, 28)
+        hdr.setSectionResizeMode(4, QHeaderView.Fixed)
+        self.groups.setColumnWidth(4, 28)
         self.groups.verticalHeader().setVisible(False)
         self.groups.setMinimumHeight(110)
         self.btn_group = QPushButton("Add pin group")
-        self.btn_group.clicked.connect(lambda: (self._add_group_row("", "", 0.0), self._store()))
+        self.btn_group.clicked.connect(lambda: (self._add_group_row("", "", 0.0, None),
+                                                self._store()))
         self.btn_each = QPushButton("One group per pin")
         self.btn_each.setToolTip("Replace the groups with one group per supply pin")
         self.btn_each.clicked.connect(self._group_per_pin)
@@ -473,24 +483,27 @@ class LoadEditor(_Editor):
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
         f.addRow("Current", self.current)
+        f.addRow("Max current", self.current_max)
         f.addRow(self.groups)
         f.addRow(gb)
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
-        self._watch(self.name, self.current, self.tol, self.mode)
+        self._watch(self.name, self.current, self.current_max, self.tol, self.mode)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
 
     def _mode_rows(self, *_):
         grouped = self.mode.currentData() == "groups"
         self.form.setRowVisible(self.current, not grouped)
+        self.form.setRowVisible(self.current_max, not grouped)
         self.form.setRowVisible(self.groups, grouped)
         self.form.setRowVisible(self.lbl_total, grouped)
         for w in self._gb_widgets:
             w.setVisible(grouped)
 
-    def _add_group_row(self, name: str, pins: str, current: float):
+    def _add_group_row(self, name: str, pins: str, current: float,
+                       current_max: Optional[float]):
         r = self.groups.rowCount()
         self.groups.insertRow(r)
         for col, text in ((0, name), (1, pins)):
@@ -501,15 +514,19 @@ class LoadEditor(_Editor):
         sp = _spin(-1000, 1000, current, 4, " A", 0.01)
         sp.valueChanged.connect(self._store)
         self.groups.setCellWidget(r, 2, sp)
+        mx = _optional_spin(-1000, 1000, 4, " A", 0.01)
+        _set_optional(mx, current_max)
+        mx.valueChanged.connect(self._store)
+        self.groups.setCellWidget(r, 3, mx)
         btn = QToolButton()
         btn.setText("✕")
         btn.setAutoRaise(True)
         btn.clicked.connect(lambda _=False, b=btn: self._remove_group_of(b))
-        self.groups.setCellWidget(r, 3, btn)
+        self.groups.setCellWidget(r, 4, btn)
 
     def _remove_group_of(self, widget):
         for r in range(self.groups.rowCount()):
-            if self.groups.cellWidget(r, 3) is widget:
+            if self.groups.cellWidget(r, 4) is widget:
                 self.groups.removeRow(r)
                 self._store()
                 return
@@ -525,11 +542,12 @@ class LoadEditor(_Editor):
         pins = self._supply_pins()
         self.groups.setRowCount(0)
         for pin in pins:
-            self._add_group_row(f"pin {pin}", pin, total / max(1, len(pins)))
+            self._add_group_row(f"pin {pin}", pin, total / max(1, len(pins)), None)
 
     def _group_per_pin(self):
         current = self._groups_value()
-        total = sum(g.current for g in current) if current else self.current.value()
+        total = (sum(g.current for g in current) if current
+                 else _get_optional(self.current) or 0.0)
         self._fill_per_pin(total)
         self._store()
 
@@ -539,20 +557,22 @@ class LoadEditor(_Editor):
         for r in range(self.groups.rowCount()):
             pins = [t for t in re.split(r"[,\s]+", self.groups.cellWidget(r, 1).text().strip()) if t]
             out.append(PinGroup(pins, self.groups.cellWidget(r, 2).value(),
-                                self.groups.cellWidget(r, 0).text().strip()))
+                                self.groups.cellWidget(r, 0).text().strip(),
+                                _get_optional(self.groups.cellWidget(r, 3))))
         return out
 
     def _load(self, l: Load):
         self.name.setText(l.name)
         self.supply.set_value(l.supply)
-        self.current.setValue(l.current)
+        _set_optional(self.current, l.current)
+        _set_optional(self.current_max, l.current_max)
         self.groups.setRowCount(0)
         for g in l.groups:
-            self._add_group_row(g.name, ",".join(g.pins), g.current)
+            self._add_group_row(g.name, ",".join(g.pins), g.current, g.current_max)
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
         self.tol.setValue(l.tolerance_pct or 0.0)
-        self.lbl_total.setText(f"{l.total_current():.4g} A")
+        self.lbl_total.setText(_amps(l.total_current()))
         self._mode_rows()
 
     def _save(self, l: Load):
@@ -565,17 +585,18 @@ class LoadEditor(_Editor):
             self.name.setText(typed)
         l.name = typed
         l.supply = new_supply
-        l.current = self.current.value()
+        l.current = _get_optional(self.current)
+        l.current_max = _get_optional(self.current_max)
         if self.mode.currentData() == "groups":
             if self.groups.rowCount() == 0:
                 # Switching to groups: start with one group per pin, same total current.
-                self._fill_per_pin(l.current)
+                self._fill_per_pin(l.current or 0.0)
             l.groups = self._groups_value()
         else:
             l.groups = []
         l.ground = self.ground.value()
         l.tolerance_pct = self.tol.value() or None
-        self.lbl_total.setText(f"{l.total_current():.4g} A")
+        self.lbl_total.setText(_amps(l.total_current()))
 
 
 class LinkEditor(_Editor):
@@ -587,22 +608,26 @@ class LinkEditor(_Editor):
         self.b = self._picker()
         self.r = _spin(0, 1e9, 0, 3, " mΩ", 1)
         self.r.setSpecialValueText("0 (short)")
+        self.r_max = _optional_spin(0, 1e9, 3, " mΩ", 1)
+        self.r_max.setToolTip("Maximum resistance, used by a worst-case solve")
         f.addRow("Name", self.name)
         f.addRow("Side A pins", self.a)
         f.addRow("Side B pins", self.b)
         f.addRow("Resistance", self.r)
+        f.addRow("Max resistance", self.r_max)
         hint = QLabel("A part that passes DC between two nets (sense resistor, ferrite, "
                       "fuse, load switch…). The nets it joins are simulated together.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
-        self._watch(self.name, self.r)
+        self._watch(self.name, self.r, self.r_max)
 
     def _load(self, k: DcLink):
         self.name.setText(k.name)
         self.a.set_value(k.side_a)
         self.b.set_value(k.side_b)
         self.r.setValue(k.resistance * 1e3)
+        _set_optional(self.r_max, None if k.resistance_max is None else k.resistance_max * 1e3)
 
     def _save(self, k: DcLink):
         new_a = self.a.value() or k.side_a
@@ -623,6 +648,8 @@ class LinkEditor(_Editor):
                 self.r.blockSignals(True)
                 self.r.setValue(ohms * 1e3)
                 self.r.blockSignals(False)
+        r_max = _get_optional(self.r_max)
+        k.resistance_max = None if r_max is None else r_max / 1e3
 
 
 class ItemList(QWidget):
@@ -779,6 +806,12 @@ class PIPanel(QWidget):
         self.btn_solve = QPushButton("Solve all", self)
         self.btn_solve.setStyleSheet("font-weight: bold; padding: 6px;")
         self.btn_solve.clicked.connect(lambda: self.solve_requested.emit(self.setup))
+        self.cmb_corner = QComboBox(self)
+        self.cmb_corner.addItem("Typical", "typ")
+        self.cmb_corner.addItem("Worst case (max)", "max")
+        self.cmb_corner.setToolTip("Which current of each load, and resistance of each DC "
+                                   "connection, to solve with")
+        self.cmb_corner.currentIndexChanged.connect(self._corner_changed)
         self.chk_report = QCheckBox("HTML report", self)
         self.chk_report.setToolTip("Also write an HTML report (interactive 3D, per-layer maps "
                                    "and tables) next to the board")
@@ -789,6 +822,7 @@ class PIPanel(QWidget):
         self.btn_report.clicked.connect(self._open_report)
         self.report_path = None
         row.addWidget(self.btn_solve, 1)
+        row.addWidget(self.cmb_corner)
         row.addWidget(self.chk_report)
         row.addWidget(self.btn_report)
         lay.addLayout(row)
@@ -830,7 +864,7 @@ class PIPanel(QWidget):
         self.res_tabs = QTabWidget(g_res)
         self.tbl_loads = self._table(["Load", "Group", "I (A)", "V eff (V)",
                                       "Drop / boost (mV)", "Worst pin (mV)", "Worst %",
-                                      "Tolerance %", ""], sortable=True)
+                                      "Tolerance %", "Current", ""], sortable=True)
         self.tbl_loads.setToolTip("Drop: below the VRM set point. Boost: above it, e.g. near "
                                   "a remote-sensed VRM's output pins. The worst pin is the one "
                                   "furthest from the set point either way.")
@@ -1149,6 +1183,9 @@ class PIPanel(QWidget):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
             wdg.blockSignals(False)
+        self.cmb_corner.blockSignals(True)
+        self.cmb_corner.setCurrentIndex(max(0, self.cmb_corner.findData(setup.corner)))
+        self.cmb_corner.blockSignals(False)
         self._thermal_changed()
         self.setEnabled(True)
         self._refresh_pickers()
@@ -1172,6 +1209,10 @@ class PIPanel(QWidget):
     def _refresh_pickers(self):
         for il in (self.vrm_list, self.load_list, self.link_list):
             il.editor.refresh_nets(self._nets)
+
+    def _corner_changed(self, *_):
+        self.setup.corner = self.cmb_corner.currentData()
+        self._on_changed()
 
     def _on_changed(self):
         errors = validate(self.setup) if (self.setup.vrms or self.setup.loads) else []
@@ -1229,7 +1270,7 @@ class PIPanel(QWidget):
 
     @staticmethod
     def _describe_load(l: Load) -> str:
-        return f"{l.name}: {l.current:g} A from {l.supply.net} ({l.supply.label()})"
+        return f"{l.name}: {_amps(l.total_current())} from {l.supply.net} ({l.supply.label()})"
 
     @staticmethod
     def _describe_link(k: DcLink) -> str:
@@ -1273,11 +1314,12 @@ class PIPanel(QWidget):
                            (fmt_drop(l.drop, unit=""), l.drop * 1e3),
                            (fmt_drop(l.drop_worst, unit=""), l.drop_worst * 1e3),
                            (f"{abs(l.drop_worst_pct):.3f}", l.drop_worst_pct),
-                           "" if l.tolerance_pct is None else f"±{l.tolerance_pct:g}", status])
+                           "" if l.tolerance_pct is None else f"±{l.tolerance_pct:g}", l.basis,
+                           status])
             color = (("#ffb040" if l.status else None) if l.passed is None
                      else ("#60d060" if l.passed else "#ff6060"))
             if color:
-                t.item(r, 8).setForeground(QColor(color))
+                t.item(r, 9).setForeground(QColor(color))
         f = lambda x, fmt: "" if x is None else format(x, fmt)
         t = self.tbl_vrms
         t.setRowCount(sum(1 + len(v.phases) for v in tree.vrms))
@@ -1305,7 +1347,8 @@ class PIPanel(QWidget):
             cur = "" if math.isnan(s.current) else f"{s.current:.4g}"
             set_row(self.tbl_links, r, [s.name, gname, f"{s.resistance * 1e3:g}", cur,
                                         f"{s.power * 1e3:.3f}"])
-        notes = [f"Solved {len(tree.groups)} net group(s) in {tree.solve_s:.2f} s:"]
+        case = "worst case (maximum values)" if tree.corner == "max" else "typical values"
+        notes = [f"Solved {len(tree.groups)} net group(s), {case}, in {tree.solve_s:.2f} s:"]
         th = getattr(tree, "thermal", None)
         if th is not None:
             x, y, tmax = th.hottest()
