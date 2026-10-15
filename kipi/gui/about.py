@@ -24,8 +24,8 @@ from kipi import __version__
 NAME = "KiPI"
 DESCRIPTION = ("Power integrity analysis for KiCad: DC IR drop, current density, "
                "via currents and electro-thermal co-simulation in 3D, and AC PDN impedance "
-               "over frequency."
-               "The author is not interested in donations, but if you want to support the"
+               "over frequency. "
+               "The author is not interested in donations, but if you want to support the "
                "project, please reach out and tell me how you are using it! I'd love to hear from you.")
 AUTHOR = "Drew Maatman"
 EMAIL = "drewmaatman@gmail.com"
