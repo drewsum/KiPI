@@ -80,6 +80,8 @@ def dielectric_summary(stackup: Stackup, default_er: float) -> str:
         er = f"{d.epsilon_r:g}" if d.epsilon_r > 0 else f"{default_er:g} (Default εr)"
         parts.append(f"{name} {d.thickness_mm * 1000:.0f} µm εr {er}")
     note = "" if stackup.from_board else " [stackup not read from the board]"
+    if stackup.edited:
+        note += " [thicknesses edited in KiPI]"
     return ", ".join(parts) + note
 
 @dataclass

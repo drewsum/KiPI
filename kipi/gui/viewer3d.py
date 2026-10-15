@@ -7,7 +7,6 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
-from vtkmodules.vtkCommonDataModel import vtkPlane
 from vtkmodules.vtkRenderingCore import vtkActor, vtkCellPicker, vtkPolyDataMapper
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QVBoxLayout, QWidget
@@ -177,6 +176,7 @@ class Viewer3D(QWidget):
         self._models: Dict[str, Tuple[pv.PolyData, str]] = {}   # ref -> (mesh, side)
         self._model_actors: Dict[str, vtkActor] = {}             # side -> actor
         self._board_top = 0.0
+        self._model_board = 0.0   # board thickness the part models were placed for
         self._color_mode = "layer"
         self._zscale = 1.0
         self._layer_opacity = 1.0
@@ -189,7 +189,6 @@ class Viewer3D(QWidget):
         self._scalar_bars: List[str] = []
         self._arrows_on = False
         self._arrow_actors: Dict[int, object] = {}          # layer id -> actor
-        self._clip = None                                   # (axis, fraction, flip) or None
         # Clicks are handled here rather than with pyvista's point picking, so a click can
         # also select a via by its on-screen distance (vias are only a few pixels wide).
         self._picker = vtkCellPicker()
@@ -200,8 +199,10 @@ class Viewer3D(QWidget):
         iren.add_observer("LeftButtonReleaseEvent", self._on_left_release)
 
     # ------------------------------------------------------------------ scene
-    def set_board(self, body: Optional[pv.PolyData], outline: Optional[pv.PolyData]):
-        """Start a new board: drop every actor, draw the board body and frame the camera."""
+    def set_board(self, body: Optional[pv.PolyData], outline: Optional[pv.PolyData],
+                  reset_view: bool = True):
+        """Start a new board: drop every actor, draw the board body and frame the camera
+        (unless ``reset_view`` is False, as when only the stackup changed)."""
         p = self.plotter
         renderer = p.renderer
         for a in self._chunk_actors.values():
@@ -229,7 +230,8 @@ class Viewer3D(QWidget):
         for a in self._board_actors:
             a.SetScale(1.0, 1.0, self._zscale)
         self._apply_visibility()
-        self.view_iso()
+        if reset_view:
+            self.view_iso()
 
     def nets(self) -> List[str]:
         return list(self._net_color)
@@ -269,18 +271,24 @@ class Viewer3D(QWidget):
     def models(self) -> List[str]:
         return list(self._models)
 
-    def set_models(self, models: Dict[str, Tuple[pv.PolyData, str]], board_top_mm: float):
+    def set_models(self, models: Dict[str, Tuple[pv.PolyData, str]], board_top_mm: float,
+                   model_board_mm: Optional[float] = None):
         """Draw these part models (ref -> (mesh, "top" or "bottom")) in place of any shown.
 
         Meshes are in the view's frame at true height (see
-        :func:`kipi.core.kicad_io.models3d.to_mesh`). The Z scale stretches the board but
-        not the parts: the top side's parts are lifted to sit on the stretched board.
+        :func:`kipi.core.kicad_io.models3d.to_mesh`), for a board ``model_board_mm`` thick
+        (KiCad's; default ``board_top_mm``). The Z scale stretches the board but not the
+        parts: the top side's parts are lifted to sit on the stretched board, and on a
+        board made thicker or thinner in the Stackup pane.
         """
+        model_board = float(board_top_mm if model_board_mm is None else model_board_mm)
         if (models.keys() == self._models.keys() and board_top_mm == self._board_top
+                and model_board == self._model_board
                 and all(models[r][0] is self._models[r][0] for r in models)):
             return
         self._models = dict(models)
         self._board_top = float(board_top_mm)
+        self._model_board = model_board
         self._remove_model_actors()
         renderer = self.plotter.renderer
         for side in ("top", "bottom"):
@@ -302,7 +310,7 @@ class Viewer3D(QWidget):
     def _place_models(self):
         top = self._model_actors.get("top")
         if top is not None:
-            top.SetPosition(0.0, 0.0, self._board_top * (self._zscale - 1.0))
+            top.SetPosition(0.0, 0.0, self._board_top * self._zscale - self._model_board)
 
     def _flush(self):
         """Rebuild changed chunks and sync their actors."""
@@ -325,8 +333,6 @@ class Viewer3D(QWidget):
 
     def render(self):
         self._flush()
-        if self._clip is not None:
-            self._apply_clip_all()
         self.plotter.render()
 
     def clear(self):
@@ -386,7 +392,6 @@ class Viewer3D(QWidget):
             actor.SetVisibility(lid not in self._hidden_layers)
         for lid, actor in self._arrow_actors.items():
             actor.SetVisibility(lid not in self._hidden_layers)
-        self._apply_clip_all()
         if self._result_via_actor is not None:
             # In the via-current view the vias are the result, so always show them.
             self._result_via_actor.SetVisibility(self._show_vias
@@ -411,8 +416,6 @@ class Viewer3D(QWidget):
         for a in self._arrow_actors.values():
             a.SetScale(1.0, 1.0, self._zscale)
         self._place_models()
-        if self._clip is not None:
-            self._apply_clip_all()
         self.plotter.reset_camera_clipping_range()
         self.plotter.render()
 
@@ -565,50 +568,6 @@ class Viewer3D(QWidget):
                                pickable=False, reset_camera=False, render=False)
             actor.SetScale(1.0, 1.0, self._zscale)
             self._arrow_actors[lid] = actor
-
-    # ------------------------------------------------------------------ cut plane
-    def set_clip(self, axis: Optional[str], fraction: float = 0.5, flip: bool = False):
-        """Cut the view with a plane normal to ``axis`` ("x", "y", "z" or None to clear)
-        at ``fraction`` (0..1) of the scene's extent; ``flip`` keeps the other side."""
-        self._clip = None if not axis else (axis, float(fraction), bool(flip))
-        self._apply_clip_all()
-        self.plotter.render()
-
-    def _all_actors(self):
-        out = list(self._chunk_actors.values()) + list(self._board_actors)
-        out += list(self._result_actors.values()) + list(self._arrow_actors.values())
-        out += list(self._model_actors.values())
-        if self._result_via_actor is not None:
-            out.append(self._result_via_actor)
-        return out
-
-    def _clip_plane(self):
-        axis, frac, flip = self._clip
-        b = self.plotter.renderer.ComputeVisiblePropBounds()
-        i = "xyz".index(axis)
-        lo, hi = b[2 * i], b[2 * i + 1]
-        origin = [0.0, 0.0, 0.0]
-        origin[i] = lo + frac * (hi - lo)
-        normal = [0.0, 0.0, 0.0]
-        normal[i] = -1.0 if flip else 1.0        # keep the side the normal points to
-        plane = vtkPlane()
-        plane.SetOrigin(*origin)
-        plane.SetNormal(*normal)
-        return plane
-
-    def _apply_clip_all(self):
-        actors = self._all_actors()
-        plane = None
-        if self._clip is not None:
-            # Bounds of everything, unclipped, so the slider maps to the whole board.
-            for a in actors:
-                a.GetMapper().RemoveAllClippingPlanes()
-            plane = self._clip_plane()
-        for a in actors:
-            m = a.GetMapper()
-            m.RemoveAllClippingPlanes()
-            if plane is not None:
-                m.AddClippingPlane(plane)
 
     def _draw_copper_result(self, scene, arr, assoc, title):
         """Copper colored by a field; vias drawn plain for context."""

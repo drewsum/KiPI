@@ -24,6 +24,7 @@ import numpy as np
 
 from kipi import __version__
 from kipi.core.model.board import BoardSnapshot
+from kipi.core.model.stackup import summary as stackup_summary
 from kipi.dc.pi.tree import fmt_drop
 
 TRIANGLE_BUDGET = 60_000      # per group's 3D view
@@ -254,6 +255,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      f"{_e(n)} {r * 1e-3:.4g} Ω·m" for n, r in sorted(s.rho_by_layer.items()))
                     if s.rho_by_layer else "")
                  + ".</p>")
+    parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")

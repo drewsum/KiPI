@@ -26,6 +26,7 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import PIPanel
 from kipi.dc.pi.tree import fmt_drop
+from kipi.gui.stackup_panel import StackupPanel
 from kipi.gui.viewer3d import Viewer3D
 from kipi.gui.worker import QtProgress, Task
 
@@ -80,6 +81,8 @@ class MainWindow(QMainWindow):
         self._model_timer.timeout.connect(self._sync_models)
         self._last_fraction_t = 0.0
         self._picked = None   # ("pad"|"via", id)
+        self._imported_stackup = None     # as read from KiCad, before any edits
+        self._pending_stackup = None      # edited while a task ran; applied after
         self.mode = "dc"
 
         # The central area: the 3D view and, in AC mode, the impedance plot as a second tab.
@@ -283,6 +286,14 @@ class MainWindow(QMainWindow):
         ll.addWidget(self.layer_list)
         ll.addLayout(lrow)
 
+        # --- stackup
+        g_stackup = QGroupBox("Stackup", panel)
+        lst = QVBoxLayout(g_stackup)
+        self.stackup_panel = StackupPanel(g_stackup)
+        self.stackup_panel.stackup_changed.connect(self._stackup_changed)
+        self.stackup_panel.copy_requested.connect(self._copy_stackup_to_kicad)
+        lst.addWidget(self.stackup_panel)
+
         # --- display options
         g_view = QGroupBox("Display", panel)
         fv = QFormLayout(g_view)
@@ -337,23 +348,6 @@ class MainWindow(QMainWindow):
         fv.addRow("Z scale", self.spin_z)
         fv.addRow("Opacity", opac)
         fv.addRow(feats)
-        cut = QHBoxLayout()
-        self.cmb_cut = QComboBox(g_view)
-        self.cmb_cut.addItems(["Off", "X", "Y", "Z"])
-        self.cmb_cut.setToolTip("Cut the view with a plane across this axis, to look inside "
-                                "the stackup")
-        self.sld_cut = QSlider(Qt.Horizontal, g_view)
-        self.sld_cut.setRange(0, 1000)
-        self.sld_cut.setValue(500)
-        self.sld_cut.setToolTip("Where the cutting plane sits along its axis")
-        self.chk_cut_flip = QCheckBox("Flip", g_view)
-        self.chk_cut_flip.setToolTip("Keep the other side of the cutting plane")
-        for w in (self.cmb_cut, self.sld_cut, self.chk_cut_flip):
-            cut.addWidget(w, 1 if w is self.sld_cut else 0)
-        self.cmb_cut.currentIndexChanged.connect(self._cut_changed)
-        self.sld_cut.valueChanged.connect(self._cut_changed)
-        self.chk_cut_flip.toggled.connect(self._cut_changed)
-        fv.addRow("Cut", cut)
 
         # --- info
         g_info = QGroupBox("Info", panel)
@@ -370,9 +364,9 @@ class MainWindow(QMainWindow):
         li.addWidget(self.btn_select_kicad)
 
         split = QSplitter(Qt.Vertical, panel)
-        for w in (g_nets, g_layers, g_view, g_info):
+        for w in (g_nets, g_layers, g_stackup, g_view, g_info):
             split.addWidget(w)
-        split.setSizes([360, 170, 110, 220])
+        split.setSizes([320, 150, 200, 110, 180])
         lay.addWidget(split)
 
         dock = QDockWidget("Board", self)
@@ -529,7 +523,10 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(1000)
         self.lbl_stage.setText("Idle")
         self.statusBar().showMessage("Ready")
-        if self._resync_pending:
+        if self._pending_stackup is not None:
+            st, self._pending_stackup = self._pending_stackup, None
+            QTimer.singleShot(0, lambda: self._stackup_changed(st))
+        elif self._resync_pending:
             self._resync_pending = False
             self._sync_timer.start()
         if pending is not None:
@@ -582,8 +579,11 @@ class MainWindow(QMainWindow):
                                               "KiPI snapshot (*.json.gz *.json)")
         if not path:
             return
+        import dataclasses
         from kipi.core.kicad_io.snapshot import save
-        save(self.snapshot, path)
+        # A snapshot is the board as KiCad has it; edited thicknesses live in the setup.
+        save(dataclasses.replace(self.snapshot, stackup=self._imported_stackup
+                                 or self.snapshot.stackup), path)
         self.log(f"Snapshot saved to {path}")
 
     def save_screenshot(self):
@@ -610,11 +610,14 @@ class MainWindow(QMainWindow):
         self.btn_select_kicad.setEnabled(False)
         self.setWindowTitle(f"KiPI {__version__} — {snap.board_name}")
         self._load_layer_colors(snap)
-        self._populate_layers()
         self._result = None
         self._tree = None
         self._scenes = {}
+        self._pending_stackup = None
         setup = self._load_setup(snap)
+        self._imported_stackup = snap.stackup
+        self._apply_setup_stackup(setup)
+        self._populate_layers()
         self._populate_nets(keep if keep is not None else setup.nets, setup)
         self._show_board_summary()
         from kipi.core.viz.meshes import board_body
@@ -636,6 +639,8 @@ class MainWindow(QMainWindow):
     def _populate_layers(self):
         from kipi.core.viz.meshes import layer_color
         st = self.snapshot.stackup
+        hidden = {self.layer_list.item(i).data(Qt.UserRole) for i in range(self.layer_list.count())
+                  if self.layer_list.item(i).checkState() != Qt.Checked}
         self.layer_list.blockSignals(True)
         self.layer_list.clear()
         for cu in st.copper:
@@ -646,7 +651,7 @@ class MainWindow(QMainWindow):
             pm.fill(QColor.fromRgbF(r, g, b))
             it.setIcon(QIcon(pm))
             it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked)
+            it.setCheckState(Qt.Unchecked if cu.id in hidden else Qt.Checked)
             it.setData(Qt.UserRole, cu.id)
             self.layer_list.addItem(it)
         self.layer_list.blockSignals(False)
@@ -835,7 +840,9 @@ class MainWindow(QMainWindow):
         side = {f.reference: f.side for f in snap.footprints}
         shown = {r: (self._model_cache[r], side.get(r, "top")) for r in wanted
                  if self._model_cache.get(r) is not None}
-        self.viewer.set_models(shown, snap.stackup.board_thickness_mm)
+        kicad = self._imported_stackup or snap.stackup
+        self.viewer.set_models(shown, snap.stackup.board_thickness_mm,
+                               kicad.board_thickness_mm)
 
     def _models_source(self):
         """``(kicad-cli, board file)``, or False (said once per board) if either is
@@ -1069,12 +1076,81 @@ class MainWindow(QMainWindow):
         self.btn_select_kicad.setEnabled(False)
         self.info.setHtml(text)
 
-    def _cut_changed(self, *_):
-        axis = self.cmb_cut.currentText().lower()
-        self.sld_cut.setEnabled(axis != "off")
-        self.chk_cut_flip.setEnabled(axis != "off")
-        self.viewer.set_clip(None if axis == "off" else axis, self.sld_cut.value() / 1000,
-                             self.chk_cut_flip.isChecked())
+    # ------------------------------------------------------------ stackup
+    def _layer_colors(self):
+        from kipi.core.viz.meshes import layer_color
+        st = self.snapshot.stackup
+        return {cu.id: layer_color(cu, len(st.copper)) for cu in st.copper}
+
+    def _apply_setup_stackup(self, setup):
+        """Use the thicknesses kept in the setup file, if they still fit the board."""
+        from kipi.core.model.stackup import from_setup
+        snap = self.snapshot
+        edited, why = from_setup(self._imported_stackup, setup.stackup)
+        if edited is not None:
+            snap.stackup = edited
+            self.log(f"Stackup: using the thicknesses edited in KiPI "
+                     f"({edited.board_thickness_mm:.3f} mm board; "
+                     f"KiCad has {self._imported_stackup.board_thickness_mm:.3f} mm)")
+        elif why:
+            setup.stackup = None
+            self.log(f"Stackup: the setup's edited thicknesses no longer fit the board "
+                     f"({why}); using KiCad's", logging.WARNING)
+        self.stackup_panel.set_stackup(self._imported_stackup, snap.stackup,
+                                       self._layer_colors())
+        self.solve_panel.show_thicknesses()
+
+    def _stackup_changed(self, st):
+        """Use an edited stackup (or KiCad's again) for the views and every analysis."""
+        snap = self.snapshot
+        if snap is None or st is snap.stackup:
+            return
+        if self._busy():
+            # A solve may be reading the stackup: change it when the task is done.
+            self._pending_stackup = st
+            self.log("Stackup change waits for the current task to finish")
+            return
+        from kipi.core.model.stackup import to_setup
+        from kipi.core.viz.meshes import board_body
+        snap.stackup = st
+        self.solve_panel.setup.stackup = to_setup(st) if st.edited else None
+        self.log(f"Stackup: {'edited' if st.edited else 'KiCad'} thicknesses, "
+                 f"{st.board_thickness_mm:.3f} mm board"
+                 + ("; solve again for results with it" if self._tree is not None else ""))
+        if self._tree is not None:
+            self._tree, self._scenes = None, {}
+            self.solve_panel.clear_results()
+        self._populate_layers()
+        self._show_board_summary()
+        self.solve_panel.show_thicknesses()
+        self.viewer.set_board(*board_body(snap), reset_view=False)
+        for i in range(self.layer_list.count()):
+            it = self.layer_list.item(i)
+            if it.checkState() != Qt.Checked:
+                self.viewer.set_layer_visible(it.data(Qt.UserRole), False)
+        self.sync_nets()
+
+    def _copy_stackup_to_kicad(self, st):
+        """Set the edited thicknesses in KiCad, or list them for Board Setup when KiCad
+        cannot take them through its API."""
+        if st is None:
+            return
+        from kipi.core.kicad_io.stackup_write import StackupWriteUnsupported, write_stackup
+        reason = "KiPI is not connected to KiCad (the board came from a snapshot file)"
+        if self._board is not None:
+            try:
+                write_stackup(self._board, st)
+                self.log("Stackup copied to KiCad")
+                QMessageBox.information(self, "KiPI", "The stackup thicknesses are set in "
+                                        "KiCad. Save the board there to keep them.")
+                return
+            except StackupWriteUnsupported as e:
+                reason = str(e)
+            except Exception as e:  # noqa: BLE001 - fall back to entering them by hand
+                reason = f"KiCad did not take them ({e})"
+        self.log(f"Stackup not copied to KiCad: {reason}", logging.WARNING)
+        from kipi.gui.stackup_panel import ManualStackupDialog
+        ManualStackupDialog(st, reason, self).exec()
 
     def _show_via(self, group: str, owner_id: str):
         """Jump to a via from the results table: show its group, center and select it."""
@@ -1212,7 +1288,8 @@ class MainWindow(QMainWindow):
             f"<b>{html.escape(s.board_name)}</b><br>"
             f"<small>{html.escape(s.source)} {html.escape(s.kicad_version)}</small><br><br>"
             f"Board thickness: {st.board_thickness_mm:.3f} mm"
-            f"{'' if st.from_board else ' <i>(default stackup)</i>'}<br>"
+            f"{'' if st.from_board else ' <i>(default stackup)</i>'}"
+            f"{' <i>(edited in KiPI)</i>' if st.edited else ''}<br>"
             f"Nets: {len(s.nets)} ({n_pwr} power, {n_gnd} ground)<br>"
             f"Tracks: {len(s.tracks)} &nbsp; Vias: {len(s.vias)} &nbsp; Pads: {len(s.pads)}<br>"
             f"Zones: {len(s.zones)} &nbsp; Footprints: {len(s.footprints)}<br><br>"

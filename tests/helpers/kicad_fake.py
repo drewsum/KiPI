@@ -45,6 +45,8 @@ ADDED = {
     "CheckPadstackPresenceOnLayers": (9, 0, 3),
     "GetBoardEnabledLayers": (9, 0, 5),
     "GetBoardLayerName": (9, 0, 8),
+    # In the API since 9.0 but "not yet implemented": no KiCad release handles it yet.
+    "UpdateBoardStackup": (99,),
 }
 GROUPS_ADDED = (10, 0, 0)          # KOT_PCB_GROUP in GetItems
 

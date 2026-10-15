@@ -1367,7 +1367,8 @@ class PIPanel(QWidget):
         self.cmb_thk_unit = QComboBox()
         self.cmb_thk_unit.addItems(list(THICKNESS_UNITS))
         self.cmb_thk_unit.setToolTip("Unit for the layer thicknesses below (1 oz = 35 µm). "
-                                     "Thicknesses come from the board stackup in KiCad.")
+                                     "Thicknesses come from the Stackup pane: KiCad's, or "
+                                     "as edited there.")
         unit = QSettings("KiPI", "KiPI").value("copper/thickness_unit", "µm")
         self.cmb_thk_unit.setCurrentText(unit if unit in THICKNESS_UNITS else "µm")
         self.cmb_thk_unit.currentTextChanged.connect(self._thickness_unit_changed)
@@ -1402,9 +1403,10 @@ class PIPanel(QWidget):
                           f"Resistivity setting above)")
             sp.valueChanged.connect(partial(self._layer_rho_changed, cu.name))
             t.setCellWidget(r, 2, sp)
-        self._show_thicknesses()
+        self.show_thicknesses()
 
-    def _show_thicknesses(self):
+    def show_thicknesses(self):
+        """Show each layer's thickness from the stackup in use (KiCad's or the edited one)."""
         unit = self.cmb_thk_unit.currentText()
         layers = self.snapshot.stackup.copper if self.snapshot is not None else []
         for r, cu in enumerate(layers):
@@ -1412,7 +1414,7 @@ class PIPanel(QWidget):
 
     def _thickness_unit_changed(self, unit: str):
         QSettings("KiPI", "KiPI").setValue("copper/thickness_unit", unit)
-        self._show_thicknesses()
+        self.show_thicknesses()
 
     def _layer_rho_changed(self, name: str, value: float):
         overrides = self.setup.settings.rho_by_layer

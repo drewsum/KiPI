@@ -33,13 +33,13 @@ def _part(z0=1.6, normals=True):
 
 def _view(zscale=1.0):
     v = NS(plotter=pv.Plotter(off_screen=True), _models={}, _model_actors={}, _board_top=0.0,
+           _model_board=0.0,
            _zscale=zscale, _show_models=True, _show_models_result=False, _show_board=True,
            _show_vias=True,
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
-           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
-           _clip=None)
+           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
     for name in ("set_models", "_remove_model_actors", "_place_models", "_apply_visibility",
-                 "_apply_clip_all", "_all_actors", "set_zscale"):
+                 "set_zscale"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
     return v
 
@@ -80,6 +80,14 @@ def test_top_parts_sit_on_the_stretched_board_unstretched():
     assert top.GetScale() == (1.0, 1.0, 1.0)
 
 
+def test_top_parts_follow_a_board_made_thicker_in_the_stackup_pane():
+    v = _view(zscale=2.0)
+    # The models were placed by kicad-cli on KiCad's 1.6 mm board; the edit makes it 2.0.
+    v.set_models({"C1": (_part(), "top"), "C3": (_part(z0=-1.0), "bottom")}, 2.0, 1.6)
+    assert v._model_actors["top"].GetPosition()[2] == pytest.approx(2.0 * 2 - 1.6)
+    assert v._model_actors["bottom"].GetPosition() == (0.0, 0.0, 0.0)
+
+
 def test_models_are_off_over_results_until_asked_for():
     v = _view()
     v.set_feature_visible = MethodType(Viewer3D.set_feature_visible, v)
@@ -99,7 +107,6 @@ def test_models_are_off_over_results_until_asked_for():
     v._result = None
     v._apply_visibility()
     assert actor.GetVisibility()
-    assert actor in v._all_actors()                       # cut by the cutting plane too
 
 
 def test_the_checkbox_follows_the_view(app, no_3d, monkeypatch):
@@ -135,7 +142,7 @@ def _window(no_3d, monkeypatch, nets=("VOUT",), found=None, cli=("no-such-kicad-
     w.solve_panel.setup = two_phase()
     monkeypatch.setattr(w, "_checked_set", lambda: frozenset(nets))
     shown, asked, said = [], [], []
-    w.viewer.set_models = lambda models, top: shown.append((models, top))
+    w.viewer.set_models = lambda models, top, kicad_top=None: shown.append((models, top))
     monkeypatch.setattr(w, "log", lambda text, level=0: said.append(text))
     monkeypatch.setattr(models3d, "find_kicad_cli", lambda kicad=None: list(cli) if cli else None)
     monkeypatch.setattr(models3d, "board_file", lambda snap: "b.kicad_pcb")

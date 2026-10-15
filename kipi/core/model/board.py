@@ -54,6 +54,7 @@ class Stackup:
     dielectrics: List[DielectricLayer]
     board_thickness_mm: float
     from_board: bool = True  # False when a default stackup had to be synthesized
+    edited: bool = False     # thicknesses changed in KiPI (see kipi.core.model.stackup)
 
     def layer(self, layer_id: int) -> Optional[CopperLayer]:
         for layer in self.copper:

@@ -153,9 +153,13 @@ ground.
 Below that:
 
 * **Copper layers** toggles layers in the view.
-* **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), shows
-  or hides vias, pads, the board and part **Models**, and cuts the view along X, Y or Z
-  (**Cut**, slider, **Flip**) to look inside the stackup. By layer, each copper layer has
+* **Stackup** lists every copper and dielectric layer with its thickness. It is locked to
+  KiCad's values by default; untick **Lock to imported values** to try other thicknesses,
+  which every DC and AC analysis then uses and the setup keeps. **Copy to KiCad** carries
+  them back to the board, or lists them to enter in Board Setup where KiCad's API cannot
+  take them (KiCad 9 and 10).
+* **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
+  shows or hides vias, pads, the board and part **Models**. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
 * **Models** are the KiCad 3D models of the parts in your setup (VRMs, loads, series links
   and capacitor models) with a pad on a net shown. KiPI has KiCad's `kicad-cli` export them
@@ -169,8 +173,6 @@ Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. D
 scroll to zoom and shift-drag (or middle-drag) to pan. **About** shows the KiPI version and
 project links, and **Copy version info** copies the versions of KiPI, Python and its
 libraries for a bug report.
-
-![Stackup cut along Y with 15× Z scale, showing the inner planes and via barrels](docs/images/stackup_cut.png)
 
 ### 3. Model the power system
 
@@ -272,7 +274,7 @@ every layer and to via barrel plating. **TCR** is the temperature coefficient th
 electro-thermal co-simulation uses (0.00393 /°C for copper). The table lists each copper layer.
 Give a layer its own resistivity to override the default, for example for electroplated or
 rolled-annealed foil. Leave it at **default** to use the value above. Layer thicknesses come
-from the KiCad board stackup. **Thickness unit** shows them in µm, mil or oz (1 oz = 35 µm).
+from the **Stackup** pane (KiCad's, or as edited there). **Thickness unit** shows them in µm, mil or oz (1 oz = 35 µm).
 
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
 the board and the warmer copper become more resistive. Set:

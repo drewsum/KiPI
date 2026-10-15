@@ -129,6 +129,7 @@ ol.steps > li { margin-bottom: 6px; }
       <ol>
         <li><a href="#nets">Nets</a></li>
         <li><a href="#layers">Copper layers</a></li>
+        <li><a href="#stackup">Stackup</a></li>
         <li><a href="#display">Display</a></li>
         <li><a href="#info">Info</a></li>
       </ol></li>
@@ -391,6 +392,42 @@ are shown, so one layer's outlier does not wash out the others.</p>
 </div>
 </details>
 
+<details id="stackup">
+<summary>Stackup</summary>
+<div class="body">
+<p>The board's layers top to bottom: each copper layer and each dielectric with its
+thickness, and the dielectric's εr. Every analysis, DC and AC, uses this stackup, and the 3D
+view draws it.</p>
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td><b>Lock to imported values</b></td><td class="wrap">Ticked (the default), the
+    thicknesses are the ones read from KiCad's board stackup. Untick it to try others: type a
+    new thickness for any copper or dielectric layer. The layers above and below move with
+    it, and the total board thickness shows under the table next to KiCad's. Ticking it
+    again goes back to KiCad's thicknesses.</td></tr>
+  <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses, still
+    unlocked.</td></tr>
+  <tr><td><b>Copy to KiCad</b></td><td class="wrap">Sets the edited thicknesses in the board's
+    stackup in KiCad. KiCad 9 and 10 cannot change a stackup through their API yet, so KiPI
+    then lists the thicknesses to enter in <i>Board Setup → Board Stackup → Physical
+    Stackup</i>, with a button to copy them as text. A dielectric made of several sublayers
+    keeps its sublayers' proportions.</td></tr>
+</table>
+<ul>
+  <li>Thicknesses are in µm and take units and prefixes like every value field: <code>70</code>,
+    <code>70um</code> or <code>0.2mm</code>.</li>
+  <li>Edited thicknesses are saved with the PI setup and used again the next time the board
+    is opened (unlocked). If a layer has been added, removed or renamed in KiCad since, the
+    log says so and KiCad's stackup is used.</li>
+  <li>To compare stackups, solve, edit, and solve again. A thickness change clears the DC
+    results, which were for the old stackup; the AC results stay until a rail is solved
+    again. Reports note a stackup edited in KiPI.</li>
+  <li>A board snapshot (<b>Save snapshot</b>) keeps KiCad's stackup; the edits live in the
+    setup.</li>
+</ul>
+</div>
+</details>
+
 <details id="display">
 <summary>Display</summary>
 <div class="body">
@@ -412,12 +449,7 @@ are shown, so one layer's outlier does not wash out the others.</p>
     on a net shown. In the geometry view they are on to start with; over results they start
     hidden, and ticking <b>Models</b> there shows them too. Each view remembers its own
     setting. See <a href="#part-models">Part 3D models</a> below.</td></tr>
-  <tr><td><b>Cut</b> axis, slider, <b>Flip</b></td><td class="wrap">Cuts the view with a plane
-    across X, Y or Z, so you can look inside the stackup. The slider moves the plane;
-    <b>Flip</b> keeps the other half.</td></tr>
 </table>
-<figure><img src="images/stackup_cut.png" alt="Stackup cut along Y at 15x Z scale">
-<figcaption>A cut along Y at 15× Z scale shows the inner planes and via barrels.</figcaption></figure>
 <h4 id="part-models">Part 3D models</h4>
 <ul>
   <li>KiPI asks KiCad's command-line tool, <code>kicad-cli</code>, to export just the parts it
@@ -428,7 +460,8 @@ are shown, so one layer's outlier does not wash out the others.</p>
     since the last save is drawn where it was saved; save the board and click <b>Load from
     KiCad</b> to update it.</li>
   <li>The <b>Z scale</b> stretches the board but not the parts: top-side parts sit on the
-    stretched board at their true height. The <b>Cut</b> plane cuts them too.</li>
+    stretched board at their true height, and on a board made thicker or thinner in the
+    <a href="#stackup">Stackup</a> pane.</li>
   <li>Clicks go through the models to the copper beneath, so probing works as without
     them.</li>
   <li>A part whose model KiCad cannot find is named in the log with the missing path. If
@@ -696,7 +729,7 @@ many groups will be solved, e.g. <b>Solve 3 of 5 net groups</b>.</p>
 <div class="body">
 <p><b>Resistivity</b> at 20 °C (annealed copper, 1.724 µΩ·cm, by default) applies to every layer
 and to via plating. <b>TCR</b> (0.00393 /°C for copper) is used by the electro-thermal solve.
-The table lists each layer's thickness, from the KiCad stackup, and lets you override its
+The table lists each layer's thickness, from the <a href="#stackup">Stackup</a> pane (KiCad's, or as edited there), and lets you override its
 resistivity, e.g. for electroplated or rolled foil; <code>default</code> uses the value above.
 <b>Thickness unit</b> shows the thicknesses in µm, mil or oz (1 oz = 35 µm).</p>
 </div>

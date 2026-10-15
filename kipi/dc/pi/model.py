@@ -138,6 +138,9 @@ class PISetup:
     nets: Optional[List[str]] = None
     # DC: net groups with any of these nets are left out of the solve (see active_setup).
     excluded_nets: List[str] = field(default_factory=list)
+    # Stackup thicknesses edited in the Stackup pane (kipi.core.model.stackup.to_setup);
+    # None = use the board's own.
+    stackup: Optional[Dict] = None
     # AC analysis
     caps: List[CapModel] = field(default_factory=list)
     probes: List[Probe] = field(default_factory=list)
@@ -202,6 +205,7 @@ class PISetup:
             html_report=bool(d.get("html_report", False)),
             nets=list(d["nets"]) if d.get("nets") is not None else None,
             excluded_nets=list(d.get("excluded_nets", [])),
+            stackup=d.get("stackup") or None,
             settings=SolveSettings(**{k: v for k, v in d.get("settings", {}).items()
                                       if k in known}),
             caps=[CapModel(c["name"], c.get("capacitance_f", 0.0), c.get("esl_h", 0.0),
