@@ -55,7 +55,7 @@ from kipi.ac.solver.physics import (
 )
 from kipi.core.geometry.copper import net_layer_copper
 from kipi.core.mesh.mesher import NetMesh, combine_meshes, mesh_net
-from kipi.core.model.board import BoardSnapshot
+from kipi.core.model.board import BoardSnapshot, Stackup
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.solver import direct
 from kipi.dc.solver.fem import _merge_groups, triangle_geometry
@@ -67,6 +67,20 @@ SHIELDED_FACE_HEIGHT = 1000  # x board thickness: the inductance height of a shi
 class ACError(RuntimeError):
     pass
 
+
+
+def dielectric_summary(stackup: Stackup, default_er: float) -> str:
+    """The εr the AC solve uses for each dielectric, top to bottom: the stackup's, or
+    ``default_er`` (marked) where the stackup gives none."""
+    if not stackup.dielectrics:
+        return f"{default_er:g} (Default εr: the stackup lists no dielectrics)"
+    parts = []
+    for d in stackup.dielectrics:
+        name = d.material or "dielectric"
+        er = f"{d.epsilon_r:g}" if d.epsilon_r > 0 else f"{default_er:g} (Default εr)"
+        parts.append(f"{name} {d.thickness_mm * 1000:.0f} µm εr {er}")
+    note = "" if stackup.from_board else " [stackup not read from the board]"
+    return ", ".join(parts) + note
 
 @dataclass
 class PortDef:
@@ -491,6 +505,8 @@ class ACSystem:
             self.warnings.append("No rail copper faces ground copper: the planes add no "
                                  "capacitance")
         self.total_plane_capacitance = float(self._cap_c.sum())
+        progress.info(f"Dielectric εr, top to bottom: "
+                      f"{dielectric_summary(self.snap.stackup, self.ac.default_er)}")
         progress.info(f"Rail-to-ground plane capacitance "
                       f"{self.total_plane_capacitance * 1e9:.3f} nF")
 

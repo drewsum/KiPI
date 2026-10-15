@@ -19,10 +19,20 @@ milestones rather than versions that were ever set.
   drawn on each copper layer instead of 3D cone-and-cylinder models. They lie on the
   copper's top face and are repeated on its bottom face, so they show from above and
   below, and they are unlit, so they stay plain white at any viewing angle.
+- **Dielectric constant from the KiCad stackup in AC mode** (#65). A dielectric made of
+  several sublayers (for example, two prepreg sheets) now gets all of their εr, combined
+  in series. Before, the first sublayer's εr was used for the whole thickness. The AC
+  solve's log and the HTML report list the εr used for each dielectric and mark where
+  *Default εr* stood in.
 - The version number is 0.7.2. The 0.7.1 release still reported itself as 0.7.0.
 - Tests are grouped into `tests/core`, `tests/dc`, `tests/ac`, `tests/gui` and
   `tests/scripts`, with shared test boards in `tests/helpers` instead of being imported from
   other test files. CI shows each folder's results in its own log group.
+
+### Fixed
+- When KiPI cannot read the board's stackup, its default stackup no longer fixes εr at 4.5.
+  The AC *Default εr* setting now applies there, as it does for any dielectric the stackup
+  gives no value for.
 
 ## 0.7.1
 

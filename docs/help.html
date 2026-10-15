@@ -1035,7 +1035,10 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
     decides the via and mounting inductance.</td></tr>
   <tr><td>Loss tangent</td><td class="wrap">Dielectric loss (FR4 about 0.02). Damps the plane
     resonances.</td></tr>
-  <tr><td>Default εr</td><td class="wrap">Dielectric constant where the stackup gives none.</td></tr>
+  <tr><td>Default εr</td><td class="wrap">Dielectric constant where the stackup gives none.
+    Every other dielectric uses the εr from KiCad's board stackup (Board Setup → Physical
+    Stackup); a dielectric made of several sublayers gets their series combination. The log
+    and the HTML report list the εr used for each dielectric.</td></tr>
 </table>
 <p>Copper resistivity and barrel plating come from the DC setup's Copper and Mesh tabs.</p>
 </div>
