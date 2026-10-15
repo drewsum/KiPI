@@ -134,6 +134,7 @@ class Footprint:
     position: Point
     side: str               # "top" or "bottom"
     pad_ids: List[str] = field(default_factory=list)
+    footprint: str = ""     # library footprint, e.g. "Capacitor_SMD:C_0402_1005Metric"
 
 
 @dataclass

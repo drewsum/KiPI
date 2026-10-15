@@ -72,6 +72,7 @@ def test_footprints_and_pads(extracted):
     version, snap = extracted
     (fp,) = snap.footprints
     assert (fp.reference, fp.value, fp.side) == ("U1", "TPS62130", "top")
+    assert fp.footprint == "Package_SON:Texas_VSON-HR-16"
     pads = {p.number: p for p in snap.pads}
     assert pads["1"].pad_type == "smd" and set(pads["1"].shapes) == {L.BL_F_Cu}
     slot = pads["2"]

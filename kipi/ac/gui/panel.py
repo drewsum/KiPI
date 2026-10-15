@@ -50,7 +50,8 @@ class CapEditor(_Editor):
     nets ticked in the Board panel (so, between two power/ground nets). Ticking a part
     assigns it to this model (moving it from another model if it had one).
     """
-    COLS = ("", "Part", "Value", "Nets", "Model")
+    COLS = ("", "Part", "Value", "Footprint", "Nets", "Model")
+    C_VALUE, C_FOOTPRINT = 2, 3
 
     def __init__(self, panel: "ACPanel", parent=None):
         super().__init__(panel, parent)
@@ -78,9 +79,9 @@ class CapEditor(_Editor):
         self._watch(self.name, self.cap, self.esl, self.esr)
 
         self.filter = QLineEdit()
-        self.filter.setPlaceholderText("Filter parts (reference, value or net)…")
-        self.filter.setToolTip("Show only the parts whose reference, value, nets or model "
-                               "contain this text")
+        self.filter.setPlaceholderText("Filter parts (reference, value, footprint or net)…")
+        self.filter.setToolTip("Show only the parts whose reference, value, footprint, nets "
+                               "or model contain this text")
         self.filter.textChanged.connect(self._apply_filter)
         f.addRow(self.filter)
         self.table = QTableWidget(0, len(self.COLS))
@@ -98,17 +99,25 @@ class CapEditor(_Editor):
                               "sort by it.")
         make_sortable(self.table)
         f.addRow(self.table)
+        same = QHBoxLayout()
+        for label, cols, text in (
+                ("Tick same value", (self.C_VALUE,), "the value"),
+                ("Tick same footprint", (self.C_FOOTPRINT,), "the footprint"),
+                ("Tick same value + footprint", (self.C_VALUE, self.C_FOOTPRINT),
+                 "both the value and the footprint")):
+            b = QPushButton(label)
+            b.setToolTip(f"Tick every listed part with {text} of the selected row")
+            b.clicked.connect(lambda _=False, c=cols: self._tick_same(c))
+            same.addWidget(b)
+        f.addRow(same)
         row = QHBoxLayout()
-        b_val = QPushButton("Tick same value")
-        b_val.setToolTip("Tick every listed part with the value of the selected row")
-        b_val.clicked.connect(self._tick_same_value)
         b_all = QPushButton("Tick shown")
         b_all.setToolTip("Give this model to every part the filter shows")
         b_all.clicked.connect(lambda: self._tick_shown(True))
         b_none = QPushButton("Untick shown")
         b_none.setToolTip("Take this model off every part the filter shows")
         b_none.clicked.connect(lambda: self._tick_shown(False))
-        for b in (b_val, b_all, b_none):
+        for b in (b_all, b_none):
             row.addWidget(b)
         f.addRow(row)
         self.lbl_count = QLabel()
@@ -149,10 +158,15 @@ class CapEditor(_Editor):
             chk.setData(Qt.UserRole, c.ref)
             t.setItem(r, 0, chk)
             other = owner.get(c.ref)
-            cells = (c.ref, c.value, " / ".join(c.nets), other.name if other else "")
+            cells = (c.ref, c.value, c.footprint.split(":")[-1], " / ".join(c.nets),
+                     other.name if other else "")
             for col, text in enumerate(cells, start=1):
                 it = SortItem(text)
                 it.row0 = r
+                if col == self.C_FOOTPRINT:
+                    it.setData(Qt.UserRole, c.footprint)
+                    it.setToolTip(c.footprint or "Footprint not known: re-read the board "
+                                                 "from KiCad to fill it in")
                 if other is not None and not mine:
                     it.setForeground(QColor("#999"))
                 t.setItem(r, col, it)
@@ -197,16 +211,27 @@ class CapEditor(_Editor):
                 if not self.table.isRowHidden(r)]
         self._assign(refs, on)
 
-    def _tick_same_value(self):
+    def _tick_same(self, cols):
+        """Tick every part matching the selected row in columns ``cols`` (value, the full
+        library footprint)."""
         if self.obj is None:
             return
         r = self.table.currentRow()
         if r < 0:
             QMessageBox.information(self, "KiPI", "Select a part in the list first.")
             return
-        value = self.table.item(r, 2).text()
-        refs = [self.table.item(k, 0).data(Qt.UserRole) for k in range(self.table.rowCount())
-                if self.table.item(k, 2).text() == value]
+        t = self.table
+
+        def key(row):
+            return tuple(t.item(row, c).data(Qt.UserRole) if c == self.C_FOOTPRINT
+                         else t.item(row, c).text() for c in cols)
+        want = key(r)
+        if self.C_FOOTPRINT in cols and not t.item(r, self.C_FOOTPRINT).data(Qt.UserRole):
+            QMessageBox.information(self, "KiPI", "This part's footprint is not known. "
+                                    "Re-read the board from KiCad to fill footprints in.")
+            return
+        refs = [t.item(k, 0).data(Qt.UserRole) for k in range(t.rowCount())
+                if key(k) == want]
         self._assign(refs, True)
 
 

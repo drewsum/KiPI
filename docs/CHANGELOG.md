@@ -17,6 +17,11 @@ milestones rather than versions that were ever set.
   in the DC and AC HTML reports. Values with SI prefixes sort by value (100 nF before
   10 µF, 4u7 as 4.7 µ), references sort naturally (C9 before C10), ticked parts can be
   sorted first, and blanks go last. A table keeps its order when ticking a part refills it.
+- **Footprints in the capacitor parts table** (#64): each capacitor's footprint shows in
+  its own column (the library in its tooltip) and the filter matches it. **Tick same
+  footprint** and **Tick same value + footprint** join **Tick same value**, so e.g. the
+  0402 and 0603 100 nF parts can get their own models. Snapshots now keep each
+  footprint's library name; boards saved earlier show it once read again from KiCad.
 - **Power tree** toolbar button: a block diagram of the VRMs (each type in its own colour and
   tag), rails, series links, loads and capacitors, laid out in the direction power flows,
   saveable as a PNG. Rails with many loads or capacitor groups pack them into grids shaped

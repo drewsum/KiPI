@@ -1015,14 +1015,15 @@ are required.</p>
   <tr><td>ESL</td><td class="wrap">The part's own inductance (datasheet), not including
     mounting.</td></tr>
   <tr><td>ESR</td><td class="wrap">Per part.</td></tr>
-  <tr><td>Filter box</td><td class="wrap">Narrows the parts table by reference, value, net or
-    model.</td></tr>
+  <tr><td>Filter box</td><td class="wrap">Narrows the parts table by reference, value, footprint,
+    net or model.</td></tr>
   <tr><td>Parts table</td><td class="wrap">Every capacitor (reference <code>C…</code>) whose pads
-    are all on ticked nets, across two nets. Tick a part to give it this model; it moves from
-    any other model. Grayed rows already belong to another model, named in the last
-    column.</td></tr>
-  <tr><td><b>Tick same value</b></td><td class="wrap">Ticks every part with the value of the
-    selected row.</td></tr>
+    are all on ticked nets, across two nets, with its footprint (hover for the library).
+    Tick a part to give it this model; it moves from any other model. Grayed rows already
+    belong to another model, named in the last column. Click a column header to sort by it.</td></tr>
+  <tr><td><b>Tick same value / footprint / value + footprint</b></td><td class="wrap">Ticks
+    every part matching the selected row: the same value, the same library footprint, or
+    both (e.g. only the 0402 100 nF parts, whose ESL differs from the 0603 ones).</td></tr>
   <tr><td><b>Tick shown / Untick shown</b></td><td class="wrap">Applies to every row the filter
     shows.</td></tr>
 </table>

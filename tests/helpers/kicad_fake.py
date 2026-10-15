@@ -138,6 +138,8 @@ class FakeBoardData:
         fp.layer = L.BL_F_Cu
         fp.reference_field.text.text.text = "U1"
         fp.value_field.text.text.text = "TPS62130"
+        fp.definition.id.library_nickname = "Package_SON"
+        fp.definition.id.entry_name = "Texas_VSON-HR-16"
         smd = bt.Pad()
         smd.id.value = "pad-u1-1"
         smd.number = "1"

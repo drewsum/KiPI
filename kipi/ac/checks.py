@@ -20,6 +20,7 @@ class CapCandidate:
     ref: str
     value: str
     nets: List[str]                      # distinct nets of its pads, sorted
+    footprint: str = ""                  # library footprint, "library:name"
 
 
 def capacitor_candidates(snap: BoardSnapshot, nets) -> List[CapCandidate]:
@@ -31,11 +32,13 @@ def capacitor_candidates(snap: BoardSnapshot, nets) -> List[CapCandidate]:
         if p.footprint and is_capacitor_ref(p.footprint):
             pads_by_ref.setdefault(p.footprint, []).append(p.net)
     values = {f.reference: f.value for f in snap.footprints}
+    footprints = {f.reference: f.footprint for f in snap.footprints}
     out = []
     for ref, pad_nets in pads_by_ref.items():
         distinct = sorted(set(pad_nets))
         if len(distinct) >= 2 and all(n and n in nets for n in distinct):
-            out.append(CapCandidate(ref, values.get(ref, ""), distinct))
+            out.append(CapCandidate(ref, values.get(ref, ""), distinct,
+                                    footprints.get(ref, "")))
     return sorted(out, key=lambda c: _ref_key(c.ref))
 
 

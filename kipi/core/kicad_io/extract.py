@@ -272,6 +272,16 @@ def _field_text(field) -> str:
             return ""
 
 
+def _footprint_name(fp) -> str:
+    """'library:name' of a footprint instance, or "" if this kicad-python can't tell."""
+    try:
+        lib_id = fp.definition.id
+        lib, name = lib_id.library, lib_id.name
+    except Exception:  # noqa: BLE001
+        return ""
+    return f"{lib}:{name}" if lib and name else name or ""
+
+
 def _pad_shapes(board, pads, layer_ids: Iterable[int], progress) -> Dict[str, Dict[int, List[Poly]]]:
     """Pad copper polygon per layer, keyed by pad id.
 
@@ -488,7 +498,7 @@ def extract_board(board, refill_zones: bool = False,
                 id=fp.id.value, reference=ref, value=_field_text(fp.value_field),
                 position=pt(fp.position),
                 side="bottom" if fp.layer == BoardLayer.BL_B_Cu else "top",
-                pad_ids=[p.id.value for p in fpads]))
+                pad_ids=[p.id.value for p in fpads], footprint=_footprint_name(fp)))
             for p in fpads:
                 pad_ref[p.id.value] = ref
             kpads.extend(fpads)

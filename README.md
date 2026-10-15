@@ -388,8 +388,10 @@ series links with DC (fields only DC uses are grayed out) and adds:
   shared by a group of identical parts. **Models from values** makes one model per capacitor
   value that has none yet, reading the capacitance from the value; enter the ESL and ESR
   from the datasheet. The table lists every capacitor between ticked nets: tick parts to
-  assign them to the selected model, with **Tick same value**, **Tick shown** and
-  **Untick shown** for many at once. Enter only the part's own ESL: its mounting (pads,
+  assign them to the selected model, with **Tick same value**, **Tick same footprint**,
+  **Tick same value + footprint**, **Tick shown** and **Untick shown** for many at once.
+  The table shows each part's footprint, so 0402 and 0603 parts of one value can get
+  different models. Enter only the part's own ESL: its mounting (pads,
   vias, planes) is simulated.
 * **Probes tab**: where the impedance is looked into, usually a device's supply and ground
   pins. Each probe has a target: **flat** (an impedance up to a frequency) or **custom**, a
