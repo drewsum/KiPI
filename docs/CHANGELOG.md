@@ -45,6 +45,8 @@ milestones rather than versions that were ever set.
 - The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity
   moved to the Stackup window, since the AC solve uses them too.
 - The **Cut** plane (axis, slider and **Flip**) is gone from the Display options.
+- The multiphase buck example has a 10 µF input capacitor (C20-C23) on VIN beside each
+  power stage, with a `10u` model in its setup, so an AC solve of VIN shows decoupling.
 - The AC HTML report's impedance plot shows |Z| only; the phase plot under it is gone.
   Hovering a curve still gives R and X.
 - **Flat current arrows** (#63). The current-density view's arrows are flat 2D arrows

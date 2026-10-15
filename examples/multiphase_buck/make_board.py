@@ -17,6 +17,8 @@ The board is 60 x 40 mm, four layers (1 oz everywhere):
 
 Decoupling for AC mode: eight 1 µF capacitors C1-C8 around the load and a 100 µF bulk
 capacitor C10-C13 after each inductor, each on F.Cu with a GND via next to its GND pad.
+On VIN, a 10 µF input capacitor C20-C23 beside each power stage, from its VIN pour
+across to the GND strip, with a via in each pad down to the In2 VIN and In1 GND planes.
 
 The phases sit in a column at y = 5, 15, 25 and 35 mm. Each phase is a power stage
 Qn (VIN pad 1, GND pad 2) and an inductor Ln (output pad 2 on VCORE); the switch node
@@ -142,16 +144,21 @@ def build() -> BoardSnapshot:
             b.via(net, x, y, drill=0.2, dia=0.45)
     # Decoupling: 1 µF around the load, 100 µF bulk after each inductor. Pad 1 on VCORE
     # (F.Cu pour), pad 2 on GND with a via down to the In1 plane.
-    def cap(ref, value, x, y, size):
+    def cap(ref, value, x, y, size, net="VCORE", span=1.2, gnd_via_dx=None):
         values[ref] = value
-        b.pad(ref, "1", "VCORE", box(x - size, y - size, x + size, y + size))
-        b.pad(ref, "2", "GND", box(x + 1.2 - size, y - size, x + 1.2 + size, y + size))
-        b.via("GND", x + 1.2 + size, y)
+        b.pad(ref, "1", net, box(x - size, y - size, x + size, y + size))
+        b.pad(ref, "2", "GND", box(x + span - size, y - size, x + span + size, y + size))
+        b.via("GND", x + span + (size if gnd_via_dx is None else gnd_via_dx), y)
     for k, (x, y) in enumerate([(39.5, 25.0), (39.5, 30.0), (39.5, 35.0), (44.0, 22.5),
                                 (48.0, 22.5), (51.0, 25.0), (51.0, 30.0), (51.0, 35.0)], 1):
         cap(f"C{k}", "1u", x, y, 0.3)
     for k, y in enumerate(PHASE_Y, start=10):
         cap(f"C{k}", "100u", 23.0, y, 0.6)
+    # Input capacitors: one per phase, just past the power stage's pads (y + 3.5), VIN pad
+    # on the F.Cu VIN pour and GND pad on the GND strip, each pad with a via to its plane.
+    for k, y in enumerate(PHASE_Y, start=20):
+        cap(f"C{k}", "10u", 9.0, y + 3.5, 0.6, net="VIN", span=3.0, gnd_via_dx=0.0)
+        b.via("VIN", 9.0, y + 3.5)
     # VCORE stitching on the way to the load.
     for x in (26, 32, 38):
         for y in (8, 16, 24, 32):
@@ -189,7 +196,8 @@ def make_setup() -> PISetup:
     load = Load("U10", PinRef("U10", "VCORE"), 40.0, ground=gnd("U10"), tolerance_pct=3.0)
     setup = PISetup([j1, u1], [load], [], SolveSettings(), nets=["VIN", "VCORE", "GND"])
     setup.caps = [CapModel("1u", 1e-6, 0.3e-9, 10e-3, [f"C{k}" for k in range(1, 9)]),
-                  CapModel("100u", 100e-6, 0.8e-9, 3e-3, [f"C{k}" for k in range(10, 14)])]
+                  CapModel("100u", 100e-6, 0.8e-9, 3e-3, [f"C{k}" for k in range(10, 14)]),
+                  CapModel("10u", 10e-6, 0.5e-9, 5e-3, [f"C{k}" for k in range(20, 24)])]
     setup.probes = [Probe("U10", PinRef("U10", "VCORE"), gnd("U10"), 2e-3, 20e6)]
     setup.ac.rail, setup.ac.ground = "U1", "GND"
     return setup
