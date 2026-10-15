@@ -922,9 +922,8 @@ class ACPanel(QWidget):
     def _open_report(self):
         path = getattr(self.result, "report_path", None)
         if path:
-            from qtpy.QtCore import QUrl
-            from qtpy.QtGui import QDesktopServices
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            from kipi.gui.browser import open_in_browser
+            open_in_browser(path)
 
     def _save_results(self):
         if not self._results or self.snapshot is None:

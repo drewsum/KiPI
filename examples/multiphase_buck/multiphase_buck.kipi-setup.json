@@ -323,6 +323,23 @@
       "target_hz": null,
       "target_custom": false,
       "target_points": []
+    },
+    {
+      "name": "Q4",
+      "rail": {
+        "ref": "Q4",
+        "net": "VIN",
+        "pins": []
+      },
+      "ground": {
+        "ref": "Q4",
+        "net": "GND",
+        "pins": []
+      },
+      "target_ohm": null,
+      "target_hz": null,
+      "target_custom": false,
+      "target_points": []
     }
   ],
   "ac": {

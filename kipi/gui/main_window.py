@@ -1011,6 +1011,7 @@ class MainWindow(QMainWindow):
                 return
             self._tree, self._scenes = tree, scenes
             self.solve_panel.set_report(getattr(tree, "report_path", None))
+            self._open_new_report(getattr(tree, "report_path", None))
             first = tree.loads[0].group if tree.loads else next(iter(tree.groups))
             self.solve_panel.show_results(tree, first)
             self._show_group(first)
@@ -1020,6 +1021,16 @@ class MainWindow(QMainWindow):
 
         if self._run(work, done, "Solving power tree") is not None:
             self.solve_panel.set_busy(True)
+
+    def _open_new_report(self, path):
+        """Open a report a solve just wrote in the default browser."""
+        if path is None:
+            return
+        from kipi.gui.browser import open_in_browser
+        if open_in_browser(path):
+            self.log(f"Opened the report in the web browser: {path}")
+        else:
+            self.log(f"Could not open a web browser; the report is at {path}")
 
     # ------------------------------------------------------------ AC solve
     def run_ac_solve(self, setup, vrm_name: str, gnd: str):
@@ -1064,6 +1075,7 @@ class MainWindow(QMainWindow):
                 self.ac_panel.show_error(error)
                 return
             self.ac_panel.show_result(result)
+            self._open_new_report(getattr(result, "report_path", None))
 
         def partial(board_map):
             """The solve's board map as it fills: shown while the rail solves."""

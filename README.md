@@ -303,7 +303,8 @@ back towards the source, so each VRM's input current includes everything it feed
 and solver residuals stream into the log; **Cancel** stops the run.
 
 Tick **HTML report** before solving to also write `<board>_kipi_report.html` next to the
-board, and **Report** opens it afterwards. It is a single file that works offline, containing:
+board. It opens in your web browser when the solve finishes, and **Report** opens it
+again later. It is a single file that works offline, containing:
 
 * the summary and every results table;
 * an interactive 3D view per net group (rotate, zoom, hover for values);
@@ -421,7 +422,8 @@ frequency. **Save results…** writes every solved rail to a `.kipi-ac-results` 
 pickles, so only open ones you created).
 
 Tick **HTML report** next to **Solve rail** to also write `<board>_<rail>_ac_report.html`
-next to the board after each solve; **Report** opens it. Like the DC report, it is one
+next to the board after each solve. It opens in your web browser when the solve
+finishes, and **Report** opens it again later. Like the DC report, it is one
 offline file you can share. It has the probe table with margins, an interactive |Z| and phase
 plot with the targets and each capacitor model's own curve, a board map of the rail's copper
 with the probes and capacitors marked, the capacitor models, and the sweep, mesh and solver

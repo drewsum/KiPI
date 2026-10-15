@@ -1116,9 +1116,8 @@ class PIPanel(QWidget):
 
     def _open_report(self):
         if self.report_path:
-            from qtpy.QtCore import QUrl
-            from qtpy.QtGui import QDesktopServices
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.report_path)))
+            from kipi.gui.browser import open_in_browser
+            open_in_browser(self.report_path)
 
     def _set_temperature_field(self, available: bool):
         i = self.cmb_field.findData("temperature")

@@ -47,6 +47,10 @@ milestones rather than versions that were ever set.
 - The **Cut** plane (axis, slider and **Flip**) is gone from the Display options.
 - The multiphase buck example has a 10 µF input capacitor (C20-C23) on VIN beside each
   power stage, with a `10u` model in its setup, so an AC solve of VIN shows decoupling.
+  Its setup probes VIN at all four power stages (Q1-Q4).
+- HTML reports open in the default web browser as soon as a DC or AC solve writes them
+  (Python's `webbrowser` is the fallback where the desktop cannot open the file). **Report**
+  still reopens them later.
 - The AC HTML report's impedance plot shows |Z| only; the phase plot under it is gone.
   Hovering a curve still gives R and X.
 - **Flat current arrows** (#63). The current-density view's arrows are flat 2D arrows
