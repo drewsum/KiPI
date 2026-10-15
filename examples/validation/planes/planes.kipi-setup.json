@@ -1,0 +1,132 @@
+{
+  "vrms": [
+    {
+      "name": "J1",
+      "output": {
+        "ref": "J1",
+        "net": "PLANE",
+        "pins": [
+          "1"
+        ]
+      },
+      "voltage": 1.0,
+      "kind": "source",
+      "efficiency": 0.9,
+      "quiescent_a": 0.0,
+      "input": null,
+      "sense": null,
+      "ground": null,
+      "ground_sense": null,
+      "phases": [],
+      "current_limit_a": null,
+      "dropout_v": 0.0,
+      "vin_min": null,
+      "vin_max": null,
+      "bandwidth_khz": null
+    },
+    {
+      "name": "J2",
+      "output": {
+        "ref": "J2",
+        "net": "PAIR",
+        "pins": [
+          "1"
+        ]
+      },
+      "voltage": 1.0,
+      "kind": "source",
+      "efficiency": 0.9,
+      "quiescent_a": 0.0,
+      "input": null,
+      "sense": null,
+      "ground": null,
+      "ground_sense": null,
+      "phases": [],
+      "current_limit_a": null,
+      "dropout_v": 0.0,
+      "vin_min": null,
+      "vin_max": null,
+      "bandwidth_khz": null
+    }
+  ],
+  "loads": [
+    {
+      "name": "U1",
+      "supply": {
+        "ref": "U1",
+        "net": "PLANE",
+        "pins": [
+          "1"
+        ]
+      },
+      "current": 2.0,
+      "ground": null,
+      "tolerance_pct": null,
+      "groups": []
+    },
+    {
+      "name": "U2",
+      "supply": {
+        "ref": "U2",
+        "net": "PAIR",
+        "pins": [
+          "1"
+        ]
+      },
+      "current": 2.0,
+      "ground": null,
+      "tolerance_pct": null,
+      "groups": []
+    }
+  ],
+  "links": [],
+  "settings": {
+    "max_edge_mm": 0.25,
+    "min_angle_deg": 28.0,
+    "simplify_mm": 0.003,
+    "circle_quad_segs": 4,
+    "min_edge_mm": 0.02,
+    "grading": 0.2,
+    "plating_mm": 0.025,
+    "rho_ohm_mm": 1.724e-05,
+    "tcr_per_c": 0.00393,
+    "rho_by_layer": {},
+    "tcr_by_layer": {},
+    "conductor_by_layer": {},
+    "tol": 1e-10,
+    "max_iter": 2000
+  },
+  "via_current_limit_a": null,
+  "thermal": {
+    "enabled": false,
+    "ambient_c": 25.0,
+    "iterations": 3,
+    "airflow_m_s": 0.0,
+    "grid_mm": 0.0,
+    "laminate_k_w_mk": 0.0,
+    "load_power": false,
+    "max_temp_c": null,
+    "max_rise_c": null
+  },
+  "html_report": false,
+  "nets": null,
+  "excluded_nets": [],
+  "stackup": null,
+  "caps": [],
+  "probes": [],
+  "ac": {
+    "f_start_hz": 1000.0,
+    "f_stop_hz": 300000000.0,
+    "points_per_decade": 250,
+    "field_points_per_decade": 20,
+    "max_edge_mm": 1.0,
+    "grading": 0.3,
+    "min_edge_mm": 0.03,
+    "loss_tangent": 0.02,
+    "default_er": 4.3,
+    "rail": "",
+    "ground": "",
+    "html_report": false
+  },
+  "format_version": 1
+}

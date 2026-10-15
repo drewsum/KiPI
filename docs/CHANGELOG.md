@@ -7,6 +7,11 @@ milestones rather than versions that were ever set.
 ## 0.7.2 (in development)
 
 ### Added
+- **Solver accuracy tests** (#70): eight validation boards in `examples/validation`
+  (thin and arc tracks, right-angle routes, a layer change through vias, planes, a power
+  chain with a series link, and AC plane, decoupling-capacitor and ferrite boards), each
+  solved and compared with hand calculations. They run in `tests/accuracy`, as a separate
+  final CI job, and open in KiPI like any snapshot.
 - **Power tree** toolbar button: a block diagram of the VRMs (each type in its own colour and
   tag), rails, series links, loads and capacitors, laid out in the direction power flows,
   saveable as a PNG. Rails with many loads or capacitor groups pack them into grids shaped

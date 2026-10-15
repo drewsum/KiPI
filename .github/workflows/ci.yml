@@ -90,14 +90,14 @@ jobs:
 
       # One collapsible log group per test folder (core, dc, ac, gui, ...), found rather
       # than listed so a new folder is never skipped. Every folder runs even after one
-      # fails, and the step fails if any did.
+      # fails, and the step fails if any did. tests/accuracy runs last, in its own job.
       - name: Run tests
         shell: bash
         run: |
           failed=""
           for dir in tests/*/; do
             name=$(basename "$dir")
-            case "$name" in helpers|data|__pycache__) continue ;; esac
+            case "$name" in helpers|data|accuracy|__pycache__) continue ;; esac
             echo "::group::tests/$name"
             python -m pytest -v "$dir" || failed="$failed $name"
             echo "::endgroup::"
@@ -106,6 +106,36 @@ jobs:
             echo "::error title=Tests failed::in tests/{${failed# }}"
             exit 1
           fi
+
+  # Solver accuracy (#70): the boards in examples/validation solved and compared with hand
+  # calculations. Last, once lint and every test job have passed, so a failure here
+  # means the solvers' answers moved rather than something else breaking.
+  accuracy:
+    name: Solver accuracy (${{ matrix.os }})
+    needs: [lint, test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Solver accuracy against hand calculations
+        run: python -m pytest -v tests/accuracy
 
   # KiCad installs the plugin's dependencies with pip, and users rarely have a compiler, so
   # every dependency needs a binary wheel for the Python their KiCad uses. Python 3.14

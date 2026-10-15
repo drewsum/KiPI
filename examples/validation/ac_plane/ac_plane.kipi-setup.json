@@ -1,0 +1,107 @@
+{
+  "vrms": [
+    {
+      "name": "VRM1",
+      "output": {
+        "ref": "U1",
+        "net": "+3V3",
+        "pins": [
+          "1"
+        ]
+      },
+      "voltage": 3.3,
+      "kind": "source",
+      "efficiency": 0.9,
+      "quiescent_a": 0.0,
+      "input": null,
+      "sense": null,
+      "ground": {
+        "ref": "U1",
+        "net": "GND",
+        "pins": [
+          "2"
+        ]
+      },
+      "ground_sense": null,
+      "phases": [],
+      "current_limit_a": null,
+      "dropout_v": 0.0,
+      "vin_min": null,
+      "vin_max": null,
+      "bandwidth_khz": null
+    }
+  ],
+  "loads": [],
+  "links": [],
+  "settings": {
+    "max_edge_mm": 0.5,
+    "min_angle_deg": 28.0,
+    "simplify_mm": 0.003,
+    "circle_quad_segs": 4,
+    "min_edge_mm": 0.02,
+    "grading": 0.2,
+    "plating_mm": 0.025,
+    "rho_ohm_mm": 1.724e-05,
+    "tcr_per_c": 0.00393,
+    "rho_by_layer": {},
+    "tcr_by_layer": {},
+    "conductor_by_layer": {},
+    "tol": 1e-10,
+    "max_iter": 2000
+  },
+  "via_current_limit_a": null,
+  "thermal": {
+    "enabled": false,
+    "ambient_c": 25.0,
+    "iterations": 3,
+    "airflow_m_s": 0.0,
+    "grid_mm": 0.0,
+    "laminate_k_w_mk": 0.0,
+    "load_power": false,
+    "max_temp_c": null,
+    "max_rise_c": null
+  },
+  "html_report": false,
+  "nets": null,
+  "excluded_nets": [],
+  "stackup": null,
+  "caps": [],
+  "probes": [
+    {
+      "name": "U1",
+      "rail": {
+        "ref": "U1",
+        "net": "+3V3",
+        "pins": [
+          "1"
+        ]
+      },
+      "ground": {
+        "ref": "U1",
+        "net": "GND",
+        "pins": [
+          "2"
+        ]
+      },
+      "target_ohm": null,
+      "target_hz": null,
+      "target_custom": false,
+      "target_points": []
+    }
+  ],
+  "ac": {
+    "f_start_hz": 1000.0,
+    "f_stop_hz": 1000000000.0,
+    "points_per_decade": 100,
+    "field_points_per_decade": 20,
+    "max_edge_mm": 2.0,
+    "grading": 0.3,
+    "min_edge_mm": 0.03,
+    "loss_tangent": 0.02,
+    "default_er": 4.3,
+    "rail": "VRM1",
+    "ground": "GND",
+    "html_report": false
+  },
+  "format_version": 1
+}

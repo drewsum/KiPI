@@ -489,6 +489,27 @@ Shared test boards and the fake KiCad live in `tests/helpers`, which pytest puts
 import path; each folder also runs on its own (`pytest tests/dc`). CI runs each folder in
 its own log group.
 
+`tests/accuracy` guards the solvers' answers. It solves the boards in
+[`examples/validation`](examples/validation) from their committed snapshots and setups and
+compares the results with hand calculations from each board's dimensions:
+
+| Board | Checks |
+|---|---|
+| `skinny_traces` | 0.15 mm and 0.1 mm tracks on outer and inner layers (ρL/wt), an arc track (annular sector) |
+| `right_angle` | an L route and a Z route: 0.5587 squares per right-angle corner |
+| `layer_change` | a strip dropping from F.Cu to In2.Cu through a row of vias: barrels in parallel, current crowding, equal sharing |
+| `planes` | two pads on a disc-shaped inner plane (method of images); one strip on two layers of different weights |
+| `power_chain` | source, switcher, ferrite series link and remote-sensed LDO over a ground strip: every voltage and current |
+| `ac_plane` | plane-pair capacitance ε₀εrA/h and the first cavity resonance c/(2a√εr) |
+| `ac_decap` | a mounted capacitor as a series RLC: low-frequency capacitance, mounted inductance, ESR at resonance |
+| `ac_ferrite` | a ferrite (R + L link) feeding a small plane: lumped impedance and its LC resonance |
+
+Each one opens in KiPI like any snapshot
+(`python -m kipi --snapshot examples/validation/planes/planes.kipi.json.gz`). CI runs these
+last, in their own job, once lint and the other tests pass. The folder also checks that the
+committed files match `examples/validation/make_boards.py`: after changing a board there,
+rerun `python examples/validation/make_boards.py [name]` and commit its files.
+
 CI runs ruff and the test suite for every push and pull request: on Windows with Python 3.11,
 on Linux with Python 3.10 to 3.13, on macOS, and with the oldest kicad-python that
 `requirements.txt` allows. A further job checks whether every dependency has prebuilt
