@@ -220,3 +220,35 @@ def test_a_change_during_a_task_waits_for_it(app, no_3d, monkeypatch, tmp_path):
     _idle(app, w)
     assert w.snapshot.stackup is edited
     w.close()
+
+
+def test_choosing_a_material_sets_its_er_and_k(app, unit_setting):
+    from kipi.core.model.stackup import dielectric_materials
+    from kipi.dc.thermal.materials import laminate_conductance
+    st = board().stackup
+    win = StackupWindow()
+    got = []
+    win.stackup_changed.connect(got.append)
+    win.set_board(st, setup=PISetup())
+    box = win._mat_boxes[0]
+    assert not box.isEnabled()                           # locked
+    kicad_name = dielectric_materials(st)[0]
+    assert box.currentData() == kicad_name
+    win.chk_lock.setChecked(False)
+    assert box.isEnabled()
+    row = _diel_rows(win)[0]
+    box.setCurrentIndex(box.findData("Rogers RO4350B"))
+    assert win._er_spins[0].value() == pytest.approx(3.48)
+    assert win.table.item(row, 3).text() == "0.69"
+    win.flush()
+    edited = got[-1]
+    assert dielectric_materials(edited)[0] == "Rogers RO4350B"
+    assert dielectric_er(edited)[0] == pytest.approx(3.48)
+    assert laminate_conductance(edited)[0] != pytest.approx(laminate_conductance(st)[0])
+    box.setCurrentIndex(box.findData(kicad_name))        # KiCad's material: KiCad's εr
+    assert win._er_spins[0].value() == pytest.approx(dielectric_er(st)[0])
+    win.flush()
+    assert got[-1] is st                                 # nothing edited any more
+    box.setCurrentIndex(box.findData("PTFE"))
+    win.chk_lock.setChecked(True)
+    assert box.currentData() == kicad_name and got[-1] is st

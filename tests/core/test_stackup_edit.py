@@ -92,3 +92,17 @@ def test_summary_marks_an_edited_stackup():
     assert summary(st).startswith("F.Cu 35 µm, FR4 200 µm εr 4.4, In1.Cu 17.5 µm")
     assert "edited" not in summary(st)
     assert summary(restack(st, thicknesses(st))).endswith("(edited in KiPI)")
+
+
+def test_dielectric_materials_are_edited_and_kept():
+    from kipi.core.model.stackup import dielectric_materials
+    st = four_layer()
+    ed = restack(st, thicknesses(st), [3.48, 4.4, 4.4],
+                 materials=["Rogers RO4350B", "FR4", "FR4"])
+    assert dielectric_materials(ed) == ["Rogers RO4350B", "FR4", "FR4"]
+    assert dielectric_materials(st) == ["FR4", "FR4", "FR4"]
+    back, _ = from_setup(st, to_setup(ed))
+    assert dielectric_materials(back) == ["Rogers RO4350B", "FR4", "FR4"]
+    assert "Rogers RO4350B 200 µm εr 3.48" in summary(ed)
+    with pytest.raises(ValueError):
+        restack(st, thicknesses(st), materials=["FR4"])

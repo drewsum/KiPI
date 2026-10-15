@@ -142,3 +142,16 @@ def test_laminate_conductance_follows_stackup_materials():
         m.deposit(heat, np.array([[20.0, 20.0]]), np.array([0.5]))
         peaks.append(np.nanmax(m.solve(heat)))
     assert peaks[0] > 2 * peaks[1]
+
+
+def test_every_listed_material_is_found_by_its_own_name():
+    from kipi.dc.thermal.materials import catalog, lookup
+    mats = catalog()
+    assert mats[0].material == "FR4 core" and len({m.material for m in mats}) == len(mats)
+    for m in mats:
+        found = lookup(m.material)
+        assert found.matched == m.material and not found.assumed
+        assert (found.k_w_mk, found.er) == (m.k_w_mk, m.er)
+    er = {m.material: m.er for m in mats}
+    assert er["Rogers RO4350B"] == pytest.approx(3.48)
+    assert er["aluminum (metal core)"] == 0.0           # a metal: Default εr applies

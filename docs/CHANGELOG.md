@@ -14,10 +14,12 @@ milestones rather than versions that were ever set.
   its usual decimals but shows more when a small typed value needs them, so 10 pF in a µF
   field reads 0.00001 µF instead of rounding to zero. See *Typing values* in the help.
 - **Stackup window** (#61). The new **Stackup** toolbar button opens a window listing
-  every copper and dielectric layer with its thickness, each dielectric's εr and each copper
-  layer's resistivity. Thicknesses show in µm, mm, mil or oz. The stackup is locked to
-  KiCad's values by default. Untick **Lock to imported values** to try other thicknesses and
-  εr: the layers restack, and every DC and AC analysis, the 3D view and the reports use the
+  every copper and dielectric layer with its thickness, each dielectric's material, εr and
+  in-plane thermal conductivity, and each copper layer's resistivity. Thicknesses show in
+  µm, mm, mil or oz. The stackup is locked to KiCad's values by default. Untick **Lock to
+  imported values** to try other thicknesses, materials and εr. Each dielectric's material
+  is a drop-down of the materials KiPI knows; choosing one sets its typical εr and thermal
+  conductivity. The layers restack, and every DC and AC analysis, the 3D view and the reports use the
   edited stackup. The PI setup keeps it. KiCad's API cannot change a board's stackup yet, so
   edits stay in KiPI.
 

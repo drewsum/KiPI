@@ -165,10 +165,11 @@ Below that:
   via in the PCB editor.
 
 The **Stackup** toolbar button opens a window listing every copper and dielectric layer
-with its thickness (in µm, mm, mil or oz), each dielectric's εr and each copper layer's
-resistivity, with the copper **Resistivity** and **TCR** for the whole board. The stackup is
+with its thickness (in µm, mm, mil or oz), each dielectric's material, εr and thermal
+conductivity, and each copper layer's resistivity, with the copper **Resistivity** and **TCR** for the whole board. The stackup is
 locked to KiCad's values by default; untick **Lock to imported values** to try other
-thicknesses and εr, which every DC and AC analysis then uses and the setup keeps. KiCad's
+thicknesses, materials and εr (choosing a material from the list sets its typical εr and
+thermal conductivity), which every DC and AC analysis then uses and the setup keeps. KiCad's
 API cannot change a board's stackup yet, so enter a stackup you settle on in KiCad's Board
 Setup yourself.
 

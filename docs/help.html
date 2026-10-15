@@ -359,8 +359,8 @@ of decimals, plus more when a small typed value needs them.</p>
 <!-- ================================================================== STACKUP -->
 <h2 id="stackup">Stackup window</h2>
 <p>The <b>Stackup</b> toolbar button opens a window with the board's layers top to bottom:
-each copper layer and each dielectric with its thickness, each dielectric's εr, and each
-copper layer's resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
+each copper layer and each dielectric with its thickness, each dielectric's material, εr and
+in-plane thermal conductivity, and each copper layer's resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
 draws it. The window can stay open beside the main window.</p>
 <details open>
 <summary>Controls</summary>
@@ -368,8 +368,9 @@ draws it. The window can stay open beside the main window.</p>
 <table>
   <tr><th>Control</th><th>What it does</th></tr>
   <tr><td><b>Lock to imported values</b></td><td class="wrap">Ticked (the default), the
-    thicknesses and εr are the ones read from KiCad's board stackup. Untick it to try others:
-    type a new thickness for any copper or dielectric layer, or a new εr for a dielectric.
+    thicknesses, materials and εr are the ones read from KiCad's board stackup. Untick it to
+    try others: type a new thickness for any copper or dielectric layer, or choose a
+    dielectric's material or type its εr.
     The layers above and below move with a thickness change, and the total board thickness
     shows under the table next to KiCad's. Ticking it again goes back to KiCad's
     values.</td></tr>
@@ -377,9 +378,17 @@ draws it. The window can stay open beside the main window.</p>
     mm, mil or oz (1 oz = 35 µm). Ounces are a copper weight, so in oz the dielectrics show
     in mil. In a µm or mm field a value can also carry its own unit, like <code>35um</code>
     or <code>0.2mm</code>. KiPI remembers the unit.</td></tr>
+  <tr><td><b>Material</b></td><td class="wrap">Each dielectric's material, from the list
+    KiPI knows: FR4 core and prepreg, polyimide, Kapton, Rogers RO4350B, RO4003C, RO3003 and
+    RT/duroid, PTFE, polyolefin, alumina and aluminum nitride ceramics, and an aluminum metal
+    core. KiCad's own name for the material is listed too when it is not one of these.
+    Choosing a material sets its typical εr (a datasheet value near 1 GHz; type another if
+    your laminate's differs) and its in-plane thermal conductivity <b>k</b>, which the
+    electro-thermal solve uses unless the Thermal tab's <b>Laminate k</b> overrides it. A ⚠
+    beside k means KiPI did not recognize KiCad's name and took the layer as FR4.</td></tr>
   <tr><td><b>εr</b></td><td class="wrap">Each dielectric's constant, for the AC solve.
-    <code>default</code> means the stackup gives none, and the AC setup's <b>Default εr</b>
-    applies.</td></tr>
+    <code>default</code> means the stackup gives none (or the material is a metal), and the AC
+    setup's <b>Default εr</b> applies.</td></tr>
   <tr><td><b>Resistivity at 20 °C</b> (table)</td><td class="wrap">A copper layer's own
     resistivity, e.g. for electroplated or rolled foil; <code>default</code> uses the
     <b>Resistivity</b> below.</td></tr>
@@ -388,8 +397,8 @@ draws it. The window can stay open beside the main window.</p>
     plating, and its temperature coefficient (0.00393 /°C for copper), used by the
     electro-thermal solve. These are setup settings, so they can be changed while the
     stackup is locked.</td></tr>
-  <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses and εr, still
-    unlocked.</td></tr>
+  <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses, materials and εr,
+    still unlocked.</td></tr>
 </table>
 <ul>
   <li>The stackup and resistivities are saved with the PI setup. An edited stackup is used
@@ -756,7 +765,9 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     the board.</td></tr>
   <tr><td>Laminate k</td><td class="wrap">In-plane dielectric conductivity. <i>From stackup</i>
     looks it up from each dielectric's material name (FR4, prepregs, polyimide, PTFE, Rogers,
-    ceramic, aluminum…), falling back to FR4 with a warning.</td></tr>
+    ceramic, aluminum…), falling back to FR4 with a warning. The
+    <a href="#stackup">Stackup window</a> shows each dielectric's k and lets you choose
+    another material.</td></tr>
   <tr><td>Max copper temperature</td><td class="wrap">Optional limit: copper hotter than this
     on any layer is FAIL.</td></tr>
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
