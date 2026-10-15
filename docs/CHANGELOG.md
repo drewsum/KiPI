@@ -31,7 +31,7 @@ milestones rather than versions that were ever set.
   probes, and the capacitors in the model coloured by model, with those left out for want
   of a model crossed. It fills in while the rail solves, the parts first and then the mesh,
   and the Impedance tab comes to the front when the results arrive. Hover a part for its
-  model; scroll to zoom, drag to pan, double-click to fit. Saved AC results keep the map.
+  model. The view is fixed, fitted to the board. Saved AC results keep the map.
 
 ### Changed
 - The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity

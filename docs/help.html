@@ -1157,7 +1157,8 @@ target), and every other probe's |Z| at the same frequency.</p>
 <a href="#ac-report">HTML report</a>: the solver's mesh of the rail (copper colored) and its
 ground (blue-gray), the board outline, the probes as red stars, and the capacitors in the model
 as dots, one color per capacitor model. Capacitors between the rail and ground that have no
-model, and so are left out, are crossed.</p>
+model, and so are left out, are crossed. The view is fixed, always fitted to the
+board.</p>
 <p>The map fills in while the rail solves: the parts as soon as the solve starts, then the
 mesh once it is built. The tab comes to the front for the solve; the
 <b>Impedance</b> tab comes back to the front when the results arrive.</p>
@@ -1169,7 +1170,6 @@ mesh once it is built. The tab comes to the front for the solve; the
     the copper alone.</td></tr>
   <tr><td>Hover a part</td><td class="wrap">Its reference, value, side and capacitor model
     (C, ESL, ESR).</td></tr>
-  <tr><td>Zoom / pan / fit</td><td class="wrap">Scroll wheel / drag / double-click.</td></tr>
 </table>
 <p>The map belongs to each rail's result, so switching <b>Rail</b> shows that rail's map, and
 saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>

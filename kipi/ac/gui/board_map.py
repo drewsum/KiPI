@@ -8,14 +8,13 @@ from __future__ import annotations
 from typing import List, Optional
 
 import numpy as np
-from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from kipi.ac.board_map import ACMap
 from kipi.ac.gui.plot import COLORS
 
 EMPTY = "Solve a rail in AC mode to see its mesh, capacitors and probes here."
-HINT = "Hover a part for its model. Scroll to zoom and drag to pan; double-click to fit."
+HINT = "Hover a part for its model."
 RAIL_COLOR = "#b98a5c"         # opaque: see-through triangles show seams
 GROUND_COLOR = "#4a6178"
 ALL_LAYERS = -1
@@ -55,12 +54,8 @@ class BoardMap(QWidget):
         # Else the controls set the main window's minimum width (it must fit small screens).
         self.setMinimumWidth(120)
         self.canvas.mpl_connect("motion_notify_event", self._hover)
-        self.canvas.mpl_connect("scroll_event", self._scroll)
-        self.canvas.mpl_connect("button_press_event", self._press)
-        self.canvas.mpl_connect("button_release_event", self._release)
         self.board_map: Optional[ACMap] = None
         self._parts: List[tuple] = []          # (x, y, text) of every part drawn
-        self._pan = None                       # (x, y) in data units where a drag started
         self._annot = None
         self._layer_ids: List[int] = []
         self._style()
@@ -93,10 +88,9 @@ class BoardMap(QWidget):
         if board_map is None:
             self.clear()
             return
-        same = self.board_map is board_map
         self.board_map = board_map
         self._fill_layers()
-        self._redraw(keep_view=same)
+        self._redraw()
 
     def _fill_layers(self):
         """The layer choice: every layer the mesh is on, keeping the choice made."""
@@ -118,13 +112,13 @@ class BoardMap(QWidget):
         self._layer_ids = ids
 
     # ------------------------------------------------------------------ drawing
-    def _redraw(self, *_args, keep_view: bool = True):
+    def _redraw(self, *_args):
+        """Draw the map, always fitted to the board: the view is fixed, with no zoom or pan."""
         m = self.board_map
         if m is None:
             return
         from matplotlib.collections import PolyCollection
         ax = self.ax
-        view = (ax.get_xlim(), ax.get_ylim()) if keep_view and ax.has_data() else None
         ax.clear()
         self._annot = None
         self._style()
@@ -162,11 +156,7 @@ class BoardMap(QWidget):
                 ax.annotate(p.ref, (p.x, p.y), xytext=(0, 9), textcoords="offset points",
                             ha="center", color="#ffb0b0", fontsize=8, zorder=6)
         ax.set_aspect("equal", adjustable="box")
-        if view is not None:
-            ax.set_xlim(*view[0])
-            ax.set_ylim(*view[1])
-        else:
-            self._fit()
+        self._fit()
         ax.set_xlabel("x (mm)")
         ax.set_ylabel("y (mm)")
         where = ("all layers" if layer in (None, ALL_LAYERS) else m.layer_name(layer))
@@ -200,15 +190,6 @@ class BoardMap(QWidget):
 
     # ------------------------------------------------------------------ mouse
     def _hover(self, event):
-        if self._pan is not None and event.inaxes is self.ax and event.xdata is not None:
-            dx, dy = self._pan[0] - event.xdata, self._pan[1] - event.ydata
-            ax = self.ax
-            x0, x1 = ax.get_xlim()
-            y0, y1 = ax.get_ylim()
-            ax.set_xlim(x0 + dx, x1 + dx)
-            ax.set_ylim(y0 + dy, y1 + dy)
-            self.canvas.draw_idle()
-            return
         text = self._part_at(event)
         if self._annot is None:
             self._annot = self.ax.annotate(
@@ -234,33 +215,6 @@ class BoardMap(QWidget):
         d = np.hypot(xy[:, 0] - event.x, xy[:, 1] - event.y)
         k = int(np.argmin(d))
         return self._parts[k] if d[k] <= HOVER_PX else None
-
-    def _scroll(self, event):
-        if self.board_map is None or event.inaxes is not self.ax or event.xdata is None:
-            return
-        f = 1 / 1.25 if event.button == "up" else 1.25
-        ax = self.ax
-        x0, x1 = ax.get_xlim()
-        y0, y1 = ax.get_ylim()
-        cx, cy = event.xdata, event.ydata
-        ax.set_xlim(cx + (x0 - cx) * f, cx + (x1 - cx) * f)
-        ax.set_ylim(cy + (y0 - cy) * f, cy + (y1 - cy) * f)
-        self.canvas.draw_idle()
-
-    def _press(self, event):
-        if self.board_map is None or event.inaxes is not self.ax or event.xdata is None:
-            return
-        if event.dblclick:
-            self._fit()
-            self.canvas.draw_idle()
-        elif event.button == 1:
-            self._pan = (event.xdata, event.ydata)
-            self.canvas.setCursor(Qt.ClosedHandCursor)
-
-    def _release(self, _event):
-        if self._pan is not None:
-            self._pan = None
-            self.canvas.unsetCursor()
 
     def save_png(self, path: str):
         self.figure.savefig(path, dpi=150, facecolor=self.figure.get_facecolor())
