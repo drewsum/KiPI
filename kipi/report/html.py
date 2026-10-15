@@ -257,12 +257,13 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     parts.append("<h2 id='loads'>Loads</h2>")
     parts.append(_table(
         ["Load", "Group", "I (A)", "Nominal (V)", "V effective (V)", "Drop / boost (mV)", "%",
-         "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance %", "Result"],
+         "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance %", "Min V", "Result"],
         [[_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
           _num(l.v_effective, ".6f"), fmt_drop(l.drop, unit=""), _num(abs(l.drop_pct), ".3f"),
           _num(l.v_worst, ".6f"), fmt_drop(l.drop_worst, unit=""),
           _num(abs(l.drop_worst_pct), ".3f"),
           "" if l.tolerance_pct is None else f"±{l.tolerance_pct:g}",
+          _num(l.min_v, "g"),
           _verdict(l.passed, l.status)]
          for l in tree.loads]))
     parts.append("<p class='note'>Drop: below the VRM set point. Boost: above it, e.g. near a "

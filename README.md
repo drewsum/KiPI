@@ -157,6 +157,8 @@ To try it without a design of your own, open the example board in
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
 * **Ground pins** (optional) include the ground return.
+* **Min V** (optional) is the lowest supply voltage the part's datasheet allows; the load
+  FAILS when its worst supply pin is below it.
 * **Tolerance** (± %) is the PASS/FAIL limit. Each load is judged by its worst pin: the one
   furthest from the VRM set point, below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point

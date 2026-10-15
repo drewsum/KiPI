@@ -339,3 +339,26 @@ def test_unconverged_group_leaves_its_loads_unjudged(monkeypatch):
     assert ld.passed is None and ld.verdict == NOT_CONVERGED
     assert res.groups["VIN"].converged is False
     assert by_name(res.loads, "U2").passed is True     # its own rail converged
+
+
+def test_load_below_its_datasheet_minimum_fails():
+    s = setup("ldo")
+    s.loads[0].tolerance_pct = None
+    s.loads[0].min_v = 3.299                 # 1 A over R(8) drops 3.9 mV below 3.3 V
+    ld = by_name(solve_tree(board(), s).loads, "U2")
+    assert ld.min_v == 3.299 and ld.passed is False
+    s.loads[0].min_v = 3.0
+    assert by_name(solve_tree(board(), s).loads, "U2").passed is True
+
+
+def test_min_v_and_max_drop_both_judge():
+    s = setup("ldo")                          # tolerance 1 %: passes
+    s.loads[0].min_v = 3.299                  # but below the minimum
+    assert by_name(solve_tree(board(), s).loads, "U2").passed is False
+
+
+def test_min_v_round_trips(tmp_path):
+    s = setup("ldo")
+    s.loads[0].min_v = 3.0
+    back = PISetup.load(s.save(tmp_path / "s.json"))
+    assert by_name(back.loads, "U2").min_v == 3.0

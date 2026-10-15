@@ -4,6 +4,13 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## Unreleased
+
+### Added
+- **Minimum supply voltage per load.** An optional **Min V** per load, the lowest supply
+  voltage its datasheet allows: the load FAILS when its worst supply pin is below it. It is
+  shown in the Loads table, the CSV export and the HTML report.
+
 ## 0.6.5 (2026-10-13): Drop and boost, limits and fixes
 
 ### Added

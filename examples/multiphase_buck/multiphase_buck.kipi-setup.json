@@ -162,7 +162,8 @@
         "pins": []
       },
       "tolerance_pct": 3.0,
-      "groups": []
+      "groups": [],
+      "min_v": null
     }
   ],
   "links": [],
