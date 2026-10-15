@@ -392,6 +392,13 @@ were left out for having no model. Each rail keeps its last result, so switching
 another rail's curves without solving again. **Export CSV…** writes |Z|, R and X at every
 frequency.
 
+Tick **HTML report** next to **Solve rail** to also write `<board>_<rail>_ac_report.html`
+next to the board after each solve; **Report** opens it. Like the DC report, it is one
+offline file you can share. It has the probe table with margins, an interactive |Z| and phase
+plot with the targets and each capacitor model's own curve, a board map of the rail's copper
+with the probes and capacitors marked, the capacitor models, and the sweep, mesh and solver
+details.
+
 ![The impedance plot of the example's 0.9 V core rail against its custom target, with the cursor on the anti-resonance and its values in the Info box](docs/images/ac_impedance.png)
 
 ### Tips and troubleshooting
@@ -461,7 +468,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
 | `kipi/dc/gui/` | The PI setup and results panel |
-| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the AC setup panel and impedance plot (`gui/`) |
+| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the AC setup panel and impedance plot (`gui/`) |
 | `kipi/gui/` | PySide6 application shell shared by both modes: main window, mode switch, 3D viewer, worker threads, About and Help |
 | `docs/help.html` | The user guide opened by **Help**; a single offline HTML file |
 | `kipi/compat.py` | Opens results files saved by earlier versions, from before modules moved |

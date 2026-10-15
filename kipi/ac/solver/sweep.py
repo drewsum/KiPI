@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -81,6 +82,7 @@ class ACResult:
     stats: ACStats = field(default_factory=ACStats)
     warnings: List[str] = field(default_factory=list)
     solve_s: float = 0.0
+    report_path: Optional[Path] = None    # the HTML report, when one was written
 
 
 class _Pads:

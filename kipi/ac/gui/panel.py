@@ -16,7 +16,7 @@ import numpy as np
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
-    QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox, QTableWidget,
     QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
@@ -470,11 +470,24 @@ class ACPanel(QWidget):
                                   "this rail. Problems that stop the solve are listed above "
                                   "in red.")
         self.btn_solve.clicked.connect(self._solve)
+        self.chk_report = QCheckBox("HTML report", self)
+        self.chk_report.setToolTip("Also write an HTML report (interactive impedance plot, "
+                                   "board map and tables) next to the board after each "
+                                   "rail's solve")
+        self.chk_report.toggled.connect(lambda on: setattr(self.setup.ac, "html_report", on))
+        self.btn_report = QPushButton("Report", self)
+        self.btn_report.setToolTip("Open the shown rail's HTML report in your browser")
+        self.btn_report.setVisible(False)
+        self.btn_report.clicked.connect(self._open_report)
         row.addWidget(QLabel("Rail"))
         row.addWidget(self.cmb_rail, 2)
         row.addWidget(QLabel("Ground"))
         row.addWidget(self.cmb_gnd, 2)
+        lay.addLayout(row)
+        row = QHBoxLayout()
         row.addWidget(self.btn_solve, 1)
+        row.addWidget(self.chk_report)
+        row.addWidget(self.btn_report)
         lay.addLayout(row)
 
         g_res = QGroupBox("Results", self)
@@ -597,6 +610,9 @@ class ACPanel(QWidget):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
+        self.chk_report.blockSignals(True)
+        self.chk_report.setChecked(s.html_report)
+        self.chk_report.blockSignals(False)
 
     # ------------------------------------------------------------------ data
     def nets(self) -> List[str]:
@@ -804,6 +820,7 @@ class ACPanel(QWidget):
         self.tbl_probes.setRowCount(0)
         self.txt_notes.clear()
         self.btn_export.setEnabled(False)
+        self.btn_report.setVisible(False)
 
     def show_error(self, message: str):
         self.txt_notes.setText(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
@@ -858,7 +875,15 @@ class ACPanel(QWidget):
         notes += [f"⚠ {html.escape(w)}" for w in result.warnings]
         self.txt_notes.setText("<br>".join(notes))
         self.btn_export.setEnabled(True)
+        self.btn_report.setVisible(getattr(result, "report_path", None) is not None)
         self.result_selected.emit(result)
+
+    def _open_report(self):
+        path = getattr(self.result, "report_path", None)
+        if path:
+            from qtpy.QtCore import QUrl
+            from qtpy.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _export_csv(self):
         if self.result is None:

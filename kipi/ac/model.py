@@ -73,6 +73,7 @@ class ACSettings:
     # Last rail (VRM name) and ground net chosen for a solve.
     rail: str = ""
     ground: str = ""
+    html_report: bool = False             # write an HTML report after each rail's solve
 
     def frequencies(self):
         import numpy as np

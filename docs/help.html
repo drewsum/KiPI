@@ -172,6 +172,7 @@ ol.steps > li { margin-bottom: 6px; }
       <ol>
         <li><a href="#ac-plot">Impedance plot and cursor</a></li>
         <li><a href="#ac-table">Results table</a></li>
+        <li><a href="#ac-report">AC HTML report</a></li>
         <li><a href="#ac-reading">Reading the curve</a></li>
       </ol></li>
     <li class="group">Workflows</li>
@@ -963,6 +964,9 @@ target fields; the inputs are remembered for next time.</p>
 nets with grounds first, defaulting to the VRM's ground pins' net. <b>Solve rail</b> saves the
 setup and runs the sweep; problems that stop it are listed in red above. The log shows the
 field solves as they go.</p>
+<p>Tick <b>HTML report</b> next to <b>Solve rail</b> to also write
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code> next to the board after each rail's solve;
+<b>Report</b> opens the shown rail's report. See <a href="#ac-report">AC HTML report</a>.</p>
 <p>Each rail keeps its last result: switch <b>Rail</b> to look at another rail's curves
 without solving again. If you change the rail while a solve is running, the result is kept
 for its own rail and the notes say so.</p>
@@ -1013,6 +1017,31 @@ target), and every other probe's |Z| at the same frequency.</p>
 series links included, the total plane capacitance, the solve size and time, capacitors left
 out for having no model, and any warnings. <b>Export CSV…</b> writes |Z|, R and X of every probe
 at every frequency.</p>
+</div>
+</details>
+
+<details id="ac-report">
+<summary>AC HTML report</summary>
+<div class="body">
+<p>With <b>HTML report</b> ticked, each rail's solve also writes
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code> next to the board, replacing that rail's
+last one. Like the DC report, it is a single offline file you can email. It holds:</p>
+<ul>
+  <li>a summary and the probe table: pins, minimum and worst |Z|, the target, the margin in dB
+    at the worst point (positive passes), PASS/FAIL, and an overall verdict;</li>
+  <li>an interactive impedance plot, with |Z| above and phase below, and the targets dashed.
+    Drag to zoom, double-click to reset, hover for f, |Z|, R and X. Click a legend entry to
+    hide or show a curve. The grey dotted curves, hidden at first, are each capacitor model on
+    its own (one part, without mounting), useful for matching dips to capacitor banks;</li>
+  <li>a board map seen from the top: the board outline, the rail's copper on every layer
+    merged, the probes as stars and each capacitor colored by its model. Capacitors left out
+    for having no model show as grey crosses;</li>
+  <li>the capacitor models (C, ESL, ESR, self-resonance, how many parts and which), the series
+    links, the sweep, mesh and copper settings, and the solver's size, backend and time;</li>
+  <li>notes: capacitors left out and any warnings.</li>
+</ul>
+<p>If the report can't be written, the log says why; the solve's results are kept either
+way.</p>
 </div>
 </details>
 
@@ -1184,6 +1213,7 @@ them a model or confirm they really do not belong on this rail.</p>
     pads, vias, parts).</td></tr>
   <tr><td><code>*.kipi-results</code></td><td class="wrap">A saved DC solve (Python pickle).</td></tr>
   <tr><td><code>&lt;board&gt;_kipi_report.html</code></td><td class="wrap">The DC HTML report.</td></tr>
+  <tr><td><code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code></td><td class="wrap">An AC rail's HTML report.</td></tr>
   <tr><td><code>*.csv</code></td><td class="wrap">DC tables, or an AC rail's impedance.</td></tr>
   <tr><td><code>*.vtm</code></td><td class="wrap">DC 3D results for ParaView.</td></tr>
   <tr><td><code>kipi-&lt;date&gt;-&lt;time&gt;-&lt;pid&gt;.log</code></td><td class="wrap">The session

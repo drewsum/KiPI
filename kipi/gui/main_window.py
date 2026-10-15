@@ -842,16 +842,29 @@ class MainWindow(QMainWindow):
         self._save_setup()
         import copy
         frozen = copy.deepcopy(setup)
+        report_path = None
+        if frozen.ac.html_report and self._setup_path is not None:
+            from kipi.ac.html_report import report_name
+            report_path = self._setup_path.parent / report_name(self._results_stem(), vrm_name)
 
         def work(progress):
             from kipi.ac.solver import ACError, solve_ac
             from kipi.core.mesh.mesher import MeshError
             from kipi.dc.solver import SolveError
             try:
-                return solve_ac(snap, frozen, vrm_name, gnd, progress), None
+                result = solve_ac(snap, frozen, vrm_name, gnd, progress)
             except (ACError, MeshError, SolveError) as e:
                 progress.warn(str(e))
                 return None, str(e)
+            if report_path is not None:
+                from kipi.ac.html_report import write_ac_report
+                with progress.timed("Writing HTML report"):
+                    try:
+                        result.report_path = write_ac_report(report_path, result, snap, frozen,
+                                                             progress)
+                    except Exception as e:        # the solve's results stand without it
+                        progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+            return result, None
 
         def done(out):
             result, error = out

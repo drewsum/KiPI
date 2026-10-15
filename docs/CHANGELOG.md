@@ -25,6 +25,12 @@ milestones rather than versions that were ever set.
     tolerance, load step and slew rate.
   - Each rail keeps its last result; switching the rail shows its curves without solving
     again. *Export CSV…* writes |Z|, R and X per probe.
+  - *HTML report* next to *Solve rail* also writes `<board>_<rail>_ac_report.html`, a
+    single offline file like the DC report, and *Report* opens it. It contains the probe
+    table with margins and PASS/FAIL, an interactive |Z| and phase plot with the targets and
+    each capacitor model's own curve, and a board map of the rail's copper with the probes
+    and capacitors. It also lists the capacitor models, series links, settings and solver
+    statistics.
 - **User guide and tooltips.** *Help* in the toolbar (or F1) opens `docs/help.html`, an
   offline guide to every button, the workflows and the results, with collapsible sections.
   Every button, box and table in KiPI now has a tooltip.
