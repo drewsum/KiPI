@@ -153,11 +153,6 @@ ground.
 Below that:
 
 * **Copper layers** toggles layers in the view.
-* **Stackup** lists every copper and dielectric layer with its thickness. It is locked to
-  KiCad's values by default; untick **Lock to imported values** to try other thicknesses,
-  which every DC and AC analysis then uses and the setup keeps. **Copy to KiCad** carries
-  them back to the board, or lists them to enter in Board Setup where KiCad's API cannot
-  take them (KiCad 9 and 10).
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
   shows or hides vias, pads, the board and part **Models**. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
@@ -168,6 +163,14 @@ Below that:
   geometry and result views each remember their own setting.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
   via in the PCB editor.
+
+The **Stackup** toolbar button opens a window listing every copper and dielectric layer
+with its thickness (in µm, mm, mil or oz), each dielectric's εr and each copper layer's
+resistivity, with the copper **Resistivity** and **TCR** for the whole board. The stackup is
+locked to KiCad's values by default; untick **Lock to imported values** to try other
+thicknesses and εr, which every DC and AC analysis then uses and the setup keeps. KiCad's
+API cannot change a board's stackup yet, so enter a stackup you settle on in KiCad's Board
+Setup yourself.
 
 Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. Drag to rotate,
 scroll to zoom and shift-drag (or middle-drag) to pan. **About** shows the KiPI version and
@@ -268,13 +271,6 @@ ignored. The Notes tab lists these substitutions.
 **Mesh tab**: **Max edge** is the largest triangle edge in mm; smaller is more accurate and
 slower. **Via grading** controls how fast the mesh refines towards plated holes, and
 **Barrel plating** sets the via wall thickness. The defaults suit most boards.
-
-**Copper tab**: **Resistivity** at 20 °C, by default annealed copper (1.724 µΩ·cm), applies to
-every layer and to via barrel plating. **TCR** is the temperature coefficient that the
-electro-thermal co-simulation uses (0.00393 /°C for copper). The table lists each copper layer.
-Give a layer its own resistivity to override the default, for example for electroplated or
-rolled-annealed foil. Leave it at **default** to use the value above. Layer thicknesses come
-from the **Stackup** pane (KiCad's, or as edited there). **Thickness unit** shows them in µm, mil or oz (1 oz = 35 µm).
 
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
 the board and the warmer copper become more resistive. Set:

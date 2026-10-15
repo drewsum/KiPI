@@ -125,11 +125,11 @@ ol.steps > li { margin-bottom: 6px; }
     <li><a href="#window">The main window</a></li>
     <li class="group">Interface reference</li>
     <li><a href="#toolbar">Toolbar</a></li>
+    <li><a href="#stackup">Stackup window</a></li>
     <li><a href="#board-panel">Board panel</a>
       <ol>
         <li><a href="#nets">Nets</a></li>
         <li><a href="#layers">Copper layers</a></li>
-        <li><a href="#stackup">Stackup</a></li>
         <li><a href="#display">Display</a></li>
         <li><a href="#info">Info</a></li>
       </ol></li>
@@ -146,7 +146,6 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#dc-links">Series links</a></li>
         <li><a href="#dc-solve-tab">Solve</a></li>
         <li><a href="#dc-mesh">Mesh</a></li>
-        <li><a href="#dc-copper">Copper</a></li>
         <li><a href="#dc-thermal">Thermal</a></li>
       </ol></li>
     <li><a href="#dc-solving">Solving</a></li>
@@ -341,6 +340,8 @@ of decimals, plus more when a small typed value needs them.</p>
   <tr><td><b>Open results…</b></td><td class="wrap">Reopens saved results without solving again. Load the same board
     first. In DC mode it opens a DC solve saved with <b>Export ▾ → Save results…</b>; in AC
     mode, the rails saved with the AC panel's <b>Save results…</b>.</td></tr>
+  <tr><td><b>Stackup</b></td><td class="wrap">Opens the <a href="#stackup">Stackup
+    window</a>: the board's layers with their thicknesses, εr and copper resistivity.</td></tr>
   <tr><td><b>Help</b> <kbd>F1</kbd></td><td class="wrap">Opens this guide in your web
     browser.</td></tr>
   <tr><td><b>About</b></td><td class="wrap">Version, author and project links, and how often
@@ -352,6 +353,57 @@ of decimals, plus more when a small typed value needs them.</p>
     shows that mode's panel. The DC setup and results are kept while you are in AC and come
     back when you switch to DC. You cannot switch while a task is running.</td></tr>
 </table>
+</div>
+</details>
+
+<!-- ================================================================== STACKUP -->
+<h2 id="stackup">Stackup window</h2>
+<p>The <b>Stackup</b> toolbar button opens a window with the board's layers top to bottom:
+each copper layer and each dielectric with its thickness, each dielectric's εr, and each
+copper layer's resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
+draws it. The window can stay open beside the main window.</p>
+<details open>
+<summary>Controls</summary>
+<div class="body">
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td><b>Lock to imported values</b></td><td class="wrap">Ticked (the default), the
+    thicknesses and εr are the ones read from KiCad's board stackup. Untick it to try others:
+    type a new thickness for any copper or dielectric layer, or a new εr for a dielectric.
+    The layers above and below move with a thickness change, and the total board thickness
+    shows under the table next to KiCad's. Ticking it again goes back to KiCad's
+    values.</td></tr>
+  <tr><td><b>Thickness unit</b></td><td class="wrap">Shows and takes the thicknesses in µm,
+    mm, mil or oz (1 oz = 35 µm). Ounces are a copper weight, so in oz the dielectrics show
+    in mil. In a µm or mm field a value can also carry its own unit, like <code>35um</code>
+    or <code>0.2mm</code>. KiPI remembers the unit.</td></tr>
+  <tr><td><b>εr</b></td><td class="wrap">Each dielectric's constant, for the AC solve.
+    <code>default</code> means the stackup gives none, and the AC setup's <b>Default εr</b>
+    applies.</td></tr>
+  <tr><td><b>Resistivity at 20 °C</b> (table)</td><td class="wrap">A copper layer's own
+    resistivity, e.g. for electroplated or rolled foil; <code>default</code> uses the
+    <b>Resistivity</b> below.</td></tr>
+  <tr><td><b>Resistivity</b>, <b>TCR</b></td><td class="wrap">Resistivity at 20 °C (annealed
+    copper, 1.724 µΩ·cm, by default) of every layer without its own value and of via
+    plating, and its temperature coefficient (0.00393 /°C for copper), used by the
+    electro-thermal solve. These are setup settings, so they can be changed while the
+    stackup is locked.</td></tr>
+  <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses and εr, still
+    unlocked.</td></tr>
+</table>
+<ul>
+  <li>The stackup and resistivities are saved with the PI setup. An edited stackup is used
+    again the next time the board is opened (unlocked). If a layer has been added, removed
+    or renamed in KiCad since, the log says so and KiCad's stackup is used.</li>
+  <li>To compare stackups, solve, edit, and solve again. A stackup change clears the DC
+    results, which were for the old stackup; the AC results stay until a rail is solved
+    again. Reports note a stackup edited in KiPI.</li>
+  <li>KiCad's API cannot change a board's stackup yet, so edits stay in KiPI. To keep a
+    stackup you settle on, enter it in KiCad's <i>Board Setup → Board Stackup → Physical
+    Stackup</i>.</li>
+  <li>A board snapshot (<b>Save snapshot</b>) keeps KiCad's stackup; the edits live in the
+    setup.</li>
+</ul>
 </div>
 </details>
 
@@ -392,42 +444,6 @@ are shown, so one layer's outlier does not wash out the others.</p>
 </div>
 </details>
 
-<details id="stackup">
-<summary>Stackup</summary>
-<div class="body">
-<p>The board's layers top to bottom: each copper layer and each dielectric with its
-thickness, and the dielectric's εr. Every analysis, DC and AC, uses this stackup, and the 3D
-view draws it.</p>
-<table>
-  <tr><th>Control</th><th>What it does</th></tr>
-  <tr><td><b>Lock to imported values</b></td><td class="wrap">Ticked (the default), the
-    thicknesses are the ones read from KiCad's board stackup. Untick it to try others: type a
-    new thickness for any copper or dielectric layer. The layers above and below move with
-    it, and the total board thickness shows under the table next to KiCad's. Ticking it
-    again goes back to KiCad's thicknesses.</td></tr>
-  <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses, still
-    unlocked.</td></tr>
-  <tr><td><b>Copy to KiCad</b></td><td class="wrap">Sets the edited thicknesses in the board's
-    stackup in KiCad. KiCad 9 and 10 cannot change a stackup through their API yet, so KiPI
-    then lists the thicknesses to enter in <i>Board Setup → Board Stackup → Physical
-    Stackup</i>, with a button to copy them as text. A dielectric made of several sublayers
-    keeps its sublayers' proportions.</td></tr>
-</table>
-<ul>
-  <li>Thicknesses are in µm and take units and prefixes like every value field: <code>70</code>,
-    <code>70um</code> or <code>0.2mm</code>.</li>
-  <li>Edited thicknesses are saved with the PI setup and used again the next time the board
-    is opened (unlocked). If a layer has been added, removed or renamed in KiCad since, the
-    log says so and KiCad's stackup is used.</li>
-  <li>To compare stackups, solve, edit, and solve again. A thickness change clears the DC
-    results, which were for the old stackup; the AC results stay until a rail is solved
-    again. Reports note a stackup edited in KiPI.</li>
-  <li>A board snapshot (<b>Save snapshot</b>) keeps KiCad's stackup; the edits live in the
-    setup.</li>
-</ul>
-</div>
-</details>
-
 <details id="display">
 <summary>Display</summary>
 <div class="body">
@@ -461,7 +477,7 @@ view draws it.</p>
     KiCad</b> to update it.</li>
   <li>The <b>Z scale</b> stretches the board but not the parts: top-side parts sit on the
     stretched board at their true height, and on a board made thicker or thinner in the
-    <a href="#stackup">Stackup</a> pane.</li>
+    <a href="#stackup">Stackup window</a>.</li>
   <li>Clicks go through the models to the copper beneath, so probing works as without
     them.</li>
   <li>A part whose model KiCad cannot find is named in the log with the missing path. If
@@ -721,17 +737,6 @@ many groups will be solved, e.g. <b>Solve 3 of 5 net groups</b>.</p>
   <tr><td>Barrel plating</td><td class="wrap">Via and PTH wall thickness, µm.</td></tr>
 </table>
 <p>The defaults suit most boards.</p>
-</div>
-</details>
-
-<details id="dc-copper">
-<summary>Copper tab</summary>
-<div class="body">
-<p><b>Resistivity</b> at 20 °C (annealed copper, 1.724 µΩ·cm, by default) applies to every layer
-and to via plating. <b>TCR</b> (0.00393 /°C for copper) is used by the electro-thermal solve.
-The table lists each layer's thickness, from the <a href="#stackup">Stackup</a> pane (KiCad's, or as edited there), and lets you override its
-resistivity, e.g. for electroplated or rolled foil; <code>default</code> uses the value above.
-<b>Thickness unit</b> shows the thicknesses in µm, mil or oz (1 oz = 35 µm).</p>
 </div>
 </details>
 

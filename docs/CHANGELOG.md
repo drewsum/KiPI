@@ -13,18 +13,18 @@ milestones rather than versions that were ever set.
   works in every field whose unit is an SI unit (Ω, F, H, Hz, A, V, W, m). A field keeps
   its usual decimals but shows more when a small typed value needs them, so 10 pF in a µF
   field reads 0.00001 µF instead of rounding to zero. See *Typing values* in the help.
-- **Editable stackup** (#61). A new **Stackup** pane in the Board panel lists every copper
-  and dielectric layer with its thickness and εr. It is locked to KiCad's values by
-  default. Untick **Lock to imported values** to try other copper and dielectric
-  thicknesses: the layers restack, and every DC and AC analysis, the 3D view and the
-  reports use the edited stackup. The edits are saved with the PI setup. **Copy to KiCad**
-  sends them to the board's stackup in KiCad. KiCad 9 and 10 do not carry out the API's
-  stackup update yet, so KiPI then lists the thicknesses to enter in Board Setup, with a
-  button to copy them as text.
+- **Stackup window** (#61). The new **Stackup** toolbar button opens a window listing
+  every copper and dielectric layer with its thickness, each dielectric's εr and each copper
+  layer's resistivity. Thicknesses show in µm, mm, mil or oz. The stackup is locked to
+  KiCad's values by default. Untick **Lock to imported values** to try other thicknesses and
+  εr: the layers restack, and every DC and AC analysis, the 3D view and the reports use the
+  edited stackup. The PI setup keeps it. KiCad's API cannot change a board's stackup yet, so
+  edits stay in KiPI.
 
 ### Changed
-- The **Cut** plane (axis, slider and **Flip**) is gone from the Display options, to make
-  room for the Stackup pane.
+- The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity
+  moved to the Stackup window, since the AC solve uses them too.
+- The **Cut** plane (axis, slider and **Flip**) is gone from the Display options.
 - **Flat current arrows** (#63). The current-density view's arrows are flat 2D arrows
   drawn on each copper layer instead of 3D cone-and-cylinder models. They lie on the
   copper's top face and are repeated on its bottom face, so they show from above and
