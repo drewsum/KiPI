@@ -85,14 +85,18 @@ class MainWindow(QMainWindow):
         self._pending_stackup = None      # edited while a task ran; applied after
         self.mode = "dc"
 
-        # The central area: the 3D view and, in AC mode, the impedance plot as a second tab.
+        # The central area: the 3D view and, in AC mode, the impedance plot and the board
+        # map of the solve (#67).
+        from kipi.ac.gui.board_map import BoardMap
         from kipi.ac.gui.plot import ImpedancePlot
         self.views = QTabWidget(self)
         self.views.setDocumentMode(True)
         self.viewer = Viewer3D(self.views)
         self.plot = ImpedancePlot(self.views)
+        self.board_map = BoardMap(self.views)
         self.views.addTab(self.viewer, "3D view")
         self.views.addTab(self.plot, "Impedance")
+        self.views.addTab(self.board_map, "Board map")
         self.setCentralWidget(self.views)
         self.viewer.on_click(self._on_click)
         self.plot.cursor_moved.connect(self._show_cursor)
@@ -207,15 +211,16 @@ class MainWindow(QMainWindow):
             "Reopen saved AC impedance results (.kipi-ac-results); load the board first")
 
     def _set_plot_tab_shown(self, shown: bool):
-        """Show the impedance tab only in AC mode. QTabWidget.setTabVisible needs Qt 5.15;
-        older Qt disables the tab instead."""
-        i = self.views.indexOf(self.plot)
-        if hasattr(self.views, "setTabVisible"):
-            self.views.setTabVisible(i, shown)
-        else:
-            self.views.setTabEnabled(i, shown)
-        if not shown and self.views.currentIndex() == i:
-            self.views.setCurrentWidget(self.viewer)
+        """Show the impedance and board map tabs only in AC mode. QTabWidget.setTabVisible
+        needs Qt 5.15; older Qt disables the tabs instead."""
+        for w in (self.plot, self.board_map):
+            i = self.views.indexOf(w)
+            if hasattr(self.views, "setTabVisible"):
+                self.views.setTabVisible(i, shown)
+            else:
+                self.views.setTabEnabled(i, shown)
+            if not shown and self.views.currentIndex() == i:
+                self.views.setCurrentWidget(self.viewer)
 
     def _show_3d(self, then=None):
         """Bring the 3D view to the front (from the impedance tab), then run ``then``."""
@@ -592,8 +597,8 @@ class MainWindow(QMainWindow):
     def save_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save screenshot", "kipi.png", "PNG (*.png)")
         if path:
-            if self.views.currentWidget() is self.plot:
-                self.plot.save_png(path)
+            if self.views.currentWidget() in (self.plot, self.board_map):
+                self.views.currentWidget().save_png(path)
             else:
                 self.viewer.screenshot(path)
             self.log(f"Screenshot saved to {path}")
@@ -933,6 +938,7 @@ class MainWindow(QMainWindow):
         self.solve_panel.set_board(snap, setup, label)
         self.ac_panel.set_board(snap, setup, label)
         self.plot.clear()
+        self.board_map.clear()
         return setup
 
     def _save_setup(self):
@@ -1059,7 +1065,14 @@ class MainWindow(QMainWindow):
                 return
             self.ac_panel.show_result(result)
 
-        if self._run(work, done, "AC impedance solve") is not None:
+        def partial(board_map):
+            """The solve's board map as it fills: shown while the rail solves."""
+            first = self.board_map.board_map is not board_map
+            self.board_map.set_map(board_map)
+            if first and self.mode == "ac":
+                self.views.setCurrentWidget(self.board_map)
+
+        if self._run(work, done, "AC impedance solve", on_partial=partial) is not None:
             self.ac_panel.set_busy(True)
 
     def _show_ac_result(self, result):
@@ -1067,8 +1080,11 @@ class MainWindow(QMainWindow):
         that rail has not been solved)."""
         if result is None:
             self.plot.clear()
+            self.board_map.clear()
             return
         self.plot.set_result(result)
+        if self.board_map.board_map is not getattr(result, "board_map", None):
+            self.board_map.set_map(getattr(result, "board_map", None))  # None: saved before 0.7.2
         self.views.setCurrentWidget(self.plot)
 
     def _show_cursor(self, text: str):

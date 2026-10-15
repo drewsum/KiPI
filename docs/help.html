@@ -172,6 +172,7 @@ ol.steps > li { margin-bottom: 6px; }
     <li><a href="#ac-results">AC results</a>
       <ol>
         <li><a href="#ac-plot">Impedance plot and cursor</a></li>
+        <li><a href="#ac-map">Board map</a></li>
         <li><a href="#ac-table">Results table</a></li>
         <li><a href="#ac-report">AC HTML report</a></li>
         <li><a href="#ac-reading">Reading the curve</a></li>
@@ -334,9 +335,9 @@ of decimals, plus more when a small typed value needs them.</p>
     report.</td></tr>
   <tr><td><b>Top / Bottom / Iso</b></td><td class="wrap">Snap the 3D camera to look down on
     the board, up at its underside, or from an isometric angle. They also bring the 3D view
-    to the front from the Impedance tab.</td></tr>
+    to the front from the Impedance and Board map tabs.</td></tr>
   <tr><td><b>Screenshot…</b></td><td class="wrap">Saves whatever is in the middle as a PNG:
-    the 3D view, or the impedance plot when its tab is showing.</td></tr>
+    the 3D view, the impedance plot or the board map, whichever tab is showing.</td></tr>
   <tr><td><b>Open results…</b></td><td class="wrap">Reopens saved results without solving again. Load the same board
     first. In DC mode it opens a DC solve saved with <b>Export ▾ → Save results…</b>; in AC
     mode, the rails saved with the AC panel's <b>Save results…</b>.</td></tr>
@@ -532,8 +533,9 @@ in your layout. It needs a live KiCad connection (not a snapshot).</p>
     the <a href="#info">Info</a> box and the status bar. Clicks pass through
     <a href="#part-models">part models</a>.</td></tr>
 </table>
-<p>In AC mode a second tab, <b>Impedance</b>, appears beside <b>3D view</b> and holds the
-<a href="#ac-plot">impedance plot</a>.</p>
+<p>In AC mode two more tabs appear beside <b>3D view</b>: <b>Impedance</b>, with the
+<a href="#ac-plot">impedance plot</a>, and <b>Board map</b>, with the
+<a href="#ac-map">mesh and parts of the solve</a>.</p>
 </div>
 </details>
 
@@ -1145,6 +1147,32 @@ the frequency under the mouse in the line above the plot.</p>
 equivalent L or C, the target there with PASS/FAIL and the margin in dB (positive is below the
 target), and every other probe's |Z| at the same frequency.</p>
 <p><b>Screenshot…</b> in the toolbar saves the plot as a PNG while its tab is showing.</p>
+</div>
+</details>
+
+<details open id="ac-map">
+<summary>Board map</summary>
+<div class="body">
+<p>The <b>Board map</b> tab shows the solve from above, as in the
+<a href="#ac-report">HTML report</a>: the solver's mesh of the rail (copper colored) and its
+ground (blue-gray), the board outline, the probes as red stars, and the capacitors in the model
+as dots, one color per capacitor model. Capacitors between the rail and ground that have no
+model, and so are left out, are crossed.</p>
+<p>The map fills in while the rail solves: the parts as soon as the solve starts, then the
+mesh once it is built. The tab comes to the front for the solve; the
+<b>Impedance</b> tab comes back to the front when the results arrive.</p>
+<table>
+  <tr><th>Control</th><th>Does</th></tr>
+  <tr><td><b>Layer</b></td><td class="wrap">The copper layer whose mesh is shown, or
+    <b>All layers</b> (the rail drawn over its ground).</td></tr>
+  <tr><td><b>Mesh edges</b></td><td class="wrap">Draws the triangles' edges. Untick it to see
+    the copper alone.</td></tr>
+  <tr><td>Hover a part</td><td class="wrap">Its reference, value, side and capacitor model
+    (C, ESL, ESR).</td></tr>
+  <tr><td>Zoom / pan / fit</td><td class="wrap">Scroll wheel / drag / double-click.</td></tr>
+</table>
+<p>The map belongs to each rail's result, so switching <b>Rail</b> shows that rail's map, and
+saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
 </div>
 </details>
 

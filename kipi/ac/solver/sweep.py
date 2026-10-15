@@ -17,6 +17,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from kipi.ac.board_map import ACMap, MapMesh, build_map
 from kipi.ac.checks import rail_caps, rail_nets, validate_ac
 from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
 from kipi.ac.target import judged_from, target_at
@@ -95,6 +96,7 @@ class ACResult:
     solve_s: float = 0.0
     bandwidth_hz: Optional[float] = None  # the VRM's control loop bandwidth, if given
     report_path: Optional[Path] = None    # the HTML report, when one was written
+    board_map: Optional[ACMap] = None     # what the Board map tab shows (#67)
 
 
 class _Pads:
@@ -203,7 +205,13 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
         progress.warn(f"{len(missing)} capacitor(s) between the rail and {gnd} have no model "
                       f"and are left out: {', '.join(missing[:20])}"
                       f"{'…' if len(missing) > 20 else ''}")
+    # The board map, handed to the GUI as it fills: the parts now, the mesh once meshed.
+    board_map = build_map(snap, setup, vrm_name, rail, gnd, caps, missing,
+                          [p.name for p in ports if p.kind == "probe"])
+    progress.partial(board_map)
     system = ACSystem(snap, sorted(rail), gnd, ports, shorts, setup.settings, s, progress)
+    board_map.mesh = MapMesh.from_mesh(system.mesh, system.node_ground)
+    progress.partial(board_map)
 
     freqs = s.frequencies()
     f_field = s.field_frequencies()
@@ -252,4 +260,5 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                     probes=curves, field_freqs=f_field, caps=caps, missing_caps=missing,
                     links=links, plane_capacitance_f=system.total_plane_capacitance,
                     stats=system.stats, warnings=notes + system.warnings,
-                    solve_s=time.perf_counter() - t0, bandwidth_hz=bandwidth)
+                    solve_s=time.perf_counter() - t0, bandwidth_hz=bandwidth,
+                    board_map=board_map)

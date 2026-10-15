@@ -406,7 +406,9 @@ curve keeps rising towards low frequency as the bulk capacitance runs out.
 The result opens in the **Impedance** tab next to the 3D view: |Z| against frequency for every
 probe, with its target dashed in the same color. Click a curve to place a cursor; drag it or
 use ←/→ (Shift: ×10) to move along the curve, ↑/↓ to change curve, and Esc or right-click to
-remove it. The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
+remove it. The **Board map** tab beside it shows the solve from above while it runs and
+after: the mesh of the rail and its ground, layer by layer, with the probes and the
+capacitors marked by model. The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
 equivalent L or C, PASS/FAIL against the target with the margin in dB, and every other
 probe's |Z| at that frequency. The results table gives each probe's minimum and worst |Z|
 (closest to, or furthest over, the target) and PASS/FAIL; the notes list the capacitors that
@@ -515,7 +517,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
 | `kipi/dc/gui/` | The PI setup and results panel |
-| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the AC setup panel and impedance plot (`gui/`) |
+| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the board map data (`board_map.py`), the AC setup panel, impedance plot and Board map tab (`gui/`) |
 | `kipi/gui/` | PySide6 application shell shared by both modes: main window, mode switch, 3D viewer, worker threads, About and Help |
 | `docs/help.html` | The user guide opened by **Help**; a single offline HTML file |
 | `kipi/compat.py` | Opens results files saved by earlier versions, from before modules moved |

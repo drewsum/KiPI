@@ -25,6 +25,13 @@ milestones rather than versions that were ever set.
   model use a TCR and a thermal conductivity per layer. The layers restack, and every DC and AC analysis, the 3D view and the reports use the
   edited stackup. The PI setup keeps it. KiCad's API cannot change a board's stackup yet, so
   edits stay in KiPI.
+- **AC Board map tab** (#67). In AC mode a **Board map** tab beside **Impedance** shows the
+  report's board map in the GUI: the solver's mesh of the rail and its ground (all layers,
+  or one layer at a time, with or without the triangle edges), the board outline, the
+  probes, and the capacitors in the model coloured by model, with those left out for want
+  of a model crossed. It fills in while the rail solves, the parts first and then the mesh,
+  and the Impedance tab comes to the front when the results arrive. Hover a part for its
+  model; scroll to zoom, drag to pan, double-click to fit. Saved AC results keep the map.
 
 ### Changed
 - The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity

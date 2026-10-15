@@ -164,6 +164,7 @@ class ACSystem:
         self.mesh = mesh
         node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)
                                     for m, k in zip(meshes, kinds)])
+        self.node_ground = node_kind == 1           # for the board map
         n = mesh.n_nodes
         self.stats.n_nodes, self.stats.n_tris = n, mesh.n_tris
         progress.info(f"AC mesh: {n} nodes, {mesh.n_tris} triangles")
