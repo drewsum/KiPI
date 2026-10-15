@@ -164,6 +164,7 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#ac-caps">Capacitors</a></li>
         <li><a href="#ac-probes">Probes and targets</a></li>
         <li><a href="#ac-calc">Target calculator</a></li>
+        <li><a href="#ac-bandwidth">Targets and the VRM bandwidth</a></li>
         <li><a href="#ac-sweep">Sweep</a></li>
         <li><a href="#ac-mesh">Mesh</a></li>
       </ol></li>
@@ -542,7 +543,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     outside its range (or an LDO below its dropout) cannot hold its output, and every load it
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
-  <tr><td>Control loop bandwidth</td><td class="wrap">AC only; grayed out in DC.</td></tr>
+  <tr><td>Control loop bandwidth</td><td class="wrap">AC only; grayed out in DC. The AC solve
+    leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
+    frequency the converter's loop holds the rail. Probe targets are drawn and judged only
+    above it (see <a href="#ac-bandwidth">Targets and the VRM bandwidth</a>);
+    <i>none</i> judges the whole target.</td></tr>
   <tr><td>Phases / Edit phase</td><td class="wrap">Multi-phase regulators. See
     <a href="#wf-multiphase">the multi-phase workflow</a>.</td></tr>
   <tr><td>Output pins</td><td class="wrap">Where it drives the rail: the output pin, or for a
@@ -892,7 +897,8 @@ are required.</p>
   <tr><td>Target</td><td class="wrap"><b>Flat, up to a frequency</b>, or <b>Custom (piecewise
     linear)</b>.</td></tr>
   <tr><td>Target |Z| / Target frequency</td><td class="wrap">Flat target: PASS if |Z| stays at
-    or below it up to the frequency (<i>none</i>: the whole sweep).</td></tr>
+    or below it from the VRM's control loop bandwidth up to the frequency (<i>none</i>: to the
+    end of the sweep).</td></tr>
   <tr><td>Calculator…</td><td class="wrap">Opens the <a href="#ac-calc">Target
     Impedance/Frequency Calculator</a>.</td></tr>
   <tr><td>Custom points</td><td class="wrap">Frequency/|Z| corner points, joined by straight
@@ -901,6 +907,26 @@ are required.</p>
 </table>
 <p>A rail can have several probes, e.g. one per device; they are all solved together and each
 sees the others as open circuits.</p>
+</div>
+</details>
+
+<details id="ac-bandwidth">
+<summary>Targets and the VRM bandwidth</summary>
+<div class="body">
+<p>The AC solve leaves the VRM out of circuit: it gives the <b>open-loop</b> PDN impedance,
+which keeps rising toward low frequency. In the real circuit the converter's control loop
+holds the rail below its bandwidth. So when the rail's VRM has a <b>Control loop bandwidth</b>,
+a probe's target (flat or custom) applies only from that frequency up:</p>
+<ul>
+  <li>the plot draws the target only above the bandwidth, and marks the bandwidth with a
+    dotted line;</li>
+  <li>PASS/FAIL, the worst |Z| and the margin only look above it. Without a target, the worst
+    |Z| is the highest above the bandwidth;</li>
+  <li>the cursor shows "none here" below it.</li>
+</ul>
+<p><b>Fallback:</b> if the bandwidth is at or above a flat target's frequency, or above the
+whole sweep, no frequencies are left to judge. That probe's target is then judged over its
+whole range, as if the VRM had no bandwidth, and a note in the results says so.</p>
 </div>
 </details>
 
@@ -916,7 +942,12 @@ sees the others as open circuits.</p>
 </ul>
 <p>Then Z<sub>target</sub> = V<sub>AC</sub> / ΔI, flat up to f<sub>target</sub> = 1 / (π ·
 t<sub>rise</sub>), with t<sub>rise</sub> = ΔI / slew rate. <b>Use for probe</b> fills the probe's
-target fields; the inputs are remembered for next time.</p>
+target fields; the inputs are remembered for next time. The target applies above the VRM's
+control loop bandwidth (<a href="#ac-bandwidth">Targets and the VRM bandwidth</a>).</p>
+<p>The calculator links to the paper that introduced the target impedance method: L. D. Smith,
+R. E. Anderson, D. W. Forehand, T. J. Pelc and T. Roy, "<a href="https://doi.org/10.1109/6040.784476">Power
+Distribution System Design Methodology and Capacitor Selection for Modern CMOS Technology</a>,"
+<i>IEEE Transactions on Advanced Packaging</i>, vol. 22, no. 3, pp. 284–291, Aug. 1999.</p>
 <figure><img src="images/ac_target_calc.png" alt="Target impedance calculator dialog">
 <figcaption>The calculator: 27 mV over a 10 A step at 10 A/µs gives 2.7 mΩ up to about 318 kHz.</figcaption></figure>
 </div>

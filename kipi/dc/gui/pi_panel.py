@@ -410,7 +410,11 @@ class VrmEditor(_Editor):
                                "input marks its loads VRM OUT OF REGULATION."),
                 (self.vin_max, "Optional highest input voltage it regulates at. A higher "
                                "solved input marks its loads VRM OUT OF REGULATION."),
-                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis)"),
+                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
+                                 "AC solve leaves the VRM out of circuit (the open-loop PDN "
+                                 "impedance); below this frequency the loop holds the rail, "
+                                 "so probe targets are drawn and judged only above it. "
+                                 "'none' judges the whole target."),
                 (self.n_phases, "Parallel phases of a multi-phase regulator. Each carries an "
                                 "equal share of the output current and has its own output, "
                                 "input and ground pins. A new phase takes the next parts in "

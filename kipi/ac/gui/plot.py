@@ -110,6 +110,10 @@ class ImpedancePlot(QWidget):
             if t is not None:                 # NaN where no target applies: not drawn
                 ax.loglog(f, t, color=color, lw=1.2, ls="--", alpha=0.8,
                           label=f"{c.name} target")
+        bw = getattr(result, "bandwidth_hz", None)
+        if bw and f[0] < bw < f[-1]:
+            ax.axvline(bw, color="#888", lw=1.0, ls=":",
+                       label=f"VRM bandwidth {_eng_hz(bw)}")
         ax.set_xlim(f[0], f[-1])
         ax.set_xlabel("Frequency")
         ax.set_ylabel("|Z|")
@@ -244,8 +248,11 @@ class ImpedancePlot(QWidget):
         if t is not None:
             tk = float(t[k])
             if not math.isfinite(tk):
-                rows.append(("Target", f"{_eng(c.target_ohm, 'Ω')} (not above "
-                                       f"{_eng_hz(c.target_hz)})"))
+                if c.above_hz and fk < c.above_hz:
+                    why = f"only above the VRM bandwidth, {_eng_hz(c.above_hz)}"
+                else:
+                    why = f"not above {_eng_hz(c.target_hz)}"
+                rows.append(("Target", f"none here ({why})"))
             else:
                 ok = mag <= tk
                 margin = 20 * math.log10(tk / mag) if mag > 0 else math.inf

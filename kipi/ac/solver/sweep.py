@@ -19,7 +19,7 @@ import numpy as np
 
 from kipi.ac.checks import rail_caps, rail_nets, validate_ac
 from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
-from kipi.ac.target import target_at
+from kipi.ac.target import judged_from, target_at
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.dc.pi.model import PISetup
@@ -35,6 +35,9 @@ class ProbeCurve:
     target_hz: Optional[float] = None
     target_points: Optional[List[Tuple[float, float]]] = None   # custom mask, in place of
                                                                  # the flat target
+    # The VRM's control loop bandwidth when the target applies only above it (None: the
+    # whole target applies; see kipi.ac.target.judged_from).
+    above_hz: Optional[float] = None
 
     @property
     def mag(self) -> np.ndarray:
@@ -46,17 +49,25 @@ class ProbeCurve:
 
     def target_at(self, freqs) -> Optional[np.ndarray]:
         """The target at each of ``freqs`` (NaN where none applies); None without one."""
-        return target_at(freqs, self.target_ohm, self.target_hz, self.target_points)
+        return target_at(freqs, self.target_ohm, self.target_hz, self.target_points,
+                         self.above_hz)
 
     def worst(self, freqs: np.ndarray):
-        """(|Z|, f) where the impedance comes closest to (or furthest over) the target, up
-        to where the target applies; the highest impedance in the sweep without one."""
+        """(|Z|, f) where the impedance comes closest to (or furthest over) the target,
+        where the target applies; without one, the highest impedance in the sweep (above
+        the VRM's bandwidth, where it has one)."""
         t = self.target_at(freqs)
         if t is None:
-            i = int(np.argmax(self.mag))
+            sel = np.ones(len(freqs), dtype=bool)
+            if self.above_hz and (np.asarray(freqs) >= self.above_hz).any():
+                sel = np.asarray(freqs) >= self.above_hz
+            i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel]))]
         else:
             sel = np.isfinite(t)
-            i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel] / t[sel]))]
+            if not sel.any():
+                i = int(np.argmax(self.mag))
+            else:
+                i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel] / t[sel]))]
         return float(self.mag[i]), float(freqs[i])
 
     def passed(self, freqs: np.ndarray) -> Optional[bool]:
@@ -64,7 +75,7 @@ class ProbeCurve:
         if t is None:
             return None
         sel = np.isfinite(t)
-        return bool(np.all(self.mag[sel] <= t[sel]))
+        return bool(np.all(self.mag[sel] <= t[sel])) if sel.any() else None
 
 
 @dataclass
@@ -82,6 +93,7 @@ class ACResult:
     stats: ACStats = field(default_factory=ACStats)
     warnings: List[str] = field(default_factory=list)
     solve_s: float = 0.0
+    bandwidth_hz: Optional[float] = None  # the VRM's control loop bandwidth, if given
     report_path: Optional[Path] = None    # the HTML report, when one was written
 
 
@@ -216,8 +228,21 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     with progress.timed(f"Sweep: {len(freqs)} frequencies"):
         z = terminate(_interpolate(f_field, zb, freqs), freqs, ports)
     probe_ports = [p for p in ports if p.kind == "probe"]
-    curves = [ProbeCurve(p.name, z[:, i], p.element.target_ohm, p.element.target_hz,
-                         p.element.target_mask()) for i, p in enumerate(probe_ports)]
+    vrm = next(v for v in setup.vrms if v.name == vrm_name)
+    bandwidth = vrm.bandwidth_khz * 1e3 if vrm.bandwidth_khz else None
+    curves = []
+    for i, p in enumerate(probe_ports):
+        pr = p.element
+        above, why = judged_from(bandwidth, freqs, pr.target_ohm, pr.target_hz,
+                                 pr.target_mask())
+        if why:
+            notes.append(f"Probe {p.name}: {why}")
+            progress.warn(notes[-1])
+        curves.append(ProbeCurve(p.name, z[:, i], pr.target_ohm, pr.target_hz,
+                                 pr.target_mask(), above))
+    if bandwidth:
+        progress.info(f"Targets apply above the {vrm_name} control loop bandwidth, "
+                      f"{fmt_hz(bandwidth)} (open-loop PDN impedance)")
     for c in curves:
         zmax, fmax = c.worst(freqs)
         verdict = {None: "", True: " PASS", False: " FAIL"}[c.passed(freqs)]
@@ -227,4 +252,4 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                     probes=curves, field_freqs=f_field, caps=caps, missing_caps=missing,
                     links=links, plane_capacitance_f=system.total_plane_capacitance,
                     stats=system.stats, warnings=notes + system.warnings,
-                    solve_s=time.perf_counter() - t0)
+                    solve_s=time.perf_counter() - t0, bandwidth_hz=bandwidth)

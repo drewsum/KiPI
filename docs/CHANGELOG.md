@@ -22,7 +22,14 @@ milestones rather than versions that were ever set.
     equivalent L or C and the target margin in the Info box.
   - Probe targets are flat up to a frequency, or a custom piecewise-linear mask. The
     *Target Impedance/Frequency Calculator* derives a flat target from the AC voltage
-    tolerance, load step and slew rate.
+    tolerance, load step and slew rate, and links the paper that introduced the method
+    (Smith et al., IEEE Trans. Advanced Packaging, 1999).
+  - The VRM is left out of circuit, so the solve gives the open-loop PDN impedance. Targets
+    apply only above the VRM's *Control loop bandwidth*, where the converter's loop no
+    longer holds the rail. The plot draws them only there, marks the bandwidth, and judges
+    PASS/FAIL, worst |Z| and margin only above it. If the bandwidth is at or above the
+    target frequency, or above the sweep, the whole target is judged and the results say
+    why.
   - Each rail keeps its last result; switching the rail shows its curves without solving
     again. *Export CSV…* writes |Z|, R and X per probe.
   - *HTML report* next to *Solve rail* also writes `<board>_<rail>_ac_report.html`, a

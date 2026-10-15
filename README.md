@@ -365,6 +365,12 @@ series links with DC (fields only DC uses are grayed out) and adds:
   piecewise-linear mask through frequency/impedance points on the log-log plot.
   **Target Impedance/Frequency Calculator…** works out a flat target from the device's AC
   voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).
+  Targets apply only above the rail's VRM **Control loop bandwidth**: the AC solve leaves
+  the VRM out of circuit (the open-loop PDN impedance), and below its bandwidth the
+  converter's loop holds the rail. If the bandwidth is at or above the target frequency,
+  the whole target is judged and the results say so. The method follows Smith et al.,
+  ["Power Distribution System Design Methodology and Capacitor Selection for Modern CMOS
+  Technology"](https://doi.org/10.1109/6040.784476), IEEE Trans. Adv. Packaging, 1999.
 * **Sweep tab**: start and stop frequency, points per decade, and how many copper field
   solves per decade (the copper's response is interpolated between them).
 * **Mesh tab**: mesh size, minimum edge at plated holes (which sets the via inductance),

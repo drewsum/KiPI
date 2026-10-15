@@ -13,7 +13,14 @@ from kipi.dc.gui.pi_panel import _spin
 
 NOTE = ("Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>, flat up to "
         "f<sub>target</sub> = 1 / (π · t<sub>rise</sub>), where t<sub>rise</sub> = "
-        "I<sub>step</sub> / slew rate is the rise time of the load step.")
+        "I<sub>step</sub> / slew rate is the rise time of the load step. The target applies "
+        "above the VRM's control loop bandwidth, where one is set.")
+PAPER_URL = "https://doi.org/10.1109/6040.784476"
+PAPER = (f'For more information on the target impedance approach, please see '
+         f'<a href="{PAPER_URL}">this paper</a>: L. D. Smith, R. E. Anderson, D. W. Forehand, '
+         f'T. J. Pelc and T. Roy, "Power Distribution System Design Methodology and Capacitor '
+         f'Selection for Modern CMOS Technology," <i>IEEE Transactions on Advanced '
+         f'Packaging</i>, vol. 22, no. 3, pp. 284–291, Aug. 1999.')
 
 
 class TargetCalculator(QDialog):
@@ -52,6 +59,13 @@ class TargetCalculator(QDialog):
         note = QLabel(NOTE)
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
+        self.lbl_paper = QLabel(PAPER)
+        self.lbl_paper.setWordWrap(True)
+        self.lbl_paper.setTextFormat(Qt.RichText)
+        self.lbl_paper.setOpenExternalLinks(True)        # opens in the browser
+        self.lbl_paper.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.lbl_paper.setToolTip(PAPER_URL)
+        self.lbl_paper.setStyleSheet("color: #999;")
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
         self.buttons.button(QDialogButtonBox.Ok).setText("Use for probe")
@@ -61,6 +75,7 @@ class TargetCalculator(QDialog):
         lay = QVBoxLayout(self)
         lay.addLayout(form)
         lay.addWidget(note)
+        lay.addWidget(self.lbl_paper)
         lay.addWidget(self.buttons)
         self.setMinimumWidth(420)
         self._update()

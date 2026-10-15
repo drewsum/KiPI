@@ -70,11 +70,13 @@ def _si(x: float, unit: str) -> str:
 
 
 def _target_text(c) -> str:
+    above = f" above {_hz(c.above_hz)}" if c.above_hz else ""
     if c.target_points:
-        return f"custom ({len(c.target_points)} points)"
+        return f"custom ({len(c.target_points)} points){above}"
     if c.target_ohm:
-        upto = f" to {_hz(c.target_hz)}" if c.target_hz else ""
-        return f"{_ohms(c.target_ohm)}{upto}"
+        span = (f" from {_hz(c.above_hz)} to {_hz(c.target_hz)}" if c.above_hz and c.target_hz
+                else above or (f" to {_hz(c.target_hz)}" if c.target_hz else ""))
+        return f"{_ohms(c.target_ohm)}{span}"
     return ""
 
 
@@ -125,6 +127,15 @@ def _impedance_plot(result, models: List, div_id: str) -> str:
             line=dict(color="#999", width=1, dash="dot"),
             hovertemplate=(f"{_e(m.name)}, one of {n}<br>f %{{x:.4s}}Hz<br>%{{y:.4s}}Ω"
                            "<extra></extra>")), row=1, col=1)
+    bw = getattr(result, "bandwidth_hz", None)
+    if bw and f[0] < bw < f[-1]:
+        # Below the converter's control loop bandwidth the loop holds the rail: shade it.
+        fig.add_vrect(x0=f[0], x1=bw, fillcolor="#888", opacity=0.08, line_width=0,
+                      row="all", col=1)
+        fig.add_vline(x=bw, line=dict(color="#888", width=1, dash="dot"), row="all", col=1)
+        fig.add_annotation(x=math.log10(bw), y=1, xref="x", yref="paper", xanchor="right",
+                           yanchor="top", showarrow=False, font=dict(size=11, color="#666"),
+                           text=f"VRM bandwidth {_hz(bw)} ")
     fig.update_xaxes(type="log", exponentformat="SI", ticksuffix="Hz", showgrid=True,
                      gridcolor="#e6e6e6")
     fig.update_xaxes(title_text="Frequency", row=2, col=1)
@@ -316,6 +327,11 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                  "over) the probe's target, up to where the target applies; the highest "
                  "impedance in the sweep without one. Margin: target over |Z| there (positive "
                  "passes).</p>")
+    if getattr(result, "bandwidth_hz", None):
+        parts.append(f"<p class='note'>The VRM is out of circuit, so this is the open-loop PDN "
+                     f"impedance. Below the converter's control loop bandwidth "
+                     f"({_hz(result.bandwidth_hz)}) the loop holds the rail, so targets are "
+                     "drawn and judged only above it.</p>")
 
     # ---------------- impedance plot
     info("Report: impedance plot")

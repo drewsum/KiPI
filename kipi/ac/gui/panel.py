@@ -214,8 +214,20 @@ def _target_text(c) -> str:
     if c.target_points:
         zs = [z * 1e3 for _, z in c.target_points]
         lo, hi = min(zs), max(zs)
-        return f"{lo:g} (custom)" if lo == hi else f"{lo:g}–{hi:g} (custom)"
-    return f"{c.target_ohm * 1e3:g}" if c.target_ohm else ""
+        text = f"{lo:g} (custom)" if lo == hi else f"{lo:g}–{hi:g} (custom)"
+    elif c.target_ohm:
+        text = f"{c.target_ohm * 1e3:g}"
+    else:
+        return ""
+    above = getattr(c, "above_hz", None)
+    return f"{text} above {_fmt_hz(above)}" if above else text
+
+
+def _fmt_hz(f: float) -> str:
+    for scale, unit in ((1e6, "MHz"), (1e3, "kHz")):
+        if f >= scale * 0.9995:
+            return f"{f / scale:.4g} {unit}"
+    return f"{f:.4g} Hz"
 
 
 def _natural(ref: str):
@@ -287,8 +299,9 @@ class ProbeEditor(_Editor):
                               "Picking the supply pins fills in the same part's ground pins."),
                 (self.target_kind, "Flat: one impedance up to a frequency. Custom: a target "
                                    "mask through frequency/impedance points."),
-                (self.target, "Target impedance: PASS if |Z| stays at or below this up to "
-                              "the target frequency"),
+                (self.target, "Target impedance: PASS if |Z| stays at or below this from "
+                              "the VRM's control loop bandwidth (if set) up to the target "
+                              "frequency"),
                 (self.target_f, "Frequency up to which the target impedance applies "
                                 "(none: the whole sweep)")):
             tip(f, w, text)
