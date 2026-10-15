@@ -28,6 +28,9 @@ from kipi.thermal.model import ThermalSettings
 
 FORMAT_VERSION = 1
 VRM_KINDS = ("source", "ldo", "smps")
+# Which value of each current and resistance a solve uses: "typ" the typical, "max" the
+# maximum where one is given (worst case for DC drop).
+CORNERS = ("typ", "max")
 
 
 @dataclass
@@ -87,20 +90,26 @@ class PinGroup:
     pins: List[str]
     current: float
     name: str = ""
+    current_max: Optional[float] = None
 
 
 @dataclass
 class Load:
     name: str
     supply: PinRef
-    current: float
+    current: Optional[float]                # typical; None = not known (solved as 0 A)
     ground: Optional[PinRef] = None
     tolerance_pct: Optional[float] = None   # pass if every pin is within +/- this % of nominal
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
+    current_max: Optional[float] = None     # maximum, for a worst-case solve
+    # The lowest supply voltage the part's datasheet allows (its recommended
+    # operating minimum): the load FAILS when its worst supply pin is below it.
+    min_v: Optional[float] = None
 
-    def total_current(self) -> float:
+    def total_current(self) -> Optional[float]:
+        """Typical total; None when it is not known."""
         return sum(g.current for g in self.groups) if self.groups else self.current
 
 
@@ -110,6 +119,7 @@ class DcLink:
     side_a: PinRef
     side_b: PinRef
     resistance: float                       # ohms; 0 = short
+    resistance_max: Optional[float] = None  # maximum, for a worst-case solve
 
 
 @dataclass
@@ -131,6 +141,7 @@ class PISetup:
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
         return {r.net for r in refs}
+    corner: str = "typ"                           # "typ" or "max": see CORNERS
 
     # ------------------------------------------------------------------ JSON
     def to_dict(self) -> dict:
@@ -159,18 +170,23 @@ class PISetup:
                       dropout_v=v.get("dropout_v", 0.0), vin_min=v.get("vin_min"),
                       vin_max=v.get("vin_max"))
                   for v in d.get("vrms", [])],
-            loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
+            loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l.get("current"),
+                        current_max=l.get("current_max"),
                         ground=pin(l.get("ground")), tolerance_pct=l.get("tolerance_pct"),
-                        groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
-                                for g in l.get("groups", [])])
+                        groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""),
+                                         g.get("current_max"))
+                                for g in l.get("groups", [])],
+                        min_v=l.get("min_v"))
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
-                          resistance=k["resistance"]) for k in d.get("links", [])],
+                          resistance=k["resistance"], resistance_max=k.get("resistance_max"))
+                   for k in d.get("links", [])],
             via_current_limit_a=d.get("via_current_limit_a"),
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
             html_report=bool(d.get("html_report", False)),
             nets=list(d["nets"]) if d.get("nets") is not None else None,
+            corner=d.get("corner", "typ"),
             settings=SolveSettings(**{k: v for k, v in d.get("settings", {}).items()
                                       if k in known}),
         )
@@ -270,6 +286,8 @@ def validate(setup: PISetup) -> List[str]:
     """Problems that make the setup unsolvable (empty list = OK)."""
     errors: List[str] = []
     names = [x.name for x in [*setup.vrms, *setup.loads, *setup.links]]
+    if setup.corner not in CORNERS:
+        errors.append(f"Unknown solve corner {setup.corner!r}")
     dupes = sorted({n for n in names if names.count(n) > 1})
     if dupes:
         errors.append(f"Names must be unique: {', '.join(dupes)}")
@@ -315,6 +333,9 @@ def validate(setup: PISetup) -> List[str]:
     for l in setup.loads:
         if l.tolerance_pct is not None and l.tolerance_pct < 0:
             errors.append(f"Load {l.name}: max drop cannot be negative")
+        pairs = [(l.current, l.current_max)] + [(g.current, g.current_max) for g in l.groups]
+        if any(typ is not None and mx is not None and abs(mx) < abs(typ) for typ, mx in pairs):
+            errors.append(f"Load {l.name}: a maximum current is below its typical current")
         if l.groups:
             seen_pins: Dict[str, int] = {}
             for gi, g in enumerate(l.groups):
@@ -340,6 +361,8 @@ def validate(setup: PISetup) -> List[str]:
     for k in setup.links:
         if k.resistance < 0:
             errors.append(f"DC connection {k.name}: resistance cannot be negative")
+        if k.resistance_max is not None and k.resistance_max < k.resistance:
+            errors.append(f"DC connection {k.name}: maximum resistance is below its typical")
     for g in ground_groups:
         if g in rail_groups:
             errors.append(f"{group_name(g)} is used both as a supply and as ground")

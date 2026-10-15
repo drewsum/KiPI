@@ -4,6 +4,31 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## Unreleased
+
+### Added
+- **Typical / worst-case solve.** Loads (and each pin group) take a typical and an optional
+  maximum current, and DC connections an optional maximum resistance. A **Typical / Worst
+  case (max)** selector beside **Solve all** chooses which is solved; where no maximum is
+  given the typical value is used and the Notes tab names those items. The Loads table, CSV
+  export and HTML report say which value each load was solved at.
+- **Currents that are not known.** A load current can be left "not known". It is solved as
+  0 A, and every load whose result that changes is marked **INCOMPLETE** instead of PASS:
+  loads on its rail, on every rail upstream of it and on every rail those feed, and, when it
+  has ground pins, every load whose ground pins are on the same ground net. A load that
+  fails anyway still fails.
+- **Minimum supply voltage per load.** An optional **Min V** per load, the lowest supply
+  voltage its datasheet allows: the load FAILS when its worst supply pin is below it. It is
+  shown in the Loads table, the CSV export and the HTML report.
+- **Import a Tomachie power tree.** **Load Tomachie pdn.json…** (toolbar, and offered when a
+  board has no setup) fills the PI setup from a Tomachie `.pdn.json`: sources; LDOs and
+  switchers with their input pins, efficiency, quiescent current, dropout and input range;
+  load switches as DC connections with their on-resistance; series parts with their DC
+  resistance; and each load's typical and maximum current and minimum supply voltage.
+  Schematic nets are matched to board nets through the pads. A current the file does not
+  know stays not known, and power leaving the board at a connector pin is a load of unknown
+  current. Whatever cannot be placed on the board is written to the log.
+
 ## 0.6.5 (2026-10-13): Drop and boost, limits and fixes
 
 ### Added

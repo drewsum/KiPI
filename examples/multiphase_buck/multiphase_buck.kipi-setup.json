@@ -162,7 +162,9 @@
         "pins": []
       },
       "tolerance_pct": 3.0,
-      "groups": []
+      "groups": [],
+      "current_max": null,
+      "min_v": null
     }
   ],
   "links": [],
@@ -195,5 +197,6 @@
     "VCORE",
     "GND"
   ],
+  "corner": "typ",
   "format_version": 1
 }

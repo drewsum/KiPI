@@ -24,6 +24,14 @@ output delivers, and its input pins are a load on the group feeding it.
 After the solve each VRM's input is checked against its dropout and input range. A VRM
 that cannot hold its set point fails every load it feeds, directly or downstream; a
 group whose iteration did not converge leaves its loads unjudged.
+
+Currents and resistances are resolved for the setup's corner (typical or worst case)
+first, see :mod:`kipi.pi.corner`. A load whose current is not known solves as 0 A, so its
+group, every group feeding it and every group those feed carry the wrong current (a rail
+upstream looks better than it is, so a regulator downstream of it may pass a dropout or
+input-range check it should not), and so does its ground return: a load on any of those
+rails, or with ground pins on that ground, that passes is INCOMPLETE, never PASS; one that
+fails anyway still fails.
 """
 
 from __future__ import annotations
@@ -35,8 +43,10 @@ import numpy as np
 
 from kipi.mesh.mesher import mesh_nets
 from kipi.model.board import BoardSnapshot
+from kipi.pi.corner import CornerInfo, resolve
 from kipi.pi.model import Load, PISetup, PinRef, Vrm, net_groups, validate
 from kipi.pi.results import (  # also importable from here, where they were defined
+    INCOMPLETE,
     NOT_CONVERGED,
     OUT_OF_REGULATION,
     GroupResult,
@@ -138,12 +148,9 @@ class _Rail:
 class _TreeSolver:
     """One solve of a validated setup. Each method is one step of :func:`solve_tree`."""
 
-    def __init__(self, snap: BoardSnapshot, setup: PISetup, progress: ProgressReporter,
-                 temperature, mesh_cache: Optional[dict]):
-        errors = validate(setup)
-        if errors:
-            raise SolveError("Setup problems:\n- " + "\n- ".join(errors))
-        self.snap, self.setup, self.progress = snap, setup, progress
+    def __init__(self, snap: BoardSnapshot, setup: PISetup, info: CornerInfo,
+                 progress: ProgressReporter, temperature, mesh_cache: Optional[dict]):
+        self.snap, self.setup, self.info, self.progress = snap, setup, info, progress
         self.temperature, self.mesh_cache = temperature, mesh_cache
         self.pads = _Pads(snap)
         self.groups = net_groups(setup)
@@ -203,6 +210,41 @@ class _TreeSolver:
             if ref and self.groups[ref.net] not in out:
                 out.append(self.groups[ref.net])
         return out
+
+    def _feeding(self, g: Group) -> Iterator[Group]:
+        """``g`` and every group its power comes through."""
+        yield g
+        vrm = self.driver[g]
+        if vrm.input:
+            yield from self._feeding(self.groups[vrm.input.net])
+
+    def _incomplete_groups(self, warnings: List[str]) -> Tuple[set, set]:
+        """Rails and grounds whose solution misses a current that is not known.
+
+        Rails: the load's own, every one upstream of it, and every one fed from those (an
+        upstream rail that looks better than it is lets a regulator further down pass a
+        dropout or input-range check it should not). Grounds: the load's ground net, when
+        it has ground pins, since its return current is missing there too."""
+        rails, grounds = set(), set()
+        unknown = set(self.info.unknown_current)
+        for l in self.setup.loads:
+            names = [l.name] + [f"{l.name} [{g.name or ','.join(g.pins)}]" for g in l.groups]
+            if unknown.intersection(names):
+                for up in self._feeding(self.groups[l.supply.net]):
+                    rails.update(self._fed_from(up))
+                if l.ground:
+                    grounds.add(self.groups[l.ground.net])
+        if self.info.unknown_current:
+            warnings.append("Currents not known (solved as 0 A): "
+                            + ", ".join(self.info.unknown_current)
+                            + f". Loads on the rails they draw from, on every rail upstream "
+                            f"and every rail those feed, and loads sharing their ground "
+                            f"return, are marked {INCOMPLETE} unless they fail anyway.")
+        if self.info.typical_used:
+            warnings.append("Worst case: no maximum given for "
+                            + ", ".join(self.info.typical_used)
+                            + "; their typical value is used.")
+        return rails, grounds
 
     def _fed_from(self, g: Group) -> Iterator[Group]:
         """``g`` and every group powered through it."""
@@ -408,7 +450,10 @@ class _TreeSolver:
         out.warnings.extend(warnings)
         regulation = {v.name: self._regulation(v) for v in self.setup.vrms}
         out_of_reg = self._groups_out_of_regulation(regulation, out.warnings)
-        out.loads = [self._load_report(l, out_of_reg) for l in self.setup.loads]
+        incomplete, incomplete_grounds = self._incomplete_groups(out.warnings)
+        out.corner = self.info.corner
+        out.loads = [self._load_report(l, out_of_reg, incomplete, incomplete_grounds)
+                     for l in self.setup.loads]
         out.vrms = [self._vrm_report(v, regulation[v.name]) for v in self.setup.vrms]
         out.solve_s = time.perf_counter() - t0
         self.progress.info(f"Power tree solved: {len(self.order)} rail(s), "
@@ -451,7 +496,8 @@ class _TreeSolver:
         return [pid for grp in l.groups
                 for pid in self.pads(PinRef(l.supply.ref, l.supply.net, list(grp.pins)))]
 
-    def _load_report(self, l: Load, out_of_reg: set) -> LoadReport:
+    def _load_report(self, l: Load, out_of_reg: set, incomplete: set,
+                     incomplete_grounds: set) -> LoadReport:
         g = self.groups[l.supply.net]
         sol = self.rail_solutions[g]
         sv = _pad_voltages(sol, self._supply_pads(l))
@@ -470,14 +516,32 @@ class _TreeSolver:
         rep = LoadReport(l.name, self.label_of(g), l.total_current(), nominal,
                          float(sv.mean()), float(sv.min()),
                          None if gv is None else g_mean, eff, nominal - eff,
-                         l.tolerance_pct, None, worst, self._pin_group_rows(l, sol), low, high)
+                         l.tolerance_pct, None, worst, self._pin_group_rows(l, sol), low, high,
+                         min_v=l.min_v)
         if not self.tree_converged or g in self.not_converged:
             rep.status = NOT_CONVERGED
         elif g in out_of_reg:
             rep.status, rep.passed = OUT_OF_REGULATION, False
-        elif l.tolerance_pct is not None and nominal:
-            rep.passed = abs(rep.drop_worst_pct) <= l.tolerance_pct
+        else:
+            rep.passed = self._judge(l, rep, nominal)
+        shares_ground = l.ground is not None and self.groups[l.ground.net] in incomplete_grounds
+        if (g in incomplete or shares_ground) and rep.passed is not False and not rep.status:
+            rep.status, rep.passed = INCOMPLETE, None
+        rep.basis = self.info.basis.get(l.name, "")
         return rep
+
+    @staticmethod
+    def _judge(l: Load, rep: LoadReport, nominal: float) -> Optional[bool]:
+        """Against the tolerance (the worst pin either way, +/- % of the set voltage) and
+        the datasheet minimum (the pin nearest 0 V, by magnitude); None when neither is
+        set."""
+        verdicts = []
+        if l.tolerance_pct is not None and nominal:
+            verdicts.append(abs(rep.drop_worst_pct) <= l.tolerance_pct)
+        if l.min_v is not None:
+            lowest = rep.v_low if nominal >= 0 else rep.v_high
+            verdicts.append(abs(lowest) >= abs(l.min_v))
+        return all(verdicts) if verdicts else None
 
     def _pin_group_rows(self, l: Load, sol) -> List[tuple]:
         rows = []
@@ -512,4 +576,8 @@ def solve_tree(snap: BoardSnapshot, setup: PISetup,
     """Solve every rail and ground group. ``temperature`` (optional) maps KiCad xy (mm) to
     copper temperature in degC for temperature-dependent resistivity. ``mesh_cache`` (a
     dict) lets repeated solves of the same setup reuse their meshes."""
-    return _TreeSolver(snap, setup, progress, temperature, mesh_cache).run()
+    errors = validate(setup)
+    if errors:
+        raise SolveError("Setup problems:\n- " + "\n- ".join(errors))
+    resolved, info = resolve(setup)
+    return _TreeSolver(snap, resolved, info, progress, temperature, mesh_cache).run()
