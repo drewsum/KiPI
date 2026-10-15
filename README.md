@@ -359,7 +359,9 @@ Result tabs (click a column header to sort by it; click again to reverse):
 | Thermal | After an electro-thermal solve: the hottest copper on each layer, its rise and location, PASS/FAIL against the temperature limits, the iteration history and the dielectric conductivities used. Double-click a row to show that group's temperature. |
 | Notes | Solver details, warnings and the thermal iteration history |
 
-**Export ▾** writes the tables as CSV, the 3D results as a ParaView `.vtm`, or **Save
+**Export ▾** writes the tables as CSV (including `_pins.csv`, with the voltage and current
+of every pin each group was solved with, which the HTML report also lists), the 3D
+results as a ParaView `.vtm`, or **Save
 results…** as a `.kipi-results` file, which the toolbar's **Open results…** reloads without
 solving again (load the board first). Results files are Python pickles, so only open ones
 you created.

@@ -23,6 +23,15 @@ class TerminalResult:
     v_pads: List[float]           # V at each of its pads
     v_min: float
     v_max: float
+    # Per pad (#71): its id, and the A it draws from the copper (negative: delivered).
+    # A source's pad currents are solved; a load's current is shared equally by its pads.
+    pad_ids: List[str] = field(default_factory=list)
+    i_pads: List[float] = field(default_factory=list)
+    i_solved: bool = False
+
+    def __setstate__(self, state):
+        # Results saved before pin currents were kept (#71).
+        self.__dict__.update({"pad_ids": [], "i_pads": [], "i_solved": False, **state})
 
     @property
     def v_mean(self) -> float:
@@ -47,6 +56,11 @@ class SeriesResult:
     v_a: float
     v_b: float
     power: float                  # W dissipated in the part
+    pads_a: List[str] = field(default_factory=list)   # pad ids of each side (#71)
+    pads_b: List[str] = field(default_factory=list)
+
+    def __setstate__(self, state):
+        self.__dict__.update({"pads_a": [], "pads_b": [], **state})
 
 
 @dataclass
@@ -116,14 +130,21 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
     amps = getattr(sol, "load_current", None) or {}
     volts = getattr(sol, "source_voltage", None) or {}
     terminals = []
+    pad_amps = getattr(sol, "source_pad_current", None) or {}
     for src in prob.sources:
         vs = [pad_v(p) for p in src.pad_ids]
-        terminals.append(TerminalResult(src.name, "source", sol.source_current[src.name],
-                                        vs, min(vs), max(vs)))
+        i = sol.source_current[src.name]
+        solved = src.name in pad_amps
+        per_pad = ([-a for a in pad_amps[src.name]] if solved
+                   else [-i / len(src.pad_ids)] * len(src.pad_ids))
+        terminals.append(TerminalResult(src.name, "source", i, vs, min(vs), max(vs),
+                                        list(src.pad_ids), per_pad, solved))
     for load in prob.loads:
         vs = [pad_v(p) for p in load.pad_ids]
-        terminals.append(TerminalResult(load.name, "load", amps.get(load.name, load.current),
-                                        vs, min(vs), max(vs)))
+        i = amps.get(load.name, load.current)
+        terminals.append(TerminalResult(load.name, "load", i, vs, min(vs), max(vs),
+                                        list(load.pad_ids),
+                                        [i / len(load.pad_ids)] * len(load.pad_ids)))
 
     v_src = max(volts.get(s.name, s.voltage) for s in prob.sources)
     if v_ref is None:
@@ -143,7 +164,8 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
         i = sol.series_current.get(e.name, float("nan"))
         pw = 0.0 if e.g is None else e.g * (va - vb) ** 2
         series_power += pw
-        series.append(SeriesResult(e.name, 0.0 if e.g is None else link.resistance, i, va, vb, pw))
+        series.append(SeriesResult(e.name, 0.0 if e.g is None else link.resistance, i, va, vb,
+                                   pw, list(link.pads_a), list(link.pads_b)))
     loss = copper_power + total_barrel_power + series_power
     live = ~np.isnan(sol.node_v)
     summary = {

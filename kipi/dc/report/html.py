@@ -1,7 +1,7 @@
 """Self-contained HTML report for a solved power tree.
 
 One ``.html`` file with:
-* a summary and the load / VRM / DC connection / loss / via tables,
+* a summary and the load / VRM / DC connection / pin / loss / via tables,
 * per net group: an interactive 3D view (Plotly, rotate and zoom in the browser), a
   per-layer table and top-down voltage and current-density maps for every layer,
 * the board temperature map and iteration history when an electro-thermal solve ran.
@@ -216,6 +216,7 @@ th { background: #f0f0f0; } td:first-child, th:first-child { text-align: left; }
 .maps img { width: 520px; max-width: 100%; }
 .note { color: #666; font-size: 12px; }
 nav a { margin-right: 12px; }
+details > summary { cursor: pointer; margin: 6px 0; }
 """
 
 
@@ -223,7 +224,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  progress=None) -> Path:
     import plotly.offline
     from kipi.dc.pi.report import (
-        layer_temps, limits_text, loss_rows, thermal_passed, via_rows,
+        layer_temps, limits_text, loss_rows, pin_rows, thermal_passed, via_rows,
     )
 
     def info(t):
@@ -241,7 +242,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{_e(snap.board_name)} "
                  f"· {now} · KiPI {__version__} · solved in {tree.solve_s:.1f} s</div>")
     nav = ["<a href='#loads'>Loads</a>", "<a href='#vrms'>VRMs</a>",
-           "<a href='#losses'>Losses</a>", "<a href='#vias'>Vias</a>"]
+           "<a href='#pins'>Pins</a>", "<a href='#losses'>Losses</a>",
+           "<a href='#vias'>Vias</a>"]
     if th is not None:
         nav.append("<a href='#thermal'>Thermal</a>")
     nav += [f"<a href='#g{i}'>{_e(n)}</a>" for i, n in enumerate(tree.groups)]
@@ -301,6 +303,35 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     if links:
         parts.append("<h3>DC connections</h3>" +
                      _table(["Part", "Group", "R (mΩ)", "I (A)", "P (mW)"], links))
+    pins = pin_rows(tree, snap)
+    parts.append("<h2 id='pins'>Pins</h2>")
+    if pins:
+        for name in tree.groups:
+            rows = [r for r in pins if r.group == name]
+            if not rows:
+                continue
+            parts.append(
+                f"<details><summary><b>{_e(name)}</b>: {len(rows)} pin(s)</summary>" +
+                _table(["Terminal", "Role", "Pin", "x (mm)", "y (mm)", "V", "Drop / boost (mV)",
+                        "%", "I (mA)", "I is"],
+                       [[_e(r.terminal), _e(r.role),
+                         _e(f"{r.part}.{r.pin}" if r.part else r.pin), _num(r.x, ".3f"),
+                         _num(r.y, ".3f"), _num(r.v, ".6f"), fmt_drop(r.deviation, unit=""),
+                         _num(abs(100.0 * r.deviation / r.nominal), ".3f") if r.nominal else "",
+                         _num(None if r.current is None else r.current * 1e3, ".4g"),
+                         _e(r.current_is)] for r in rows]) +
+                "</details>")
+        parts.append("<p class='note'>Every pin each group was solved with: VRM outputs, "
+                     "phases, inputs and sense pins, load supply and ground pins and the pins "
+                     "of DC connections. I is the current drawn from the copper at the pin; "
+                     "negative is delivered into it (a VRM output, or a DC connection's far "
+                     "side). VRM output pin currents are solved; a load's current is shared "
+                     "equally by its pins, as the solver applies it, and a DC connection's by "
+                     "the pins on each side. Drop and boost are from the VRM set point (0 V "
+                     "for a ground).</p>")
+    else:
+        parts.append("<p class='note'>These results were saved before KiPI kept each pin "
+                     "(0.7.2); solve again to list them.</p>")
     losses = loss_rows(tree, snap)
     layers = [c.name for c in snap.stackup.copper if any(c.name in r.by_layer for r in losses)]
     parts.append("<h2 id='losses'>Losses</h2>")

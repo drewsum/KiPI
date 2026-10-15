@@ -2,9 +2,10 @@
 
 * :func:`via_rows`   every via / PTH barrel across all groups, highest current first
 * :func:`loss_rows`  copper loss per group, split by layer, vias and DC connections
+* :func:`pin_rows`   every solved pin of every group: its voltage and current
 * :func:`layer_temps` the hottest copper per layer after an electro-thermal solve
-* :func:`export_csv` loads, VRMs, DC connections, vias, losses and copper temperature
-  as CSV files
+* :func:`export_csv` loads, VRMs, DC connections, pins, vias, losses and copper
+  temperature as CSV files
 * :func:`export_vtk` each group's 3D results as a ParaView multiblock (.vtm)
 * :func:`save_results` / :func:`load_results`  reopen a solve without re-solving
 """
@@ -153,6 +154,71 @@ def loss_rows(tree, snap: BoardSnapshot) -> List[LossRow]:
 
 
 # ---------------------------------------------------------------------------
+# Pins
+# ---------------------------------------------------------------------------
+
+PIN_CURRENT_SOLVED = "solved"
+PIN_CURRENT_SHARED = "equal share"
+
+
+@dataclass
+class PinRow:
+    group: str
+    kind: str                 # the group's: "rail" or "ground"
+    terminal: str             # e.g. "U1 (output)", "U2", "U2 [VDD]", "R5"
+    role: str                 # "source", "load" or "DC connection"
+    part: str
+    pin: str
+    x: float
+    y: float
+    v: float
+    nominal: float            # the group's reference: its VRM's set point, or 0 V
+    current: Optional[float]  # A drawn from the copper at the pin (negative: delivered)
+    current_is: str           # PIN_CURRENT_SOLVED or PIN_CURRENT_SHARED; "" if unknown
+
+    @property
+    def deviation(self) -> float:
+        """Nominal minus the pin's voltage, volts (negative: a boost)."""
+        return self.nominal - self.v
+
+
+def pin_rows(tree, snap: BoardSnapshot) -> List[PinRow]:
+    """Every pin each group was solved with (#71): VRM outputs, phases, inputs and sense
+    pins, load supply and ground pins, and the pins of DC connections. A source's (VRM
+    output's) pin currents are solved; a load's current is shared equally by its pins, as
+    the solver applies it, and so is a DC connection's (its pins on a side are one node).
+    Results saved before 0.7.2 kept no pins and give none."""
+    by_id = {p.id: p for p in snap.pads}
+    rows = []
+
+    def add(g, terminal, role, pids, vs, amps, how):
+        for pid, v, a in zip(pids, vs, amps):
+            p = by_id.get(pid)
+            if p is None:
+                continue
+            ok = a is not None and not (isinstance(a, float) and math.isnan(a))
+            rows.append(PinRow(g.name, g.kind, terminal, role, p.footprint, p.number,
+                               p.position[0], p.position[1], v, g.result.fields.v_ref,
+                               a if ok else None, how if ok else ""))
+
+    for g in tree.groups.values():
+        f = g.result.fields
+        for t in sorted(f.terminals, key=lambda t: t.kind != "source"):
+            pids = getattr(t, "pad_ids", [])
+            if not pids:
+                continue
+            add(g, t.name, t.kind, pids, t.v_pads, t.i_pads,
+                PIN_CURRENT_SOLVED if t.i_solved else PIN_CURRENT_SHARED)
+        for s in f.series:
+            for pids, v, sign in ((getattr(s, "pads_a", []), s.v_a, 1.0),
+                                  (getattr(s, "pads_b", []), s.v_b, -1.0)):
+                if pids:
+                    add(g, s.name, "DC connection", pids, [v] * len(pids),
+                        [sign * s.current / len(pids)] * len(pids), PIN_CURRENT_SHARED)
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # CSV
 # ---------------------------------------------------------------------------
 
@@ -183,7 +249,7 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
     # nominal) or "boost" (above it).
     def dev(dv, pct):
         mag, kind = drop_or_boost(dv)
-        return [mag * 1e3, abs(pct), kind]
+        return [mag * 1e3, None if pct is None else abs(pct), kind]
 
     out.append(_write(folder / f"{stem}_loads.csv",
                       ["load", "group", "current_A", "nominal_V", "v_supply_mean_V",
@@ -219,6 +285,16 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
                        "power_W"],
                       [[s.name, g.name, s.resistance, s.current, s.v_a, s.v_b, s.power]
                        for g in tree.groups.values() for s in g.result.fields.series]))
+    out.append(_write(folder / f"{stem}_pins.csv",
+                      ["group", "group_kind", "terminal", "role", "part", "pin", "x_mm", "y_mm",
+                       "v_V", "nominal_V", "deviation_mV", "deviation_pct", "deviation_is",
+                       "current_A", "current_is"],
+                      [[r.group, r.kind, r.terminal, r.role, r.part, r.pin, r.x, r.y, r.v,
+                        r.nominal,
+                        *dev(r.deviation,
+                             100.0 * r.deviation / abs(r.nominal) if r.nominal else None),
+                        r.current, r.current_is]
+                       for r in pin_rows(tree, snap)]))
     out.append(_write(folder / f"{stem}_vias.csv",
                       ["group", "kind", "label", "x_mm", "y_mm", "drill_mm", "current_A",
                        "power_W", "limit_A", "result"],

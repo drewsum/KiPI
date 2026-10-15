@@ -73,6 +73,8 @@ class Solution:
     # differ from the problem's own (VRM sense correction, power-tree VRM input currents).
     source_voltage: Dict[str, float] = field(default_factory=dict)
     load_current: Dict[str, float] = field(default_factory=dict)
+    # A each source delivers at each of its pads, in the source's pad order (#71).
+    source_pad_current: Dict[str, List[float]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +326,11 @@ class LinearSystem:
         flow = self.K @ np.nan_to_num(u_all) - f
         source_current = {name: float(flow[us].sum())
                           for name, us in self.source_unknowns.items()}
+        # Per pad: pads that touch share one unknown, and so share its current.
+        source_pad_current = {}
+        for src in prob.sources:
+            us = [self.pad_unknown[pid] for pid in src.pad_ids]
+            source_pad_current[src.name] = [float(flow[u]) / us.count(u) for u in us]
         series_current = {}
         for e in self.series:
             if e.g is None:
@@ -338,7 +345,8 @@ class LinearSystem:
                         stats=stats, warnings=list(self.warnings),
                         series_elements=self.series, series_current=series_current,
                         tri_rho_factor=self.rho_factor, layer_rho=self.layer_rho,
-                        source_voltage=volts, load_current=amps)
+                        source_voltage=volts, load_current=amps,
+                        source_pad_current=source_pad_current)
 
 
 def solve(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem,

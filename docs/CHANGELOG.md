@@ -32,6 +32,14 @@ milestones rather than versions that were ever set.
   of a model crossed. It fills in while the rail solves, the parts first and then the mesh,
   and the Impedance tab comes to the front when the results arrive. Hover a part for its
   model. The view is fixed, fitted to the board. Saved AC results keep the map.
+- **Every pin's voltage and current in the DC reports** (#71). The CSV export adds
+  `<stem>_pins.csv`, and the HTML report adds a **Pins** section with a collapsible
+  table per net group. Both list every pin each group was solved with: VRM output, phase,
+  input and sense pins, load supply and ground pins, and DC connection pins. Each row has
+  the pin's position, voltage, drop or boost from the set point, and current. VRM output
+  pin currents are solved, so they show how the current shares between a VRM's pins. A
+  load's current is split equally across its pins, which is how the solver applies it.
+  Results saved before 0.7.2 have no pin list.
 
 ### Changed
 - The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity

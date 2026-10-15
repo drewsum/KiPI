@@ -31,6 +31,7 @@ def test_report_contents(tmp_path, thermal):
     assert text.count("data:image/png;base64,") >= 2 * len(tree.groups)
     for l in tree.loads:
         assert l.name in text
+    assert "id='pins'" in text and text.count("<details>") >= len(tree.groups)   # #71
     assert ("Electro-thermal" in text) == thermal
     assert ("Copper temperature by layer" in text) == thermal
     import re
