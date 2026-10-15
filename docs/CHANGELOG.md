@@ -75,6 +75,8 @@ milestones rather than versions that were ever set.
   - Without it, or if it fails on a system, KiPI falls back to SciPy.
   - *Copy version info* names the solver in use.
 - **All and None buttons for the copper layers.** They show or hide every layer at once.
+- **Layer opacity slider.** *Display → Opacity* draws the copper layers and pads see-through
+  (5% to 100%), in the plain and result views, to see the layers beneath. Vias stay solid.
 
 ### Changed
 - **Faster solves.** Rails of up to 200k unknowns now get a direct solve rather than AMG,

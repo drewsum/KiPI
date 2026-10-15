@@ -24,6 +24,8 @@ _BOARD_COLOR = (0.15, 0.40, 0.20)
 
 # Surface properties per mesh category: (opacity, specular)
 _CATEGORY_LOOK = {"cu": (1.0, 0.4), "pad": (0.9, 0.0), "via": (1.0, 0.6)}
+# Copper drawn under the via-current view, for context
+_VIA_VIEW_COPPER_OPACITY = 0.35
 
 
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
@@ -74,7 +76,7 @@ def _copper_clim(scene: ResultScene, field: str, hidden=()) -> Tuple[float, floa
     return lo, hi, log_scale
 
 
-def _chunk_actor(category) -> vtkActor:
+def _chunk_actor(category, layer_opacity: float = 1.0) -> vtkActor:
     """A bare VTK actor colored by the chunk's per-cell ``rgb`` array.
 
     Chunk actors bypass ``Plotter.add_mesh``: its name bookkeeping walks every actor in
@@ -90,7 +92,7 @@ def _chunk_actor(category) -> vtkActor:
     actor.SetMapper(mapper)
     opacity, specular = _CATEGORY_LOOK[category[0]]
     prop = actor.GetProperty()
-    prop.SetOpacity(opacity)
+    prop.SetOpacity(opacity * (layer_opacity if category[0] in ("cu", "pad") else 1.0))
     prop.SetSpecular(specular)
     prop.SetSpecularPower(20.0)
     prop.SetInterpolationToFlat()
@@ -127,6 +129,8 @@ class Viewer3D(QWidget):
         self._show_board = True
         self._color_mode = "layer"
         self._zscale = 1.0
+        self._layer_opacity = 1.0
+        self._depth_peeling = False
         self._pick_cb: Optional[Callable[[Tuple[float, float, float]], None]] = None
         self._result: Optional[ResultScene] = None
         self._result_field = "voltage"
@@ -221,7 +225,7 @@ class Viewer3D(QWidget):
                     del self._chunk_actors[chunk]
                 continue
             if actor is None:
-                actor = _chunk_actor(chunk.category)
+                actor = _chunk_actor(chunk.category, self._layer_opacity)
                 actor.SetScale(1.0, 1.0, self._zscale)
                 renderer.AddActor(actor)
                 self._chunk_actors[chunk] = actor
@@ -308,6 +312,42 @@ class Viewer3D(QWidget):
     @property
     def zscale(self) -> float:
         return self._zscale
+
+    def set_layer_opacity(self, opacity: float):
+        """Draw the copper layers (plain and result) and their pads at ``opacity`` (0..1)
+        of their usual opacity, to see the layers beneath. Vias and arrows stay solid."""
+        self._layer_opacity = min(1.0, max(0.0, float(opacity)))
+        for chunk, actor in self._chunk_actors.items():
+            kind = chunk.category[0]
+            if kind in ("cu", "pad"):
+                actor.GetProperty().SetOpacity(_CATEGORY_LOOK[kind][0] * self._layer_opacity)
+        for actor in self._result_actors.values():
+            self._apply_result_opacity(actor)
+        self._set_depth_peeling(self._layer_opacity < 1.0)
+        self.plotter.render()
+
+    def _apply_result_opacity(self, actor):
+        base = _VIA_VIEW_COPPER_OPACITY if self._result_field == "via_current" else 1.0
+        actor.GetProperty().SetOpacity(base * self._layer_opacity)
+
+    def _set_depth_peeling(self, on: bool):
+        """Sort see-through layers properly while any are see-through. Some graphics
+        drivers lack depth peeling; VTK then blends unsorted, which only looks a little
+        off, so a failure here is ignored."""
+        if on == self._depth_peeling:
+            return
+        try:
+            if on:
+                self.plotter.enable_depth_peeling()
+            else:
+                self.plotter.disable_depth_peeling()
+            self._depth_peeling = on
+        except Exception:
+            pass
+
+    @property
+    def layer_opacity(self) -> float:
+        return self._layer_opacity
 
     # ---------------------------------------------------------------- results
     @property
@@ -461,6 +501,7 @@ class Viewer3D(QWidget):
                                show_scalar_bar=first, scalar_bar_args=bar,
                                name=f"result:{lid}", reset_camera=False, render=False)
             actor.SetScale(1.0, 1.0, self._zscale)
+            self._apply_result_opacity(actor)
             self._result_actors[lid] = actor
             first = False
         self._style_bar(title)
@@ -474,10 +515,11 @@ class Viewer3D(QWidget):
         """Vias colored by current; copper drawn as muted gray for context."""
         p = self.plotter
         for lid, lr in scene.layers.items():
-            actor = p.add_mesh(lr.mesh, color="#7a7f88", opacity=0.35, smooth_shading=False,
-                               name=f"result:{lid}", reset_camera=False, render=False,
-                               pickable=True)
+            actor = p.add_mesh(lr.mesh, color="#7a7f88", opacity=_VIA_VIEW_COPPER_OPACITY,
+                               smooth_shading=False, name=f"result:{lid}",
+                               reset_camera=False, render=False, pickable=True)
             actor.SetScale(1.0, 1.0, self._zscale)
+            self._apply_result_opacity(actor)
             self._result_actors[lid] = actor
         if scene.vias is None:
             return

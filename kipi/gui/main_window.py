@@ -281,6 +281,18 @@ class MainWindow(QMainWindow):
                                "Only the drawing changes, not the solve.")
         self.spin_z.valueChanged.connect(self.viewer.set_zscale)
         self.viewer.set_zscale(self.spin_z.value())
+        opac = QHBoxLayout()
+        self.sld_opacity = QSlider(Qt.Horizontal, g_view)
+        self.sld_opacity.setRange(5, 100)
+        self.sld_opacity.setValue(100)
+        self.sld_opacity.setToolTip("How solid the copper layers and pads are drawn. Lower "
+                                    "it to see the layers beneath; vias stay solid.")
+        self.lbl_opacity = QLabel("100%", g_view)
+        self.lbl_opacity.setMinimumWidth(self.lbl_opacity.fontMetrics()
+                                         .horizontalAdvance("100%") + 4)
+        self.sld_opacity.valueChanged.connect(self._opacity_changed)
+        opac.addWidget(self.sld_opacity, 1)
+        opac.addWidget(self.lbl_opacity)
         feats = QHBoxLayout()
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate"}
@@ -292,6 +304,7 @@ class MainWindow(QMainWindow):
             feats.addWidget(cb)
         fv.addRow("Color", self.cmb_color)
         fv.addRow("Z scale", self.spin_z)
+        fv.addRow("Opacity", opac)
         fv.addRow(feats)
         cut = QHBoxLayout()
         self.cmb_cut = QComboBox(g_view)
@@ -671,6 +684,10 @@ class MainWindow(QMainWindow):
 
     def _on_layer_item_changed(self, item):
         self.viewer.set_layer_visible(item.data(Qt.UserRole), item.checkState() == Qt.Checked)
+
+    def _opacity_changed(self, value: int):
+        self.lbl_opacity.setText(f"{value}%")
+        self.viewer.set_layer_opacity(value / 100.0)
 
     def _set_layers_checked(self, on: bool):
         """Tick (show) or untick (hide) every copper layer."""
