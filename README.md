@@ -302,8 +302,9 @@ tab). Every net group is meshed and solved, the downstream loads first and then
 back towards the source, so each VRM's input current includes everything it feeds. Progress
 and solver residuals stream into the log; **Cancel** stops the run.
 
-Tick **HTML report** before solving to also write `<board>_kipi_report.html` next to the
-board. It opens in your web browser when the solve finishes, and **Report** opens it
+Tick **HTML report** before solving to also write
+`<board>_kipi_report_<date>_<time>.html` next to the board (the time stamp keeps each
+solve's report rather than overwriting the last). It opens in your web browser when the solve finishes, and **Report** opens it
 again later. It is a single file that works offline, containing:
 
 * the summary and every results table;
@@ -363,7 +364,7 @@ Result tabs (click a column header to sort by it; click again to reverse):
 **Export ▾** writes the tables as CSV (including `_pins.csv`, with the voltage and current
 of every pin each group was solved with, which the HTML report also lists), the 3D
 results as a ParaView `.vtm`, or **Save
-results…** as a `.kipi-results` file, which the toolbar's **Open results…** reloads without
+results…** as a `.kipi-results` file (named with the board and the time by default), which the toolbar's **Open results…** reloads without
 solving again (load the board first). Results files are Python pickles, so only open ones
 you created.
 
@@ -421,10 +422,10 @@ frequency. **Save results…** writes every solved rail to a `.kipi-ac-results` 
 **Open results…** reloads in AC mode (load the board first; like DC results files, these are
 pickles, so only open ones you created).
 
-Tick **HTML report** next to **Solve rail** to also write `<board>_<rail>_ac_report.html`
-next to the board after each solve. It opens in your web browser when the solve
+Tick **HTML report** next to **Solve rail** to also write
+`<board>_<rail>_ac_report_<date>_<time>.html` next to the board after each solve. It opens in your web browser when the solve
 finishes, and **Report** opens it again later. Like the DC report, it is one
-offline file you can share. It has the probe table with margins, an interactive |Z| and phase
+offline file you can share. It has the probe table with margins, an interactive |Z|
 plot with the targets and each capacitor model's own curve, a board map of the rail's copper
 with the probes and capacitors marked, the capacitor models, and the sweep, mesh and solver
 details.

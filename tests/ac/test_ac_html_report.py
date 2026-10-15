@@ -2,6 +2,7 @@
 the AC panel's HTML report option."""
 
 import os
+from datetime import datetime
 
 import numpy as np
 import pytest
@@ -51,9 +52,11 @@ def test_report_without_targets_or_caps(tmp_path):
 
 
 def test_report_name_is_safe_for_files():
-    assert report_name("board", "+3.3V") == "board_+3.3V_ac_report.html"
-    assert report_name("board", "A/B: core") == "board_A_B_core_ac_report.html"
-    assert report_name("board", "///") == "board_rail_ac_report.html"
+    when = datetime(2026, 10, 15, 14, 30, 12)
+    assert report_name("board", "+3.3V", when) == "board_+3.3V_ac_report_2026-10-15_143012.html"
+    assert report_name("board", "A/B: core", when) == \
+        "board_A_B_core_ac_report_2026-10-15_143012.html"
+    assert report_name("board", "///", when) == "board_rail_ac_report_2026-10-15_143012.html"
 
 
 def test_html_report_setting_is_saved(tmp_path):

@@ -42,6 +42,11 @@ milestones rather than versions that were ever set.
   Results saved before 0.7.2 have no pin list.
 
 ### Changed
+- HTML report file names carry the date and time of the solve
+  (`<board>_kipi_report_<date>_<time>.html`,
+  `<board>_<rail>_ac_report_<date>_<time>.html`), so a new solve no longer overwrites the
+  last report, and **Save results…** suggests a time-stamped `.kipi-results` /
+  `.kipi-ac-results` name (#66).
 - The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity
   moved to the Stackup window, since the AC solve uses them too.
 - The **Cut** plane (axis, slider and **Flip**) is gone from the Display options.

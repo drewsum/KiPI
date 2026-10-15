@@ -971,7 +971,8 @@ class MainWindow(QMainWindow):
         frozen = copy.deepcopy(setup)     # edits during the solve don't affect it
         report_path = None
         if frozen.html_report and self._setup_path is not None:
-            report_path = self._setup_path.parent / f"{self._results_stem()}_kipi_report.html"
+            from kipi.dc.report.html import report_name
+            report_path = self._setup_path.parent / report_name(self._results_stem())
 
         def work(progress):
             from kipi.core.mesh.mesher import MeshError
@@ -1180,12 +1181,14 @@ class MainWindow(QMainWindow):
     def _export(self, kind: str):
         if not self._tree:
             return
+        from kipi.core.naming import stamped
         from kipi.dc.pi import report
         start = str(self._setup_path.parent) if self._setup_path else ""
         try:
             if kind == "results":
                 path, _ = QFileDialog.getSaveFileName(
-                    self, "Save results", str(Path(start) / f"{self._results_stem()}.kipi-results"),
+                    self, "Save results",
+                    str(Path(start) / f"{stamped(self._results_stem())}.kipi-results"),
                     "KiPI results (*.kipi-results)")
                 if path:
                     report.save_results(path, self._tree, self._scenes, self.snapshot,

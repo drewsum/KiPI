@@ -798,8 +798,9 @@ limits grade the last solve straight away when you change them.</p>
 <p><b>Solve all</b> saves the setup, meshes every ticked net group and solves the power tree.
 It is disabled while there are problems (listed in red). If you click it while the 3D view is
 still building nets, the solve is queued and starts as soon as that finishes.</p>
-<p>Tick <b>HTML report</b> before solving to also write <code>&lt;board&gt;_kipi_report.html</code>
-next to the board. It opens in your web browser when the solve finishes, and
+<p>Tick <b>HTML report</b> before solving to also write
+<code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the board; the
+time stamp keeps each solve's report instead of overwriting the last one. It opens in your web browser when the solve finishes, and
 <b>Report</b> opens it again later. The report is a single offline file with every
 table, an interactive 3D view of each net group, per-layer statistics and maps, and the
 temperature map.</p>
@@ -920,7 +921,7 @@ clipped).</p>
   <tr><td>3D results for ParaView (.vtm)…</td><td class="wrap">The result meshes, for ParaView
     or other VTK tools.</td></tr>
   <tr><td>Save results…</td><td class="wrap">A <code>.kipi-results</code> file that <b>Open
-    results…</b> reloads without solving. It is a Python pickle: only open files you
+    results…</b> reloads without solving, named with the board and the time by default. It is a Python pickle: only open files you
     trust.</td></tr>
 </table>
 <div class="pair">
@@ -1127,7 +1128,8 @@ nets with grounds first, defaulting to the VRM's ground pins' net. <b>Solve rail
 setup and runs the sweep; problems that stop it are listed in red above. The log shows the
 field solves as they go.</p>
 <p>Tick <b>HTML report</b> next to <b>Solve rail</b> to also write
-<code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code> next to the board after each rail's solve;
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
+board after each rail's solve;
 the report opens in your web browser when the rail finishes solving, and <b>Report</b> opens
 the shown rail's report again later. See <a href="#ac-report">AC HTML report</a>.</p>
 <p>Each rail keeps its last result: switch <b>Rail</b> to look at another rail's curves
@@ -1206,7 +1208,8 @@ saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
 series links included, the total plane capacitance, the solve size and time, capacitors left
 out for having no model, and any warnings. <b>Export CSV…</b> writes |Z|, R and X of every probe
 at every frequency. <b>Save results…</b> writes every rail solved so far to a
-<code>.kipi-ac-results</code> file; <b>Open results…</b> in AC mode brings them back, each
+<code>.kipi-ac-results</code> file (named with the board and the time by default);
+<b>Open results…</b> in AC mode brings them back, each
 under its VRM in <b>Rail</b>. Rails whose VRM is no longer in the setup are left out.</p>
 </div>
 </details>
@@ -1215,8 +1218,8 @@ under its VRM in <b>Rail</b>. Rails whose VRM is no longer in the setup are left
 <summary>AC HTML report</summary>
 <div class="body">
 <p>With <b>HTML report</b> ticked, each rail's solve also writes
-<code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code> next to the board, replacing that rail's
-last one. Like the DC report, it is a single offline file you can email. It holds:</p>
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
+board; the time stamp keeps every solve's report. Like the DC report, it is a single offline file you can email. It holds:</p>
 <ul>
   <li>a summary and the probe table: pins, minimum and worst |Z|, the target, the margin in dB
     at the worst point (positive passes), PASS/FAIL, and an overall verdict;</li>
@@ -1405,8 +1408,8 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>*.kipi-results</code></td><td class="wrap">A saved DC solve (Python pickle).</td></tr>
   <tr><td><code>*.kipi-ac-results</code></td><td class="wrap">Saved AC results, every rail
     solved (Python pickle).</td></tr>
-  <tr><td><code>&lt;board&gt;_kipi_report.html</code></td><td class="wrap">The DC HTML report.</td></tr>
-  <tr><td><code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code></td><td class="wrap">An AC rail's HTML report.</td></tr>
+  <tr><td><code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code></td><td class="wrap">The DC HTML report.</td></tr>
+  <tr><td><code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code></td><td class="wrap">An AC rail's HTML report.</td></tr>
   <tr><td><code>*.csv</code></td><td class="wrap">DC tables, or an AC rail's impedance.</td></tr>
   <tr><td><code>*.vtm</code></td><td class="wrap">DC 3D results for ParaView.</td></tr>
   <tr><td><code>kipi-&lt;user&gt;.lock</code></td><td class="wrap">In the temporary folder while

@@ -25,6 +25,7 @@ from kipi import __version__
 from kipi.ac.model import caps_dict
 from kipi.ac.solver.fem import dielectric_summary
 from kipi.core.model.board import BoardSnapshot
+from kipi.core.naming import timestamp
 from kipi.dc.report.html import CSS, _e, _table, _verdict
 
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf", "#bcbd22",
@@ -52,11 +53,12 @@ CSS_EXTRA = ".caps td:not(:last-child) { white-space: nowrap; } .caps td:last-ch
             "{ text-align: left; }"
 
 
-def report_name(board_stem: str, rail: str) -> str:
-    """File name of a rail's AC report: '<board>_<rail>_ac_report.html', the rail made safe
-    for a file name ('+3.3V' stays '+3.3V'; '/' and the like become '_')."""
+def report_name(board_stem: str, rail: str, when: Optional[_dt.datetime] = None) -> str:
+    """File name of a rail's AC report: '<board>_<rail>_ac_report_<time stamp>.html', the
+    rail made safe for a file name ('+3.3V' stays '+3.3V'; '/' and the like become '_').
+    The time stamp keeps each solve's report (#66)."""
     safe = re.sub(r"[^\w.+\-]+", "_", rail).strip("_") or "rail"
-    return f"{board_stem}_{safe}_ac_report.html"
+    return f"{board_stem}_{safe}_ac_report_{timestamp(when)}.html"
 
 
 def _ohms(z: Optional[float]) -> str:

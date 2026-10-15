@@ -929,8 +929,9 @@ class ACPanel(QWidget):
         if not self._results or self.snapshot is None:
             return
         from kipi.ac.report import RESULTS_SUFFIX, save_results
+        from kipi.core.naming import stamped
         start = self.snapshot.project_dir
-        stem = f"{Path(self.snapshot.board_name).stem or 'kipi'}{RESULTS_SUFFIX}"
+        stem = f"{stamped(Path(self.snapshot.board_name).stem or 'kipi')}{RESULTS_SUFFIX}"
         path, _ = QFileDialog.getSaveFileName(self, "Save AC results", f"{start}/{stem}"
                                               if start else stem,
                                               f"KiPI AC results (*{RESULTS_SUFFIX})")

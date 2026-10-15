@@ -25,6 +25,7 @@ import numpy as np
 from kipi import __version__
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.stackup import summary as stackup_summary
+from kipi.core.naming import timestamp
 from kipi.dc.pi.tree import fmt_drop
 
 TRIANGLE_BUDGET = 60_000      # per group's 3D view
@@ -218,6 +219,12 @@ th { background: #f0f0f0; } td:first-child, th:first-child { text-align: left; }
 nav a { margin-right: 12px; }
 details > summary { cursor: pointer; margin: 6px 0; }
 """
+
+
+def report_name(board_stem: str, when: Optional[_dt.datetime] = None) -> str:
+    """File name of the DC report: '<board>_kipi_report_<time stamp>.html', so each solve
+    keeps its own report (#66)."""
+    return f"{board_stem}_kipi_report_{timestamp(when)}.html"
 
 
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,

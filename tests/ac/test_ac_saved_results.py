@@ -1,6 +1,7 @@
 """AC results files: every solved rail is saved and opens again without solving."""
 
 import os
+import re
 
 import numpy as np
 import pytest
@@ -103,12 +104,19 @@ def test_save_writes_every_rail(panel, tmp_path, monkeypatch):
     panel.show_result(_result("VRM1", 0.001))
     panel.show_result(_result("VRM2", 0.002))
     out = tmp_path / f"x{RESULTS_SUFFIX}"
-    monkeypatch.setattr("qtpy.QtWidgets.QFileDialog.getSaveFileName",
-                        lambda *a, **k: (str(out), ""))
+    offered = []
+
+    def ask(parent, title, start, filt):
+        offered.append(start)
+        return str(out), ""
+    monkeypatch.setattr("qtpy.QtWidgets.QFileDialog.getSaveFileName", ask)
     saved = []
     panel.results_saved.connect(saved.append)
     panel.btn_save.click()
     assert saved == [str(out)]
+    # The name offered carries the time, so saving again does not overwrite (#66).
+    assert re.search(r"_\d{4}-\d\d-\d\d_\d{6}" + re.escape(RESULTS_SUFFIX) + "$",
+                     offered[0]), offered
     assert set(load_results(out)["results"]) == {"VRM1", "VRM2"}
 
 
