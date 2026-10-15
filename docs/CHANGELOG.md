@@ -74,6 +74,7 @@ milestones rather than versions that were ever set.
     environment from about 860 MB to about 1.5 GB. The README explains how to add it.
   - Without it, or if it fails on a system, KiPI falls back to SciPy.
   - *Copy version info* names the solver in use.
+- **All and None buttons for the copper layers.** They show or hide every layer at once.
 
 ### Changed
 - **Faster solves.** Rails of up to 200k unknowns now get a direct solve rather than AMG,

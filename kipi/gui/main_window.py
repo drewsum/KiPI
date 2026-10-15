@@ -252,7 +252,17 @@ class MainWindow(QMainWindow):
         self.layer_list.itemChanged.connect(self._on_layer_item_changed)
         self.layer_list.setToolTip("Show or hide each copper layer. Result colors stretch "
                                    "over the layers that are shown.")
+        lrow = QHBoxLayout()
+        btn_all_layers = QPushButton("All", g_layers)
+        btn_all_layers.setToolTip("Show every copper layer")
+        btn_all_layers.clicked.connect(lambda: self._set_layers_checked(True))
+        btn_no_layers = QPushButton("None", g_layers)
+        btn_no_layers.setToolTip("Hide every copper layer")
+        btn_no_layers.clicked.connect(lambda: self._set_layers_checked(False))
+        lrow.addWidget(btn_all_layers, 1)
+        lrow.addWidget(btn_no_layers, 1)
         ll.addWidget(self.layer_list)
+        ll.addLayout(lrow)
 
         # --- display options
         g_view = QGroupBox("Display", panel)
@@ -661,6 +671,14 @@ class MainWindow(QMainWindow):
 
     def _on_layer_item_changed(self, item):
         self.viewer.set_layer_visible(item.data(Qt.UserRole), item.checkState() == Qt.Checked)
+
+    def _set_layers_checked(self, on: bool):
+        """Tick (show) or untick (hide) every copper layer."""
+        state = Qt.Checked if on else Qt.Unchecked
+        for i in range(self.layer_list.count()):
+            it = self.layer_list.item(i)
+            if it.checkState() != state:
+                it.setCheckState(state)      # itemChanged updates the viewer
 
     # ============================================================ scene
     def sync_nets(self):
