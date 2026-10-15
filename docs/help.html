@@ -291,6 +291,19 @@ and probes already set up. From a development checkout run</p>
 <figcaption>The main window in DC mode.</figcaption></figure>
 <p>The Board, setup and Log panels are dock widgets: drag their title bars to move them or
 float them in their own windows.</p>
+<h4>Starting KiPI</h4>
+<ul>
+  <li>While KiPI starts it shows a <b>welcome screen</b> with the logo, its version and the
+    versions of Python and its main packages. It closes on its own after one play of the
+    animation, or when you click it.</li>
+  <li><b>One KiPI at a time.</b> Clicking the KiPI button while KiPI is already open brings
+    the open window to the front instead of opening a second one. A KiPI that crashed does
+    not block the next one.</li>
+  <li><b>One KiCad at a time.</b> KiPI talks to KiCad through its API, which cannot tell two
+    open KiCads apart, so KiPI will not connect (at start or on <b>Load from KiCad</b>) while
+    more than one KiCad project manager or PCB editor is open. The message names each one
+    with its process ID. See <a href="#ts-multiple-kicad">Troubleshooting</a>.</li>
+</ul>
 
 <!-- ================================================================== TOOLBAR -->
 <h2 id="toolbar">Toolbar</h2>
@@ -301,7 +314,8 @@ float them in their own windows.</p>
   <tr><th>Button</th><th>What it does</th></tr>
   <tr><td><b>Load from KiCad</b></td><td class="wrap">Re-reads the board from the running PCB
     editor (after you change the layout) and reloads the saved setup. The nets you have
-    ticked stay ticked. Save the setup first if you have unsaved changes.</td></tr>
+    ticked stay ticked. Save the setup first if you have unsaved changes. Only one KiCad may
+    be open (see <a href="#window">Starting KiPI</a>).</td></tr>
   <tr><td><b>Refill zones</b></td><td class="wrap">When ticked, KiPI asks KiCad to refill every
     zone and waits for it before reading. KiPI only sees <em>filled</em> copper, so leave
     this on unless the fills are already current and the refill is slow.</td></tr>
@@ -372,7 +386,10 @@ are shown, so one layer's outlier does not wash out the others.</p>
 <div class="body">
 <table>
   <tr><th>Control</th><th>What it does</th></tr>
-  <tr><td><b>Color</b></td><td class="wrap">Colors the plain copper by layer or by net.</td></tr>
+  <tr><td><b>Color</b></td><td class="wrap">Colors the plain copper by layer or by net. By
+    layer, each layer has its color from the PCB editor's color theme (<i>Preferences →
+    Colors</i> in KiCad), read again on every <b>Load from KiCad</b>; the log names the theme.
+    If the theme cannot be read, KiCad's default theme colors are used.</td></tr>
   <tr><td><b>Z scale</b></td><td class="wrap">Stretches the stackup vertically (1× to 100×)
     so the layers can be told apart. It only changes the drawing.</td></tr>
   <tr><td><b>Opacity</b></td><td class="wrap">How solid the copper layers and pads are
@@ -380,12 +397,34 @@ are shown, so one layer's outlier does not wash out the others.</p>
     layers beneath; vias stay solid.</td></tr>
   <tr><td><b>Vias / Pads / Board</b></td><td class="wrap">Show or hide via barrels, pads and
     the board body.</td></tr>
+  <tr><td id="models"><b>Models</b></td><td class="wrap">Shows the KiCad 3D models of the parts
+    in the setup (VRMs, loads, series links and the parts of capacitor models) that have a pad
+    on a net shown. In the geometry view they are on to start with; over results they start
+    hidden, and ticking <b>Models</b> there shows them too. Each view remembers its own
+    setting. See <a href="#part-models">Part 3D models</a> below.</td></tr>
   <tr><td><b>Cut</b> axis, slider, <b>Flip</b></td><td class="wrap">Cuts the view with a plane
     across X, Y or Z, so you can look inside the stackup. The slider moves the plane;
     <b>Flip</b> keeps the other half.</td></tr>
 </table>
 <figure><img src="images/stackup_cut.png" alt="Stackup cut along Y at 15x Z scale">
 <figcaption>A cut along Y at 15× Z scale shows the inner planes and via barrels.</figcaption></figure>
+<h4 id="part-models">Part 3D models</h4>
+<ul>
+  <li>KiPI asks KiCad's command-line tool, <code>kicad-cli</code>, to export just the parts it
+    needs, so KiCad finds the model files the same way its own 3D viewer does (STEP and
+    VRML). It runs in the background and takes about a second; each part is read once per
+    board, so adding a part to the setup only exports that part.</li>
+  <li><code>kicad-cli</code> reads the <b>saved</b> <code>.kicad_pcb</code> file. A part moved
+    since the last save is drawn where it was saved; save the board and click <b>Load from
+    KiCad</b> to update it.</li>
+  <li>The <b>Z scale</b> stretches the board but not the parts: top-side parts sit on the
+    stretched board at their true height. The <b>Cut</b> plane cuts them too.</li>
+  <li>Clicks go through the models to the copper beneath, so probing works as without
+    them.</li>
+  <li>A part whose model KiCad cannot find is named in the log with the missing path. If
+    <code>kicad-cli</code> or the board file cannot be found, the log says so once and no
+    models are drawn; see <a href="#ts-models">Troubleshooting</a>.</li>
+</ul>
 </div>
 </details>
 
@@ -412,7 +451,8 @@ in your layout. It needs a live KiCad connection (not a snapshot).</p>
   <tr><td>Pan</td><td>Shift + left-drag, or middle-drag</td></tr>
   <tr><td>Zoom</td><td>Scroll wheel</td></tr>
   <tr><td>Probe / identify</td><td class="wrap">Left-click copper or a via. The result goes to
-    the <a href="#info">Info</a> box and the status bar.</td></tr>
+    the <a href="#info">Info</a> box and the status bar. Clicks pass through
+    <a href="#part-models">part models</a>.</td></tr>
 </table>
 <p>In AC mode a second tab, <b>Impedance</b>, appears beside <b>3D view</b> and holds the
 <a href="#ac-plot">impedance plot</a>.</p>
@@ -1251,6 +1291,12 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>&lt;board&gt;_&lt;rail&gt;_ac_report.html</code></td><td class="wrap">An AC rail's HTML report.</td></tr>
   <tr><td><code>*.csv</code></td><td class="wrap">DC tables, or an AC rail's impedance.</td></tr>
   <tr><td><code>*.vtm</code></td><td class="wrap">DC 3D results for ParaView.</td></tr>
+  <tr><td><code>kipi-&lt;user&gt;.lock</code></td><td class="wrap">In the temporary folder while
+    KiPI is open, so a second KiPI brings the first to the front. It names the owner's
+    process, so one left behind by a crash is ignored.</td></tr>
+  <tr><td><code>&lt;board&gt;.kicad_prl</code></td><td class="wrap">KiCad's own local project
+    settings. <code>kicad-cli</code> may create it next to the board the first time it exports
+    <a href="#part-models">part models</a>, if the project has none yet.</td></tr>
   <tr><td><code>kipi-&lt;date&gt;-&lt;time&gt;-&lt;pid&gt;.log</code></td><td class="wrap">The session
     log, in <code>kipi/</code> under the temporary folder, with a matching
     <code>.crash.log</code>. The last 15 sessions are kept.</td></tr>
@@ -1267,6 +1313,36 @@ editor. The first start builds a Python environment and downloads a few hundred 
 take several minutes. If the button never appears, right-click the action in <i>Preferences →
 Plugins</i> and choose <i>Recreate Plugin Environment</i>. On macOS, select a Python 3.10–3.13
 interpreter there.</p></div>
+</details>
+<details id="ts-multiple-kicad">
+<summary>"KiPI works with one KiCad at a time"</summary>
+<div class="body"><p>More than one KiCad project manager or standalone PCB editor is open, and
+KiPI cannot tell which one holds your board. Close the others (the message lists them with their
+process IDs) and start KiPI again from the PCB editor of the board you want. If you know the
+check is wrong, set the environment variable <code>KIPI_ALLOW_MULTIPLE_KICAD=1</code> to skip it.
+If the running programs cannot be listed, KiPI carries on.</p></div>
+</details>
+<details>
+<summary>Clicking the KiPI button does not open a new window</summary>
+<div class="body"><p>KiPI is already open, perhaps minimized or behind KiCad; the button brings it
+to the front. If it is not open and still does not start, check the session log for a stale lock
+and delete <code>kipi-&lt;user&gt;.lock</code> from the temporary folder.</p></div>
+</details>
+<details id="ts-models">
+<summary>No part models are drawn</summary>
+<div class="body"><ul>
+  <li>Check <b>Models</b> is ticked in <a href="#display">Display</a>. Over results it starts
+    unticked.</li>
+  <li>Only parts named in the setup with a pad on a ticked net get a model.</li>
+  <li>The log says why. KiPI needs KiCad's <code>kicad-cli</code>: it looks in the connected
+    KiCad, the PATH, the usual install folders and a Flatpak KiCad. Otherwise set the
+    environment variable <code>KIPI_KICAD_CLI</code> to its full path.</li>
+  <li>It also needs the board's <code>.kicad_pcb</code> on disk, next to the project or the
+    snapshot. A snapshot opened on another machine usually has none.</li>
+  <li>A part whose model file KiCad cannot find is named in the log with the missing path;
+    KiCad's own 3D viewer shows the same gap. Fix the path in the footprint's 3D model
+    settings and save the board.</li>
+</ul></div>
 </details>
 <details>
 <summary>A net is missing from the pin pickers</summary>

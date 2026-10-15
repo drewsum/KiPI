@@ -33,7 +33,8 @@ def _part(z0=1.6, normals=True):
 
 def _view(zscale=1.0):
     v = NS(plotter=pv.Plotter(off_screen=True), _models={}, _model_actors={}, _board_top=0.0,
-           _zscale=zscale, _show_models=True, _show_board=True, _show_vias=True,
+           _zscale=zscale, _show_models=True, _show_models_result=False, _show_board=True,
+           _show_vias=True,
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
            _clip=None)
@@ -79,22 +80,38 @@ def test_top_parts_sit_on_the_stretched_board_unstretched():
     assert top.GetScale() == (1.0, 1.0, 1.0)
 
 
-def test_models_show_in_the_geometry_view_only():
+def test_models_are_off_over_results_until_asked_for():
     v = _view()
+    v.set_feature_visible = MethodType(Viewer3D.set_feature_visible, v)
     v.set_models({"C1": (_part(), "top")}, 1.6)
     actor = v._model_actors["top"]
     assert actor.GetVisibility()
-    v._show_models = False
-    v._apply_visibility()
+    v.set_feature_visible("models", False)
     assert not actor.GetVisibility()
-    v._show_models = True
+    v.set_feature_visible("models", True)
     v._result = object()                                  # a result is shown
     v._apply_visibility()
-    assert not actor.GetVisibility()
+    assert not actor.GetVisibility()                      # off by default over results
+    v.set_feature_visible("models", True)
+    assert actor.GetVisibility() and v._show_models_result
+    v.set_feature_visible("models", False)
+    assert not actor.GetVisibility() and v._show_models   # the copper view's is kept
     v._result = None
     v._apply_visibility()
     assert actor.GetVisibility()
     assert actor in v._all_actors()                       # cut by the cutting plane too
+
+
+def test_the_checkbox_follows_the_view(app, no_3d, monkeypatch):
+    w, shown, asked, _ = _window(no_3d, monkeypatch)
+    assert w.chk_models.isChecked()
+    w.viewer.models_shown = False                         # the result view's setting
+    w.viewer.result_shown.emit(True)
+    assert not w.chk_models.isChecked()
+    w.viewer.models_shown = True                          # back to the copper view's
+    w.viewer.result_shown.emit(False)
+    assert w.chk_models.isChecked()
+    w.close()
 
 
 def test_merged_models_keep_colors_and_normals_only_if_all_have_them():

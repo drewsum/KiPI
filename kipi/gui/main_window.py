@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self._kicad_cli = None              # found once per session
         self._cli_looked = False
         self._closed = False
+        self._layer_colors_from = None      # where the layer colors were last read from
         self._model_timer = QTimer(self)    # coalesce setup edits into one update
         self._model_timer.setSingleShot(True)
         self._model_timer.setInterval(300)
@@ -282,7 +283,8 @@ class MainWindow(QMainWindow):
         fv = QFormLayout(g_view)
         self.cmb_color = QComboBox(g_view)
         self.cmb_color.addItems(["By layer", "By net"])
-        self.cmb_color.setToolTip("Color the copper by layer or by net (plain geometry view)")
+        self.cmb_color.setToolTip("Color the copper by layer, in the PCB editor's layer colors, "
+                                  "or by net (plain geometry view)")
         self.cmb_color.currentIndexChanged.connect(
             lambda i: self.viewer.set_color_mode("net" if i == 1 else "layer"))
         self.spin_z = QDoubleSpinBox(g_view)
@@ -311,7 +313,9 @@ class MainWindow(QMainWindow):
                      "pads": "Show pads", "board": "Show the board outline and laminate",
                      "models": "Show the 3D models of the parts in the setup (VRMs, loads, "
                                "series links and capacitors) on the nets shown. KiCad's "
-                               "kicad-cli reads them from the saved board file."}
+                               "kicad-cli reads them from the saved board file. The copper "
+                               "and result views each remember this; over results they "
+                               "start off."}
         for name, label in (("vias", "Vias"), ("pads", "Pads"), ("board", "Board"),
                             ("models", "Models")):
             cb = QCheckBox(label, g_view)
@@ -321,6 +325,9 @@ class MainWindow(QMainWindow):
             feats.addWidget(cb)
         self.chk_models = cb
         self.chk_models.toggled.connect(lambda _: self._model_timer.start())
+        # The copper and result views each keep their own Models setting.
+        self.viewer.result_shown.connect(
+            lambda _: self.chk_models.setChecked(self.viewer.models_shown))
         fv.addRow("Color", self.cmb_color)
         fv.addRow("Z scale", self.spin_z)
         fv.addRow("Opacity", opac)
@@ -596,6 +603,7 @@ class MainWindow(QMainWindow):
         self._picked = None
         self.btn_select_kicad.setEnabled(False)
         self.setWindowTitle(f"KiPI {__version__} — {snap.board_name}")
+        self._load_layer_colors(snap)
         self._populate_layers()
         self._result = None
         self._tree = None
@@ -606,6 +614,17 @@ class MainWindow(QMainWindow):
         from kipi.core.viz.meshes import board_body
         self.viewer.set_board(*board_body(snap))
         self.sync_nets()
+
+    def _load_layer_colors(self, snap: BoardSnapshot):
+        """Color the copper layers like the PCB editor's color theme, read again on every
+        load so a theme changed in KiCad shows after Load from KiCad."""
+        from kipi.core.kicad_io.colors import copper_theme
+        from kipi.core.viz.meshes import set_layer_colors
+        colors, source = copper_theme(snap.kicad_version)
+        set_layer_colors(colors)
+        if source != self._layer_colors_from:
+            self._layer_colors_from = source
+            self.log(f"Layer colors: {source}")
 
     # ============================================================ lists
     def _populate_layers(self):
@@ -790,7 +809,7 @@ class MainWindow(QMainWindow):
     def _wanted_models(self) -> List[str]:
         """Parts in the setup with a pad on a ticked net, like the copper drawn."""
         snap = self.snapshot
-        if snap is None or not self.chk_models.isChecked():
+        if snap is None or not self.viewer.models_wanted:
             return []
         on_nets = {p.footprint for net in self._checked_set()
                    for p in snap.items_on_net(net)[2]}

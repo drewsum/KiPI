@@ -151,11 +151,13 @@ Below that:
 * **Copper layers** toggles layers in the view.
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), shows
   or hides vias, pads, the board and part **Models**, and cuts the view along X, Y or Z
-  (**Cut**, slider, **Flip**) to look inside the stackup.
+  (**Cut**, slider, **Flip**) to look inside the stackup. By layer, each copper layer has
+  its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
 * **Models** are the KiCad 3D models of the parts in your setup (VRMs, loads, series links
   and capacitor models) with a pad on a net shown. KiPI has KiCad's `kicad-cli` export them
   from the saved board file, so a part moved since the last save is drawn where it was
-  saved. They show in the geometry view, not over results.
+  saved. Over results they start hidden; tick **Models** there to show them too. The
+  geometry and result views each remember their own setting.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
   via in the PCB editor.
 

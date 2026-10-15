@@ -3,6 +3,13 @@
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def no_kicad_settings(monkeypatch):
+    """Tests never read this machine's KiCad color theme."""
+    from kipi.core.kicad_io import colors
+    monkeypatch.setattr(colors, "_config_roots", lambda: [])
+
+
 @pytest.fixture
 def no_3d(monkeypatch):
     """Build MainWindow with a stand-in for the 3D view.
@@ -10,16 +17,23 @@ def no_3d(monkeypatch):
     Qt's offscreen platform cannot create an OpenGL widget on Linux, so the real view has
     no interactor there (CI). Tests of the window's own logic do not need it.
     """
+    from qtpy.QtCore import Signal
     from qtpy.QtWidgets import QWidget
     from kipi.gui import main_window
 
     class StubViewer(QWidget):
         result = None
         zscale = 1.0
+        result_shown = Signal(bool)
 
         def __init__(self, parent=None):
             super().__init__(parent)
             self._nets = []
+            self.models_shown = self.models_wanted = True
+
+        def set_feature_visible(self, feature, visible):
+            if feature == "models":
+                self.models_shown = self.models_wanted = visible
 
         def nets(self):
             return list(self._nets)

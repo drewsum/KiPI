@@ -11,6 +11,7 @@ pytest.importorskip("qtpy")
 pytest.importorskip("pyvista")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from qtpy.QtCore import Signal  # noqa: E402
 from qtpy.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
 from shapely.geometry import box  # noqa: E402
 
@@ -33,6 +34,8 @@ def window(app, monkeypatch, tmp_path):
 
     class ResultView(QWidget):
         zscale = 1.0
+        models_shown = models_wanted = True
+        result_shown = Signal(bool)
 
         def __init__(self, parent=None):
             super().__init__(parent)

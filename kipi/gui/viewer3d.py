@@ -9,6 +9,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 from vtkmodules.vtkCommonDataModel import vtkPlane
 from vtkmodules.vtkRenderingCore import vtkActor, vtkCellPicker, vtkPolyDataMapper
+from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
 from kipi.core.viz.batch import Chunk, MeshBatcher
@@ -147,6 +148,9 @@ class Viewer3D(QWidget):
     dirty and :meth:`render` rebuilds only those before drawing.
     """
 
+    #: Emitted with True when results replace the copper view and False when they go.
+    result_shown = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -168,7 +172,8 @@ class Viewer3D(QWidget):
         self._show_pads = True
         self._show_vias = True
         self._show_board = True
-        self._show_models = True
+        self._show_models = True            # in the copper (geometry) view
+        self._show_models_result = False    # over results: off until asked for
         self._models: Dict[str, Tuple[pv.PolyData, str]] = {}   # ref -> (mesh, side)
         self._model_actors: Dict[str, vtkActor] = {}             # side -> actor
         self._board_top = 0.0
@@ -208,7 +213,7 @@ class Viewer3D(QWidget):
         self._net_color.clear()
         self._layer_color.clear()
         self._clear_result_actors()
-        self._result = None
+        self._set_result(None)
         p.clear_actors()
         self._board_actors.clear()
         self._hidden_layers.clear()
@@ -345,8 +350,20 @@ class Viewer3D(QWidget):
         self._apply_visibility()
 
     def set_feature_visible(self, feature: str, visible: bool):
+        if feature == "models" and self._result is not None:
+            feature = "models_result"       # the result view keeps its own setting
         setattr(self, f"_show_{feature}", visible)
         self._apply_visibility()
+
+    @property
+    def models_shown(self) -> bool:
+        """Whether part models are shown in the current view (copper or results)."""
+        return self._show_models_result if self._result is not None else self._show_models
+
+    @property
+    def models_wanted(self) -> bool:
+        """Whether either view shows part models, so they are worth loading."""
+        return self._show_models or self._show_models_result
 
     def _apply_actor_visibility(self, category, actor):
         kind, lid = category
@@ -376,8 +393,9 @@ class Viewer3D(QWidget):
                                                  or self._result_field == "via_current")
         for a in self._board_actors:
             a.SetVisibility(self._show_board)
+        models = self._show_models_result if showing_result else self._show_models
         for a in self._model_actors.values():
-            a.SetVisibility(self._show_models and not showing_result)
+            a.SetVisibility(models)
         self.plotter.render()
 
     def set_zscale(self, s: float):
@@ -453,7 +471,7 @@ class Viewer3D(QWidget):
     def show_result(self, scene: ResultScene, field: Optional[str] = None):
         """Replace the copper view with solver results colored by ``field``."""
         self._clear_result_actors()
-        self._result = scene
+        self._set_result(scene)
         if field is not None:
             self._result_field = field
         self._draw_result()
@@ -466,8 +484,14 @@ class Viewer3D(QWidget):
 
     def clear_result(self):
         self._clear_result_actors()
-        self._result = None
+        self._set_result(None)
         self._apply_visibility()
+
+    def _set_result(self, scene: Optional[ResultScene]):
+        was = self._result is not None
+        self._result = scene
+        if was != (scene is not None):
+            self.result_shown.emit(scene is not None)
 
     def _clear_result_actors(self):
         p = self.plotter

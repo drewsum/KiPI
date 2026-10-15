@@ -19,21 +19,23 @@ import shapely
 from shapely.geometry.base import BaseGeometry
 
 from kipi.core.geometry.copper import drill_holes, iter_polygons, poly_to_shapely
+from kipi.core.kicad_io.colors import DEFAULT_COPPER, layer_key
 from kipi.core.model.board import BoardSnapshot, CopperLayer
 
-# KiCad-like default layer colors, top to bottom (outer layers fixed).
-_TOP = (0.78, 0.20, 0.20)
-_BOTTOM = (0.30, 0.45, 0.85)
-_INNER = [(0.85, 0.75, 0.25), (0.35, 0.75, 0.40), (0.85, 0.45, 0.80), (0.30, 0.75, 0.80),
-          (0.95, 0.55, 0.25), (0.60, 0.50, 0.90)]
+# Copper layer colors, keyed like a KiCad color theme ("f", "in1".., "b"): KiCad's default
+# theme until :func:`set_layer_colors` gives the PCB editor's.
+_layer_colors: Dict[str, Tuple[int, int, int]] = dict(DEFAULT_COPPER)
+
+
+def set_layer_colors(colors: Dict[str, Tuple[int, int, int]]):
+    """Use these copper colors (0..255 RGB by theme key) for nets built from now on."""
+    global _layer_colors
+    _layer_colors = {**DEFAULT_COPPER, **colors}
 
 
 def layer_color(layer: CopperLayer, n_layers: int) -> Tuple[float, float, float]:
-    if layer.index == 0:
-        return _TOP
-    if layer.index == n_layers - 1:
-        return _BOTTOM
-    return _INNER[(layer.index - 1) % len(_INNER)]
+    rgb = _layer_colors.get(layer_key(layer.id, layer.index, n_layers), (184, 115, 51))
+    return tuple(v / 255.0 for v in rgb)
 
 
 def triangulate(geom: BaseGeometry) -> Tuple[np.ndarray, np.ndarray]:

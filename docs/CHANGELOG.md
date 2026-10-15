@@ -77,6 +77,11 @@ milestones rather than versions that were ever set.
 - **All and None buttons for the copper layers.** They show or hide every layer at once.
 - **Layer opacity slider.** *Display → Opacity* draws the copper layers and pads see-through
   (5% to 100%), in the plain and result views, to see the layers beneath. Vias stay solid.
+- **KiCad's layer colors.** Colored by layer, the copper and the layer list use the
+  copper colors of the PCB editor's color theme, read from KiCad's settings folder
+  (`pcbnew.json` and `colors/<theme>.json`) on every load. A built-in, missing or unreadable
+  theme, or a layer the theme leaves out, gets KiCad's default theme color; the log names
+  the theme used.
 - **Welcome screen.** KiPI shows the animated logo, its version, the plugin identifier and
   the versions of Python and its main packages while it starts. It closes on its own after
   a few seconds (or on a click); if it cannot be shown, KiPI starts without it.
@@ -89,8 +94,9 @@ milestones rather than versions that were ever set.
   `KIPI_ALLOW_MULTIPLE_KICAD=1` skips the check.
 - **3D models of the modeled parts.** The geometry view draws the KiCad 3D models of the
   parts named in the setup (VRMs, loads, series links and capacitor models) that have a
-  pad on a net shown, like the copper. *Display → Models* hides them, and they are not
-  drawn over results.
+  pad on a net shown, like the copper. *Display → Models* hides them. Over results they
+  start hidden and *Models* shows them; the geometry and result views each keep their own
+  setting.
   - KiCad's `kicad-cli` exports them (`pcb export glb`, no board body, just those parts),
     so KiCad resolves the model paths and reads STEP as well as VRML. It reads the saved
     board file, in the background; parts without a model KiCad can find are named in the
