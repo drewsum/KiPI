@@ -37,7 +37,9 @@ def connect(timeout_ms: int = 5000, retries: int = 3, progress: ProgressReporter
     When launched as a KiCad plugin, ``KICAD_API_SOCKET``/``KICAD_API_TOKEN`` are set
     and kipy picks them up automatically. Run standalone, kipy falls back to the
     default socket, which works when only one KiCad instance is open.
+    KiPI refuses to connect while more than one is open (:func:`require_single_kicad`).
     """
+    require_single_kicad()
     from kipy import KiCad
     from kipy.errors import ApiError
 
@@ -61,6 +63,14 @@ def connect(timeout_ms: int = 5000, retries: int = 3, progress: ProgressReporter
         "Could not connect to KiCad. Make sure the PCB editor is open with a board loaded "
         "and that Preferences > Plugins > 'Enable KiCad API' is checked.\n"
         f"Last error: {last_err}")
+
+
+def require_single_kicad() -> None:
+    """Raise :class:`ExtractionError` if this user has more than one KiCad open."""
+    from kipi.core.kicad_io.instances import multiple_kicads_message
+    message = multiple_kicads_message()
+    if message:
+        raise ExtractionError(message)
 
 
 def _warn_old_kicad(version, progress: ProgressReporter) -> None:

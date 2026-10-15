@@ -203,17 +203,29 @@ def _install_excepthooks():
                                             f"thread {a.thread.name if a.thread else '?'}")
 
 
-def run(kicad=None, board=None, snapshot=None) -> int:
+def run(kicad=None, board=None, snapshot=None, instance=None) -> int:
+    """Show the main window until it is closed. ``instance`` is this KiPI's
+    :class:`~kipi.gui.single_instance.InstanceGuard`; a KiPI started later brings this
+    window to the front through it."""
     os.environ.setdefault("QT_API", "pyside6")
     from kipi.gui.identity import make_app, tag_window
     from kipi.gui.main_window import MainWindow
+    from kipi.gui.single_instance import bring_to_front
+    from kipi.gui.splash import show_splash
 
     app = make_app()
     app.setStyle("Fusion")
+    splash = show_splash(app)
     win = MainWindow(kicad=kicad, board=board, snapshot=snapshot)
     win.show()
     tag_window(win)
+    if splash is not None and splash.isVisible():
+        splash.raise_()     # over the new window until its timer closes it
+    if instance is not None:
+        instance.listen(lambda: bring_to_front(win))
     code = app.exec()
+    if instance is not None:
+        instance.release()
     task = getattr(win, "_task", None)
     if task is not None and task.isRunning():
         # A worker stuck in native code (e.g. a long direct solve) cannot be interrupted;

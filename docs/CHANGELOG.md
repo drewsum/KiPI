@@ -77,6 +77,16 @@ milestones rather than versions that were ever set.
 - **All and None buttons for the copper layers.** They show or hide every layer at once.
 - **Layer opacity slider.** *Display → Opacity* draws the copper layers and pads see-through
   (5% to 100%), in the plain and result views, to see the layers beneath. Vias stay solid.
+- **Welcome screen.** KiPI shows the animated logo, its version, the plugin identifier and
+  the versions of Python and its main packages while it starts. It closes on its own after
+  a few seconds (or on a click); if it cannot be shown, KiPI starts without it.
+- **One KiPI at a time.** Starting KiPI while one is open brings the open one to the front
+  instead of opening a second. A KiPI that crashed does not block the next one, and if the
+  lock cannot be written KiPI starts anyway.
+- **One KiCad at a time.** KiPI refuses to connect, at start or on *Load from KiCad*, while
+  more than one KiCad (project manager or standalone PCB editor) is open for this user, and
+  names them with their PIDs. If the processes cannot be listed it carries on;
+  `KIPI_ALLOW_MULTIPLE_KICAD=1` skips the check.
 
 ### Changed
 - **Faster solves.** Rails of up to 200k unknowns now get a direct solve rather than AMG,

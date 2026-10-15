@@ -36,14 +36,22 @@ def main(argv=None) -> int:
         print(f"Saved {args.dump}")
         return 0
 
-    if args.snapshot:
-        from kipi.gui.app import run
-        from kipi.core.kicad_io.snapshot import load
-        return run(snapshot=load(args.snapshot))
-    return _run_live()
+    from kipi.gui import single_instance
+    instance = single_instance.claim()
+    if instance is None:
+        print("KiPI is already running", file=sys.stderr)
+        return 0
+    try:
+        if args.snapshot:
+            from kipi.gui.app import run
+            from kipi.core.kicad_io.snapshot import load
+            return run(snapshot=load(args.snapshot), instance=instance)
+        return _run_live(instance)
+    finally:
+        instance.release()
 
 
-def _run_live() -> int:
+def _run_live(instance) -> int:
     from kipi.gui.app import run
     from kipi.core.kicad_io.extract import ExtractionError, connect
     from kipi.core.progress import ProgressReporter
@@ -52,7 +60,7 @@ def _run_live() -> int:
     except ExtractionError as e:
         print(e, file=sys.stderr)
         return 1
-    return run(kicad=kicad, board=board)
+    return run(kicad=kicad, board=board, instance=instance)
 
 
 if __name__ == "__main__":

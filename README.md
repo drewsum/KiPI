@@ -115,7 +115,12 @@ removes `pypardiso`, so install it again afterwards.
 
 Open your board in the PCB editor and click the **KiPI** toolbar button. KiPI opens in its
 own window and reads the board through the KiCad API; the log at the bottom streams each
-stage as it runs.
+stage as it runs. A welcome screen with the version and package versions shows for a few
+seconds while it starts, and closes on its own.
+
+KiPI runs one window at a time: clicking the button again brings the open KiPI to the
+front. It also needs exactly one KiCad open, so it reads the board you started it from;
+with two or more it lists them and asks you to close the others.
 
 * **Refill zones** (toolbar, on by default) refills every zone in KiCad and waits for the fill
   to finish before reading, so the zone fills KiPI sees match your current routing. KiPI
@@ -416,6 +421,10 @@ details.
   obvious.
 * **Slow solves:** raise **Max edge**, or analyze fewer nets at a time. Large planes are cheap
   but very fine traces are not.
+* **"KiPI works with one KiCad at a time"** although only one is open: a KiCad that did
+  not exit cleanly may still be running; end it in the task manager (the message gives its
+  PID). If the check is wrong for your setup, set the environment variable
+  `KIPI_ALLOW_MULTIPLE_KICAD=1` before starting KiCad to skip it.
 * **Logs:** each session writes to `kipi/kipi-<date>-<time>-<pid>.log` in the temporary
   folder (`%TEMP%` on Windows, `$TMPDIR` on macOS, `/tmp` on Linux), and the last
   15 sessions are kept. A matching `.crash.log` collects native crash tracebacks and, if a

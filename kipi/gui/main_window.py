@@ -517,7 +517,8 @@ class MainWindow(QMainWindow):
         refill = self.chk_refill.isChecked()
 
         def work(progress):
-            from kipi.core.kicad_io.extract import connect, extract_board
+            from kipi.core.kicad_io.extract import connect, extract_board, require_single_kicad
+            require_single_kicad()     # a second KiCad may have been opened since the last load
             if self._board is None:
                 self._kicad, self._board = connect(progress=progress)
             snap = extract_board(self._board, refill_zones=refill, progress=progress)

@@ -20,17 +20,24 @@ def main() -> int:
     # KiCad captures plugin stdout/stderr through a pipe it does not always drain; a full
     # pipe blocks the writer forever. Send everything to this session's log folder.
     kipi_app.detach_std_streams()
+    os.environ.setdefault("QT_API", "pyside6")
+    from kipi.gui import single_instance
+    instance = single_instance.claim()
+    if instance is None:        # another KiPI is open; it was brought to the front
+        return 0
     try:
-        kicad, board = connect(progress=ProgressReporter())
-    except ExtractionError as e:
-        os.environ.setdefault("QT_API", "pyside6")
-        from qtpy.QtWidgets import QMessageBox
+        try:
+            kicad, board = connect(progress=ProgressReporter())
+        except ExtractionError as e:
+            from qtpy.QtWidgets import QMessageBox
 
-        from kipi.gui.identity import make_app
-        _app = make_app()  # must outlive the box
-        QMessageBox.critical(None, "KiPI", f"{e}\n\nLog: {kipi_app.LOG_PATH}")
-        return 1
-    return run(kicad=kicad, board=board)
+            from kipi.gui.identity import make_app
+            _app = make_app()  # must outlive the box
+            QMessageBox.critical(None, "KiPI", f"{e}\n\nLog: {kipi_app.LOG_PATH}")
+            return 1
+        return run(kicad=kicad, board=board, instance=instance)
+    finally:
+        instance.release()
 
 
 if __name__ == "__main__":

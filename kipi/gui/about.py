@@ -48,13 +48,17 @@ def animated_icon_path() -> Optional[Path]:
     return p if p.is_file() else None
 
 
-def versions() -> List[Tuple[str, str]]:
+def versions(solver: bool = True) -> List[Tuple[str, str]]:
+    """Python and the dependency versions; ``solver`` adds the direct solver backend,
+    which imports the solver stack (slow the first time)."""
     rows = [("Python", f"{platform.python_version()} ({sys.platform})")]
     for dist in _DEPS:
         try:
             rows.append((dist, metadata.version(dist)))
         except metadata.PackageNotFoundError:
             pass
+    if not solver:
+        return rows
     try:
         from kipi.core.solver import direct
         rows.append(("Direct solver", direct.backend_note()))
