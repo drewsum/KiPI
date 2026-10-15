@@ -9,7 +9,7 @@ from kipi.dc.pi.report import (
 )
 from kipi.dc.pi.tree import solve_tree
 from kipi.dc.viz.results import build_result_scene
-from test_tree import board, setup
+from tree_boards import board, setup
 
 
 @pytest.fixture(scope="module")
@@ -35,7 +35,7 @@ def test_via_rows_ranked_with_limit(tmp_path):
     snap = board()
     # Feed the +3V3 load from B.Cu through a via: add B.Cu copper and a via.
     from shapely.geometry import box
-    from test_tree import F, B, poly
+    from tree_boards import F, B, poly
     from kipi.core.model.board import Zone
     snap.zones.append(Zone("vb", "+3V3", "", 0, {B: [poly(box(12, 2, 22, 3))]}))
     snap.vias.append(Via("v1", "+3V3", (17.0, 0.5), 0.3, 0.6, [F, B]))

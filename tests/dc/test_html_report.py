@@ -10,7 +10,7 @@ from kipi.dc.report.html import write_report
 from kipi.dc.thermal.cosim import solve_electrothermal
 from kipi.dc.thermal.model import ThermalSettings
 from kipi.dc.viz.results import build_result_scene
-from test_tree import board, setup
+from tree_boards import board, setup
 
 
 @pytest.mark.parametrize("thermal", [False, True])

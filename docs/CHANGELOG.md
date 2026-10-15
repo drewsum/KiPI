@@ -8,6 +8,9 @@ milestones rather than versions that were ever set.
 
 ### Changed
 - The version number is 0.7.2. The 0.7.1 release still reported itself as 0.7.0.
+- Tests are grouped into `tests/core`, `tests/dc`, `tests/ac`, `tests/gui` and
+  `tests/scripts`, with shared test boards in `tests/helpers` instead of being imported from
+  other test files. CI shows each folder's results in its own log group.
 
 ## 0.7.1
 

@@ -52,7 +52,7 @@ def test_report_link_is_dropped_if_the_report_is_gone(tmp_path):
 
 
 def test_dc_and_ac_files_are_told_apart(tmp_path):
-    from test_tree import board, setup
+    from tree_boards import board, setup
     from kipi.dc.pi.tree import solve_tree
     snap, s = board(), setup()
     dc = dc_report.save_results(tmp_path / "r.kipi-results", solve_tree(snap, s), {}, snap, s)

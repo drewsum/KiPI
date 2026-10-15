@@ -5,7 +5,7 @@ import pytest
 from kipi.dc.pi.model import Load, PinRef, PISetup, active_setup, validate
 from kipi.dc.pi.tree import solve_tree
 from kipi.dc.solver.fem import SolveError
-from test_tree import R, board, by_name, setup
+from tree_boards import R, board, by_name, setup
 
 
 def test_excluded_output_becomes_its_vrms_input_load():

@@ -10,7 +10,7 @@ from kipi.core.geometry.copper import drill_holes, iter_polygons, net_layer_copp
 from kipi.core.kicad_io.snapshot import from_dict, to_dict
 from kipi.core.model.board import Pad
 from synthetic import F, make_board
-from test_tree import poly
+from tree_boards import poly
 
 
 def _slot_pad(angle_deg, pad_geom=None, drill=(2.0, 0.8)):

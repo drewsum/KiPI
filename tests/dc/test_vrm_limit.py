@@ -6,7 +6,8 @@ import pytest
 
 from kipi.dc.pi.model import PISetup, validate
 from kipi.dc.pi.tree import VrmReport, solve_tree
-from test_multiphase import board, by_name, two_phase
+from phase_boards import board, two_phase
+from tree_boards import by_name
 
 
 def test_limit_judges_the_total_of_all_phases():

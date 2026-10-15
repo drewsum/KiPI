@@ -82,10 +82,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E402"]                      # imports follow pytest.importorskip
+"tests/**" = ["E402"]                     # imports follow pytest.importorskip
 "kipi/dc/pi/tree.py" = ["B023"]              # regulated() is only called in the iteration defining it
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "tests"]
+pythonpath = [".", "tests/helpers"]
 addopts = "-ra"

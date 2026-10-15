@@ -16,7 +16,7 @@ from qtpy.QtWidgets import QApplication  # noqa: E402
 
 from kipi.gui import single_instance as si  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")

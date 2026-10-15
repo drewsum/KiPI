@@ -11,7 +11,7 @@ from kipi.core.model.board import (
 from kipi.dc.solver import CurrentLoad, NetProblem, SolveSettings, VoltageSource, run
 from kipi.dc.thermal.cosim import solve_electrothermal
 from kipi.dc.thermal.model import BoardThermalModel, ThermalSettings
-from test_tree import F, B, board, setup, by_name, R
+from tree_boards import F, B, board, setup, by_name, R
 
 TCR = 0.00393
 

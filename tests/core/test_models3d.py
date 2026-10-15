@@ -49,7 +49,7 @@ print("Binary GLTF file created.")
 @pytest.fixture
 def cli(tmp_path, monkeypatch):
     script = tmp_path / "fake_kicad_cli.py"
-    script.write_text(FAKE_CLI.format(tests=str(Path(__file__).parent)))
+    script.write_text(FAKE_CLI.format(tests=str(Path(__file__).parents[1] / "helpers")))
     log = tmp_path / "calls.jsonl"
 
     def configure(**cfg):

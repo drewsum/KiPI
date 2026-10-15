@@ -465,6 +465,13 @@ python -m venv --system-site-packages .venv   # use KiCad's bundled python.exe
 `requirements.txt` is what KiCad installs into the plugin's venv; test and lint tools live
 only in `requirements-dev.txt`.
 
+The tests follow the package: `tests/core` (geometry, meshing, solvers, KiCad I/O),
+`tests/dc` (power tree, thermal, DC reports and panel), `tests/ac` (impedance solve, targets,
+AC panel and report), `tests/gui` (main window and app) and `tests/scripts` (CI scripts).
+Shared test boards and the fake KiCad live in `tests/helpers`, which pytest puts on the
+import path; each folder also runs on its own (`pytest tests/dc`). CI runs each folder in
+its own log group.
+
 CI runs ruff and the test suite for every push and pull request: on Windows with Python 3.11,
 on Linux with Python 3.10 to 3.13, on macOS, and with the oldest kicad-python that
 `requirements.txt` allows. A further job checks whether every dependency has prebuilt
@@ -478,9 +485,9 @@ GitHub remembers. Clone counts need a `TRAFFIC_TOKEN` repository secret: a fine-
 token for this repo only, with *Administration: read-only*. Without it the workflow still
 updates the download counts and warns.
 
-`tests/kicad_fake.py` stands in for a running KiCad. It answers the IPC API's own
+`tests/helpers/kicad_fake.py` stands in for a running KiCad. It answers the IPC API's own
 messages the way each KiCad version from 9.0.0 to 10.0.6 does, refusing commands that
-version did not have yet, and `tests/test_kicad_versions.py` extracts a board from each one.
+version did not have yet, and `tests/core/test_kicad_versions.py` extracts a board from each one.
 When a KiCad release adds a command KiPI starts using, add it to `ADDED` there.
 
 The tests also solve the example board and check that its committed setup still matches

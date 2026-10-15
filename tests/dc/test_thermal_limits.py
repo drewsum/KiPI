@@ -10,7 +10,7 @@ from kipi.dc.pi.model import PISetup
 from kipi.dc.pi.report import export_csv, layer_temps, thermal_passed
 from kipi.dc.thermal.cosim import solve_electrothermal
 from kipi.dc.thermal.model import ThermalSettings
-from test_tree import board, setup
+from tree_boards import board, setup
 
 
 def test_limits_grade_a_temperature():

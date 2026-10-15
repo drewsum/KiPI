@@ -13,7 +13,7 @@ from qtpy.QtWidgets import QApplication  # noqa: E402
 
 from kipi.dc.pi.tree import solve_tree  # noqa: E402
 from kipi.dc.solver.post import ViaResult  # noqa: E402
-from test_multiphase import board, two_phase  # noqa: E402
+from phase_boards import board, two_phase  # noqa: E402
 
 
 @pytest.fixture(scope="module")

@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
 from kipi.gui.viewer3d import Viewer3D, _merge_models  # noqa: E402
-from test_multiphase import board, two_phase  # noqa: E402
+from phase_boards import board, two_phase  # noqa: E402
 
 
 @pytest.fixture(scope="module")

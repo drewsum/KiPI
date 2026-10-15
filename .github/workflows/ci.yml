@@ -88,8 +88,24 @@ jobs:
       - name: Import GUI modules
         run: python -c "import kipi.gui.main_window, kipi.gui.viewer3d, kipi.dc.gui.pi_panel, kipi_entry"
 
+      # One collapsible log group per test folder (core, dc, ac, gui, ...), found rather
+      # than listed so a new folder is never skipped. Every folder runs even after one
+      # fails, and the step fails if any did.
       - name: Run tests
-        run: python -m pytest -v
+        shell: bash
+        run: |
+          failed=""
+          for dir in tests/*/; do
+            name=$(basename "$dir")
+            case "$name" in helpers|data|__pycache__) continue ;; esac
+            echo "::group::tests/$name"
+            python -m pytest -v "$dir" || failed="$failed $name"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error title=Tests failed::in tests/{${failed# }}"
+            exit 1
+          fi
 
   # KiCad installs the plugin's dependencies with pip, and users rarely have a compiler, so
   # every dependency needs a binary wheel for the Python their KiCad uses. Python 3.14

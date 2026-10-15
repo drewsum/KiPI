@@ -12,7 +12,7 @@ pytest.importorskip("pyvistaqt")
 from kipi.gui.viewer3d import Viewer3D, _copper_clim  # noqa: E402
 from kipi.dc.pi.tree import solve_tree  # noqa: E402
 from kipi.dc.viz.results import FIELDS, build_result_scene  # noqa: E402
-from test_multiphase import board, two_phase  # noqa: E402
+from phase_boards import board, two_phase  # noqa: E402
 
 
 @pytest.mark.parametrize("field", ["voltage", "current_density", "power_density",

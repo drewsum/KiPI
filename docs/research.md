@@ -85,7 +85,7 @@ KiCad. What matters is whether that KiCad has a handler for each request.
 * KiCad checks for busy before it looks at the item types, so the refill probe still sees
   `AS_BUSY` on KiCad 9.
 * The first KiCad for each request is taken from kicad-python's `versionadded` notes.
-  `tests/kicad_fake.py` encodes this table (`ADDED`), and `tests/test_kicad_versions.py`
+  `tests/helpers/kicad_fake.py` encodes this table (`ADDED`), and `tests/core/test_kicad_versions.py`
   extracts a board from every version listed there.
 
 ## GUI / 3D
@@ -129,7 +129,7 @@ KiCad. What matters is whether that KiCad has a handler for each request.
   write blocks, freezing whichever thread was logging. A long solve logs CG progress, so the
   first solve worked and a later one hung at "Solving…". Now logging echoes only to an
   interactive terminal, and the plugin entry redirects fds 1 and 2 to a per-session
-  `.console.log`. `tests/test_app.py` reproduces the problem with an unread pipe.
+  `.console.log`. `tests/gui/test_app.py` reproduces the problem with an unread pipe.
 * **Triangle and nearly coincident constraints.** If a pad outline runs within a few µm of the
   (simplified) copper edge, it creates hair-thin slivers, and quality refinement then splits
   them essentially forever (+12Vin, J201). Pad outlines are now clipped 10 µm clear of copper

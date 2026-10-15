@@ -19,7 +19,7 @@ from kipi.core.model.board import Net, Zone  # noqa: E402
 from kipi.dc.pi.model import DcLink, Load, PinRef  # noqa: E402
 from kipi.dc.pi.tree import solve_tree  # noqa: E402
 from kipi.dc.viz.results import build_result_scene  # noqa: E402
-from test_tree import F, board, pad, poly, setup  # noqa: E402
+from tree_boards import F, board, pad, poly, setup  # noqa: E402
 
 
 @pytest.fixture(scope="module")

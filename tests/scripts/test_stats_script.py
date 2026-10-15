@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-_PATH = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "update_stats.py"
+_PATH = Path(__file__).resolve().parents[2] / ".github" / "scripts" / "update_stats.py"
 _spec = importlib.util.spec_from_file_location("update_stats", _PATH)
 stats = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(stats)
