@@ -40,6 +40,7 @@ from kipi.dc.pi.model import (
     validate,
 )
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
+from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS
 
@@ -60,9 +61,10 @@ def format_thickness(mm: float, unit: str) -> str:
 
 
 def _spin(lo, hi, value, decimals, suffix, step=None) -> QDoubleSpinBox:
-    s = QDoubleSpinBox()
+    """A value field in ``suffix`` units that also takes SI prefixes ("10n" in µF)."""
+    s = UnitSpinBox()
+    s.setShownDecimals(decimals)
     s.setRange(lo, hi)
-    s.setDecimals(decimals)
     s.setValue(value)
     s.setSuffix(suffix)
     if step:

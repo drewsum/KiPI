@@ -6,6 +6,14 @@ milestones rather than versions that were ever set.
 
 ## 0.7.2 (in development)
 
+### Added
+- **SI prefixes in value fields** (#60). A value can be typed with a prefix and unit, which
+  is converted to the field's unit. For example, `10n` or `10 nF` in a µF field, `2 mOhm`
+  or `4k7` for a resistance, `1.2 MHz` in a kHz field, or `3.3 V` in a mV field. This
+  works in every field whose unit is an SI unit (Ω, F, H, Hz, A, V, W, m). A field keeps
+  its usual decimals but shows more when a small typed value needs them, so 10 pF in a µF
+  field reads 0.00001 µF instead of rounding to zero. See *Typing values* in the help.
+
 ### Changed
 - The version number is 0.7.2. The 0.7.1 release still reported itself as 0.7.0.
 - Tests are grouped into `tests/core`, `tests/dc`, `tests/ac`, `tests/gui` and

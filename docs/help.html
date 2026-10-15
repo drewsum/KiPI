@@ -304,6 +304,14 @@ float them in their own windows.</p>
     more than one KiCad project manager or PCB editor is open. The message names each one
     with its process ID. See <a href="#ts-multiple-kicad">Troubleshooting</a>.</li>
 </ul>
+<h4 id="typing-values">Typing values</h4>
+<p>A number on its own is in the field's unit. Fields in an SI unit (Ω, F, H, Hz, A, V, W, m)
+also take a prefix, with or without the unit, and convert it to the field's unit: in a µF
+field, <code>10n</code>, <code>10 nF</code> and <code>0.01</code> are all 10 nF. A resistance
+can be written <code>2 mOhm</code>, <code>2mΩ</code> or <code>4k7</code>. Prefixes are case
+sensitive (<code>m</code> is milli, <code>M</code> is mega), and <code>u</code> stands for µ.
+Fields in other units (%, °C, A/µs, µΩ·cm) take plain numbers. A field shows its usual number
+of decimals, plus more when a small typed value needs them.</p>
 
 <!-- ================================================================== TOOLBAR -->
 <h2 id="toolbar">Toolbar</h2>
