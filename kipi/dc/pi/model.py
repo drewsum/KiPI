@@ -151,6 +151,15 @@ class PISetup:
         refs += [r for p in self.probes for r in (p.rail, p.ground) if r]
         return {r.net for r in refs}
 
+    def part_refs(self) -> set:
+        """Footprints given a model: VRMs, loads, series links and capacitor models."""
+        refs = [r for v in self.vrms for r in v.pin_refs()]
+        refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
+        refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
+        out = {r.ref for r in refs} | {ref for m in self.caps for ref in m.refs}
+        out.discard("")
+        return out
+
     # ------------------------------------------------------------------ JSON
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)

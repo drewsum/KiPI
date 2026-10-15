@@ -64,6 +64,19 @@ class MainWindow(QMainWindow):
         self._ui_beat_timer.timeout.connect(kipi_app.ui_alive)
         self._ui_beat_timer.start()
         self._checked_cache: Optional[frozenset] = None  # None = recompute from the list
+        # Part 3D models: ref -> mesh, or None when the part has no model KiCad can find.
+        self._model_cache: Dict[str, object] = {}
+        self._model_task: Optional[Task] = None
+        self._model_gen = 0                 # bumped per board; stale loads are dropped
+        self._models_pending = False        # wanted parts changed while a load ran
+        self._model_source = None           # (kicad-cli, board file), False if unusable
+        self._kicad_cli = None              # found once per session
+        self._cli_looked = False
+        self._closed = False
+        self._model_timer = QTimer(self)    # coalesce setup edits into one update
+        self._model_timer.setSingleShot(True)
+        self._model_timer.setInterval(300)
+        self._model_timer.timeout.connect(self._sync_models)
         self._last_fraction_t = 0.0
         self._picked = None   # ("pad"|"via", id)
         self.mode = "dc"
@@ -295,13 +308,19 @@ class MainWindow(QMainWindow):
         opac.addWidget(self.lbl_opacity)
         feats = QHBoxLayout()
         feat_tips = {"vias": "Show via and plated-hole barrels",
-                     "pads": "Show pads", "board": "Show the board outline and laminate"}
-        for name, label in (("vias", "Vias"), ("pads", "Pads"), ("board", "Board")):
+                     "pads": "Show pads", "board": "Show the board outline and laminate",
+                     "models": "Show the 3D models of the parts in the setup (VRMs, loads, "
+                               "series links and capacitors) on the nets shown. KiCad's "
+                               "kicad-cli reads them from the saved board file."}
+        for name, label in (("vias", "Vias"), ("pads", "Pads"), ("board", "Board"),
+                            ("models", "Models")):
             cb = QCheckBox(label, g_view)
             cb.setChecked(True)
             cb.setToolTip(feat_tips[name])
             cb.toggled.connect(lambda v, n=name: self.viewer.set_feature_visible(n, v))
             feats.addWidget(cb)
+        self.chk_models = cb
+        self.chk_models.toggled.connect(lambda _: self._model_timer.start())
         fv.addRow("Color", self.cmb_color)
         fv.addRow("Z scale", self.spin_z)
         fv.addRow("Opacity", opac)
@@ -371,6 +390,8 @@ class MainWindow(QMainWindow):
         self.ac_panel.save_requested.connect(self._save_setup)
         self.ac_panel.solve_requested.connect(self.run_ac_solve)
         self.ac_panel.result_selected.connect(self._show_ac_result)
+        for panel in (self.solve_panel, self.ac_panel):
+            panel.setup_changed.connect(self._model_timer.start)
         # One setup dock; it shows the panel of the current analysis mode.
         self.setup_stack = QStackedWidget(self)
         self.setup_stack.addWidget(self.solve_panel)
@@ -569,6 +590,9 @@ class MainWindow(QMainWindow):
                 else None)
         self.snapshot = snap
         self._copper_cache.clear()
+        self._model_cache.clear()
+        self._model_gen += 1
+        self._model_source = None
         self._picked = None
         self.btn_select_kicad.setEnabled(False)
         self.setWindowTitle(f"KiPI {__version__} — {snap.board_name}")
@@ -710,6 +734,7 @@ class MainWindow(QMainWindow):
         self.solve_panel.set_nets(list(self._checked_set()))
         self.ac_panel.set_nets(list(self._checked_set()))
         self.solve_panel.setup.nets = self._checked_nets()   # saved with the setup
+        self._model_timer.start()
         if self._busy():
             self._resync_pending = True
             return
@@ -760,6 +785,96 @@ class MainWindow(QMainWindow):
             # A canceled build leaves its nets unchecked so the list matches the view.
             task.canceled.connect(lambda: self._set_checked(
                 lambda it: it.data(Qt.UserRole) in self.viewer.nets()))
+
+    # ============================================================ part models
+    def _wanted_models(self) -> List[str]:
+        """Parts in the setup with a pad on a ticked net, like the copper drawn."""
+        snap = self.snapshot
+        if snap is None or not self.chk_models.isChecked():
+            return []
+        on_nets = {p.footprint for net in self._checked_set()
+                   for p in snap.items_on_net(net)[2]}
+        return sorted(self.solve_panel.setup.part_refs() & on_nets)
+
+    def _sync_models(self):
+        """Show the models of the wanted parts, loading those not seen yet."""
+        snap = self.snapshot
+        if snap is None or self._closed:
+            return
+        wanted = self._wanted_models()
+        todo = [r for r in wanted if r not in self._model_cache]
+        if todo and self._model_task is None:
+            self._load_models(todo)
+        elif todo:
+            self._models_pending = True
+        side = {f.reference: f.side for f in snap.footprints}
+        shown = {r: (self._model_cache[r], side.get(r, "top")) for r in wanted
+                 if self._model_cache.get(r) is not None}
+        self.viewer.set_models(shown, snap.stackup.board_thickness_mm)
+
+    def _models_source(self):
+        """``(kicad-cli, board file)``, or False (said once per board) if either is
+        missing."""
+        if self._model_source is None:
+            from kipi.core.kicad_io import models3d
+            if not self._cli_looked:
+                self._cli_looked = True
+                self._kicad_cli = models3d.find_kicad_cli(self._kicad)
+            board = models3d.board_file(self.snapshot)
+            if self._kicad_cli is None:
+                self.log("3D models are read with KiCad's kicad-cli, which KiPI could not "
+                         f"find; set {models3d.CLI_ENV} to its path to show them",
+                         logging.WARNING)
+            elif board is None:
+                self.log(f"3D models: the board file {self.snapshot.board_name} was not "
+                         "found next to the project, so no models are shown",
+                         logging.WARNING)
+            self._model_source = ((self._kicad_cli, board)
+                                  if self._kicad_cli and board else False)
+        return self._model_source
+
+    def _load_models(self, refs: List[str]):
+        source = self._models_source()
+        if not source:
+            self._model_cache.update({r: None for r in refs})
+            return
+        cli, board = source
+        gen = self._model_gen
+
+        def work(progress):
+            from kipi.core.kicad_io.models3d import load_models
+            from kipi.core.progress import Canceled
+            progress.info(f"Loading 3D models of {len(refs)} part(s) with kicad-cli")
+            try:
+                found = load_models(cli, board, refs, progress)
+            except Canceled:
+                raise
+            except Exception as e:  # noqa: BLE001 - models are a nicety; never fail on them
+                progress.warn(f"Could not load 3D models: {e}")
+                return {r: None for r in refs}
+            n = sum(m is not None for m in found.values())
+            progress.info(f"3D models: {n} of {len(refs)} part(s) have one")
+            return found
+
+        prog = QtProgress()
+        prog.sig_message.connect(self.log)
+        task = Task(work, prog, self)
+        task.done.connect(lambda found: self._models_loaded(gen, found))
+        task.finished.connect(self._model_task_finished)
+        self._model_task = task
+        task.start()
+
+    def _models_loaded(self, gen: int, found: dict):
+        if gen != self._model_gen:          # a board loaded since; these are its parts
+            return
+        self._model_cache.update(found)
+        self._sync_models()
+
+    def _model_task_finished(self):
+        self._model_task = None
+        if self._models_pending:
+            self._models_pending = False
+            self._model_timer.start()
 
     # ============================================================ solve
     # ------------------------------------------------------------ setup file
@@ -1213,8 +1328,12 @@ class MainWindow(QMainWindow):
 
     # ============================================================ close
     def closeEvent(self, event):
-        if self._task is not None and self._task.isRunning():
-            self._task.progress.cancel()
-            self._task.wait(3000)
+        self._model_timer.stop()            # start no kicad-cli for a closed window
+        self._models_pending = False
+        self._closed = True
+        for task in (self._task, self._model_task):
+            if task is not None and task.isRunning():
+                task.progress.cancel()
+                task.wait(3000)
         self.viewer.close()
         super().closeEvent(event)

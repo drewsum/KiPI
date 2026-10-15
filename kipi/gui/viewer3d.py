@@ -27,6 +27,7 @@ _CATEGORY_LOOK = {"cu": (1.0, 0.4), "pad": (0.9, 0.0), "via": (1.0, 0.6)}
 # Copper drawn under the via-current view, for context
 _VIA_VIEW_COPPER_OPACITY = 0.35
 DEPTH_PEELS = 4          # see-through layers sorted per pixel (pyvista's default)
+_MODEL_SPECULAR = 0.3
 
 
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
@@ -100,6 +101,45 @@ def _chunk_actor(category, layer_opacity: float = 1.0) -> vtkActor:
     return actor
 
 
+def _merge_models(meshes: List[pv.PolyData]) -> Optional[pv.PolyData]:
+    """One mesh of many part models, keeping each triangle's ``rgb`` and, when every
+    model has them, the point normals that smooth its curved faces."""
+    meshes = [m for m in meshes if m is not None and m.n_cells]
+    if not meshes:
+        return None
+    offsets = np.cumsum([0] + [m.n_points for m in meshes[:-1]])
+    faces = np.concatenate([m.regular_faces + o for m, o in zip(meshes, offsets)])
+    cells = np.empty((len(faces), 4), dtype=np.int64)
+    cells[:, 0] = 3
+    cells[:, 1:] = faces
+    out = pv.PolyData(np.concatenate([m.points for m in meshes]), cells.ravel())
+    out.cell_data["rgb"] = np.concatenate([np.asarray(m.cell_data["rgb"]) for m in meshes])
+    if all("Normals" in m.point_data for m in meshes):
+        out.point_data["Normals"] = np.concatenate([np.asarray(m.point_data["Normals"])
+                                                    for m in meshes])
+        out.point_data.active_normals_name = "Normals"
+    return out
+
+
+def _model_actor(mesh: pv.PolyData) -> vtkActor:
+    """A bare actor for part models, colored by their per-triangle ``rgb``. Models are
+    never picked: a click is meant for the copper beneath them."""
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputData(mesh)
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SelectColorArray("rgb")
+    mapper.SetColorModeToDirectScalars()
+    mapper.ScalarVisibilityOn()
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.PickableOff()
+    prop = actor.GetProperty()
+    prop.SetSpecular(_MODEL_SPECULAR)
+    prop.SetSpecularPower(20.0)
+    prop.SetInterpolationToGouraud()
+    return actor
+
+
 class Viewer3D(QWidget):
     """3D view of the board body plus individually added nets, with visibility controls.
 
@@ -128,6 +168,10 @@ class Viewer3D(QWidget):
         self._show_pads = True
         self._show_vias = True
         self._show_board = True
+        self._show_models = True
+        self._models: Dict[str, Tuple[pv.PolyData, str]] = {}   # ref -> (mesh, side)
+        self._model_actors: Dict[str, vtkActor] = {}             # side -> actor
+        self._board_top = 0.0
         self._color_mode = "layer"
         self._zscale = 1.0
         self._layer_opacity = 1.0
@@ -158,6 +202,8 @@ class Viewer3D(QWidget):
         for a in self._chunk_actors.values():
             renderer.RemoveActor(a)
         self._chunk_actors.clear()
+        self._remove_model_actors()
+        self._models = {}
         self._batch = MeshBatcher()
         self._net_color.clear()
         self._layer_color.clear()
@@ -213,6 +259,45 @@ class Viewer3D(QWidget):
             del self._layer_color[key]
         if render:
             self.render()
+
+    # ------------------------------------------------------------ part models
+    def models(self) -> List[str]:
+        return list(self._models)
+
+    def set_models(self, models: Dict[str, Tuple[pv.PolyData, str]], board_top_mm: float):
+        """Draw these part models (ref -> (mesh, "top" or "bottom")) in place of any shown.
+
+        Meshes are in the view's frame at true height (see
+        :func:`kipi.core.kicad_io.models3d.to_mesh`). The Z scale stretches the board but
+        not the parts: the top side's parts are lifted to sit on the stretched board.
+        """
+        if (models.keys() == self._models.keys() and board_top_mm == self._board_top
+                and all(models[r][0] is self._models[r][0] for r in models)):
+            return
+        self._models = dict(models)
+        self._board_top = float(board_top_mm)
+        self._remove_model_actors()
+        renderer = self.plotter.renderer
+        for side in ("top", "bottom"):
+            mesh = _merge_models([m for m, s in self._models.values() if s == side])
+            if mesh is None:
+                continue
+            actor = _model_actor(mesh)
+            renderer.AddActor(actor)
+            self._model_actors[side] = actor
+        self._place_models()
+        self._apply_visibility()
+
+    def _remove_model_actors(self):
+        renderer = self.plotter.renderer
+        for actor in self._model_actors.values():
+            renderer.RemoveActor(actor)
+        self._model_actors.clear()
+
+    def _place_models(self):
+        top = self._model_actors.get("top")
+        if top is not None:
+            top.SetPosition(0.0, 0.0, self._board_top * (self._zscale - 1.0))
 
     def _flush(self):
         """Rebuild changed chunks and sync their actors."""
@@ -291,6 +376,8 @@ class Viewer3D(QWidget):
                                                  or self._result_field == "via_current")
         for a in self._board_actors:
             a.SetVisibility(self._show_board)
+        for a in self._model_actors.values():
+            a.SetVisibility(self._show_models and not showing_result)
         self.plotter.render()
 
     def set_zscale(self, s: float):
@@ -305,6 +392,7 @@ class Viewer3D(QWidget):
             self._result_via_actor.SetScale(1.0, 1.0, self._zscale)
         for a in self._arrow_actors.values():
             a.SetScale(1.0, 1.0, self._zscale)
+        self._place_models()
         if self._clip is not None:
             self._apply_clip_all()
         self.plotter.reset_camera_clipping_range()
@@ -463,6 +551,7 @@ class Viewer3D(QWidget):
     def _all_actors(self):
         out = list(self._chunk_actors.values()) + list(self._board_actors)
         out += list(self._result_actors.values()) + list(self._arrow_actors.values())
+        out += list(self._model_actors.values())
         if self._result_via_actor is not None:
             out.append(self._result_via_actor)
         return out

@@ -87,6 +87,20 @@ milestones rather than versions that were ever set.
   more than one KiCad (project manager or standalone PCB editor) is open for this user, and
   names them with their PIDs. If the processes cannot be listed it carries on;
   `KIPI_ALLOW_MULTIPLE_KICAD=1` skips the check.
+- **3D models of the modeled parts.** The geometry view draws the KiCad 3D models of the
+  parts named in the setup (VRMs, loads, series links and capacitor models) that have a
+  pad on a net shown, like the copper. *Display → Models* hides them, and they are not
+  drawn over results.
+  - KiCad's `kicad-cli` exports them (`pcb export glb`, no board body, just those parts),
+    so KiCad resolves the model paths and reads STEP as well as VRML. It reads the saved
+    board file, in the background; parts without a model KiCad can find are named in the
+    log.
+  - The Z scale stretches the board but not the parts; top-side parts sit on the stretched
+    board. Clicks go through the models to the copper.
+  - Fallbacks: kicad-cli is found through the connected KiCad, the PATH, the usual install
+    folders or KiCad's Flatpak (or `KIPI_KICAD_CLI`); an older kicad-cli is asked again
+    without the options it does not know. With no kicad-cli or no board file on disk, KiPI
+    says so once and draws no models.
 
 ### Changed
 - **Faster solves.** Rails of up to 200k unknowns now get a direct solve rather than AMG,

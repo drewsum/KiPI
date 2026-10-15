@@ -150,8 +150,12 @@ Below that:
 
 * **Copper layers** toggles layers in the view.
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), shows
-  or hides vias, pads and the board, and cuts the view along X, Y or Z (**Cut**, slider,
-  **Flip**) to look inside the stackup.
+  or hides vias, pads, the board and part **Models**, and cuts the view along X, Y or Z
+  (**Cut**, slider, **Flip**) to look inside the stackup.
+* **Models** are the KiCad 3D models of the parts in your setup (VRMs, loads, series links
+  and capacitor models) with a pad on a net shown. KiPI has KiCad's `kicad-cli` export them
+  from the saved board file, so a part moved since the last save is drawn where it was
+  saved. They show in the geometry view, not over results.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
   via in the PCB editor.
 
@@ -425,6 +429,10 @@ details.
   not exit cleanly may still be running; end it in the task manager (the message gives its
   PID). If the check is wrong for your setup, set the environment variable
   `KIPI_ALLOW_MULTIPLE_KICAD=1` before starting KiCad to skip it.
+* **No part models:** the log says why. KiPI needs KiCad's `kicad-cli` (it looks in the
+  connected KiCad, the PATH and the usual install folders; set `KIPI_KICAD_CLI` to its
+  path otherwise) and the board's `.kicad_pcb` file on disk. A part whose model file KiCad
+  cannot find is named with the missing path; KiCad's own 3D viewer shows the same gap.
 * **Logs:** each session writes to `kipi/kipi-<date>-<time>-<pid>.log` in the temporary
   folder (`%TEMP%` on Windows, `$TMPDIR` on macOS, `/tmp` on Linux), and the last
   15 sessions are kept. A matching `.crash.log` collects native crash tracebacks and, if a

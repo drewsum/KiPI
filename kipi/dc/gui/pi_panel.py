@@ -976,6 +976,7 @@ class PIPanel(QWidget):
     arrows_toggled = Signal(bool)
     via_selected = Signal(str, str)        # group name, via / PTH pad id
     export_requested = Signal(str)         # "csv", "vtk" or "results"
+    setup_changed = Signal()               # any edit to the setup
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1650,6 +1651,7 @@ class PIPanel(QWidget):
         self.lbl_errors.setText("\n".join(f"• {e}" for e in errors))
         self.btn_solve.setEnabled(not errors)
         self.btn_solve.setText(self._solve_label())
+        self.setup_changed.emit()
 
     # ------------------------------------------------------------------ new items
     def _first_net(self) -> Optional[str]:

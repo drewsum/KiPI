@@ -408,6 +408,7 @@ class ACPanel(QWidget):
     solve_requested = Signal(object, str, str)     # PISetup, VRM name, ground net
     save_requested = Signal()
     result_selected = Signal(object)               # ACResult shown in the plot; None clears it
+    setup_changed = Signal()                       # any edit to the setup
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -723,6 +724,7 @@ class ACPanel(QWidget):
         self._on_changed()
 
     def _on_changed(self):
+        self.setup_changed.emit()
         if self.cmb_rail.count() != len(self.setup.vrms) or any(
                 self.cmb_rail.itemData(i) != v.name for i, v in enumerate(self.setup.vrms)):
             self._fill_rails()                         # a VRM was added, removed or renamed
