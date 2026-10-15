@@ -43,12 +43,15 @@ class LayerResult:
     tri_j: np.ndarray
     tri_p: np.ndarray
     centroid_tree: cKDTree = field(repr=False, default=None)
-    # Current-flow arrows (display coordinates: x, -y, z): positions, unit directions,
-    # |J| in A/mm^2 and the grid spacing they were sampled on.
+    # Current-flow arrows (display coordinates: x, -y, z): positions just above the
+    # copper's top face, unit directions, |J| in A/mm^2 and the grid spacing they were
+    # sampled on. They are also drawn just below the bottom face, at ``arrow_z_below``,
+    # so they show from either side.
     arrow_pts: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
     arrow_dir: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
     arrow_mag: np.ndarray = field(default_factory=lambda: np.zeros(0))
     arrow_spacing: float = 1.0
+    arrow_z_below: Optional[float] = None
 
 
 @dataclass
@@ -95,6 +98,42 @@ def _barycentric(p: np.ndarray, x: float, y: float, tol: float = 1e-9):
 
 ARROW_GRID = 45          # arrows across the longest side of a layer's copper
 ARROW_MIN_FRACTION = 0.02   # skip bins carrying less than this fraction of the peak |J|
+ARROW_LIFT = 0.002       # mm between the copper face and the arrows drawn on it
+# A flat arrow's outline as fractions of its length, centered on its sample point.
+ARROW_SHAFT_HALF_WIDTH = 0.07
+ARROW_HEAD_HALF_WIDTH = 0.22
+ARROW_HEAD_LENGTH = 0.4
+
+
+def flat_arrows(pts: np.ndarray, dirs: np.ndarray, lengths: np.ndarray,
+                z_levels) -> pv.PolyData:
+    """Flat arrows in the xy plane, one per point and z level, as triangles.
+
+    Each arrow is centered on its point (x, y), points along its unit direction (only x
+    and y are used) and is ``lengths`` long: a shaft (two triangles) and a head (one).
+    """
+    n = len(pts)
+    z_levels = list(z_levels)
+    if n == 0 or not z_levels:
+        return pv.PolyData()
+    d = np.asarray(dirs, dtype=float)[:, :2]
+    side = np.column_stack([-d[:, 1], d[:, 0]])          # d turned 90° to the left
+    L = np.asarray(lengths, dtype=float)[:, None]
+    c = np.asarray(pts, dtype=float)[:, :2]
+    tail = c - 0.5 * L * d
+    neck = c + (0.5 - ARROW_HEAD_LENGTH) * L * d
+    tip = c + 0.5 * L * d
+    sw, hw = ARROW_SHAFT_HALF_WIDTH * L, ARROW_HEAD_HALF_WIDTH * L
+    outline = np.stack([tail - sw * side, neck - sw * side, neck + sw * side,
+                        tail + sw * side, neck - hw * side, tip, neck + hw * side], axis=1)
+    local = np.array([[0, 1, 2], [0, 2, 3], [4, 5, 6]])
+    points, faces = [], []
+    for k, z in enumerate(z_levels):
+        xyz = np.concatenate([outline, np.full((n, 7, 1), float(z))], axis=2).reshape(-1, 3)
+        points.append(xyz)
+        tri = (local[None, :, :] + 7 * (np.arange(n)[:, None, None] + k * n)).reshape(-1, 3)
+        faces.append(np.hstack([np.full((len(tri), 1), 3), tri]))
+    return pv.PolyData(np.concatenate(points), np.concatenate(faces).ravel())
 
 
 def current_arrows(pts2: np.ndarray, tris: np.ndarray, grad: np.ndarray, area: np.ndarray,
@@ -173,8 +212,9 @@ def build_result_scene(snap: BoardSnapshot, result, n_sides: int = 16,
         rho = cu.thickness_mm / sol.sheet_g[lid]          # this layer's resistivity
         apts, adir, amag, h = current_arrows(pts2, tris, fields.grad[tri_sel],
                                              fields.tri_area[tri_sel],
-                                             cu.z_top_mm + 0.002)
+                                             cu.z_top_mm + ARROW_LIFT)
         lr.arrow_pts, lr.arrow_dir, lr.arrow_mag, lr.arrow_spacing = apts, adir, amag / rho, h
+        lr.arrow_z_below = cu.z_bottom_mm - ARROW_LIFT
         layers[lid] = lr
 
     ranges = {}

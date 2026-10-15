@@ -15,6 +15,10 @@ milestones rather than versions that were ever set.
   field reads 0.00001 µF instead of rounding to zero. See *Typing values* in the help.
 
 ### Changed
+- **Flat current arrows** (#63). The current-density view's arrows are flat 2D arrows
+  drawn on each copper layer instead of 3D cone-and-cylinder models. They lie on the
+  copper's top face and are repeated on its bottom face, so they show from above and
+  below, and they are unlit, so they stay plain white at any viewing angle.
 - The version number is 0.7.2. The 0.7.1 release still reported itself as 0.7.0.
 - Tests are grouped into `tests/core`, `tests/dc`, `tests/ac`, `tests/gui` and
   `tests/scripts`, with shared test boards in `tests/helpers` instead of being imported from

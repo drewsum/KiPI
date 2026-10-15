@@ -2,6 +2,7 @@
 
 import math
 
+import numpy as np
 import pytest
 from shapely.geometry import Point, box
 
@@ -224,3 +225,40 @@ def test_current_arrows_follow_the_current():
     # Away from the pads |J| is I / (W t).
     mid = (lr.arrow_pts[:, 0] > 5) & (lr.arrow_pts[:, 0] < 15)
     assert lr.arrow_mag[mid] == pytest.approx(2.0 / (W * T_CU), rel=1e-6)
+
+
+def test_current_arrows_drawn_on_both_copper_faces():
+    from kipi.dc.viz.results import ARROW_LIFT, build_result_scene
+    L, W = 20.0, 1.0
+    snap = two_layer([(F, box(0, -W / 2, L, W / 2))],
+                     [pad("src", "U1", F, box(0, -W / 2, 1, W / 2)),
+                      pad("ld", "U2", F, box(L - 1, -W / 2, L, W / 2))])
+    res = run(snap, NetProblem("N", [VoltageSource("VRM", ["src"], 1.0)],
+                               [CurrentLoad("LOAD", ["ld"], 2.0)], SolveSettings(max_edge_mm=0.3)))
+    lr = build_result_scene(snap, res).layers[F]
+    cu = snap.stackup.layer(F)
+    assert lr.arrow_pts[:, 2] == pytest.approx(cu.z_top_mm + ARROW_LIFT)
+    assert lr.arrow_z_below == pytest.approx(cu.z_bottom_mm - ARROW_LIFT)
+
+
+def test_flat_arrows_shape():
+    from kipi.dc.viz.results import (
+        ARROW_HEAD_HALF_WIDTH, ARROW_HEAD_LENGTH, flat_arrows,
+    )
+    pts = np.array([[1.0, 2.0, 0.0], [5.0, 5.0, 0.0]])
+    dirs = np.array([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
+    arrows = flat_arrows(pts, dirs, np.array([2.0, 1.0]), [0.1, -0.2])
+    # Three triangles per arrow per z level, all flat at their level.
+    assert arrows.n_cells == 2 * 2 * 3
+    assert arrows.is_all_triangles
+    assert sorted(set(np.round(arrows.points[:, 2], 9))) == [-0.2, 0.1]
+    first = arrows.points[:7]
+    # Centered on its point, from x = 0 to x = 2, head as wide as specified.
+    assert first[:, 0].min() == pytest.approx(0.0) and first[:, 0].max() == pytest.approx(2.0)
+    assert first[:, 1].max() - first[:, 1].min() == pytest.approx(2 * ARROW_HEAD_HALF_WIDTH * 2.0)
+    assert first[5, :2] == pytest.approx([2.0, 2.0])                      # the tip
+    assert first[4, 0] == pytest.approx(2.0 - ARROW_HEAD_LENGTH * 2.0)    # the neck
+    # The second arrow points along -y: its tip is the lowest point.
+    second = arrows.points[7:14]
+    assert second[5, :2] == pytest.approx([5.0, 4.5])
+    assert flat_arrows(np.zeros((0, 3)), np.zeros((0, 3)), np.zeros(0), [0.0]).n_points == 0

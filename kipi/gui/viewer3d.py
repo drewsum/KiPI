@@ -13,7 +13,7 @@ from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
 from kipi.core.viz.batch import Chunk, MeshBatcher
-from kipi.dc.viz.results import FIELDS, ResultScene
+from kipi.dc.viz.results import FIELDS, ResultScene, flat_arrows
 from kipi.core.viz.meshes import NetScene
 
 _NET_COLORS = [(0.90, 0.35, 0.25), (0.25, 0.60, 0.90), (0.95, 0.75, 0.20), (0.40, 0.80, 0.45),
@@ -541,7 +541,8 @@ class Viewer3D(QWidget):
         self._apply_visibility()
 
     def _draw_arrows(self, scene):
-        """White arrows along the current, length ~ sqrt(|J|) relative to the peak."""
+        """Flat white arrows along the current, drawn on the copper's top and bottom faces,
+        length ~ sqrt(|J|) relative to the peak."""
         p = self.plotter
         mags = [lr.arrow_mag for lr in scene.layers.values() if len(lr.arrow_mag)]
         if not mags:
@@ -551,16 +552,17 @@ class Viewer3D(QWidget):
         peak = float(np.percentile(np.concatenate(mags), 95))
         if peak <= 0:
             return
-        geom = pv.Arrow(tip_length=0.4, tip_radius=0.22, shaft_radius=0.08)
         for lid, lr in scene.layers.items():
             if not len(lr.arrow_pts):
                 continue
-            pts = pv.PolyData(lr.arrow_pts)
-            pts["dir"] = lr.arrow_dir
-            pts["len"] = lr.arrow_spacing * (0.3 + 0.65 * np.minimum(1.0, np.sqrt(lr.arrow_mag / peak)))
-            glyphs = pts.glyph(orient="dir", scale="len", factor=1.0, geom=geom)
-            actor = p.add_mesh(glyphs, color="white", name=f"arrows:{lid}", pickable=False,
-                               reset_camera=False, render=False)
+            lengths = lr.arrow_spacing * (0.3 + 0.65 * np.minimum(1.0, np.sqrt(lr.arrow_mag / peak)))
+            z_levels = [lr.arrow_pts[0, 2]]
+            if lr.arrow_z_below is not None:
+                z_levels.append(lr.arrow_z_below)
+            arrows = flat_arrows(lr.arrow_pts, lr.arrow_dir, lengths, z_levels)
+            # Unlit, so the arrows stay plain white at any viewing angle.
+            actor = p.add_mesh(arrows, color="white", lighting=False, name=f"arrows:{lid}",
+                               pickable=False, reset_camera=False, render=False)
             actor.SetScale(1.0, 1.0, self._zscale)
             self._arrow_actors[lid] = actor
 
