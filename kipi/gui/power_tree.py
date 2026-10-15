@@ -1,14 +1,16 @@
 """The Power tree window (#58): a block diagram of the setup's VRMs, rails, series links,
 loads and capacitors, drawn from :func:`kipi.dc.pi.diagram.build_diagram`.
 
-VRM types are told apart by colour, by a tag (SOURCE / LDO / SMPS) and by outline: a
-source has a double border, an LDO a plain one and a switcher a dashed one, so they read
-apart in print and for colour-blind users too.
+VRM types are told apart by colour and by a tag (SOURCE / LDO / SMPS); a source also
+has a double border, and regulators (LDO and switcher alike) a dashed one, so sources and
+regulators read apart in print and for colour-blind users too.
+
+A rail with many loads (or capacitor groups) packs them into a framed grid fed by one
+arrow, and the grids take the shape that fits the window best (:func:`place`).
 """
 
 from __future__ import annotations
 
-from typing import Dict
 
 from qtpy.QtCore import QPointF, QRectF, Qt
 from qtpy.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen
@@ -17,7 +19,7 @@ from qtpy.QtWidgets import (
     QGraphicsView, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
 )
 
-from kipi.dc.pi.diagram import Block, Diagram, build_diagram
+from kipi.dc.pi.diagram import Block, Diagram, build_diagram, place, si
 
 FILL = {"rail": "#d9dde3", "link": "#fbe7b5", "load": "#f6c4c0", "cap": "#e2d4f3"}
 VRM_FILL = {"source": "#bfe3c0", "ldo": "#ffd29e", "smps": "#b9d7f5"}
@@ -29,6 +31,18 @@ BACKGROUND = "#fafbfc"
 PAD_X, PAD_Y, LINE_GAP = 10.0, 6.0, 2.0
 COL_GAP, ROW_GAP, MIN_W = 70.0, 16.0, 120.0
 
+
+
+def _lines(b: Block, compact: bool):
+    """A block's text under its title; in a grid a load's goes on one line."""
+    return [" · ".join(b.lines)] if compact and b.kind == "load" and b.lines else b.lines
+
+
+def _frame_title(d: Diagram, c) -> str:
+    blocks = [d.blocks[m] for m in c.members]
+    if c.kind == "load":
+        return f"{len(blocks)} loads, {si(sum(b.amps for b in blocks), 'A')}"
+    return f"{len(blocks)} capacitor groups"
 
 class _View(QGraphicsView):
     """Drag to pan, Ctrl + wheel (or plain wheel with no scroll bars) to zoom."""
@@ -128,41 +142,60 @@ class PowerTreeWindow(QDialog):
         small.setBold(True)
         fm, fmb, fms = QFontMetricsF(font), QFontMetricsF(bold), QFontMetricsF(small)
 
-        sizes: Dict[str, tuple] = {}
-        for b in self.diagram.blocks.values():
+        def size(b: Block, compact: bool):
             tag = VRM_TAG.get(b.vrm_kind, "") if b.kind == "vrm" else ""
-            w = max([fmb.horizontalAdvance(b.title)] + [fm.horizontalAdvance(t) for t in b.lines]
+            lines = _lines(b, compact)
+            w = max([fmb.horizontalAdvance(b.title)] + [fm.horizontalAdvance(t) for t in lines]
                     + [fms.horizontalAdvance(tag) if tag else 0])
-            h = fmb.height() + len(b.lines) * (fm.height() + LINE_GAP)
+            h = fmb.height() + len(lines) * (fm.height() + LINE_GAP)
             if tag:
                 h += fms.height() + LINE_GAP
-            sizes[b.id] = (max(MIN_W, w + 2 * PAD_X), h + 2 * PAD_Y)
+            return (max(MIN_W if not compact else 0.0, w + 2 * PAD_X), h + 2 * PAD_Y)
 
-        rects: Dict[str, QRectF] = {}
-        x = 0.0
-        for col in self.diagram.columns():
-            if not col:
-                continue
-            width = max(sizes[b.id][0] for b in col)
-            total = sum(sizes[b.id][1] for b in col) + ROW_GAP * (len(col) - 1)
-            y = -total / 2
-            for b in col:
-                w, h = sizes[b.id]
-                rects[b.id] = QRectF(x + (width - w) / 2, y, w, h)
-                y += h + ROW_GAP
-            x += width + COL_GAP
+        vw, vh = self.view.viewport().width(), self.view.viewport().height()
+        aspect = vw / vh if vw > 50 and vh > 50 else 1.6
+        pl = place(self.diagram, size,
+                   header=lambda c: (fmb.horizontalAdvance(_frame_title(self.diagram, c)),
+                                     fmb.height() + LINE_GAP),
+                   aspect=aspect, col_gap=COL_GAP, row_gap=ROW_GAP)
+        rects = {k: QRectF(*r) for k, r in pl.rects.items()}
+        frames = {k: QRectF(*r) for k, r in pl.cluster_rects.items()}
 
+        drawn = set()
         for a in self.diagram.arrows:
-            # Coloured by the block at the other end from the rail.
+            # Coloured by the block at the other end from the rail; a grid gets one arrow.
             src, dst = self.diagram.blocks[a.src], self.diagram.blocks[a.dst]
-            self._arrow(rects[a.src], rects[a.dst], a.dashed,
+            cid = pl.cluster_of.get(a.dst)
+            if cid:
+                if cid in drawn:
+                    continue
+                drawn.add(cid)
+            self._arrow(rects[a.src], frames[cid] if cid else rects[a.dst], a.dashed,
                         EDGE[dst.kind if src.kind == "rail" else src.kind])
+        for cid, c in pl.clusters.items():
+            self._frame(c, frames[cid], bold, fmb)
         for b in self.diagram.blocks.values():
-            self._block(b, rects[b.id], font, bold, small, fm, fmb, fms)
+            self._block(b, rects[b.id], font, bold, small, fm, fmb, fms,
+                        compact=b.id in pl.cluster_of)
         self._legend(font, small, fm)
         self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-40, -40, 40, 40))
 
-    def _block(self, b: Block, r: QRectF, font, bold, small, fm, fmb, fms):
+    def _frame(self, c, r: QRectF, bold, fmb):
+        """The box round a grid of loads or capacitors, with its count as a title."""
+        title = _frame_title(self.diagram, c)
+        path = QPainterPath()
+        path.addRoundedRect(r, 8, 8)
+        color = QColor(EDGE[c.kind])
+        fill = QColor(FILL[c.kind])
+        fill.setAlpha(70)
+        pen = QPen(color, 1.2)
+        pen.setStyle(Qt.DashLine if c.kind == "cap" else Qt.SolidLine)
+        item = self.scene.addPath(path, pen, QBrush(fill))
+        item.setZValue(0.5)
+        item.setToolTip(f"{title} on {self.diagram.blocks[c.rail].title}")
+        self._text(title, bold, fmb, r, r.top() + 6, item, color)
+
+    def _block(self, b: Block, r: QRectF, font, bold, small, fm, fmb, fms, compact=False):
         fill = VRM_FILL.get(b.vrm_kind) if b.kind == "vrm" else FILL[b.kind]
         path = QPainterPath()
         radius = r.height() / 2 if b.kind == "rail" else 6.0
@@ -170,7 +203,7 @@ class PowerTreeWindow(QDialog):
         item = QGraphicsPathItem(path)
         item.setBrush(QBrush(QColor(fill)))
         pen = QPen(QColor(EDGE.get(b.kind, "#555")), 1.4)
-        if b.kind == "vrm" and b.vrm_kind == "smps":
+        if b.kind == "vrm" and b.vrm_kind in ("ldo", "smps"):
             pen.setStyle(Qt.DashLine)
             pen.setWidthF(2.0)
         item.setPen(pen)
@@ -188,7 +221,7 @@ class PowerTreeWindow(QDialog):
             y = self._text(VRM_TAG.get(b.vrm_kind, ""), small, fms, r, y, item,
                            QColor(EDGE["vrm"]))
         y = self._text(b.title, bold, fmb, r, y, item)
-        for t in b.lines:
+        for t in _lines(b, compact):
             y = self._text(t, font, fm, r, y, item)
 
     def _text(self, text, font, fm, r: QRectF, y, parent, color=TEXT):

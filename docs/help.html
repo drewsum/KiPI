@@ -347,8 +347,12 @@ of decimals, plus more when a small typed value needs them.</p>
     left to right in the direction power flows: each source and regulator, the rails they
     drive, series links between rails, and the loads and capacitor models on each rail
     (capacitors are grouped per model and rail, with a dashed line). VRM types differ in
-    colour, tag and outline: a <b>SOURCE</b> has a double border, an <b>LDO</b> a plain one
-    and an <b>SMPS</b> a dashed one. Ground nets are left out. Hover a block for its pins;
+    colour and tag: a <b>SOURCE</b> has a double border, and regulators (<b>LDO</b> and
+    <b>SMPS</b>) a dashed one. A rail with three or more loads, or capacitor groups, packs
+    them into a framed grid fed by one arrow, titled with their count (and the loads' total
+    current); the grids take the shape that lets the whole tree fit the window largest.
+    Each block sits just right of the one feeding it. Ground nets, and net ties between
+    them, are left out. Hover a block for its pins;
     drag to pan, <kbd>Ctrl</kbd> + wheel to zoom, <b>Save image…</b> for a PNG. It redraws
     as the setup changes.</td></tr>
   <tr><td><b>Help</b> <kbd>F1</kbd></td><td class="wrap">Opens this guide in your web

@@ -81,3 +81,67 @@ def qapp_offscreen():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from qtpy.QtWidgets import QApplication
     return QApplication.instance() or QApplication([])
+
+
+# Placement (#58): grids for big sets of loads, each branch beside its feeder.
+
+def _many_loads(n=47):
+    s = _tree()
+    for i in range(n):
+        s.loads.append(Load(f"L{i}", PinRef(f"L{i}", "+3V3", ["1"]), 0.01))
+    return s
+
+
+def _size(b, compact):
+    return (100.0, 30.0 if compact else 50.0)
+
+
+def _overlap(a, b):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+
+def test_many_loads_pack_into_a_grid_that_fits_the_window():
+    from kipi.dc.pi.diagram import place
+    d = build_diagram(_many_loads(), board())
+    pl = place(d, _size, aspect=1.6)
+    (cid, c), = pl.clusters.items()
+    assert c.kind == "load" and c.rail == "rail:+3V3" and len(c.members) == 48   # U2 too
+    assert 1 < c.cols < 48
+    # Far shorter than one load per row, and close to the window's shape.
+    assert pl.height < 48 * (30 + 8) / 2          # one per row would be ~1800
+    assert 0.8 < pl.width / (pl.height * 1.6) < 1.25
+    fx, fy, fw, fh = pl.cluster_rects[cid]
+    for m in c.members:
+        x, y, w, h = pl.rects[m]
+        assert fx <= x and x + w <= fx + fw and fy <= y and y + h <= fy + fh
+
+
+def test_placed_blocks_do_not_overlap():
+    from kipi.dc.pi.diagram import place
+    d = build_diagram(_many_loads(), board())
+    pl = place(d, _size)
+    boxes = [r for k, r in pl.rects.items() if k not in pl.cluster_of]
+    boxes += list(pl.cluster_rects.values())
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            assert not _overlap(a, b)
+    # Each block sits right of the one feeding it.
+    for a in d.arrows:
+        src = pl.rects[a.src]
+        dst = pl.cluster_rects.get(pl.cluster_of.get(a.dst), pl.rects[a.dst])
+        assert src[0] + src[2] <= dst[0]
+
+
+def test_few_loads_stay_single_blocks():
+    from kipi.dc.pi.diagram import place
+    pl = place(build_diagram(_tree(), board()), _size)
+    assert pl.clusters == {}
+
+
+def test_net_ties_between_grounds_are_left_out():
+    s = _tree()
+    s.links.append(DcLink("NT1", PinRef("NT1", "GND", ["1"]), PinRef("NT1", "AGND", ["2"]),
+                          0.0))
+    assert "link:NT1" not in build_diagram(s).blocks

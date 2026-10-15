@@ -16,6 +16,7 @@ each block goes in; :mod:`kipi.gui.power_tree` draws it. Nothing here needs Qt.
 from __future__ import annotations
 
 import math
+import re
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
@@ -34,6 +35,7 @@ class Block:
     lines: List[str] = field(default_factory=list)
     vrm_kind: str = ""              # VRMs: "source", "ldo" or "smps"
     tip: str = ""
+    amps: float = 0.0               # loads: the current drawn
     column: int = 0
     row: int = 0                    # order within the column, top to bottom
 
@@ -93,7 +95,6 @@ def _refs_text(refs: List[str], most: int = 6) -> str:
 
 
 def _natural(ref: str):
-    import re
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", ref)]
 
 
@@ -136,6 +137,8 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
 
     links = []
     for k in setup.links:
+        if all(n in grounds or is_ground_name(n) for n in (k.side_a.net, k.side_b.net)):
+            continue                    # a net tie between grounds: no power flows
         bid = f"link:{k.name}"
         lines = [si(k.resistance, "Ω") if k.resistance else "short"]
         if k.esl_h:
@@ -151,7 +154,7 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
             lines.append(f"± {l.tolerance_pct:g} %")
         if l.groups:
             lines.append(f"{len(l.groups)} pin groups")
-        d.blocks[bid] = Block(bid, "load", l.name, lines,
+        d.blocks[bid] = Block(bid, "load", l.name, lines, amps=l.current,
                               tip=f"Load {l.name} on {l.supply.ref} ({l.supply.net})")
         d.arrows.append(Arrow(rail(l.supply.net), bid))
 
@@ -278,3 +281,155 @@ def _layout(d: Diagram):
                     _natural(b.title))
         for i, b in enumerate(sorted(c, key=key)):
             b.row = i
+
+
+# ---------------------------------------------------------------------------
+# Placement: where each block goes, in scene units
+# ---------------------------------------------------------------------------
+
+CLUSTER_MIN = 3             # a rail with this many loads (or capacitor groups) packs them
+
+
+@dataclass
+class Cluster:
+    """A rail's loads (or capacitor groups) packed into a grid, fed by one arrow."""
+    id: str
+    rail: str
+    kind: str                       # "load" or "cap"
+    members: List[str]
+    cols: int = 1
+
+
+@dataclass
+class Placement:
+    rects: Dict[str, Tuple[float, float, float, float]] = field(default_factory=dict)
+    clusters: Dict[str, Cluster] = field(default_factory=dict)
+    cluster_rects: Dict[str, Tuple[float, float, float, float]] = field(default_factory=dict)
+    cluster_of: Dict[str, str] = field(default_factory=dict)     # block id -> cluster id
+    width: float = 0.0
+    height: float = 0.0
+
+
+def clusters(d: Diagram, least: int = CLUSTER_MIN) -> Dict[str, Cluster]:
+    """Each rail's loads, and its capacitor groups, when it has at least ``least`` of
+    them; only blocks fed by that rail alone are packed."""
+    preds: Dict[str, List[str]] = {bid: [] for bid in d.blocks}
+    for a in d.arrows:
+        preds[a.dst].append(a.src)
+    out: Dict[str, Cluster] = {}
+    for kind in ("load", "cap"):
+        by_rail: Dict[str, List[str]] = {}
+        for c in d.columns():
+            for b in c:
+                if b.kind == kind and len(preds[b.id]) == 1:
+                    by_rail.setdefault(preds[b.id][0], []).append(b.id)
+        for rail, members in by_rail.items():
+            if len(members) >= least:
+                cid = f"cluster:{kind}:{rail}"
+                out[cid] = Cluster(cid, rail, kind, members)
+    return out
+
+
+def place(d: Diagram, size, header=None, aspect: float = 1.6, col_gap: float = 70.0,
+          row_gap: float = 16.0, cell_gap: float = 8.0, pad: float = 10.0,
+          least: int = CLUSTER_MIN) -> Placement:
+    """Lay the diagram out as a tree, left to right, each block just right of the one
+    feeding it and each branch in a band of its own, and pack big sets of loads and
+    capacitors into grids.
+
+    ``size(block, compact)`` gives a block's (width, height); ``compact`` is True for a
+    block inside a grid. ``header(cluster)`` gives the (width, height) of a grid's title.
+    The grids' shape is chosen so the whole diagram fits a window of width / height
+    ``aspect`` as large as possible: every grid is given the columns that bring it
+    closest to a common width / height, and a range of those is tried."""
+    groups = clusters(d, least)
+    header = header or (lambda c: (0.0, 0.0))
+    member = {m: cid for cid, c in groups.items() for m in c.members}
+    cell = {cid: (max(size(d.blocks[m], True)[0] for m in c.members),
+                  max(size(d.blocks[m], True)[1] for m in c.members))
+            for cid, c in groups.items()}
+
+    # The tree: each block hangs from the feeding block furthest left.
+    preds: Dict[str, List[str]] = {bid: [] for bid in d.blocks}
+    for a in d.arrows:
+        preds[a.dst].append(a.src)
+    order = {b.id: (b.column, b.row) for b in d.blocks.values()}
+    children: Dict[str, List[str]] = {bid: [] for bid in [*d.blocks, *groups]}
+    roots = []
+    for bid in sorted(d.blocks, key=order.get):
+        if bid in member:
+            continue
+        up = sorted((p for p in preds[bid] if d.blocks[p].column < d.blocks[bid].column),
+                    key=order.get)
+        (children[up[0]] if up else roots).append(bid)
+    for cid, c in sorted(groups.items(), key=lambda kv: kv[1].kind != "load"):
+        children[c.rail].append(cid)
+
+    def shape(cid, n, target):
+        cw, ch = cell[cid]
+        return min(range(1, n + 1), key=lambda k: abs(math.log(
+            (k * cw) / (-(-n // k) * ch) / target)))
+
+    def attempt(target: float) -> Placement:
+        p = Placement(clusters={cid: Cluster(c.id, c.rail, c.kind, c.members)
+                                for cid, c in groups.items()}, cluster_of=dict(member))
+        sizes = {bid: size(b, False) for bid, b in d.blocks.items() if bid not in member}
+        for cid, c in p.clusters.items():
+            n = len(c.members)
+            c.cols = shape(cid, n, target)
+            rows = -(-n // c.cols)
+            cw, ch = cell[cid]
+            hw, hh = header(c)
+            sizes[cid] = (max(c.cols * cw + (c.cols - 1) * cell_gap, hw) + 2 * pad,
+                          rows * ch + (rows - 1) * cell_gap + 2 * pad + hh)
+        span: Dict[str, float] = {}
+
+        def measure(k):
+            kids = children[k]
+            inner = sum(measure(c) for c in kids) + row_gap * max(0, len(kids) - 1)
+            span[k] = max(sizes[k][1], inner)
+            return span[k]
+
+        def put(k, top, x0):
+            # Each branch has a band of its own, so a block can sit right after the one
+            # feeding it without meeting another branch.
+            w, h = sizes[k]
+            kids = children[k]
+            inner = sum(span[c] for c in kids) + row_gap * max(0, len(kids) - 1)
+            y = top + (span[k] - inner) / 2
+            centres = []
+            for c in kids:
+                centres.append(put(c, y, x0 + w + col_gap))
+                y += span[c] + row_gap
+            mid = (centres[0] + centres[-1]) / 2 if centres else top + span[k] / 2
+            mid = min(max(mid, top + h / 2), top + span[k] - h / 2)
+            (p.cluster_rects if k in p.clusters else p.rects)[k] = (x0, mid - h / 2, w, h)
+            return mid
+
+        top = 0.0
+        for r in roots:
+            measure(r)
+            put(r, top, 0.0)
+            top += span[r] + row_gap
+        # The grids' cells, row by row.
+        for cid, c in p.clusters.items():
+            x0, y0, _, _ = p.cluster_rects[cid]
+            cw, ch = cell[cid]
+            for i, m in enumerate(c.members):
+                r_, c_ = divmod(i, c.cols)
+                w, h = size(d.blocks[m], True)
+                p.rects[m] = (x0 + pad + c_ * (cw + cell_gap), y0 + pad + header(c)[1]
+                              + r_ * (ch + cell_gap), cw, ch)
+        boxes = list(p.rects.values()) + list(p.cluster_rects.values())
+        p.width = max((x + w for x, _, w, _ in boxes), default=0.0)
+        p.height = max((y + h for _, y, _, h in boxes), default=0.0)
+        return p
+
+    best = None
+    for i in range(-12, 25):            # grid width / height from 1/8 to 64
+        p = attempt(2 ** (i / 4))
+        # The window shows the diagram at the zoom that fits its larger side.
+        score = max(p.width, p.height * aspect)
+        if best is None or score < best[0] - 1e-9:
+            best = (score, p)
+    return best[1]
