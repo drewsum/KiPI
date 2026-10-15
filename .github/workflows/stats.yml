@@ -1,0 +1,56 @@
+name: Stats
+
+# Publishes stats.json (clones and release downloads, shown in the About dialog) to the
+# `stats` branch, so main gets no daily commits. Clone counts need the TRAFFIC_TOKEN
+# secret: a fine-grained token for this repo only, with Administration: read-only. The
+# plugin itself reads the published file without any token.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # daily; GitHub keeps only 14 days of clone traffic
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stats
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check out the stats branch
+        run: |
+          if git fetch --depth=1 origin stats; then
+            git worktree add -B stats out FETCH_HEAD
+          else
+            git worktree add --detach out
+            git -C out checkout --orphan stats
+            git -C out rm -rfq .
+          fi
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Update stats.json
+        env:
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python .github/scripts/update_stats.py out/stats.json
+
+      - name: Publish
+        working-directory: out
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stats.json
+          if git diff --cached --quiet; then
+            echo "No change"
+          else
+            git commit -qm "Update stats"
+            git push origin stats
+          fi

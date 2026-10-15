@@ -1,0 +1,42 @@
+name: Release zip
+
+# Attaches KiPI-<tag>.zip to each published release. GitHub counts downloads of uploaded
+# assets only, not of the automatic "Source code" archives, so this is what makes release
+# downloads countable (stats.yml adds them up). Run it by hand with a tag to add the zip
+# to an existing release.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the zip to"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      # A KiPI/ folder ready to drop into KiCad's plugins folder; tests and CI stay out.
+      - name: Build zip
+        run: git archive --format=zip --prefix=KiPI/ -o "KiPI-$TAG.zip" HEAD -- . ':!tests' ':!.github'
+
+      # Replacing an existing asset would reset its download count, so leave it alone.
+      - name: Upload to the release
+        run: |
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx "KiPI-$TAG.zip"; then
+            echo "::notice::KiPI-$TAG.zip is already attached to $TAG"
+          else
+            gh release upload "$TAG" "KiPI-$TAG.zip"
+          fi

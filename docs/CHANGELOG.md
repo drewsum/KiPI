@@ -14,6 +14,12 @@ milestones rather than versions that were ever set.
   whose VRM is no longer in the setup are left out and logged.
 - DC and AC results files are marked with their kind, and opening one in the wrong mode
   says which mode it belongs to. DC files from earlier versions still open.
+- **Project statistics in About** (#59): clones since tracking began, unique cloners over
+  the last 14 days, and release downloads. A daily workflow publishes them to the repo's
+  `stats` branch, so no token ships with the plugin; the dialog fetches them in the
+  background once a session and shows the last ones fetched when offline.
+- Each release gets a `KiPI-<version>.zip` to unzip into KiCad's plugins folder, which is
+  also what makes its downloads countable.
 
 ## 0.7.0 (in development): AC impedance analysis, faster solves
 

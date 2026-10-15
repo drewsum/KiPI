@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import html
+import json
 import platform
 import sys
+import threading
+import urllib.request
+from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
-from qtpy.QtCore import QSize, Qt
+from qtpy.QtCore import QObject, QSettings, QSize, Qt, Signal
 from qtpy.QtGui import QGuiApplication, QMovie, QPixmap
 from qtpy.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -67,6 +71,76 @@ def versions(solver: bool = True) -> List[Tuple[str, str]]:
     return rows
 
 
+#: Clone and download counts, published by the repo's stats workflow. A public file: the
+#: Traffic API behind the clone counts needs a token, and no token can ship in the plugin.
+STATS_URL = "https://raw.githubusercontent.com/drewsum/KiPI/stats/stats.json"
+STATS_TIMEOUT_S = 5.0
+_STATS_KEY = "about/stats"
+
+
+@dataclass(frozen=True)
+class RepoStats:
+    clones: int          # every clone since `since`
+    since: str           # ISO date the clone history starts
+    uniques_14d: int     # unique cloners over GitHub's 14-day window
+    downloads: int       # release asset downloads, all releases
+
+    def text(self) -> str:
+        return (f"{self.clones:,} clones since {self.since} ({self.uniques_14d:,} unique in the "
+                f"last 14 days) · {self.downloads:,} release downloads")
+
+
+def parse_stats(data: Any) -> Optional[RepoStats]:
+    """stats.json as the stats workflow writes it, or None if it is anything else."""
+    try:
+        c = data["clones"]
+        return RepoStats(int(c["total"]), str(c["since"]), int(c["uniques_14d"]),
+                         int(data["release_downloads"]["total"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def fetch_stats(url: str = STATS_URL, timeout: float = STATS_TIMEOUT_S) -> Optional[dict]:
+    """The published stats as raw JSON, or None if they cannot be had: offline, a firewall,
+    a Python without CA certificates (common on macOS), or GitHub being down."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": f"KiPI/{__version__}"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read(1 << 20))
+    except Exception:          # any failure just leaves the stats out
+        return None
+    return data if parse_stats(data) is not None else None
+
+
+def _settings() -> QSettings:
+    return QSettings("KiPI", "KiPI")
+
+
+def cached_stats() -> Optional[RepoStats]:
+    """The stats last fetched, from any session, to show while (or instead of) fetching."""
+    try:
+        return parse_stats(json.loads(str(_settings().value(_STATS_KEY, ""))))
+    except ValueError:
+        return None
+
+
+def _cache_stats(data: dict):
+    _settings().setValue(_STATS_KEY, json.dumps(data))
+
+
+class _StatsFetch(QObject):
+    """Fetches the stats on a daemon thread; ``ready`` arrives on the UI thread."""
+
+    ready = Signal(object)    # raw stats dict, or None
+
+    def start(self):
+        threading.Thread(target=lambda: self.ready.emit(fetch_stats()),
+                         name="kipi-stats", daemon=True).start()
+
+
+_fetched_this_session = False
+
+
 def info_text() -> str:
     """Plain-text summary for pasting into an issue."""
     lines = [f"{NAME} {__version__}", REPO]
@@ -104,10 +178,29 @@ class AboutDialog(QDialog):
             f"License: {LICENSE}</p>"
             f"<p><b>Running on</b></p><table>{dep_rows}</table>")
 
+        # Repo statistics: the cached ones now, fresh ones when the fetch returns. Without
+        # either the line stays hidden; nothing here can stop the dialog opening.
+        self.stats_label = QLabel(self)
+        self.stats_label.setWordWrap(True)
+        self.stats_label.setToolTip("From the project's GitHub repository, updated daily")
+        self._show_stats(cached_stats())
+        self._fetch: Optional[_StatsFetch] = None
+        global _fetched_this_session
+        if not _fetched_this_session:
+            _fetched_this_session = True
+            self._fetch = _StatsFetch()
+            self._fetch.ready.connect(self._stats_ready)
+            self._fetch.start()
+
+        col = QVBoxLayout()
+        col.addWidget(text)
+        col.addWidget(self.stats_label)
+        col.addStretch(1)
+
         top = QHBoxLayout()
         top.addWidget(icon)
         top.addSpacing(12)
-        top.addWidget(text, 1)
+        top.addLayout(col, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
         copy = QPushButton("Copy version info", self)
@@ -120,6 +213,20 @@ class AboutDialog(QDialog):
         lay.addLayout(top)
         lay.addWidget(buttons)
         self.setMinimumWidth(520)
+
+    def _show_stats(self, stats: Optional[RepoStats]):
+        if stats is not None:
+            self.stats_label.setText(stats.text())
+        self.stats_label.setVisible(bool(self.stats_label.text()))
+
+    def _stats_ready(self, data: Optional[dict]):
+        if data is None:
+            return
+        _cache_stats(data)
+        try:
+            self._show_stats(parse_stats(data))
+        except RuntimeError:   # the dialog was deleted while the fetch ran
+            pass
 
     def _animate(self, label: QLabel) -> Optional[QMovie]:
         """Play the animated icon, or None to fall back to the still one: the GIF can be

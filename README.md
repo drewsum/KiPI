@@ -74,6 +74,10 @@ control in KiPI has a tooltip.
    ln -s "<path to this repo>" ~/.local/share/kicad/10.0/plugins/KiPI       # Linux
    ```
 
+   Or, without git, download `KiPI-<version>.zip` from the
+   [latest release](https://github.com/drewsum/KiPI/releases/latest) and unzip it into the
+   plugins folder, which gives `plugins/KiPI`.
+
 3. Restart the PCB editor. KiCad builds the plugin venv in the background; the first time this
    downloads PySide6 and VTK, so give it a few minutes. The **KiPI** toolbar button appears
    once the venv is ready. If it never appears, right-click the action in
@@ -465,6 +469,14 @@ CI runs ruff and the test suite for every push and pull request: on Windows with
 on Linux with Python 3.10 to 3.13, on macOS, and with the oldest kicad-python that
 `requirements.txt` allows. A further job checks whether every dependency has prebuilt
 packages for Python 3.14; it is expected to fail until Triangle and PyAMG publish them.
+
+Two more workflows feed the About dialog's statistics. `release.yml` attaches
+`KiPI-<tag>.zip` to each published release (run it by hand with a tag for an older
+release); GitHub counts downloads of uploaded assets only. `stats.yml` runs daily and
+writes `stats.json` to the `stats` branch, keeping the clone history beyond the 14 days
+GitHub remembers. Clone counts need a `TRAFFIC_TOKEN` repository secret: a fine-grained
+token for this repo only, with *Administration: read-only*. Without it the workflow still
+updates the download counts and warns.
 
 `tests/kicad_fake.py` stands in for a running KiCad. It answers the IPC API's own
 messages the way each KiCad version from 9.0.0 to 10.0.6 does, refusing commands that
