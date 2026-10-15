@@ -197,14 +197,17 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     progress.stage(f"Field solves: {len(f_field)} frequencies, {len(ports)} ports, "
                    f"{system.n} unknowns")
     t1 = time.perf_counter()
-    for k, f in enumerate(f_field):
-        progress.check_cancel()
-        progress.info(f"  [{k + 1}/{len(f_field)}] solving {fmt_hz(f)}")
-        zb[k] = system.port_impedance(2 * np.pi * f, progress)
-        progress.fraction((k + 1) / len(f_field))
-        if k == 0:
-            progress.info(f"  first frequency took {time.perf_counter() - t1:.2f} s "
-                          f"({system.stats.method})")
+    try:
+        for k, f in enumerate(f_field):
+            progress.check_cancel()
+            progress.info(f"  [{k + 1}/{len(f_field)}] solving {fmt_hz(f)}")
+            zb[k] = system.port_impedance(2 * np.pi * f, progress)
+            progress.fraction((k + 1) / len(f_field))
+            if k == 0:
+                progress.info(f"  first frequency took {time.perf_counter() - t1:.2f} s "
+                              f"({system.stats.method})")
+    finally:
+        system.close()
     system.stats.times["field"] = time.perf_counter() - t1
     progress.info(f"Field solves done in {system.stats.times['field']:.2f} s")
 

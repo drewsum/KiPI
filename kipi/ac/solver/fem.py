@@ -61,7 +61,6 @@ from kipi.core.solver import direct
 from kipi.dc.solver.fem import _merge_groups, triangle_geometry
 
 TIE_ADMITTANCE_S = 1e-9     # weak tie for copper reached only through parts
-PORT_CHUNK = 16             # right-hand sides solved together
 SHIELDED_FACE_HEIGHT = 1000  # x board thickness: the inductance height of a shielded face
 
 
@@ -336,26 +335,68 @@ class ACSystem:
         self.n_conductors = len(cond_ids)
 
         # Entries between kept unknowns, mapped to the reduced numbering, then CSR with a
-        # fixed order: per frequency only the values are recomputed (bincount).
+        # fixed order: per frequency only the values are recomputed.
         ok = keep[rows] & keep[cols]
-        self._ok = ok
         r, cc = new_index[rows[ok]], new_index[cols[ok]]
         diag = np.arange(self.n)
         r = np.concatenate([r, diag])          # every kept unknown gets a diagonal entry
         cc = np.concatenate([cc, diag])
         key = r * self.n + cc
         uniq, inv = np.unique(key, return_inverse=True)
-        self._inv = inv
         self._n_entries = len(uniq)
         ur, uc = uniq // self.n, uniq % self.n
         self._indices = uc.astype(np.int32 if self.n < 2**31 else np.int64)
         self._indptr = np.concatenate([[0], np.cumsum(np.bincount(ur, minlength=self.n))])
         self._tie_pos = np.searchsorted(uniq, self._ties * self.n + self._ties)
+        self._assembly(np.flatnonzero(ok), inv[:int(ok.sum())])
+        # The free block's upper triangle, which is what gets factorized: its entries'
+        # positions in the values, and its CSR structure (rows stay column-sorted).
+        up = (ur <= uc) & (uc < self.n_free)
+        self._up_sel = np.flatnonzero(up)
+        self._up_indices = uc[up].astype(np.int32 if self.n < 2**31 else np.int64)
+        self._up_indptr = np.concatenate(
+            [[0], np.cumsum(np.bincount(ur[up], minlength=self.n_free))])
+        self._factors = direct.ComplexSeries()
         self.stats.n_unknowns, self.stats.nnz = self.n, self._n_entries
         progress.info(f"{self.n} unknowns (faces meet at {int(no_d.sum())} of {n} nodes), "
                       f"{self._n_entries} non-zeros, {len(self._bar_g)} barrel segments, "
                       f"{len(self._cap_c)} capacitance couplings, {len(self.ports)} ports, "
                       f"{self.n_conductors} floating conductor(s)")
+
+    def _assembly(self, pos, entry):
+        """Matrices that assemble the system's values from the per-frequency coefficients.
+
+        ``pos`` are the kept raw stamps (in the order the sparsity pattern was built:
+        triangles' cc, cd, dc and dd blocks, barrels, capacitance) and ``entry`` the matrix
+        entry each one lands in. The values at one frequency are then
+        M_cc y_cc + M_cd y_cd + M_dd y_dd + M_cap y_c + (barrels and ties), where the y are
+        one admittance per triangle or capacitance coupling.
+        """
+        n_tri = len(self._S)
+        t9 = 9 * n_tri
+        n_bar = len(self._bar_g)
+        S = self._S.ravel()
+        ne = self._n_entries
+
+        def stamps(lo, hi, weight, column, n_cols):
+            sel = (pos >= lo) & (pos < hi)
+            q = pos[sel] - lo
+            return sp.csr_matrix((weight(q), (entry[sel], column(q))), shape=(ne, n_cols))
+
+        def tri_block(*blocks):
+            return sum(stamps(b * t9, (b + 1) * t9, lambda q: S[q], lambda q: q // 9, n_tri)
+                       for b in blocks)
+        self._M_cc, self._M_cd, self._M_dd = tri_block(0), tri_block(1, 2), tri_block(3)
+        base = 4 * t9 + 4 * n_bar
+        coef = self._cap_coef.ravel()
+        self._M_cap = stamps(base, base + len(coef), lambda q: coef[q], lambda q: q // 16,
+                             len(self._cap_c))
+        sign = np.repeat([1.0, 1.0, -1.0, -1.0], n_bar)
+        bar = stamps(4 * t9, base, lambda q: sign[q] * self._bar_g[q % n_bar],
+                     lambda q: np.zeros(len(q), dtype=np.int64), 1)
+        self._const = bar.toarray().ravel()
+        self._const[self._tie_pos] += TIE_ADMITTANCE_S
+        del self._S                            # in the matrices now
 
     def _facing(self, tri_kind, area, node_kind, progress):
         """Per triangle and face: the external inductance height and, on rail faces that
@@ -491,16 +532,14 @@ class ACSystem:
         y_cc = (2 * zd + a + b) / det
         y_cd = (b - a) / (2 * det)
         y_dd = (2 * zs + a + b) / (4 * det)
-        tri = [(y[:, None] * self._S).ravel() for y in (y_cc, y_cd, y_cd, y_dd)]
-        g = self._bar_g.astype(complex)
         yc = self._cap_c * omega * (self.ac.loss_tangent + 1j)
-        cap = (yc[:, None] * self._cap_coef).ravel()
-        data = np.concatenate(tri + [g, g, -g, -g, cap])
-        data = np.concatenate([data[self._ok], np.zeros(self.n, complex)])
-        vals = (np.bincount(self._inv, weights=data.real, minlength=self._n_entries)
-                + 1j * np.bincount(self._inv, weights=data.imag, minlength=self._n_entries))
-        vals[self._tie_pos] += TIE_ADMITTANCE_S
+        vals = self._const.astype(complex)
+        for M, y in ((self._M_cc, y_cc), (self._M_cd, y_cd), (self._M_dd, y_dd),
+                     (self._M_cap, yc)):
+            vals += M @ y.real                 # real matrices: no complex copy of them
+            vals += 1j * (M @ y.imag)
         A = sp.csr_matrix((vals, self._indices, self._indptr), shape=(self.n, self.n))
+        cap = (yc[:, None] * self._cap_coef).ravel()
         xr = np.concatenate([self._x_rows, self._ties])
         xc = np.concatenate([self._x_cols, self._ties])
         xd = np.concatenate([cap[self._x_sel], np.full(len(self._ties), TIE_ADMITTANCE_S)])
@@ -518,37 +557,62 @@ class ACSystem:
         """
         A, X = self.matrix(omega)
         nf = self.n_free
-        AFF = A[:nf, :nf].tocsr()
-        AFA = A[:nf, nf:].toarray()
-        factor = direct.factorize_complex(AFF, progress.warn)
+        upper = sp.csr_matrix((A.data[self._up_sel], self._up_indices, self._up_indptr),
+                              shape=(nf, nf))
+        factor = self._factors.factorize(upper, progress.warn)
         self.stats.method = factor.name
-        W = factor(AFA).reshape(nf, -1) if AFA.shape[1] else np.zeros((nf, 0), complex)
+        AFA = A[:nf, nf:].tocsc()
+        k = AFA.shape[1]                                    # floating conductors
         RX = (self._R @ X).tocsr()
         RX_A = RX[:, nf:].toarray()
         RX_F = RX[:, :nf]
-        G = RX_A - RX_F @ W                                 # k x k
 
         P = len(self.ports)
         plus = np.array([self.index[a] for a, _ in self.port_nodes])    # -1: the reference
         minus = np.array([self.index[b] for _, b in self.port_nodes])
-        Z = np.zeros((P, P), complex)
-        for k0 in range(0, P, PORT_CHUNK):
+        cols = np.arange(P)
+        B = sp.csc_matrix(                                  # port currents (duplicates add)
+            (np.concatenate([np.ones(int((plus >= 0).sum())),
+                             -np.ones(int((minus >= 0).sum()))]).astype(complex),
+             (np.concatenate([plus[plus >= 0], minus[minus >= 0]]),
+              np.concatenate([cols[plus >= 0], cols[minus >= 0]]))), shape=(self.n, P))
+        # Solve A_FF y = [A_FA, B_F] in blocks, keeping only what Z needs: y at the port
+        # terminals and the floating conductors' capacitive currents R X_F y.
+        rows = np.unique(np.concatenate([plus, minus]))
+        rows = rows[(rows >= 0) & (rows < nf)]
+        at = {int(r): i for i, r in enumerate(rows)}
+        Y = np.zeros((len(rows), k + P), complex)
+        RY = np.zeros((k, k + P), complex)
+        block = direct.rhs_block(nf)
+        for c0 in range(0, k + P, block):
             progress.check_cancel()
-            ks = range(k0, min(P, k0 + PORT_CHUNK))
-            rhs = np.zeros((self.n, len(ks)), complex)
-            for col, k in enumerate(ks):
-                if plus[k] >= 0:
-                    rhs[plus[k], col] += 1.0
-                if minus[k] >= 0:
-                    rhs[minus[k], col] -= 1.0
-            yF = factor(rhs[:nf]).reshape(nf, len(ks))
-            if G.shape[0]:
-                xA = np.linalg.solve(G, self._R @ rhs - RX_F @ yF)
-                xF = yF - W @ xA
-                x = np.vstack([xF, xA])
-            else:
-                x = yF
-            xp = np.where(plus[:, None] >= 0, x[np.maximum(plus, 0)], 0)
-            xm = np.where(minus[:, None] >= 0, x[np.maximum(minus, 0)], 0)
-            Z[:, k0:k0 + len(ks)] = xp - xm
+            cs = np.arange(c0, min(k + P, c0 + block))
+            rhs = np.zeros((nf, len(cs)), complex, order="F")
+            for j, c in enumerate(cs):
+                col = AFA[:, [c]] if c < k else B[:nf, [c - k]]
+                rhs[:, j] = col.toarray().ravel()
+            y = factor(rhs)
+            Y[:, cs] = y[rows]
+            RY[:, cs] = RX_F @ y
+        # x_F = y_F − W x_A, with W = A_FF⁻¹ A_FA (the first k columns).
+        x_port = Y[:, k:]
+        x_anchor = np.zeros((k, P), complex)
+        if k:
+            G = RX_A - RY[:, :k]                            # k x k
+            x_anchor = np.linalg.solve(G, (self._R @ B).toarray() - RY[:, k:])
+            x_port = x_port - Y[:, :k] @ x_anchor
+
+        def potential(idx):
+            out = np.zeros((P, P), complex)
+            for i, u in enumerate(idx):
+                if u >= nf:
+                    out[i] = x_anchor[u - nf]
+                elif u >= 0:
+                    out[i] = x_port[at[int(u)]]
+            return out
+        Z = potential(plus) - potential(minus)
         return 0.5 * (Z + Z.T)              # symmetric up to round-off
+
+    def close(self):
+        """Release the solver's memory (the last factorization)."""
+        self._factors.close()

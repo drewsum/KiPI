@@ -70,6 +70,14 @@ milestones rather than versions that were ever set.
   iteration's AMG hierarchy as the preconditioner rather than building a new one, because
   only the copper's resistivity has changed (89 s → 78 s for four iterations at 645k
   unknowns; 34 s with PARDISO).
+- **AC sweeps about 5× faster with PARDISO.** The AC model is now factorized as a complex
+  symmetric matrix by calling MKL directly, rather than as a real system twice its size
+  through pypardiso. The matrix ordering is computed once per sweep rather than at every
+  frequency, and the matrix is assembled with precomputed sparse products. On a 2M-unknown,
+  68-port rail each field frequency takes 12.6 s instead of 69 s, so a full
+  1 kHz–300 MHz sweep takes 24 min instead of about 2 h. Each factorization is still
+  checked, and one that fails falls back to the real-equivalent PARDISO solve and then to
+  SuperLU, as before.
 
 ### Fixed
 - **Result colors no longer flicker on coincident copper.** Overlapping copper surfaces

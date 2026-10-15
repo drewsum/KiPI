@@ -29,6 +29,8 @@ def _rel(A, x, b):
 def no_pardiso(monkeypatch):
     monkeypatch.setattr(direct, "_pardiso", None)
     monkeypatch.setattr(direct, "_pardiso_problem", "test")
+    monkeypatch.setattr(direct, "_mkl", None)
+    monkeypatch.setattr(direct, "_native_problem", None)
 
 
 def test_superlu_fallback_when_pardiso_is_unavailable(no_pardiso):
@@ -113,6 +115,83 @@ def test_pardiso_when_installed():
     f = direct.factorize(A)
     assert f.name == "pardiso"
     assert _rel(A, f(b), b) < 1e-12
+
+
+# --- complex symmetric series (AC sweeps) ----------------------------------------------
+
+def _ac_like(omega, n=40):
+    """Complex symmetric, shaped like an AC model: a conductance network plus jωC to
+    ground on every node."""
+    A = _poisson(n).astype(complex)
+    return (A + sp.identity(A.shape[0]) * (1j * omega * 1e-3)).tocsr()
+
+
+def _upper(A):
+    return sp.triu(A, format="csr")
+
+
+def _complex_rhs(n, k=3):
+    rng = np.random.default_rng(4)
+    return rng.standard_normal((n, k)) + 1j * rng.standard_normal((n, k))
+
+
+def test_complex_series_solves_each_matrix():
+    series = direct.ComplexSeries()
+    for omega in (1e3, 1e6, 1e9):
+        A = _ac_like(omega)
+        b = _complex_rhs(A.shape[0])
+        f = series.factorize(_upper(A))
+        if direct.backend() == "pardiso":
+            assert f.name == "pardiso"
+        assert _rel(A, f(b), b) < 1e-10
+    series.close()
+
+
+def test_complex_series_handles_a_new_pattern():
+    series = direct.ComplexSeries()
+    series.factorize(_upper(_ac_like(1e6, 30)))
+    A = _ac_like(1e6, 31)
+    b = _complex_rhs(A.shape[0])
+    assert _rel(A, series.factorize(_upper(A))(b), b) < 1e-10
+
+
+def test_complex_series_without_pardiso(no_pardiso):
+    A = _ac_like(1e6)
+    b = _complex_rhs(A.shape[0])
+    f = direct.ComplexSeries().factorize(_upper(A))
+    assert f.name == "superlu"
+    assert _rel(A, f(b), b) < 1e-10
+
+
+def test_complex_series_falls_back_when_native_fails(monkeypatch):
+    def broken(self, upper):
+        raise RuntimeError("PARDISO error -4")
+    monkeypatch.setattr(direct._NativePardiso, "factorize", broken)
+    warnings = []
+    A = _ac_like(1e6)
+    b = _complex_rhs(A.shape[0])
+    f = direct.ComplexSeries().factorize(_upper(A), warnings.append)
+    assert f.name in ("pardiso (real form)", "superlu")
+    assert _rel(A, f(b), b) < 1e-10
+    if direct.backend() == "pardiso":
+        assert warnings and "Complex PARDISO" in warnings[0]
+
+
+def test_inaccurate_native_result_falls_back(monkeypatch):
+    def wrong(self, upper):
+        return direct.ComplexFactor(lambda b: np.zeros_like(b), "pardiso")
+    monkeypatch.setattr(direct._NativePardiso, "factorize", wrong)
+    A = _ac_like(1e6)
+    b = _complex_rhs(A.shape[0])
+    f = direct.ComplexSeries().factorize(_upper(A))
+    assert f.name != "pardiso"
+    assert _rel(A, f(b), b) < 1e-10
+
+
+def test_rhs_block_fits_the_budget():
+    assert direct.rhs_block(10) == 64
+    assert direct.rhs_block(2_000_000) == 16
+    assert direct.rhs_block(10**9) == 1
 
 
 @pytest.fixture
