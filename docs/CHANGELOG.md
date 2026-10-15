@@ -45,6 +45,8 @@ milestones rather than versions that were ever set.
 - The DC setup's **Copper** tab is gone. Its resistivity, TCR and per-layer resistivity
   moved to the Stackup window, since the AC solve uses them too.
 - The **Cut** plane (axis, slider and **Flip**) is gone from the Display options.
+- The AC HTML report's impedance plot shows |Z| only; the phase plot under it is gone.
+  Hovering a curve still gives R and X.
 - **Flat current arrows** (#63). The current-density view's arrows are flat 2D arrows
   drawn on each copper layer instead of 3D cone-and-cylinder models. They lie on the
   copper's top face and are repeated on its bottom face, so they show from above and
@@ -60,6 +62,11 @@ milestones rather than versions that were ever set.
   other test files. CI shows each folder's results in its own log group.
 
 ### Fixed
+- The AC HTML report no longer leaves a large blank space between the board map and the
+  capacitor models. The map's plot shared its id with the section heading, so Plotly drew
+  the map inside the heading and left the map's own space empty. The map's height now also
+  follows the page width, so a narrow window doesn't leave blank bands above and below the
+  board.
 - When KiPI cannot read the board's stackup, its default stackup no longer fixes εr at 4.5.
   The AC *Default εr* setting now applies there, as it does for any dielectric the stackup
   gives no value for.
