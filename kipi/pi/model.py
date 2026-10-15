@@ -99,6 +99,10 @@ class Load:
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
+    # Heat the part puts into the board. None: all the power it takes from its supply
+    # pins (V x I). Set it for a part that passes power on, such as a load switch or an
+    # LED or motor driver, whose own loss is far less than what flows through it.
+    dissipation_w: Optional[float] = None
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
@@ -162,7 +166,8 @@ class PISetup:
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), tolerance_pct=l.get("tolerance_pct"),
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
-                                for g in l.get("groups", [])])
+                                for g in l.get("groups", [])],
+                        dissipation_w=l.get("dissipation_w"))
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                           resistance=k["resistance"]) for k in d.get("links", [])],
@@ -171,8 +176,7 @@ class PISetup:
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
             html_report=bool(d.get("html_report", False)),
             nets=list(d["nets"]) if d.get("nets") is not None else None,
-            settings=SolveSettings(**{k: v for k, v in d.get("settings", {}).items()
-                                      if k in known}),
+            settings=_settings(d.get("settings", {}), known),
         )
 
     def save(self, path) -> Path:
@@ -183,6 +187,16 @@ class PISetup:
     @staticmethod
     def load(path) -> "PISetup":
         return PISetup.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+def _settings(d: dict, known) -> SolveSettings:
+    """Solve settings from a setup file. A file from before via rules carries one
+    "plating_mm" for every hole: it becomes the plating of every default rule."""
+    s = SolveSettings(**{k: v for k, v in d.items() if k in known})
+    if "plating_mm" in d and "via_rules" not in d:
+        for r in s.via_rules:
+            r.plating_mm = float(d["plating_mm"])
+    return s
 
 
 def setup_path(board_file_or_name: str, project_dir: str) -> Path:
@@ -270,6 +284,8 @@ def validate(setup: PISetup) -> List[str]:
     """Problems that make the setup unsolvable (empty list = OK)."""
     errors: List[str] = []
     names = [x.name for x in [*setup.vrms, *setup.loads, *setup.links]]
+    from kipi.solver.via_barrel import rule_errors
+    errors.extend(rule_errors(setup.settings.via_rules))
     dupes = sorted({n for n in names if names.count(n) > 1})
     if dupes:
         errors.append(f"Names must be unique: {', '.join(dupes)}")
@@ -315,6 +331,8 @@ def validate(setup: PISetup) -> List[str]:
     for l in setup.loads:
         if l.tolerance_pct is not None and l.tolerance_pct < 0:
             errors.append(f"Load {l.name}: max drop cannot be negative")
+        if l.dissipation_w is not None and l.dissipation_w < 0:
+            errors.append(f"Load {l.name}: heat cannot be negative")
         if l.groups:
             seen_pins: Dict[str, int] = {}
             for gi, g in enumerate(l.groups):

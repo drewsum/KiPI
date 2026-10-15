@@ -245,13 +245,13 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     parts.append("<nav>" + " ".join(nav) + "</nav>")
     s = setup.settings
     parts.append(f"<p class='note'>Mesh: max edge {s.max_edge_mm:g} mm, via grading "
-                 f"{s.grading:g}, barrel plating {s.plating_mm * 1000:g} µm, copper "
-                 f"resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
+                 f"{s.grading:g}, copper resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
                  f"(TCR {s.tcr_per_c:g}/°C)"
                  + ("; layer overrides: " + ", ".join(
                      f"{_e(n)} {r * 1e-3:.4g} Ω·m" for n, r in sorted(s.rho_by_layer.items()))
                     if s.rho_by_layer else "")
-                 + ".</p>")
+                 + ". Via plating, first matching rule (drill = hole in the laminate, plated "
+                 f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -321,6 +321,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         parts.append(f"<p>{th.heat_w:.3g} W into the board; peak <b>{tmax:.1f} °C</b> at "
                      f"({x:.1f}, {y:.1f}) mm. Ambient {th.settings.ambient_c:g} °C, airflow "
                      f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
+        if getattr(th, "heat_by_kind", None):
+            parts.append(f"<p>Heat by source: {_e(th.heat_breakdown())}.</p>")
         parts.append(f"<div class='maps'><figure><img src='{_thermal_map(th, outline)}'>"
                      "</figure></div>")
         if th.dielectrics:

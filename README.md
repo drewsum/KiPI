@@ -157,6 +157,8 @@ To try it without a design of your own, open the example board in
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
 * **Ground pins** (optional) include the ground return.
+* **Heat** (optional, W) is what the part dissipates, for the thermal solve. Not set, it is
+  all the power it takes from its supply pins.
 * **Tolerance** (± %) is the PASS/FAIL limit. Each load is judged by its worst pin: the one
   furthest from the VRM set point, below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point
@@ -177,8 +179,19 @@ Nets joined this way are solved together as one group, and each group may hold o
 A net with no connection to its VRM is reported, not guessed at.
 
 **Mesh tab**: **Max edge** is the largest triangle edge in mm; smaller is more accurate and
-slower. **Via grading** controls how fast the mesh refines towards plated holes, and
-**Barrel plating** sets the via wall thickness. The defaults suit most boards.
+slower. **Via grading** controls how fast the mesh refines towards plated holes.
+
+**Via plating** is a table of rules, first match wins: hole type (through, blind, buried,
+microvia, component hole, or any), a drill-size range, the plating thickness, and what a
+FILLED hole of that rule is filled with. The drill is the hole made in the laminate;
+plating grows inward from it, so a barrel is a copper tube of the drill's outside diameter.
+A via KiCad marks as filled carries its core too when the fill conducts: copper fill makes
+the whole hole copper, conductive epoxy adds its core at the resistivity you enter, and
+non-conductive epoxy adds nothing. A via whose fill KiCad leaves to the design rules is
+solved unfilled, and the Notes tab counts them. The defaults are IPC-6012 Class 2 minimum
+average plating (through and blind 20 µm, buried 13 µm, microvia 12 µm); set what your
+fabricator states. Each via's pad is read per layer from its padstack, so a pad removed
+from an unused inner layer is not counted as copper.
 
 **Copper tab**: **Resistivity** at 20 °C, by default annealed copper (1.724 µΩ·cm), applies to
 every layer and to via barrel plating. **TCR** is the temperature coefficient that the
@@ -188,7 +201,11 @@ rolled-annealed foil. Leave it at **default** to use the value above. Layer thic
 from the KiCad board stackup. **Thickness unit** shows them in µm, mil or oz (1 oz = 35 µm).
 
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
-the board and the warmer copper become more resistive. Set:
+the board and the warmer copper become more resistive. The heat is the copper and via
+losses, the DC connections, each VRM's conversion loss, and each load: by default all the
+power it takes from its supply pins (V x I), spread over the pads of its footprint. A load's
+**Heat** field replaces that for a part that passes power on (a load switch, an LED or
+motor driver). The Notes tab and the report list the heat by source. Set:
 
 * **Ambient** temperature.
 * **Iterations**: three is usually enough. The Notes tab shows how much each iteration

@@ -10,6 +10,7 @@ from kipi.model.board import (
 )
 from kipi.solver import CurrentLoad, NetProblem, SolveError, SolveSettings, VoltageSource, run
 from kipi.solver.setup import RHO_CU_OHM_MM as RHO
+from kipi.solver.via_barrel import ViaRule
 
 F, B = 3, 34
 T_CU = 0.035
@@ -57,7 +58,8 @@ def test_radial_disc_through_via_matches_log_and_barrel_formulas():
     via = Via("v", "N", (0.0, 0.0), DRILL, 0.6, [F, B])
     snap = two_layer([(F, disc), (B, disc)],
                      [pad("src", "J1", F, ring), pad("ld", "J2", B, ring)], [via])
-    settings = SolveSettings(max_edge_mm=0.4, circle_quad_segs=16, plating_mm=TP)
+    settings = SolveSettings(max_edge_mm=0.4, circle_quad_segs=16,
+                             via_rules=[ViaRule("any", TP)])
     prob = NetProblem("N", [VoltageSource("VRM", ["src"], 1.0)],
                       [CurrentLoad("LOAD", ["ld"], 1.0)], settings)
     res = run(snap, prob)
@@ -107,7 +109,7 @@ def test_layer_resistivity_override_leaves_via_barrels_on_the_default():
     via = Via("v", "N", (0.0, 0.0), DRILL, 0.6, [F, B])
     snap = two_layer([(F, disc), (B, disc)],
                      [pad("src", "J1", F, ring), pad("ld", "J2", B, ring)], [via])
-    settings = SolveSettings(max_edge_mm=0.4, circle_quad_segs=16, plating_mm=TP,
+    settings = SolveSettings(max_edge_mm=0.4, circle_quad_segs=16, via_rules=[ViaRule("any", TP)],
                              rho_by_layer={"B.Cu": 2 * RHO})
     res = run(snap, NetProblem("N", [VoltageSource("VRM", ["src"], 1.0)],
                                [CurrentLoad("LOAD", ["ld"], 1.0)], settings))
@@ -223,3 +225,71 @@ def test_current_arrows_follow_the_current():
     # Away from the pads |J| is I / (W t).
     mid = (lr.arrow_pts[:, 0] > 5) & (lr.arrow_pts[:, 0] < 15)
     assert lr.arrow_mag[mid] == pytest.approx(2.0 / (W * T_CU), rel=1e-6)
+
+
+# ---------------------------------------------------------------- via rules
+def _barrel_drop(via, rules):
+    """Voltage across the one barrel of a two-layer disc fed on F and loaded on B."""
+    disc = Point(0, 0).buffer(10.0, quad_segs=64)
+    ring = disc.difference(Point(0, 0).buffer(9.0, quad_segs=64))
+    snap = two_layer([(F, disc), (B, disc)],
+                     [pad("src", "J1", F, ring), pad("ld", "J2", B, ring)], [via])
+    settings = SolveSettings(max_edge_mm=0.4, circle_quad_segs=16, via_rules=rules)
+    prob = NetProblem("N", [VoltageSource("VRM", ["src"], 1.0)],
+                      [CurrentLoad("LOAD", ["ld"], 1.0)], settings)
+    res = run(snap, prob)
+    (el,) = res.solution.barrel_elements
+    return res.solution.v_merged[el.node_a] - res.solution.v_merged[el.node_b], res
+
+
+def test_copper_filled_via_conducts_through_the_whole_hole():
+    drill, dz = 0.3, DIEL + T_CU
+    via = Via("v", "N", (0.0, 0.0), drill, 0.6, [F, B], filled=True)
+    drop, _ = _barrel_drop(via, [ViaRule("any", 0.025, fill="copper")])
+    assert drop == pytest.approx(RHO * dz / (math.pi * drill * drill / 4), rel=1e-7)
+
+
+def test_epoxy_filled_via_conducts_through_its_wall_only():
+    drill, tp, dz = 0.3, 0.025, DIEL + T_CU
+    via = Via("v", "N", (0.0, 0.0), drill, 0.6, [F, B], filled=True)
+    drop, _ = _barrel_drop(via, [ViaRule("any", tp)])
+    assert drop == pytest.approx(RHO * dz / (math.pi * (drill * tp - tp * tp)), rel=1e-7)
+
+
+def test_conductive_fill_adds_its_core_at_its_resistivity():
+    drill, tp, dz, rho_fill = 0.3, 0.025, DIEL + T_CU, 100 * RHO
+    via = Via("v", "N", (0.0, 0.0), drill, 0.6, [F, B], filled=True)
+    drop, _ = _barrel_drop(via, [ViaRule("any", tp, fill="conductive", fill_rho_ohm_mm=rho_fill)])
+    wall = math.pi * (drill * tp - tp * tp)
+    core = math.pi * drill * drill / 4 - wall
+    assert drop == pytest.approx(RHO * dz / (wall + core / 100), rel=1e-7)
+
+
+def test_fill_not_stated_is_solved_unfilled_and_said_so():
+    drill, tp, dz = 0.3, 0.025, DIEL + T_CU
+    via = Via("v", "N", (0.0, 0.0), drill, 0.6, [F, B], filled=None)
+    drop, res = _barrel_drop(via, [ViaRule("any", tp, fill="copper")])
+    assert drop == pytest.approx(RHO * dz / (math.pi * (drill * tp - tp * tp)), rel=1e-7)
+    assert any("does not say whether they are filled" in w for w in res.solution.warnings)
+
+
+def test_first_rule_covering_type_and_drill_sets_the_plating():
+    drill, dz = 0.3, DIEL + T_CU
+    via = Via("v", "N", (0.0, 0.0), drill, 0.6, [F, B], via_type="through")
+    rules = [ViaRule("micro", 0.012), ViaRule("through", 0.030, drill_max_mm=0.25),
+             ViaRule("through", 0.018, drill_min_mm=0.25, drill_max_mm=0.5)]
+    drop, _ = _barrel_drop(via, rules)
+    assert drop == pytest.approx(RHO * dz / (math.pi * (drill * 0.018 - 0.018 ** 2)), rel=1e-7)
+
+
+def test_hole_no_rule_covers_is_an_error():
+    via = Via("v", "N", (0.0, 0.0), 0.3, 0.6, [F, B], via_type="through")
+    with pytest.raises(SolveError, match="No via rule"):
+        _barrel_drop(via, [ViaRule("micro", 0.012)])
+
+
+def test_pad_diameter_per_layer():
+    v = Via("v", "N", (0.0, 0.0), 0.3, 0.6, [F, B])
+    assert v.pad_diameter(F) == 0.6 and v.pad_diameter(B) == 0.6       # older snapshots
+    v.pad_mm = {F: 0.6}                                                # no pad on B
+    assert v.pad_diameter(F) == 0.6 and v.pad_diameter(B) == 0.0

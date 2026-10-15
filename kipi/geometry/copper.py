@@ -73,10 +73,10 @@ def net_layer_copper(snap: BoardSnapshot, net: str, layer: int,
     for p in pads:
         parts.extend(_polys(p.shapes.get(layer, [])))
 
-    span_vias = [v for v in vias if layer in v.layers]
+    span_vias = [v for v in vias if layer in v.layers and v.pad_diameter(layer) > 0]
     if span_vias:
         centers = shapely.points([v.position for v in span_vias])
-        radii = np.array([v.diameter_mm / 2.0 for v in span_vias])
+        radii = np.array([v.pad_diameter(layer) / 2.0 for v in span_vias])
         parts.extend(shapely.buffer(centers, radii, quad_segs=quad_segs))
 
     for z in zones:

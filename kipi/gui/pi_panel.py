@@ -469,6 +469,10 @@ class LoadEditor(_Editor):
         self.tol.setSpecialValueText("no limit")
         self.tol.setToolTip("PASS if every supply pin is within ± this % of the VRM set "
                             "voltage: no pin drops below it or is boosted above it by more")
+        self.heat = _optional_spin(0, 1000, 3, " W", 0.01)
+        self.heat.setToolTip("Heat the part puts into the board. Not set: all the power it "
+                             "takes from its supply pins (V x I). Set it for a part that passes "
+                             "power on (load switch, LED or motor driver).")
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -478,7 +482,8 @@ class LoadEditor(_Editor):
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
-        self._watch(self.name, self.current, self.tol, self.mode)
+        f.addRow("Heat", self.heat)
+        self._watch(self.name, self.current, self.tol, self.mode, self.heat)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
 
@@ -552,6 +557,7 @@ class LoadEditor(_Editor):
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
         self.tol.setValue(l.tolerance_pct or 0.0)
+        _set_optional(self.heat, l.dissipation_w)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
@@ -575,6 +581,7 @@ class LoadEditor(_Editor):
             l.groups = []
         l.ground = self.ground.value()
         l.tolerance_pct = self.tol.value() or None
+        l.dissipation_w = _get_optional(self.heat)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 
@@ -981,12 +988,16 @@ class PIPanel(QWidget):
         s = self.setup.settings
         self.spin_edge = _spin(0.05, 5.0, s.max_edge_mm, 2, " mm", 0.05)
         self.spin_grading = _spin(0.0, 2.0, s.grading, 2, "", 0.05)
-        self.spin_plating = _spin(1.0, 100.0, s.plating_mm * 1000, 1, " µm", 1.0)
+        from kipi.gui.via_rules_editor import ViaRulesEditor
+        self.via_rules = ViaRulesEditor(w)
+        self.via_rules.set_rules(s.via_rules)
         f.addRow("Max edge", self.spin_edge)
         f.addRow("Via grading", self.spin_grading)
-        f.addRow("Barrel plating", self.spin_plating)
-        for sp in (self.spin_edge, self.spin_grading, self.spin_plating):
+        f.addRow(QLabel("<b>Via plating</b>"))
+        f.addRow(self.via_rules)
+        for sp in (self.spin_edge, self.spin_grading):
             sp.valueChanged.connect(self._settings_changed)
+        self.via_rules.changed.connect(self._settings_changed)
         return w
 
     def _copper_tab(self) -> QWidget:
@@ -1120,7 +1131,7 @@ class PIPanel(QWidget):
         s = self.setup.settings
         s.max_edge_mm = self.spin_edge.value()
         s.grading = self.spin_grading.value()
-        s.plating_mm = self.spin_plating.value() / 1000
+        s.via_rules = self.via_rules.rules()
         self._on_changed()
 
     # ------------------------------------------------------------------ data
@@ -1130,12 +1141,14 @@ class PIPanel(QWidget):
         self.lbl_file.setText(file_label)
         for sp, v in ((self.spin_edge, setup.settings.max_edge_mm),
                       (self.spin_grading, setup.settings.grading),
-                      (self.spin_plating, setup.settings.plating_mm * 1000),
                       (self.spin_rho, setup.settings.rho_ohm_mm / UOHM_CM),
                       (self.spin_tcr, setup.settings.tcr_per_c)):
             sp.blockSignals(True)
             sp.setValue(v)
             sp.blockSignals(False)
+        self.via_rules.blockSignals(True)
+        self.via_rules.set_rules(setup.settings.via_rules)
+        self.via_rules.blockSignals(False)
         self._fill_rho_table()
         self.clear_results()
         self.spin_via_limit.blockSignals(True)
@@ -1309,15 +1322,20 @@ class PIPanel(QWidget):
         th = getattr(tree, "thermal", None)
         if th is not None:
             x, y, tmax = th.hottest()
-            notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board, peak "
-                            f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
-                            f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s")
-            notes.insert(1, "&nbsp;&nbsp;iterations: " + ", ".join(
+            thermal_notes = [
+                f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board, peak "
+                f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
+                f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s"]
+            if getattr(th, "heat_by_kind", None):
+                thermal_notes.append("&nbsp;&nbsp;heat by source: "
+                                     + html.escape(th.heat_breakdown()))
+            thermal_notes.append("&nbsp;&nbsp;iterations: " + ", ".join(
                 f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history))
-            notes.insert(2, "&nbsp;&nbsp;dielectrics: " + "; ".join(
+            thermal_notes.append("&nbsp;&nbsp;dielectrics: " + "; ".join(
                 f"{html.escape(m or '(unnamed)')} {t:.3f} mm → {html.escape(i.matched)}, "
                 f"{i.k_w_mk:g} W/m·K{' ⚠ assumed' if i.assumed else ''}"
                 for m, t, i in th.dielectrics))
+            notes = thermal_notes + notes
         for g in tree.groups.values():
             role = f"driven by {g.driver}" if g.kind == "rail" else f"ground, referenced at {g.driver}"
             notes.append(f"&nbsp;&nbsp;<b>{html.escape(g.name)}</b> ({role}): "

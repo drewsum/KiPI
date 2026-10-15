@@ -18,9 +18,10 @@ from shapely.geometry import box  # noqa: E402
 from kicad_fake import VERSIONS, FakeKiCad, parse  # noqa: E402
 from kipi.geometry.copper import drill_holes  # noqa: E402
 from kipi.kicad_io.extract import (  # noqa: E402
-    _PAD_TYPES, _VIA_TYPES, extract_board, refill_and_wait,
+    _pad_type_names, extract_board, refill_and_wait,
 )
 from kipi.kicad_io.snapshot import from_dict, to_dict  # noqa: E402
+from kipi.kicad_io.vias import via_type_names  # noqa: E402
 
 COPPER = [L.BL_F_Cu, L.BL_In1_Cu, L.BL_In2_Cu, L.BL_B_Cu]
 
@@ -133,13 +134,13 @@ def test_unexpected_errors_are_not_mistaken_for_an_old_kicad():
 
 
 def test_kicad_enum_values_match():
-    """KiPI maps KiCad's via and pad types by number: the numbers must not move."""
+    """KiPI maps KiCad's via and pad types by kipy enum name onto its own names."""
     via = {"VT_THROUGH": "through", "VT_BLIND_BURIED": "blind_buried", "VT_MICRO": "micro",
            "VT_BLIND": "blind", "VT_BURIED": "buried"}      # the last two: KiCad 10
     for name, kind in via.items():
         if name in bt.ViaType.keys():
-            assert _VIA_TYPES[bt.ViaType.Value(name)] == kind
-    assert _PAD_TYPES == {bt.PT_PTH: "pth", bt.PT_SMD: "smd", bt.PT_EDGE_CONNECTOR: "edge",
+            assert via_type_names()[bt.ViaType.Value(name)] == kind
+    assert _pad_type_names() == {bt.PT_PTH: "pth", bt.PT_SMD: "smd", bt.PT_EDGE_CONNECTOR: "edge",
                           bt.PT_NPTH: "npth"}
 
 

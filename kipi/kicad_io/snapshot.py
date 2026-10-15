@@ -70,7 +70,9 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
                       mid=tuple(t["mid"]) if t.get("mid") else None) for t in d["tracks"]],
         vias=[Via(id=v["id"], net=v["net"], position=tuple(v["position"]),
                   drill_mm=v["drill_mm"], diameter_mm=v["diameter_mm"],
-                  layers=list(v["layers"]), via_type=v.get("via_type", "through"))
+                  layers=list(v["layers"]), via_type=v.get("via_type", "through"),
+                  filled=v.get("filled"),
+                  pad_mm={int(k): float(x) for k, x in v.get("pad_mm", {}).items()})
               for v in d["vias"]],
         pads=[Pad(id=p["id"], net=p["net"], footprint=p["footprint"], number=p["number"],
                   position=tuple(p["position"]), pad_type=p["pad_type"],

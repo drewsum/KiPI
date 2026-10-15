@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from kipi.solver.via_barrel import ViaRule, default_via_rules
+
 # Annealed copper (IACS) at 20 degC, in ohm*mm.
 RHO_CU_OHM_MM = 1.724e-5
 REF_TEMP_C = 20.0
@@ -50,7 +52,8 @@ class SolveSettings:
     circle_quad_segs: int = 4       # 16 segments per via/drill circle (an 8-gon reads ~0.8% high)
     min_edge_mm: float = 0.02       # smallest element, at plated holes
     grading: float = 0.2            # element size growth per mm away from a hole (0 = off)
-    plating_mm: float = 0.025       # via / PTH barrel plating thickness
+    # Plating (and the fill of a filled hole) by hole type and drill size, first match.
+    via_rules: List[ViaRule] = field(default_factory=default_via_rules)
     rho_ohm_mm: float = RHO_CU_OHM_MM      # at REF_TEMP_C
     tcr_per_c: float = 0.00393             # copper resistance temperature coefficient
     # Per-layer overrides of rho_ohm_mm, keyed by copper layer name (e.g. "In1.Cu").
@@ -58,6 +61,10 @@ class SolveSettings:
     rho_by_layer: Dict[str, float] = field(default_factory=dict)
     tol: float = 1e-10              # relative residual for the iterative solver
     max_iter: int = 2000
+
+    def __post_init__(self):
+        # A setup file stores the rules as plain objects.
+        self.via_rules = [r if isinstance(r, ViaRule) else ViaRule(**r) for r in self.via_rules]
 
     def rho_for(self, layer_name: str) -> float:
         """Resistivity of a copper layer at REF_TEMP_C, in ohm*mm."""

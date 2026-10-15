@@ -4,6 +4,20 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## Unreleased
+
+### Added
+- **Via plating rules.** A table of rules, first match wins: hole type, a drill-size range,
+  the plating thickness, and what a filled hole of that rule is filled with (copper,
+  conductive or non-conductive epoxy). The defaults are IPC-6012 Class 2 minimum average
+  plating. A via KiCad marks as filled carries its core too when the fill conducts. Setups
+  saved with the single **Barrel plating** value load it into every default rule.
+- **Via pads per layer.** Each via's pad is read per layer from its padstack (normal, front /
+  inner / back, or custom), and a pad removed from an unused layer is not counted as copper.
+- **Loads heat the board.** In the electro-thermal solve each load adds the power it takes
+  from its supply pins (V x I), spread over its footprint, or a stated **Heat** for a part
+  that passes power on. The Notes tab and the HTML report list the heat by source.
+
 ## 0.6.5 (2026-10-13): Drop and boost, limits and fixes
 
 ### Added
