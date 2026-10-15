@@ -37,20 +37,34 @@ def test_shows_version_and_packages(app):
     s.close()
 
 
-def test_logo_is_animated_past_its_opening_hold(app):
+def test_logo_is_animated(app):
     s = splash.Splash()
     assert s.movie is not None and s.movie.frameCount() > 1
-    assert s.movie.currentFrameNumber() >= 1
     assert any(lb.movie() is s.movie for lb in s.findChildren(QLabel))
     s.close()
 
 
-def test_closes_itself_without_input(app):
-    s = splash.show_splash(app, show_ms=200)
-    assert s is not None and s.isVisible()
-    deadline = time.monotonic() + 5
+def _wait_closed(app, s, seconds=10):
+    deadline = time.monotonic() + seconds
     while s.isVisible() and time.monotonic() < deadline:
         _spin(app, 0.05)
+
+
+def test_closes_itself_after_one_loop_of_the_logo(app):
+    s = splash.show_splash(app, show_ms=200)
+    assert s is not None and s.isVisible()
+    _spin(app, 0.5)
+    assert s.isVisible()            # the short timer is not what closes it
+    s.movie.jumpToFrame(s.movie.frameCount() - 1)   # skip to the end of the loop
+    _wait_closed(app, s)
+    assert not s.isVisible()
+
+
+def test_still_logo_closes_after_a_timer(app, monkeypatch):
+    monkeypatch.setattr(splash.QMovie, "isValid", lambda self: False)
+    s = splash.show_splash(app, show_ms=200)
+    assert s is not None and s.movie is None and s.isVisible()
+    _wait_closed(app, s)
     assert not s.isVisible()
 
 

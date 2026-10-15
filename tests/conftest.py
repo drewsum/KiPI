@@ -32,6 +32,9 @@ def no_3d(monkeypatch):
             if net in self._nets:
                 self._nets.remove(net)
 
+        def render(self, *a, **k):            # QWidget has its own render()
+            pass
+
         def __getattr__(self, name):          # every other view call is a no-op
             return lambda *a, **k: None
 

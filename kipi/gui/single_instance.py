@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -146,11 +147,24 @@ def activate_running(timeout_ms: int = TIMEOUT_MS) -> bool:
         log.info("The running KiPI did not answer: %s", sock.errorString())
         return False
     sock.write(ACTIVATE)
+    # On Unix flush() sends everything at once, and waitForBytesWritten() then returns
+    # False for want of anything left to write; its result says nothing about delivery.
     sock.flush()
-    ok = sock.waitForBytesWritten(timeout_ms) and sock.waitForReadyRead(timeout_ms)
-    ok = ok and bytes(sock.readAll()).startswith(ACK.strip())
+    sock.waitForBytesWritten(timeout_ms)
+    reply = b""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while not reply.startswith(ACK.strip()):
+        left = int((deadline - time.monotonic()) * 1000)
+        # The answer can arrive together with the server hanging up; read what is buffered
+        # before waiting for more.
+        if not sock.bytesAvailable() and (left <= 0 or not sock.waitForReadyRead(left)):
+            break
+        reply += bytes(sock.readAll())
     sock.abort()
-    return ok
+    if not reply.startswith(ACK.strip()):
+        log.info("The running KiPI did not confirm (reply %r): %s", reply, sock.errorString())
+        return False
+    return True
 
 
 def bring_to_front(win) -> None:

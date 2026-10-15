@@ -73,8 +73,9 @@ def test_second_instance_brings_the_first_to_the_front(app, isolated):
     assert first.listen(lambda: activated.append(True))
     # The second KiPI is another process, as it is when KiCad starts it again.
     child = subprocess.Popen([sys.executable, "-c", textwrap.dedent(f"""
-        import sys
+        import logging, sys
         sys.path.insert(0, ".")
+        logging.basicConfig(level=logging.INFO)   # says why, if the handoff fails
         from kipi.gui import single_instance as si
         si.server_name = lambda: "{isolated}"
         sys.exit(0 if si.activate_running(timeout_ms=10000) else 3)

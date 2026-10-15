@@ -1,8 +1,9 @@
 """The welcome screen shown while KiPI starts: the animated logo, the version and what it
 is running on.
 
-It closes itself after a few seconds, so it never waits for the user (a click closes it
-sooner). It is cosmetic: if it cannot be shown, KiPI starts without it.
+It closes itself once the logo has played through one loop (or after a few seconds if
+only the still logo can be shown), so it never waits for the user; a click closes it
+sooner. It is cosmetic: if it cannot be shown, KiPI starts without it.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from kipi.gui.identity import APP_ID
 
 log = logging.getLogger(__name__)
 
-SHOW_MS = 3500          # from when it appears; building the main window counts toward it
+SHOW_MS = 3500          # for the still logo only; the animated one plays one loop
 LOGO_SIZE = 160
 # The packages worth naming at a glance; the About dialog lists the rest.
 PACKAGES = ("kicad-python", "PySide6-Essentials", "pyvista", "numpy", "scipy")
@@ -82,6 +83,17 @@ class Splash(QWidget):
         self.timer.setSingleShot(True)
         self.timer.setInterval(show_ms)
         self.timer.timeout.connect(self.close)
+        self._looped_from = None
+        if self.movie is not None:
+            self.movie.frameChanged.connect(self._on_frame)
+            self.movie.finished.connect(self.close)    # a GIF that does not repeat
+
+    def _on_frame(self, n: int) -> None:
+        """Close when the logo wraps back to its first frame: one full loop played."""
+        if n > 0:
+            self._looped_from = n
+        elif self._looped_from is not None:
+            self.close()
 
     def _animate(self, label: QLabel) -> Optional[QMovie]:
         """Play the animated logo, or None to fall back to the still one (the GIF can be
@@ -95,10 +107,6 @@ class Splash(QWidget):
         movie.setScaledSize(QSize(LOGO_SIZE, LOGO_SIZE))
         label.setMovie(movie)
         movie.start()
-        # The GIF holds its first frame for a while (it doubles as a still logo); the
-        # splash is short, so go straight to the planes flashing through the result maps.
-        if movie.frameCount() > 1:
-            movie.jumpToFrame(1)
         return movie
 
     def show_centered(self) -> None:
@@ -111,7 +119,8 @@ class Splash(QWidget):
             self.move(r.center() - self.rect().center())
         self.show()
         self.raise_()
-        self.timer.start()
+        if self.movie is None or self.movie.frameCount() <= 1:
+            self.timer.start()      # nothing to loop through
 
     def mousePressEvent(self, event):
         self.close()

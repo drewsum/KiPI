@@ -26,6 +26,7 @@ _BOARD_COLOR = (0.15, 0.40, 0.20)
 _CATEGORY_LOOK = {"cu": (1.0, 0.4), "pad": (0.9, 0.0), "via": (1.0, 0.6)}
 # Copper drawn under the via-current view, for context
 _VIA_VIEW_COPPER_OPACITY = 0.35
+DEPTH_PEELS = 4          # see-through layers sorted per pixel (pyvista's default)
 
 
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
@@ -333,14 +334,21 @@ class Viewer3D(QWidget):
     def _set_depth_peeling(self, on: bool):
         """Sort see-through layers properly while any are see-through. Some graphics
         drivers lack depth peeling; VTK then blends unsorted, which only looks a little
-        off, so a failure here is ignored."""
+        off, so a failure here is ignored.
+
+        The renderers are set directly rather than through pyvista's
+        ``enable_depth_peeling``: that first renders a probe scene in a hidden window of
+        its own, which crashes the process (an access violation, not an exception) on
+        some drivers, e.g. Windows without a GPU. VTK checks support itself when it
+        renders and falls back to unsorted blending."""
         if on == self._depth_peeling:
             return
         try:
-            if on:
-                self.plotter.enable_depth_peeling()
-            else:
-                self.plotter.disable_depth_peeling()
+            for renderer in self.plotter.renderers:
+                renderer.SetUseDepthPeeling(on)
+                if on:
+                    renderer.SetMaximumNumberOfPeels(DEPTH_PEELS)
+                    renderer.SetOcclusionRatio(0.0)
             self._depth_peeling = on
         except Exception:
             pass

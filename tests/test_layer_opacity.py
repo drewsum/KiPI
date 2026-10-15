@@ -64,9 +64,10 @@ def test_slider_fades_results_and_chunks(field, base):
     cu, via = v._chunk_actors.values()
     assert cu.GetProperty().GetOpacity() == pytest.approx(0.4)
     assert via.GetProperty().GetOpacity() == 1.0
-    assert v._depth_peeling
+    assert v._depth_peeling and v.plotter.renderer.GetUseDepthPeeling()
     Viewer3D.set_layer_opacity(v, 1.0)
     assert cu.GetProperty().GetOpacity() == 1.0 and not v._depth_peeling
+    assert not v.plotter.renderer.GetUseDepthPeeling()
     # Results drawn after the change keep it.
     Viewer3D.set_layer_opacity(v, 0.25)
     v.plotter.clear_actors()
@@ -77,10 +78,26 @@ def test_slider_fades_results_and_chunks(field, base):
     v.plotter.close()
 
 
+def test_depth_peeling_skips_pyvistas_probe_window(monkeypatch):
+    # pyvista's check renders in a hidden window of its own, which access-violates on
+    # some drivers (Windows CI without a GPU); KiPI must never call it.
+    from pyvista.plotting.utilities import gl_checks
+
+    def probe(*a, **k):
+        raise AssertionError("depth peeling probe called")
+    monkeypatch.setattr(gl_checks, "check_depth_peeling", probe)
+    import pyvista.plotting.renderer as renderer_mod
+    monkeypatch.setattr(renderer_mod, "check_depth_peeling", probe, raising=False)
+    v, _scene = _view("voltage")
+    Viewer3D.set_layer_opacity(v, 0.5)
+    assert v._depth_peeling
+    v.plotter.close()
+
+
 def test_depth_peeling_failure_is_ignored():
     def boom(*a, **k):
         raise RuntimeError("no depth peeling here")
-    v = NS(plotter=NS(enable_depth_peeling=boom), _depth_peeling=False)
+    v = NS(plotter=NS(renderers=[NS(SetUseDepthPeeling=boom)]), _depth_peeling=False)
     Viewer3D._set_depth_peeling(v, True)
     assert not v._depth_peeling
 
