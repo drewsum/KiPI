@@ -9,9 +9,9 @@ milestones rather than versions that were ever set.
 ### Added
 - **PI Models in the 3D view** (#84): in DC mode, a new **PI Models** checkbox under
   Display marks the setup's VRMs (green), loads (cyan), series links (magenta) and
-  capacitors with a model (white) on the copper, with a dot on each of their pads on the nets shown (smaller on ground) and the
-  part's name. It starts unticked; the marks follow setup edits and are hidden over
-  results. The **Models** checkbox is now **3D Models**.
+  capacitors with a model (white) on the copper, with a dot on each of their pads on the
+  nets shown (smaller on ground) and the part's name. It starts unticked; the marks follow
+  setup edits and are hidden over results. The **Models** checkbox is now **3D Models**.
 - **Solver accuracy tests** (#70): eight validation boards in `examples/validation`
   (thin and arc tracks, right-angle routes, a layer change through vias, planes, a power
   chain with a series link, and AC plane, decoupling-capacitor and ferrite boards), each
@@ -101,6 +101,9 @@ milestones rather than versions that were ever set.
   other test files. CI shows each folder's results in its own log group.
 
 ### Fixed
+- **Online user guide link**: when the local guide is missing, KiPI now points to the
+  guide on GitHub Pages (https://drewsum.github.io/KiPI/help.html) rather than to the
+  file's HTML source on GitHub.
 - Clicking a results table's column header a second time now reverses the sort; it used
   to sort ascending every time, because Qt flips its own sort indicator before the click
   reaches KiPI (#85).

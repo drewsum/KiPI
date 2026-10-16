@@ -8,13 +8,12 @@ from typing import Optional
 
 from qtpy.QtWidgets import QMessageBox, QWidget
 
-from kipi.gui.about import REPO
-
 log = logging.getLogger("kipi")
 
 _DOCS = Path(__file__).resolve().parents[2] / "docs"
 # Shown when the local copy is missing (a partial install) or cannot be opened.
-ONLINE = REPO + "/blob/main/docs/help.html"
+# GitHub Pages serves docs/ from main, so this is the rendered page, not its source.
+ONLINE = "https://drewsum.github.io/KiPI/help.html"
 
 
 def help_path() -> Optional[Path]:
