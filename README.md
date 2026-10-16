@@ -13,23 +13,23 @@
 KiPI is a power integrity analyzer that runs as a KiCad 9 and 10 IPC plugin. It has two
 analysis modes:
 
-* **DC: voltage drop.** Define voltage regulators (VRMs), loads (current into pins) and series
+* **DC: Voltage Drop.** Define voltage regulators (VRMs), loads (current into pins) and series
   parts (beads, resistors, load switches), then simulate the voltage drop net by net, across
   every copper layer. Inspect voltage, current density, via currents, copper power
   dissipation and (optionally) board temperature in a rotatable 3D view, with PASS/FAIL
   checks for loads, VRMs, vias and temperature, and write an interactive HTML report.
-* **AC: PDN impedance.** Give the decoupling capacitors RLC models and put probes on a
+* **AC: PDN Impedance.** Give the decoupling capacitors RLC models and put probes on a
   device's power pins, then sweep the impedance of the power distribution network (planes,
   vias, mounting and capacitors) over frequency. Check it against a flat or custom target
-  impedance, with a calculator that works the target out from the device's transient spec.
+  impedance, with a calculator that determines the target from the load's transient spec.
 
 New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
-**F1**) walks through every button, the workflows and what the results mean, and every
+**F1**) walks through every button, the workflows and what the results mean. Every
 control in KiPI has a tooltip.
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
-**Status: 0.7.2 (alpha)** ([changelog](docs/CHANGELOG.md)). This entire project was vibe coded with Claude Opus 5.5. I make no assurances that any of this works or is accurate; however, for my use cases (decently complex PCB layouts, windows 11 machine, KiCad 10.0.7), it seems stable. The solver is a 2.5D finite element model of the copper, checked against closed-form results (the resistance of a straight trace, current spreading radially into a via). Solving the field is the well-understood part. The modelling of vias, power supplies and the bridging of layers is where the approximations are. Please leave any comments, concerns or bugs as a github issue. I wanted a free, open source power integrity tool for KiCad, which I think this project accomplishes. I'm open to suggestions for improvements.
+**Status: 0.7.2 (alpha)** ([changelog](docs/CHANGELOG.md)). Mostly stable. Unit tests for KiCad 9/10 support on Windows, Mac and Linux. Solver accuracy tests on every merge into main. Pull a tagged release for stable code. Many improvements to come, including standalone mode for analyzing PCB layouts from any tool!
 
 ## Install
 
@@ -57,7 +57,7 @@ control in KiPI has a tooltip.
 ### Steps
 
 1. In KiCad, enable **Preferences → Plugins → Enable KiCad API**.
-2. Link (or copy) this repo into your KiCad plugins folder. The examples use KiCad 10's
+2. Clone, link (or copy) this repo into your KiCad plugins folder, or uncompress the release source zip. The examples use KiCad 10's
    folder: for KiCad 9, put `9.0` in place of `10.0`. On Windows, KiCad uses your
    *Documents* folder, which may be redirected to OneDrive:
 
@@ -115,35 +115,34 @@ removes `pypardiso`, so install it again afterwards.
 
 ## Using KiPI
 
-### 1. Open the board
+### 1. Open your board in KiCad
 
 Open your board in the PCB editor and click the **KiPI** toolbar button. KiPI opens in its
 own window and reads the board through the KiCad API; the log at the bottom streams each
-stage as it runs. A welcome screen with the version and package versions shows for a few
-seconds while it starts, and closes on its own.
+stage as it runs.
 
 KiPI runs one window at a time: clicking the button again brings the open KiPI to the
-front. It also needs exactly one KiCad open, so it reads the board you started it from;
+front. It also only tolerates one KiCad open, so it reads the board you started it from;
 with two or more it lists them and asks you to close the others.
 
+* **Load from KiCad** re-reads the board into KiPI after you edit it in KiCad, and reloads the saved PI setup
+  (save first if you have unsaved changes).
 * **Refill zones** (toolbar, on by default) refills every zone in KiCad and waits for the fill
   to finish before reading, so the zone fills KiPI sees match your current routing. KiPI
   analyzes filled copper only.
-* **Load from KiCad** re-reads the board after you edit it, and reloads the saved PI setup
-  (save first if you have unsaved changes).
 * **Save snapshot… / Open snapshot…** store the extracted board as a file that KiPI can open
-  later without KiCad.
-* **Mode: DC / AC** (right end of the toolbar) picks the analysis. Sections 2 to 5 are DC,
+  later without KiCad. See example snapshots in the repo to experiment!
+* **Mode: DC / AC** (right end of the toolbar) picks the analysis mode. Readme sections 2 to 5 are DC,
   the default; [section 6](#6-ac-pdn-impedance) covers AC. The DC setup and results are kept
   while you are in AC mode and come back when you switch.
 * **Help** (or **F1**) opens the [user guide](docs/help.html) in your browser.
 
-### 2. Pick the nets
+### 2. Pick Power Nets from Netlist
 
-The **Board** panel on the left lists every net. Tick the nets you want to analyze: they are
+The **Board** panel on the left lists every net in the extracted design. Tick the nets you want to analyze power distribution on: they are
 drawn in 3D and offered in the PI setup pin pickers. **Power & ground only** filters the
 list, **All power** ticks every likely power and ground net, and **None** clears it. Type in
-the filter box to find a net.
+the filter box to find a net. In order for a net to be simulated, it must be ticked here.
 
 The ticked nets are saved with the PI setup and ticked again the next time the board is
 opened. **Load from KiCad** on a board that is already open keeps the current ticks. Only
@@ -156,22 +155,19 @@ Below that:
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
   shows or hides vias, pads, the board, **PI Models** and part **3D Models**. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
-* **PI Models** (DC mode) marks the setup's VRMs, loads, series links and capacitors with a
+* **PI Models** Marks the setup's VRMs, loads, series links and capacitors with a
   model: a dot on each of their pads on the nets shown, with the part's name. It starts unticked; over results the
   marks are hidden.
-* **3D Models** are the KiCad 3D models of the parts in your setup (VRMs, loads, series links
-  and capacitor models) with a pad on a net shown. KiPI has KiCad's `kicad-cli` export them
-  from the saved board file, so a part moved since the last save is drawn where it was
-  saved. Over results they start hidden; tick **3D Models** there to show them too. The
+* **3D Models** are the KiCad 3D models of the parts with PI models included in your setup (VRM components, loads, series links
+  and capacitor models) with a pad on a net included for analysis. When viewing results they start hidden; tick **3D Models** to show them on results. The
   geometry and result views each remember their own setting.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
-  via in the PCB editor.
+  via in the PCB editor. Thi can be used to pinpoint hot spots, find outliers in voltage drop, and find vias with heavy current.
 
-The **Power tree** toolbar button opens a block diagram of the setup, left to right in
-the direction power flows: sources and regulators (each VRM type in its own colour and
+The **Power tree** toolbar button opens a block diagram of the modelled power network, left to right in
+the direction power flows: sources and regulators (each VRM type in its own color and
 tag), the rails they drive, series links, and the loads and capacitor models on each rail.
-A rail with many loads packs them into a grid shaped to fit the window, so a busy rail
-stays compact. It redraws as the setup changes and saves as a PNG.
+It redraws as the setup changes and can be saved as a PNG.
 
 The **Stackup** toolbar button opens a window listing every copper and dielectric layer
 with its thickness (in µm, mm, mil or oz), each dielectric's material, εr and thermal
@@ -181,7 +177,7 @@ default; untick **Lock to imported values** to try other thicknesses, materials 
 (choosing a material from the list sets its typical εr and thermal conductivity). Every DC
 and AC analysis uses the edited stackup, and the setup keeps it. A copper layer's conductor
 (copper foils, silver, gold, aluminum, nickel or tin) sets its resistivity, TCR and thermal
-conductivity, and can be changed while the stackup is locked. KiCad's API cannot change a
+conductivity, and can be changed while the stackup is locked. This can be used to explore how material and thickness properties impact power distribution performance. KiCad's API cannot change a
 board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup yourself.
 
 Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. Drag to rotate,
@@ -189,31 +185,17 @@ scroll to zoom and shift-drag (or middle-drag) to pan. **About** shows the KiPI 
 project links, and **Copy version info** copies the versions of KiPI, Python and its
 libraries for a bug report.
 
-### 3. Model the power system
+### 3. Model the Power Distribution System
 
-The **PI setup** panel on the right holds the power tree. Each list has **Add**,
+The **PI setup** panel on the right enables setup of the power tree. Each list has **Add**,
 **Duplicate** and **Remove** buttons. Hover over any field for a tooltip saying what it does.
 
-As you pick pins, KiPI pre-fills the fields that usually follow from them. Every guess can be
-changed, and a field the board gives no answer for is left as it was:
 
-* **VRM set voltage** from the output net's name: `+3V3`, `3.3V`, `V1P8`, `VDD_0V75`, `-5V`,
-  `VBUS` (5 V).
-* **Ground pins** of a VRM, load or AC probe: the same part's pins on its ground net. Grounds
-  aren't always called GND, so KiPI tries grounds the setup already uses, then names like
-  `GND`, `PGND` or `VSS`, then the board's biggest net if it isn't named like a rail.
-* **VRM input pins** (LDO or switcher): the output part's pins on its other rail, if it has
-  exactly one.
-* **Series link side B**: side A on a part with pads on just two nets (a resistor, ferrite or
-  fuse) puts side B on its other net, and a resistor's value becomes the resistance.
-* **New phases** of a multi-phase VRM take the next parts in sequence: `L1` → `L2`,
-  `Q1` → `Q2`.
-* **Names** follow the picked part while they are still its reference.
 Pins are chosen with a picker: pick the net, then the part (type to search), then optionally
 the pin numbers (e.g. `1,2,5`; blank means all of that part's pins on the net). Problems such
 as missing pins, or two VRMs on one group, are shown in red as you edit.
 
-**VRMs tab**: one entry per regulator or supply.
+**VRMs tab**: one entry per regulator, power input, or ideal supply.
 
 | Field | Meaning |
 |---|---|
@@ -229,6 +211,8 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its set voltage relative to these pins instead of 0 V (needs ground pins) |
 | Phases | Parallel phases of a multi-phase regulator. **Edit phase** picks which phase the output, input and ground pins belong to. |
 
+KiPI automatically calculates the input current into the input pins on a VRM based on the efficiency, type, and output power (which is based on defined loads).
+
 **Multi-phase VRMs**: set **Phases** above 1, then choose each phase in **Edit phase** and
 give it its own output pins (e.g. its inductor), input pins and ground pins. A new phase
 takes the next parts in sequence (`L1` → `L2`, `Q1` → `Q2`), or copies the previous one when
@@ -243,22 +227,20 @@ To try it without a design of your own, open the example board in
 [`examples/multiphase_buck`](examples/multiphase_buck): a 4-phase 12 V → 0.9 V, 40 A core rail
 (`python -m kipi --snapshot examples/multiphase_buck/multiphase_buck.kipi.json.gz`).
 
-**Loads tab**: one entry per consumer.
+**Loads tab**: one entry per consumer (Can be multiple unique consumers for a single refdes).
 
 * **Supply pins** and **Current**. With several supply pins, **Current split** chooses
   between splitting the current evenly over all pins and giving explicit **pin groups**,
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
-* **Ground pins** (optional) include the ground return.
+* **Ground pins** (optional) include the ground return. KiPI superimposes all VRM and load return currents to form a comprehensive GND plane current model.
 * **Tolerance** (± %) is the PASS/FAIL limit. Each load is judged by its worst pin: the one
   furthest from the VRM set point, below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point
   further down the copper, so pins nearer the VRM sit above the set point. A load on a net
   group whose solve did not converge shows **NOT CONVERGED** instead of a result.
 
-| Loads tab | Thermal tab |
-|---|---|
-| ![Load editor](docs/images/setup_loads.png) | ![Thermal settings](docs/images/setup_thermal.png) |
+![Load editor](docs/images/setup_loads.png)
 
 **Series links tab**: parts that pass DC from one net to another, such as sense
 resistors, ferrite beads, fuses, load switches and 0 Ω links. Give **Side A pins**,
@@ -267,25 +249,27 @@ other net. A new link starts on a part that bridges the first two ticked nets th
 grounds, if there is one. When both sides are on the same resistor (reference `R…`),
 the resistance is read from its value field: `10m`, `0.005`, `4k7`, `0R1`, `5 mΩ` and the like
 all work, and anything after the value (`1% 0603`) is ignored. You can still type your own.
-Nets joined this way are solved together as one group, and each group may hold only one VRM.
+Nets joined this way are solved together as one rail, and each rail may hold only one VRM.
 A net with no connection to its VRM is reported, not guessed at. **ESL** is only used by the AC
-analysis.
+analysis. I squared R losses in series links are calculated. **In order to assign a series link, the nets on either side must both be defined as power nets in the net selection pane**. In practice, 0 ohm resistors are never possible; Check your jumper's datasheet for max DCR.
 
-**Solve tab**: every net group, with a checkbox. Untick the groups that are not modeled or
-routed yet to solve the rest; only the ticked groups are validated, and the choice is saved.
-Where a solved group meets an excluded one, a VRM whose output is excluded becomes a constant
+**Solve tab**: every combined rail, with a checkbox. Untick the rails that are not modeled or
+routed yet to solve the rest; only the ticked rails are validated, and the choice is saved.
+Where a solved rail meets an excluded one, a VRM whose output is excluded becomes a constant
 load on its input pins (the input current its rail would need at nominal voltages), a VRM
 whose input is excluded becomes an ideal source, and ground pins on an excluded ground are
 ignored. The Notes tab lists these substitutions.
 
 ![The Solve tab: tick the net groups to solve](docs/images/dc_solve_tab.png)
 
-**Mesh tab**: **Max edge** is the largest triangle edge in mm; smaller is more accurate and
+**Mesh tab**: **Max edge** is the largest FEA mesh triangle edge in mm; smaller is more accurate and
 slower. **Via grading** controls how fast the mesh refines towards plated holes, and
 **Barrel plating** sets the via wall thickness. The defaults suit most boards.
 
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
 the board and the warmer copper become more resistive. Set:
+
+![Thermal settings](docs/images/setup_thermal.png)
 
 * **Ambient** temperature.
 * **Iterations**: three is usually enough. The Notes tab shows how much each iteration
@@ -305,22 +289,37 @@ the board and the warmer copper become more resistive. Set:
 
 The setup is saved as `<board>.kipi-setup.json` next to the board when you click **Save** at
 the top of the panel and every time you solve. It travels with the project and can go into
-version control.
+version control. AI Agents can make quick work of power tree modelling by editing this file directly if they have knowledge of the file format from this codebase as well as the components in your design from your schematic.
+
+**Data Prepoulation**: As you pick pins when setting up the power tree, KiPI pre-fills the fields that usually follow from those selections. Every prepopulation can be changed, and a field the extracted board gives no answer for is left as it was:
+
+* **VRM set voltage** from the output net's name: `+3V3`, `3.3V`, `V1P8`, `VDD_0V75`, `-5V`,
+  `VBUS` (5 V).
+* **Ground pins** of a VRM, load or AC probe: the same part's pins on its ground net. Grounds
+  aren't always called GND, so KiPI tries grounds the setup already uses, then names like
+  `GND`, `PGND` or `VSS`, then the board's biggest net if it isn't named like a rail.
+* **VRM input pins** (LDO or switcher): the output part's pins on its other rail, if it has
+  exactly one.
+* **Series link side B**: side A on a part with pads on just two nets (a resistor, ferrite or
+  fuse) puts side B on its other net, and a resistor's value becomes the resistance.
+* **New phases** of a multi-phase VRM take the next parts in sequence: `L1` → `L2`,
+  `Q1` → `Q2`.
+* **Names** follow the picked part while they are still its reference.
 
 ### 4. Solve
 
-Click **Solve all** (it reads *Solve 3 of 5 net groups* when some are unticked in the Solve
-tab). Every net group is meshed and solved, the downstream loads first and then
+Click **Solve all** (If rails are unticked in the Solve
+tab, Solve x of n will be displayed). Every rail is meshed and solved, the downstream loads first and then
 back towards the source, so each VRM's input current includes everything it feeds. Progress
 and solver residuals stream into the log; **Cancel** stops the run.
 
 Tick **HTML report** before solving to also write
 `<board>_kipi_report_<date>_<time>.html` next to the board (the time stamp keeps each
 solve's report rather than overwriting the last). It opens in your web browser when the solve finishes, and **Report** opens it
-again later. It is a single file that works offline, containing:
+again later. It is a single portable file, containing:
 
 * the summary and every results table;
-* an interactive 3D view per net group (rotate, zoom, hover for values);
+* an interactive 3D view per rail (rotate, zoom, hover for values);
 * per-layer statistics, with top-down voltage and current-density maps;
 * the board temperature map when thermal is on.
 
@@ -330,7 +329,7 @@ again later. It is a single file that works offline, containing:
 
 ### 5. Read the results
 
-In the **Results** group, choose a **net group** and a **field** to show in 3D:
+In the **Results** pane, choose a **net group** and a **field** to show in 3D:
 
 * **Voltage**
 * **Current density**. Tick **Arrows** to see where and which way the current flows.
@@ -341,17 +340,17 @@ In the **Results** group, choose a **net group** and a **field** to show in 3D:
 Voltages are measured against the source's ground pins (0 V). When ground returns are
 solved, the ground under a load rises above 0 V, so a supply plane can read above its VRM's set
 point even though a remotely sensed rail is exactly on target. The Loads tab's effective
-voltage (supply minus ground at the load) is the figure to compare with the set point.
+voltage (supply minus ground at the load) is the figure to compare with the load's voltage requirements.
 
 The color scale covers the copper layers that are shown: untick a layer under **Copper
 layers** and the colors stretch over the layers that remain, so one layer's outlier does not
 flatten the rest. (Current and power density clip at the 99.5th percentile, since pad corners
 spike; the probe still reports true values.)
 
-Click any point on the copper or any via to probe it: the Info box gives the voltage, its drop
-or boost from the set point, current and power density, and the pad or via hit. **Show
-copper** returns to the plain geometry view; pick the group again, or another field, to get
-the results back.
+Click any point on the copper or vias in the 3D results view to probe it: the Info box gives the voltage, its drop
+or boost from the VRM regulation voltage, current and power density, and the pad or via probed. **Show
+copper** returns to the plain geometry view; pick the rail in the results pane again, or another field, to get
+the results back without resimulation.
 
 ![Voltage across the +3.3V plane, with the Loads results table](docs/images/voltage.png)
 
@@ -369,14 +368,14 @@ tables sort the same way:
 |---|---|
 | Loads | Each load's current, effective voltage, drop or boost, worst pin and PASS/FAIL. Double-click to show its group. |
 | VRMs | Output and input voltage, current and power, conversion loss, and PASS/FAIL against the output current limit, with a row per phase for multi-phase VRMs |
-| Series links | Current and loss in each series part |
+| Series links | Current and loss in each series part  (I squared R losses)|
 | Vias | Every via and PTH barrel ranked by current. Set a **Current limit** for PASS/FAIL, and double-click a row to fly to it. |
 | Losses | Copper loss per group and layer, vias, series links and VRM conversion |
 | Thermal | After an electro-thermal solve: the hottest copper on each layer, its rise and location, PASS/FAIL against the temperature limits, the iteration history and the dielectric conductivities used. Double-click a row to show that group's temperature. |
 | Notes | Solver details, warnings and the thermal iteration history |
 
 **Export ▾** writes the tables as CSV (including `_pins.csv`, with the voltage and current
-of every pin each group was solved with, which the HTML report also lists), the 3D
+of every pin each rail was solved with, which the HTML report also lists), the 3D
 results as a ParaView `.vtm`, or **Save
 results…** as a `.kipi-results` file (named with the board and the time by default), which the toolbar's **Open results…** reloads without
 solving again (load the board first). Results files are Python pickles, so only open ones
@@ -385,7 +384,7 @@ you created.
 ### 6. AC: PDN impedance
 
 Switch **Mode** to **AC**. The setup panel becomes the **AC setup**, which shares the VRMs and
-series links with DC (fields only DC uses are grayed out) and adds:
+series links with DC mode (fields only DC mode uses are grayed out) and adds:
 
 * **Capacitors tab**: RLC models (capacitance, ESL, ESR) for the decoupling capacitors, each
   shared by a group of identical parts. **Models from values** makes one model per capacitor
@@ -395,16 +394,16 @@ series links with DC (fields only DC uses are grayed out) and adds:
   **Tick same value + footprint**, **Tick shown** and **Untick shown** for many at once.
   The table shows each part's footprint, so 0402 and 0603 parts of one value can get
   different models. Enter only the part's own ESL: its mounting (pads,
-  vias, planes) is simulated.
-* **Probes tab**: where the impedance is looked into, usually a device's supply and ground
-  pins. Each probe has a target: **flat** (an impedance up to a frequency) or **custom**, a
+  vias, planes) is simulated. **Important**: Ensure that capacitors of the same value in different case sizes are modelled independently, as no two capacitors are created the same. Modelling of DC bias and dielectric effect to be added in a future release.
+* **Probes tab**: Defines where to plot the PDN impedance, usually a device's supply and ground
+  pins. Each probe has a target impedance and frequency range: **flat** (an impedance up to a frequency) or **custom**, a
   piecewise-linear mask through frequency/impedance points on the log-log plot.
-  **Target Impedance/Frequency Calculator…** works out a flat target from the device's AC
+  **Target Impedance/Frequency Calculator** works out a flat target from the device's AC
   voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).
   Targets apply only above the rail's VRM **Control loop bandwidth**: the AC solve leaves
-  the VRM out of circuit (the open-loop PDN impedance), and below its bandwidth the
-  converter's loop holds the rail. If the bandwidth is at or above the target frequency,
-  the whole target is judged and the results say so. The method follows Smith et al.,
+  the VRM out of circuit (the open-loop PDN impedance, capacitive only), and below its bandwidth the
+  converter's control loop is assumed to hold the rail. If the bandwidth is at or above the target frequency,
+  the target across all swept frequencies are judged and the results say so. The method follows Smith et al.,
   ["Power Distribution System Design Methodology and Capacitor Selection for Modern CMOS
   Technology"](https://doi.org/10.1109/6040.784476), IEEE Trans. Adv. Packaging, 1999.
 * **Sweep tab**: start and stop frequency, points per decade, and how many copper field
@@ -421,7 +420,8 @@ of the rail and its ground is field-solved as a 2.5D model with both faces of ev
 plane resistance with skin effect, spreading inductance, plane-pair capacitance and cavity
 resonances, and via inductance all come out of the mesh. The capacitors and series links are
 then attached at every sweep frequency. The VRM itself is not modeled as an impedance, so the
-curve keeps rising towards low frequency as the bulk capacitance runs out.
+curve keeps rising towards low frequency as the bulk capacitance approaches an open circuit.
+**Important:** AC analysis is a massive compute problem. Adding many probes and finer mesh explodes simulation time dramatically. During solving, the frequency being solved is displayed in the log output window.
 
 The result opens in the **Impedance** tab next to the 3D view: |Z| against frequency for every
 probe, with its target dashed in the same color. Click a curve to place a cursor; drag it or
@@ -429,7 +429,7 @@ use ←/→ (Shift: ×10) to move along the curve, ↑/↓ to change curve, and 
 remove it. The **Board map** tab beside it shows the solve from above while it runs and
 after: the mesh of the rail and its ground, layer by layer, with the probes and the
 capacitors marked by model. The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
-equivalent L or C, PASS/FAIL against the target with the margin in dB, and every other
+equivalent L or C, PASS/FAIL against the target with the margin in dB at the cursor frequency, and every other
 probe's |Z| at that frequency. The results table gives each probe's minimum and worst |Z|
 (closest to, or furthest over, the target) and PASS/FAIL; the notes list the capacitors that
 were left out for having no model. Each rail keeps its last result, so switching **Rail** shows
@@ -441,7 +441,7 @@ pickles, so only open ones you created).
 Tick **HTML report** next to **Solve rail** to also write
 `<board>_<rail>_ac_report_<date>_<time>.html` next to the board after each solve. It opens in your web browser when the solve
 finishes, and **Report** opens it again later. Like the DC report, it is one
-offline file you can share. It has the probe table with margins, an interactive |Z|
+portable file you can share. It has the probe table with margins, an interactive |Z|
 plot with the targets and each capacitor model's own curve, a board map of the rail's copper
 with the probes and capacitors marked, the capacitor models, and the sweep, mesh and solver
 details.
@@ -451,16 +451,16 @@ details.
 ### Tips and troubleshooting
 
 * **"No copper path" between a VRM and a load** usually means unrouted copper, an unfilled
-  zone, or a missing series link for a part between them.
-* **Unexpected drop:** compare the board view with KiCad. Thermal reliefs, necked traces and
+  zone, or a missing series link for a part between them when both have PI models defined.
+* **Unexpected voltage drop in results:** compare the board view with KiCad. Thermal reliefs, necked traces and
   via counts dominate DC drop, and the Current density view with Arrows makes the bottleneck
-  obvious.
+  obvious. Via anti-pad/voids in power planes can have a big impact on power distribution capacity when the plane becomes swiss-cheesed.
 * **Slow solves:** raise **Max edge**, or analyze fewer nets at a time. Large planes are cheap
-  but very fine traces are not.
+  but very fine traces are not. If you are simulating on an Intel x86 platform, isntall the paradiso multithread solver, as mentioned above. 
 * **"KiPI works with one KiCad at a time"** although only one is open: a KiCad that did
   not exit cleanly may still be running; end it in the task manager (the message gives its
   PID). If the check is wrong for your setup, set the environment variable
-  `KIPI_ALLOW_MULTIPLE_KICAD=1` before starting KiCad to skip it.
+  `KIPI_ALLOW_MULTIPLE_KICAD=1` before starting KiCad to skip it. This is enforced because the IPC plugin interface only supports one board instance.
 * **No part models:** the log says why. KiPI needs KiCad's `kicad-cli` (it looks in the
   connected KiCad, the PATH and the usual install folders; set `KIPI_KICAD_CLI` to its
   path otherwise) and the board's `.kicad_pcb` file on disk. A part whose model file KiCad
@@ -471,6 +471,7 @@ details.
   task runs longer than a minute, a stack dump of every thread. If the window stops
   responding during a task, the log records where the UI thread was stuck. Attach both
   files, and the **About** dialog's version info, to bug reports.
+* **Have Fun:** The author asks that you share what projects this package has simulated, and what power integrity issues you have found with it. Conductor simulation gives incredible insight into how PCBs actually function in practice. See what happens when you pump 10 amps into a 5 mil trace with the temperature results view.
 
 ## Development
 
@@ -498,7 +499,7 @@ its own log group.
 
 `tests/accuracy` guards the solvers' answers. It solves the boards in
 [`examples/validation`](examples/validation) from their committed snapshots and setups and
-compares the results with hand calculations from each board's dimensions:
+compares the results with hand calculations from each board's dimensions. This is to help gain confidence that an open-source tool can compare to professional tools:
 
 | Board | Checks |
 |---|---|
@@ -540,7 +541,7 @@ The tests also solve the example board and check that its committed setup still 
 `make_board.py`. After changing the generator, rerun
 `python examples/multiphase_buck/make_board.py` and commit both output files.
 
-### Layout
+### Codebase Layout
 
 | Path | Purpose |
 |---|---|
@@ -578,9 +579,9 @@ ANY WARRANTY; see the license for details. Copyright © 2026 Drew Maatman.
 [`triangle`](https://pypi.org/project/triangle/) Python package. Triangle is not open source
 in the OSI sense. Its author's terms allow free use and redistribution, but it **may not be
 sold or included in commercial products without a license from its author**. Using KiPI for
-your own design work is fine. If you want to ship KiPI, or anything built on it, as part of
-a commercial product, you will need to arrange a license for Triangle with its author or
-swap in another mesher. The meshing code is isolated in `kipi/core/mesh/` for that reason.
+your own design work is fine. The meshing code is isolated in `kipi/core/mesh/` for this reason.
 
 The other dependencies are under permissive licenses, apart from PySide6 (LGPL-3.0). All of
 them are compatible with the GPL.
+
+The author of KiPI prohibits the package from inclusion in commercial software. Use it, fork it, and modify it to your heart's content.
