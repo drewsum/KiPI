@@ -1,5 +1,6 @@
-"""Where the DC setup's parts sit on the board, for the 3D view's "PI Models" markers (#84):
-a point on each pad of a VRM, load or series link, with the part's name beside them."""
+"""Where the setup's parts sit on the board, for the 3D view's "PI Models" markers (#84):
+a point on each pad of a VRM, load, series link or modelled capacitor, with the part's name
+beside them."""
 
 from __future__ import annotations
 
@@ -9,16 +10,18 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 
 from kipi.core.model.board import BoardSnapshot, Pad
+from kipi.core.model.nets import is_ground_name
+from kipi.dc.pi.diagram import _ground_nets
 
-KINDS = ("vrm", "load", "link")
+KINDS = ("vrm", "load", "link", "cap")
 LIFT_MM = 0.05          # markers sit this far off the copper, so they are never buried
 
 
 @dataclass
 class PartMarker:
     """One setup part: its pads' points, (x, y_kicad, z) mm, by role."""
-    kind: str                                   # "vrm", "load" or "link"
-    name: str                                   # e.g. "VRM 3V3"
+    kind: str                                   # "vrm", "load", "link" or "cap"
+    name: str                                   # e.g. "VRM 3V3", or "C12" for a capacitor
     power: np.ndarray                           # rail pins (N, 3): drawn larger
     ground: np.ndarray                          # ground pins and ground sense (M, 3)
 
@@ -59,9 +62,25 @@ def _points(snap: BoardSnapshot, refs: Iterable, nets, sides: Dict[str, str]) ->
     return np.array(pts, dtype=float).reshape(-1, 3)
 
 
+def _cap_points(snap: BoardSnapshot, ref: str, nets, grounds,
+                sides: Dict[str, str]) -> Tuple[np.ndarray, np.ndarray]:
+    """A capacitor's pads on ``nets``, (rail side, ground side): a capacitor model names
+    parts, not pins, so its pads are split by net, ground being a ground in the setup or a
+    net named like one."""
+    power: List[Tuple[float, float, float]] = []
+    ground: List[Tuple[float, float, float]] = []
+    for p in snap.pads:
+        if p.footprint != ref or p.net not in nets:
+            continue
+        (ground if p.net in grounds or is_ground_name(p.net) else power).append(
+            (p.position[0], p.position[1], _pad_z(snap, p, sides.get(ref, "top"))))
+    return (np.array(power, dtype=float).reshape(-1, 3),
+            np.array(ground, dtype=float).reshape(-1, 3))
+
+
 def pi_markers(snap: Optional[BoardSnapshot], setup, nets: Iterable[str]) -> List[PartMarker]:
-    """Markers of the setup's VRMs, loads and series links, on the pads of ``nets`` only
-    (so none float over copper that is not drawn)."""
+    """Markers of the setup's VRMs, loads, series links and modelled capacitors, on the pads
+    of ``nets`` only (so none float over copper that is not drawn)."""
     if snap is None or setup is None:
         return []
     nets = set(nets)
@@ -80,6 +99,11 @@ def pi_markers(snap: Optional[BoardSnapshot], setup, nets: Iterable[str]) -> Lis
     for kind, name, power, ground in parts:
         m = PartMarker(kind, name, _points(snap, power, nets, sides),
                        _points(snap, ground, nets, sides))
+        if len(m.power) or len(m.ground):
+            out.append(m)
+    grounds = _ground_nets(setup)
+    for ref in sorted({r for c in setup.caps for r in c.refs if r}):
+        m = PartMarker("cap", ref, *_cap_points(snap, ref, nets, grounds, sides))
         if len(m.power) or len(m.ground):
             out.append(m)
     return out

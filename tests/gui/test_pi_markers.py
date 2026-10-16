@@ -11,6 +11,8 @@ import pytest
 from kipi.dc.pi.model import DcLink, PinRef
 from kipi.dc.viz.markers import LIFT_MM, pi_markers
 from phase_boards import T, board, two_phase
+from shapely.geometry import box
+from tree_boards import B, pad
 
 
 def _by_name(markers):
@@ -47,6 +49,20 @@ def test_links_and_parts_under_the_board():
     # Q1 is under the board: its pad is marked below the top copper's bottom face.
     q1 = next(p for p in link.power if p[0] == 9.5)
     assert q1[2] == pytest.approx(1.5 + T - LIFT_MM)
+
+
+def test_capacitors_with_a_model_are_marked_by_reference():
+    from kipi.ac.model import CapModel
+    snap, setup = board(), two_phase()
+    snap.pads.append(pad("c1_1", "VOUT", "C1", "1", box(2, 0, 3, 1)))
+    snap.pads.append(pad("c1_2", "GND", "C1", "2", box(2, 0, 3, 1), B))
+    snap.pads.append(pad("c2_1", "VOUT", "C2", "1", box(3, 0, 4, 1)))
+    setup.caps.append(CapModel("10u", 10e-6, 1e-9, 0.005, ["C1"]))   # C2 has no model
+    m = _by_name(pi_markers(snap, setup, {"VOUT", "GND"}))
+    assert "C2" not in m and m["C1"].kind == "cap"
+    np.testing.assert_allclose(m["C1"].power, [[2.5, 0.5, 1.5 + 2 * T + LIFT_MM]])
+    np.testing.assert_allclose(m["C1"].ground, [[2.5, 0.5, T + LIFT_MM]])  # GND by name
+    assert "C1" not in _by_name(pi_markers(snap, setup, {"VIN"}))
 
 
 # --- Drawing -----------------------------------------------------------------------------

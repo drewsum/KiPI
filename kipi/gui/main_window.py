@@ -355,8 +355,9 @@ class MainWindow(QMainWindow):
             feats.addLayout(r)
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate",
-                     "pi": "Mark the DC setup's VRMs (green), loads (cyan) and series "
-                           "links (magenta) on the nets shown: a dot on each of their "
+                     "pi": "Mark the DC setup's VRMs (green), loads (cyan), series "
+                           "links (magenta) and capacitors with a model (white) on the "
+                           "nets shown: a dot on each of their "
                            "pads, larger on the rail and smaller on ground, and the "
                            "part's name. In DC mode, over the copper only, not over "
                            "results. Off to start with.",
@@ -855,7 +856,8 @@ class MainWindow(QMainWindow):
 
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):
-        """Mark the DC setup's VRMs, loads and series links on the ticked nets (#84). The
+        """Mark the DC setup's VRMs, loads, series links and capacitors on the ticked nets
+        (#84). The
         markers belong to DC mode: AC mode's view has none."""
         if self._closed:
             return

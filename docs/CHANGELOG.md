@@ -8,8 +8,8 @@ milestones rather than versions that were ever set.
 
 ### Added
 - **PI Models in the 3D view** (#84): in DC mode, a new **PI Models** checkbox under
-  Display marks the setup's VRMs (green), loads (cyan) and series links (magenta) on the
-  copper, with a dot on each of their pads on the nets shown (smaller on ground) and the
+  Display marks the setup's VRMs (green), loads (cyan), series links (magenta) and
+  capacitors with a model (white) on the copper, with a dot on each of their pads on the nets shown (smaller on ground) and the
   part's name. It starts unticked; the marks follow setup edits and are hidden over
   results. The **Models** checkbox is now **3D Models**.
 - **Solver accuracy tests** (#70): eight validation boards in `examples/validation`

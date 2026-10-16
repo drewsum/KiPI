@@ -156,8 +156,8 @@ Below that:
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
   shows or hides vias, pads, the board, **PI Models** and part **3D Models**. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
-* **PI Models** (DC mode) marks the setup's VRMs, loads and series links: a dot on each of
-  their pads on the nets shown, with the part's name. It starts unticked; over results the
+* **PI Models** (DC mode) marks the setup's VRMs, loads, series links and capacitors with a
+  model: a dot on each of their pads on the nets shown, with the part's name. It starts unticked; over results the
   marks are hidden.
 * **3D Models** are the KiCad 3D models of the parts in your setup (VRMs, loads, series links
   and capacitor models) with a pad on a net shown. KiPI has KiCad's `kicad-cli` export them
