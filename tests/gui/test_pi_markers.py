@@ -119,7 +119,7 @@ def test_the_window_marks_the_dc_setup_in_dc_mode(app, no_3d, monkeypatch):
     w = MainWindow()
     labels = [cb.text() for cb in w.findChildren(QCheckBox)]
     assert "PI Models" in labels and "3D Models" in labels and "Models" not in labels
-    assert w.chk_pi.isChecked() and w.chk_models.text() == "3D Models"
+    assert not w.chk_pi.isChecked() and w.chk_models.text() == "3D Models"
     w.snapshot = board()
     w.solve_panel.setup = two_phase()
     monkeypatch.setattr(w, "_checked_set", lambda: frozenset({"VOUT"}))

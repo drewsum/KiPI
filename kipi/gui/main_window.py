@@ -359,7 +359,7 @@ class MainWindow(QMainWindow):
                            "links (magenta) on the nets shown: a dot on each of their "
                            "pads, larger on the rail and smaller on ground, and the "
                            "part's name. In DC mode, over the copper only, not over "
-                           "results.",
+                           "results. Off to start with.",
                      "models": "Show the 3D models of the parts in the setup (VRMs, loads, "
                                "series links and capacitors) on the nets shown. KiCad's "
                                "kicad-cli reads them from the saved board file. The copper "
@@ -369,7 +369,7 @@ class MainWindow(QMainWindow):
                                            ("board", "Board"), ("pi", "PI Models"),
                                            ("models", "3D Models"))):
             cb = QCheckBox(label, g_view)
-            cb.setChecked(True)
+            cb.setChecked(name != "pi")
             cb.setToolTip(feat_tips[name])
             cb.toggled.connect(lambda v, n=name: self.viewer.set_feature_visible(n, v))
             feat_rows[k // 3].addWidget(cb)

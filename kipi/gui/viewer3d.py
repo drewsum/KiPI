@@ -237,7 +237,7 @@ class Viewer3D(QWidget):
         self._show_board = True
         self._show_models = True            # in the copper (geometry) view
         self._show_models_result = False    # over results: off until asked for
-        self._show_pi = True                # PI Models markers, copper view only
+        self._show_pi = False               # PI Models markers, copper view only
         self._pi_markers: list = []
         self._pi_actors: Dict[str, object] = {}      # name -> actor
         self._models: Dict[str, Tuple[pv.PolyData, str]] = {}   # ref -> (mesh, side)
