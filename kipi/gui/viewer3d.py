@@ -7,7 +7,11 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
-from vtkmodules.vtkRenderingCore import vtkActor, vtkCellPicker, vtkPolyDataMapper
+from vtkmodules.util.numpy_support import numpy_to_vtk
+from vtkmodules.vtkCommonCore import vtkPoints, vtkStringArray
+from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
+from vtkmodules.vtkRenderingCore import vtkActor, vtkActor2D, vtkCellPicker, vtkPolyDataMapper
+from vtkmodules.vtkRenderingLabel import vtkLabeledDataMapper
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
@@ -147,6 +151,59 @@ def _model_actor(mesh: pv.PolyData) -> vtkActor:
     return actor
 
 
+def _vtk_points(pts: np.ndarray) -> vtkPolyData:
+    """Bare polydata of one vertex per point."""
+    points = vtkPoints()
+    points.SetData(numpy_to_vtk(np.ascontiguousarray(pts, dtype=float), deep=True))
+    verts = vtkCellArray()
+    for i in range(len(pts)):
+        verts.InsertNextCell(1)
+        verts.InsertCellPoint(i)
+    poly = vtkPolyData()
+    poly.SetPoints(points)
+    poly.SetVerts(verts)
+    return poly
+
+
+def _pi_dots_actor(pts: np.ndarray, color, size: float) -> vtkActor:
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputData(_vtk_points(pts))
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.PickableOff()
+    prop = actor.GetProperty()
+    prop.SetColor(*color)
+    prop.SetPointSize(size)
+    prop.SetRenderPointsAsSpheres(True)
+    return actor
+
+
+def _pi_labels_actor(pts: np.ndarray, names: List[str], color) -> vtkActor2D:
+    poly = _vtk_points(pts)
+    arr = vtkStringArray()
+    arr.SetName("names")
+    for n in names:
+        arr.InsertNextValue(n)
+    poly.GetPointData().AddArray(arr)
+    mapper = vtkLabeledDataMapper()
+    mapper.SetInputData(poly)
+    mapper.SetLabelModeToLabelFieldData()
+    mapper.SetFieldDataName("names")
+    text = mapper.GetLabelTextProperty()
+    text.SetFontSize(12)
+    text.BoldOn()
+    text.ItalicOff()
+    text.ShadowOff()
+    text.SetColor(1.0, 1.0, 1.0)
+    text.SetBackgroundColor(*color)
+    text.SetBackgroundOpacity(0.75)
+    text.SetJustificationToCentered()
+    actor = vtkActor2D()
+    actor.SetMapper(mapper)
+    actor.PickableOff()
+    return actor
+
+
 class Viewer3D(QWidget):
     """3D view of the board body plus individually added nets, with visibility controls.
 
@@ -226,7 +283,8 @@ class Viewer3D(QWidget):
         self._clear_result_actors()
         self._set_result(None)
         p.clear_actors()
-        self._pi_markers, self._pi_actors = [], {}
+        self._remove_pi_actors()
+        self._pi_markers = []
         self._board_actors.clear()
         self._hidden_layers.clear()
         self._next_color = 0
@@ -332,11 +390,18 @@ class Viewer3D(QWidget):
         self._draw_pi_markers()
         self._apply_visibility()
 
-    def _draw_pi_markers(self):
-        p = self.plotter
+    def _remove_pi_actors(self):
+        renderer = self.plotter.renderer
         for actor in self._pi_actors.values():
-            p.remove_actor(actor, render=False)
+            renderer.RemoveViewProp(actor)
         self._pi_actors = {}
+
+    def _draw_pi_markers(self):
+        """Bare VTK actors, like the copper's: pyvista's ``add_points`` and
+        ``add_point_labels`` here, while nets were built in the background, hung the
+        window in its next render."""
+        self._remove_pi_actors()
+        renderer = self.plotter.renderer
 
         def view(pts):
             return np.column_stack([pts[:, 0], -pts[:, 1], pts[:, 2] * self._zscale])
@@ -347,20 +412,16 @@ class Viewer3D(QWidget):
                 pts = [getattr(m, which) for m in parts if len(getattr(m, which))]
                 if not pts:
                     continue
-                name = f"pi_{kind}_{which}"
-                self._pi_actors[name] = p.add_points(
-                    view(np.vstack(pts)), color=colors[0], point_size=size,
-                    render_points_as_spheres=True, name=name, pickable=False,
-                    reset_camera=False, render=False)
+                self._pi_actors[f"pi_{kind}_{which}"] = _pi_dots_actor(
+                    view(np.vstack(pts)), colors[0], size)
             if parts:
                 name = f"pi_{kind}_labels"
                 anchors = view(np.array([m.anchor for m in parts]))
                 anchors[:, 2] += _PI_LABEL_LIFT_MM        # clear of the part's dots
-                self._pi_actors[name] = p.add_point_labels(
-                    anchors, [m.name for m in parts], font_size=12, text_color="white",
-                    shape_color=colors[1], shape_opacity=0.75, show_points=False,
-                    always_visible=True, name=name, pickable=False, reset_camera=False,
-                    render=False)
+                self._pi_actors[name] = _pi_labels_actor(anchors, [m.name for m in parts],
+                                                         colors[1])
+        for actor in self._pi_actors.values():
+            renderer.AddViewProp(actor)
 
     @property
     def pi_marker_names(self) -> List[str]:

@@ -64,7 +64,7 @@ def _view():
            _show_board=True, _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
-    for name in ("set_pi_markers", "_draw_pi_markers", "_apply_visibility", "set_zscale",
+    for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
                  "set_feature_visible", "_place_models"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
     return v
@@ -90,14 +90,16 @@ def test_markers_are_drawn_over_the_copper_only():
     v._result = None
     v._apply_visibility()
     assert _visible(v) == names
+    props = v.plotter.renderer.GetViewProps()
+    assert all(props.IsItemPresent(a) for a in v._pi_actors.values())
     v.set_pi_markers([])                                  # AC mode
-    assert v._pi_actors == {} and not any(n.startswith("pi_") for n in v.plotter.actors)
+    assert v._pi_actors == {} and props.GetNumberOfItems() == 0
 
 
 def test_markers_follow_the_z_scale():
     v = _view()
     v.set_pi_markers(pi_markers(board(), two_phase(), {"VOUT"}))
-    z = lambda: v._pi_actors["pi_load_power"].GetMapper().GetInput().points[0, 2]  # noqa: E731
+    z = lambda: v._pi_actors["pi_load_power"].GetMapper().GetInput().GetPoint(0)[2]  # noqa: E731
     z1 = z()
     v.set_zscale(4.0)
     assert z() == pytest.approx(4 * z1)
