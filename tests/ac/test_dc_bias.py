@@ -15,6 +15,10 @@ from kipi.ac.solver import solve_ac
 from kipi.core.model.parts import is_class2, parse_voltage_rating
 from kipi.dc.pi.model import Load, PinRef, PISetup
 
+# A small board with a coarse mesh: these tests are about the capacitor models, and the
+# field solve on a bigger one takes ~20 s without PARDISO.
+SMALL = dict(max_edge_mm=2.0, min_edge_mm=0.15, grading=0.6)
+
 
 def test_derating_curve():
     m = CapModel("X5R", 10e-6, 0.5e-9, 5e-3, dc_bias=True, rated_v=6.3, kept_at_rated_pct=40)
@@ -64,7 +68,7 @@ def test_a_model_estimating_bias_needs_a_rating():
 
 def _setup(snap, rated_v=6.3, **ac):
     setup = plane_setup(snap, f_start_hz=1e4, f_stop_hz=1e8, points_per_decade=5,
-                        field_points_per_decade=2, **ac)
+                        field_points_per_decade=2, **SMALL, **ac)
     setup.caps.append(CapModel("10u", 10e-6, 0.5e-9, 5e-3, ["C1"], dc_bias=True,
                                rated_v=rated_v, kept_at_rated_pct=40.0))
     return setup
@@ -72,7 +76,7 @@ def _setup(snap, rated_v=6.3, **ac):
 
 @pytest.fixture(scope="module")
 def board():
-    return plane_pair(caps=[("C1", "10u", (25.0, 25.0)), ("C2", "LOAD", (40.0, 40.0))])
+    return plane_pair(20.0, caps=[("C1", "10u", (10.0, 10.0)), ("C2", "LOAD", (15.0, 15.0))])
 
 
 def test_without_a_dc_solve_the_vrm_set_point_is_used(board):

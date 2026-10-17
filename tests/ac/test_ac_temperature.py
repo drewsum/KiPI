@@ -14,6 +14,10 @@ from kipi.ac.model import TEMP_CURVES, CapModel
 from kipi.ac.solver import solve_ac
 from kipi.dc.pi.model import PISetup
 
+# A small board with a coarse mesh: these tests are about the capacitor models, and the
+# field solve on a bigger one takes ~20 s without PARDISO.
+SMALL = dict(max_edge_mm=2.0, min_edge_mm=0.15, grading=0.6)
+
 
 def test_temperature_curves():
     x7r = CapModel("X7R", 10e-6, dielectric="X7R")
@@ -47,12 +51,13 @@ def test_settings_are_saved_and_old_setups_load():
 
 @pytest.fixture(scope="module")
 def board():
-    return plane_pair(caps=[("C1", "10u X7R", (10.0, 10.0)), ("C2", "10u X7R", (40.0, 40.0))])
+    return plane_pair(20.0, caps=[("C1", "10u X7R", (4.0, 14.0)),
+                                  ("C2", "10u X7R", (14.0, 14.0))])
 
 
 def _setup(snap, **ac):
     setup = plane_setup(snap, f_start_hz=1e4, f_stop_hz=1e8, points_per_decade=5,
-                        field_points_per_decade=2, loss_tangent=0.0, **ac)
+                        field_points_per_decade=2, loss_tangent=0.0, **SMALL, **ac)
     setup.caps.append(CapModel("X7R", 10e-6, 0.5e-9, 5e-3, ["C1", "C2"], dielectric="X7R"))
     return setup
 
@@ -86,12 +91,12 @@ def test_a_fixed_temperature_warms_copper_and_capacitors(board, tmp_path):
 
 def test_temperatures_from_the_thermal_co_simulation(board):
     setup = _setup(board, temperature="thermal", temperature_c=40.0)
-    dc = _thermal(lambda x: 25.0 + 2.0 * x)                     # 25 °C at x = 0, 125 at 50
+    dc = _thermal(lambda x: 25.0 + 5.0 * x)                     # 25 °C at x = 0, 125 at 20
     r = solve_ac(board, setup, "VRM1", "GND", dc_result=dc)
     m = setup.caps[0]
     c1, c2 = r.cap_bias["C1"][1], r.cap_bias["C2"][1]
-    assert c1 == pytest.approx(m.capacitance_at(0.0, temp_c=25.0 + 2.0 * 10.6))   # pads' middle
-    assert c2 == pytest.approx(m.capacitance_at(0.0, temp_c=25.0 + 2.0 * 40.6))
+    assert c1 == pytest.approx(m.capacitance_at(0.0, temp_c=25.0 + 5.0 * 4.6))   # pads' middle
+    assert c2 == pytest.approx(m.capacitance_at(0.0, temp_c=25.0 + 5.0 * 14.6))
     lo, hi = r.stats.t_copper
     assert lo < 30.0 and hi > 120.0
     assert "thermal co-simulation" in r.bias_note
@@ -138,12 +143,12 @@ def test_the_temperature_controls(panel):
 def test_copper_resistance_follows_its_temperature_coefficient():
     """Plane pair without capacitors: at low frequency the probe's resistance is the copper's
     DC resistance, which rises by the copper's TCR; with skin effect only by its square root."""
-    snap = plane_pair()
+    snap = plane_pair(20.0)
 
     def real_z(t):
         setup = plane_setup(snap, f_start_hz=1e4, f_stop_hz=1e9, points_per_decade=2,
                             field_points_per_decade=2, loss_tangent=0.0, temperature=t,
-                            temperature_c=120.0)
+                            temperature_c=120.0, **SMALL)
         return solve_ac(snap, setup, "VRM1", "GND").probes[0].z.real
     ratio = real_z("fixed") / real_z("none")
     tcr = PISetup().settings.tcr_per_c

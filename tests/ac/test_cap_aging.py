@@ -15,6 +15,10 @@ from kipi.ac.solver import solve_ac
 from kipi.core.model.parts import parse_dielectric
 from kipi.dc.pi.model import PISetup
 
+# A small board with a coarse mesh: these tests are about the capacitor models, and the
+# field solve on a bigger one takes ~20 s without PARDISO.
+SMALL = dict(max_edge_mm=2.0, min_edge_mm=0.15, grading=0.6)
+
 
 def test_aging_is_logarithmic_in_hours():
     m = CapModel("X7R", 10e-6, dielectric="X7R", aging_pct_per_decade=2.0)
@@ -73,12 +77,12 @@ def test_hours_must_be_set_when_aging():
 
 @pytest.fixture(scope="module")
 def board():
-    return plane_pair(caps=[("C1", "10u X7R", (25.0, 25.0)), ("C2", "10u", (35.0, 35.0))])
+    return plane_pair(20.0, caps=[("C1", "10u X7R", (10.0, 10.0)), ("C2", "10u", (14.0, 14.0))])
 
 
 def _setup(snap, **ac):
     setup = plane_setup(snap, f_start_hz=1e4, f_stop_hz=1e8, points_per_decade=5,
-                        field_points_per_decade=2, **ac)
+                        field_points_per_decade=2, **SMALL, **ac)
     setup.caps.append(CapModel("X7R", 10e-6, 0.5e-9, 5e-3, ["C1"], dielectric="X7R",
                                aging_pct_per_decade=2.0))
     setup.caps.append(CapModel("polymer", 10e-6, 0.5e-9, 5e-3, ["C2"]))
