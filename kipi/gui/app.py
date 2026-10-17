@@ -143,8 +143,8 @@ def watchdog_start(seconds: float = 60.0, native_seconds: float = 300.0,
                 lag = time.monotonic() - _ui_beat
                 if lag > ui_stall_seconds and not ui_reported:
                     ui_reported = True
-                    frame = sys._current_frames().get(threading.main_thread().ident)
-                    stack = "".join(traceback.format_stack(frame)) if frame else "(none)\n"
+                    stack = _python_stacks().get(threading.main_thread().ident)
+                    stack = "".join(stack.format()) if stack else "(none)\n"
                     log.warning("UI thread has not responded for %.1f s; it is at:\n%s",
                                 lag, stack)
                 elif lag <= ui_stall_seconds and ui_reported:
@@ -169,14 +169,38 @@ def watchdog_stop():
     faulthandler.cancel_dump_traceback_later()
 
 
+def _python_stacks() -> dict:
+    """Every thread's Python stack, by thread ident, taken in one go.
+
+    A frame's callers are only found by walking ``f_back``, and a thread that runs on
+    meanwhile can leave the frame it was in: a finished generator's frame no longer knows
+    its caller, so formatting the stacks as they are walked could lose the functions that
+    matter. The frames are read with thread switches held off, then formatted.
+    """
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(max(old, 1.0))
+    try:
+        out = {}
+        for ident, frame in sys._current_frames().items():
+            entries = []
+            while frame is not None:
+                entries.append((frame.f_code.co_filename, frame.f_lineno,
+                                frame.f_code.co_name, None))
+                frame = frame.f_back
+            out[ident] = entries[::-1]
+    finally:
+        sys.setswitchinterval(old)
+    return {ident: traceback.StackSummary.from_list(e) for ident, e in out.items()}
+
+
 def _dump_python_stacks(elapsed: float):
     names = {t.ident: t.name for t in threading.enumerate()}
     me = threading.get_ident()
     lines = [f"Task still running after {elapsed:.0f} s ({time.strftime('%H:%M:%S')}):\n"]
-    for ident, frame in sys._current_frames().items():
+    for ident, stack in _python_stacks().items():
         if ident != me:
             lines.append(f"Thread {names.get(ident, ident)} (most recent call last):\n")
-            lines += traceback.format_stack(frame)
+            lines += stack.format()
     try:
         _crash_file.write("".join(lines) + "\n")
         _crash_file.flush()
