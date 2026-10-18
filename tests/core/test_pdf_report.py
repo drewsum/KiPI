@@ -109,8 +109,9 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
     assert "id='pins'" in html and "id='loads'" in html
     assert html.count("data:image/png;base64,") >= 2 * len(tree.groups)
     assert not (tmp_path / "r.html").exists()
-    # The User notes: a box above the tables, with a fillable field over it.
-    assert html.index(pdf.NOTES_MARKER) < html.index("id='loads'")
+    # The User notes: a box after every result, with a fillable field over it.
+    assert html.rindex("<h2") == html.index("<h2 id='user-notes'")
+    assert "Click in the box" not in html
     x0, y0, x1, y1 = _notes_field(data)
     assert x1 - x0 > 400 and y1 - y0 == pytest.approx(pdf.NOTES_HEIGHT_PT, abs=12)
 

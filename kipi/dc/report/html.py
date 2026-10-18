@@ -297,9 +297,7 @@ def notes_section(pdf: bool = False) -> str:
     """The editable notes box (#128); in a PDF, a box with a form field to type in."""
     if pdf:
         from kipi.core.pdf import NOTES_MARKER
-        return ("<h2 id='user-notes'>User notes</h2><p class='note'>Click in the box to type "
-                "(Acrobat, a web browser, Preview and most PDF viewers can), then save the "
-                f"PDF to keep the notes in it. Printed, it is a box to write in.</p>"
+        return ("<h2 id='user-notes'>User notes</h2>"
                 f"<table class='notes'><tr><td>{NOTES_MARKER}</td></tr></table>")
     return ("<section id='user-notes-section'><h2 id='user-notes'>User notes</h2>"
             "<div id='user-notes-text' contenteditable='true' spellcheck='true' "
@@ -439,8 +437,6 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  + ". Via plating, first matching rule (drill = hole in the laminate, plated "
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
-
-    parts.append(notes_section(pdf))
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -637,6 +633,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         parts.append("<h2>Notes</h2><ul>" + "".join(f"<li>{_e(w)}</li>" for w in tree.warnings)
                      + "</ul>")
 
+    parts.append(notes_section(pdf))             # last, after every result
     finish(path, f"KiPI report — {snap.board_name}", parts, CSS, pdf)
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")
     return path

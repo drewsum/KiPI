@@ -8,8 +8,8 @@ milestones rather than versions that were ever set.
 
 ### Added
 - **User notes in the HTML reports** (#128). The DC and AC reports have an editable User
-  notes box under the summary. A report opened from disk cannot save itself, so the notes
-  are kept in the browser as they are typed (per file, restored when it is opened again),
+  notes box at the end, after every result. A report opened from disk cannot save
+  itself, so the notes are kept in the browser as they are typed (per file, restored when it is opened again),
   and *Save a copy with notes* downloads the report with them written in, plots and all, to
   keep or share. The box is left out of a printout while it is empty.
 - **The standalone launcher has the KiPI icon** instead of Python's (#127). A `.py` file

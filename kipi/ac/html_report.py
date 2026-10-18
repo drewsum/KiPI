@@ -423,7 +423,6 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
             margin = f"{20 * math.log10(t[0] / zmax):+.2f} dB"
         rows.append([_e(c.name), pins, _ohms(float(np.min(c.mag))), _ohms(zmax), _hz(fmax),
                      _e(_target_text(c)), margin, _verdict(ok)])
-    parts.append(notes_section(pdf))
     parts.append("<h2 id='probes'>Probes</h2>")
     parts.append(_table(["Probe", "Pins (rail / ground)", "Min |Z|", "Worst |Z|", "at",
                          "Target", "Margin", "Result"], rows))
@@ -537,6 +536,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         parts.append("<h2 id='notes'>Notes</h2><ul>"
                      + "".join(f"<li>{_e(w)}</li>" for w in notes) + "</ul>")
 
+    parts.append(notes_section(pdf))             # last, after every result
     finish(path, f"KiPI AC report — {result.rail} — {snap.board_name}", parts,
            CSS + CSS_EXTRA, pdf)
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")

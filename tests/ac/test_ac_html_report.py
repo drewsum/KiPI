@@ -33,6 +33,7 @@ def test_report_has_every_section(solved, tmp_path):
         assert f"id='{anchor}'" in text
     assert "Plotly.newPlot" in text and "<script src=" not in text     # works offline
     assert "contenteditable='true'" in text and "href='#user-notes'" in text    # #128
+    assert text.rindex("<h2") == text.index("<h2 id='user-notes'")     # the last section
     assert "100n (one part)" in text                                   # model curve
     assert "C3" in text and "no model" in text                         # left out, mapped
     import re

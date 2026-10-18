@@ -485,11 +485,11 @@ single portable file, containing:
 * per-layer statistics, with top-down voltage and current-density maps;
 * the board temperature map when thermal is on.
 
-Both the DC and the AC report have a **User notes** box near the top: click it and type
-what was checked, by whom, or what to change. A browser cannot write to a file it opened,
-so the notes are kept in that browser as you type (they are there the next time you open
-the same file) and **Save a copy with notes** downloads the report with the notes in it,
-to keep or share. Notes print with the report; an empty box does not.
+Both the DC and the AC report have a **User notes** box at the end, after every
+result: click it and type what was checked, by whom, or what to change. A browser cannot
+write to a file it opened, so the notes are kept in that browser as you type (they are
+there the next time you open the same file) and **Save a copy with notes** downloads the
+report with the notes in it, to keep or share. Notes print with the report; an empty box does not.
 
 | Summary tables | Interactive 3D per net group |
 |---|---|
