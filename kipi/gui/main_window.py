@@ -683,7 +683,7 @@ class MainWindow(QMainWindow):
         self.act_reload.setEnabled(True)
         self._set_mode_enabled(True)
         self.progress_bar.setRange(0, 1000)
-        self.progress_bar.setValue(1000)
+        self.progress_bar.setValue(0)          # empty when idle: a full bar reads as busy
         self.lbl_stage.setText("Idle")
         self.statusBar().showMessage("Ready")
         if self._pending_stackup is not None:

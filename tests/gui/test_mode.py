@@ -79,6 +79,7 @@ def test_mode_buttons_are_greyed_out_while_a_task_runs(app, window):
         task.wait(5000)
         app.processEvents()
     assert _mode(window, "ac").isEnabled() and _mode(window, "dc").isEnabled()
+    assert window.progress_bar.value() == 0          # idle shows an empty bar, not a full one
 
 
 def _plot_tab_shown(w) -> bool:
