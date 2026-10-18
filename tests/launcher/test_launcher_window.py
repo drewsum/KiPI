@@ -21,14 +21,29 @@ import tkinter as tk  # noqa: E402
 from kipi.launcher.ui_tk import TkUI  # noqa: E402
 
 
-@pytest.fixture
-def ui():
+@pytest.fixture(scope="module")
+def _window():
+    """One window for every test, as the launcher has: creating and destroying a Tk root
+    per test now and then aborted Python on the macOS runner."""
     try:
         u = TkUI()
     except tk.TclError as e:
         pytest.skip(f"Tk cannot open a window here: {e}")
     yield u
     u.close()
+
+
+@pytest.fixture
+def ui(_window):
+    yield _window
+    root = _window.root
+    for job in root.tk.splitlist(root.tk.call("after", "info")):    # polls, later()
+        root.tk.call("after", "cancel", job)
+    if _window.frame is not None:
+        _window.frame.destroy()
+    _window.frame, _window._tagged, _window._on_close = None, False, root.quit
+    root.withdraw()
+    root.update()
 
 
 def _summary(offered=True, default=False):
