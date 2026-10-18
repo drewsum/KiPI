@@ -149,6 +149,30 @@ def test_resistivity_and_tcr_edit_the_setup(app, unit_setting):
     assert win._rho_spins[0].isReadOnly()
 
 
+def test_loss_tangent_and_default_er_edit_the_ac_setup(app, unit_setting):
+    """They moved here from the AC Mesh tab (#134), and like resistivity are not locked."""
+    setup = PISetup()
+    setup.ac.loss_tangent, setup.ac.default_er = 0.015, 3.9
+    win = StackupWindow()
+    changed = []
+    win.settings_changed.connect(lambda: changed.append(1))
+    win.set_board(board().stackup, setup=setup)
+    assert win.spin_tand.value() == pytest.approx(0.015)
+    assert win.spin_er.value() == pytest.approx(3.9)
+    assert win.chk_lock.isChecked() and win.spin_tand.isEnabled() and win.spin_er.isEnabled()
+    win.spin_tand.setValue(0.01)
+    win.spin_er.setValue(4.5)
+    assert (setup.ac.loss_tangent, setup.ac.default_er) == (pytest.approx(0.01), 4.5)
+    assert len(changed) == 2
+
+
+def test_ac_mesh_tab_has_no_dielectric_settings(app, no_3d):
+    from kipi.gui.main_window import MainWindow
+    w = MainWindow()
+    assert not hasattr(w.ac_panel, "spin_tand") and not hasattr(w.ac_panel, "spin_er")
+    w.close()
+
+
 def test_toolbar_opens_the_window_and_the_copper_tab_is_gone(app, no_3d):
     from kipi.gui.main_window import MainWindow
     w = MainWindow()

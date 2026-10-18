@@ -67,6 +67,9 @@ milestones rather than versions that were ever set.
   *Report* button is now *Open report*.
 
 ### Changed
+- **Loss tangent and Default εr moved to the Stackup window** (#134), from the AC setup's
+  Mesh tab, beside the copper Resistivity and TCR. Like those they are setup settings, so
+  they can be changed while the stackup is locked; setups keep them as before.
 - **PARDISO is installed by default** where Intel MKL exists (Windows and Linux on x86-64),
   with an opt-out (#129).
   - Plugin: KiCad installs `requirements.txt` on every reload without asking, so PARDISO

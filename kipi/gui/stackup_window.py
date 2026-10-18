@@ -10,7 +10,8 @@ analysis then uses the edited stackup. KiCad's
 API cannot change a board's stackup yet, so edits stay in KiPI. A copper layer's conductor
 and resistivity are setup settings, changed while unlocked: choosing a conductor sets the
 layer's resistivity, TCR and thermal conductivity. Locking keeps them as set. The board's
-copper resistivity and TCR can always be changed.
+copper resistivity and TCR, and the dielectric loss tangent and Default εr the AC solve uses
+(#134), can always be changed.
 """
 
 from __future__ import annotations
@@ -67,7 +68,7 @@ class StackupWindow(QDialog):
     analyses should use: the imported one while locked, else the edited one."""
 
     stackup_changed = Signal(object)
-    settings_changed = Signal()          # resistivity or TCR
+    settings_changed = Signal()          # resistivity, TCR, loss tangent or Default εr
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -152,6 +153,28 @@ class StackupWindow(QDialog):
         note.setStyleSheet("color: #999;")
         f.addRow(note)
 
+        g_diel = QGroupBox("Dielectric", self)
+        f = QFormLayout(g_diel)
+        self.spin_tand = _spin(0.0, 0.2, 0.02, 4, "", 0.001)
+        self.spin_tand.setToolTip("Dielectric loss tangent of every dielectric, for the AC "
+                                  "solve (FR4 is about 0.02). It damps the plane resonances.")
+        self.spin_er = _spin(1.0, 20.0, 4.3, 2, "", 0.1)
+        self.spin_er.setToolTip("Dielectric constant, for the AC solve, of every dielectric "
+                                "whose εr is 'default' (KiCad gives none, or it is a metal)")
+        f.addRow("Loss tangent", self.spin_tand)
+        f.addRow("Default εr", self.spin_er)
+        for sp in (self.spin_tand, self.spin_er):
+            f.labelForField(sp).setToolTip(sp.toolTip())
+            sp.valueChanged.connect(self._dielectric_changed)
+        note = QLabel("Used by the AC analysis. Like the copper settings, these are not "
+                      "locked.", g_diel)
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #999;")
+        f.addRow(note)
+        settings = QHBoxLayout()
+        settings.addWidget(g_cu, 1)
+        settings.addWidget(g_diel, 1)
+
         row = QHBoxLayout()
         self.btn_reset = QPushButton("Reset", self)
         self.btn_reset.setToolTip("Go back to the thicknesses, materials, εr and thermal "
@@ -170,7 +193,7 @@ class StackupWindow(QDialog):
         mid.addWidget(self.view)
         lay.addLayout(mid, 1)
         lay.addWidget(self.lbl_total)
-        lay.addWidget(g_cu)
+        lay.addLayout(settings)
         lay.addLayout(row)
         self.resize(1150, 600)
         self._update_enabled()
@@ -191,7 +214,9 @@ class StackupWindow(QDialog):
         self.chk_lock.blockSignals(False)
         if setup is not None:
             for sp, v in ((self.spin_rho, setup.settings.rho_ohm_mm / UOHM_CM),
-                          (self.spin_tcr, setup.settings.tcr_per_c)):
+                          (self.spin_tcr, setup.settings.tcr_per_c),
+                          (self.spin_tand, setup.ac.loss_tangent),
+                          (self.spin_er, setup.ac.default_er)):
                 sp.blockSignals(True)
                 sp.setValue(v)
                 sp.blockSignals(False)
@@ -296,8 +321,8 @@ class StackupWindow(QDialog):
                 er = _spin(0.0, 20.0, self._er[d], 2, "", 0.1)
                 er.setSpecialValueText("default")
                 er.setFrame(False)
-                er.setToolTip("Dielectric constant ('default' uses the AC setup's Default "
-                              "εr)")
+                er.setToolTip("Dielectric constant ('default' uses the Default εr "
+                              "setting below)")
                 er.valueChanged.connect(partial(self._er_edited, d))
                 self.table.setCellWidget(i, C_ER, er)
                 self._er_spins.append(er)
@@ -448,7 +473,7 @@ class StackupWindow(QDialog):
             spin.setButtonSymbols(UnitSpinBox.UpDownArrows if unlocked and has_setup
                                   else UnitSpinBox.NoButtons)
         self.btn_reset.setEnabled(unlocked)
-        for w in (self.spin_rho, self.spin_tcr):
+        for w in (self.spin_rho, self.spin_tcr, self.spin_tand, self.spin_er):
             w.setEnabled(self._setup is not None)
 
     def _unit_changed(self, unit: str):
@@ -526,6 +551,13 @@ class StackupWindow(QDialog):
         s = self._setup.settings
         s.rho_ohm_mm = self.spin_rho.value() * UOHM_CM
         s.tcr_per_c = self.spin_tcr.value()
+        self.settings_changed.emit()
+
+    def _dielectric_changed(self, *_):
+        if self._setup is None:
+            return
+        self._setup.ac.loss_tangent = self.spin_tand.value()
+        self._setup.ac.default_er = self.spin_er.value()
         self.settings_changed.emit()
 
     def _layer_rho_changed(self, name: str, value: float):

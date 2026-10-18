@@ -487,8 +487,11 @@ its thickness in the table.</p>
     thicknesses, a layer's conductor is changed only with <b>Lock to imported values</b>
     unticked; ticking it again keeps the conductor chosen.</td></tr>
   <tr><td><b>εr</b></td><td class="wrap">Each dielectric's constant, for the AC solve.
-    <code>default</code> means the stackup gives none (or the material is a metal), and the AC
-    setup's <b>Default εr</b> applies.</td></tr>
+    <code>default</code> means the stackup gives none (or the material is a metal), and the
+    <b>Default εr</b> below applies. Every other dielectric uses the εr from KiCad's board
+    stackup (Board Setup → Physical Stackup); a dielectric made of several sublayers gets
+    their series combination. The AC log and report list the εr used for each
+    dielectric.</td></tr>
   <tr><td><b>Resistivity at 20 °C</b> (table)</td><td class="wrap">A copper layer's own
     resistivity, set by its conductor or typed in while unlocked; <code>default</code> uses
     the <b>Resistivity</b> below.</td></tr>
@@ -497,6 +500,11 @@ its thickness in the table.</p>
     plating, and its temperature coefficient (0.00393 /°C for copper), used by the
     electro-thermal solve. These are setup settings, so they can be changed while the
     stackup is locked.</td></tr>
+  <tr><td><b>Loss tangent</b>, <b>Default εr</b></td><td class="wrap">For the AC solve: the
+    dielectric loss (FR4 about 0.02), which damps the plane resonances, and the dielectric
+    constant of every dielectric whose εr is <code>default</code>. Setup settings too, so
+    they can be changed while the stackup is locked. (Before 0.9.0 they were on the AC
+    setup's Mesh tab.)</td></tr>
   <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses, materials and εr,
     still unlocked.</td></tr>
 </table>
@@ -1403,14 +1411,10 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
   <tr><td>Via grading</td><td class="wrap">Element growth per mm away from plated holes.</td></tr>
   <tr><td>Min edge (at holes)</td><td class="wrap">Element size at plated holes. The mesh here
     decides the via and mounting inductance.</td></tr>
-  <tr><td>Loss tangent</td><td class="wrap">Dielectric loss (FR4 about 0.02). Damps the plane
-    resonances.</td></tr>
-  <tr><td>Default εr</td><td class="wrap">Dielectric constant where the stackup gives none.
-    Every other dielectric uses the εr from KiCad's board stackup (Board Setup → Physical
-    Stackup); a dielectric made of several sublayers gets their series combination. The log
-    and the HTML report list the εr used for each dielectric.</td></tr>
 </table>
-<p>Copper resistivity and the via plating rules come from the DC setup's Copper and Mesh tabs.</p>
+<p>The via plating rules come from the DC setup's Mesh tab; copper resistivity and the
+dielectric <b>Loss tangent</b> and <b>Default εr</b> from the
+<a href="#stackup">Stackup window</a>.</p>
 </div>
 </details>
 

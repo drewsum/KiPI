@@ -829,29 +829,23 @@ class ACPanel(QWidget, PartSelection):
         self.spin_edge = _spin(0.05, 10.0, s.max_edge_mm, 2, " mm", 0.1)
         self.spin_grading = _spin(0.0, 2.0, s.grading, 2, "", 0.05)
         self.spin_min_edge = _spin(0.005, 1.0, s.min_edge_mm, 3, " mm", 0.01)
-        self.spin_tand = _spin(0.0, 0.2, s.loss_tangent, 4, "", 0.001)
-        self.spin_er = _spin(1.0, 20.0, s.default_er, 2, "", 0.1)
         f.addRow("Max edge", self.spin_edge)
         f.addRow("Via grading", self.spin_grading)
         f.addRow("Min edge (at holes)", self.spin_min_edge)
-        f.addRow("Loss tangent", self.spin_tand)
-        f.addRow("Default εr", self.spin_er)
         tip(f, self.spin_edge, art_tip("Largest triangle edge of the copper mesh. Smaller is "
                                        "more accurate and slower.", "mesh", "max"))
         tip(f, self.spin_grading, art_tip("How fast mesh elements grow away from plated holes "
                                           "(mm of edge per mm of distance)", "mesh", "grading"))
         tip(f, self.spin_min_edge, art_tip("Mesh edge length at plated holes, where via "
                                            "inductance is decided", "mesh", "min"))
-        tip(f, self.spin_tand, "Dielectric loss tangent (FR4 is about 0.02)")
-        tip(f, self.spin_er, "Dielectric constant used where the board stackup gives none")
         note = QLabel("The mesh decides the plane spreading and via inductance: elements grow "
                       "from 'min edge' at plated holes by 'via grading' per mm, up to 'max "
-                      "edge'. Copper resistivity and barrel plating come from the DC setup.")
+                      "edge'. Copper resistivity and barrel plating come from the DC setup; the "
+                      "dielectric loss tangent and Default εr from the Stackup window.")
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
         f.addRow(note)
-        for wdg in (self.spin_edge, self.spin_grading, self.spin_min_edge, self.spin_tand,
-                    self.spin_er):
+        for wdg in (self.spin_edge, self.spin_grading, self.spin_min_edge):
             wdg.valueChanged.connect(self._ac_settings_changed)
         return w
 
@@ -864,8 +858,6 @@ class ACPanel(QWidget, PartSelection):
         s.max_edge_mm = self.spin_edge.value()
         s.grading = self.spin_grading.value()
         s.min_edge_mm = self.spin_min_edge.value()
-        s.loss_tangent = self.spin_tand.value()
-        s.default_er = self.spin_er.value()
         s.dc_bias = self.chk_bias.isChecked()
         s.mfg_tolerance = self.chk_mfg.isChecked()
         s.aging = self.chk_aging.isChecked()
@@ -881,8 +873,7 @@ class ACPanel(QWidget, PartSelection):
                        (self.spin_ppd, s.points_per_decade),
                        (self.spin_fpd, s.field_points_per_decade),
                        (self.spin_edge, s.max_edge_mm), (self.spin_grading, s.grading),
-                       (self.spin_min_edge, s.min_edge_mm), (self.spin_tand, s.loss_tangent),
-                       (self.spin_er, s.default_er), (self.spin_hours, s.aging_hours),
+                       (self.spin_min_edge, s.min_edge_mm), (self.spin_hours, s.aging_hours),
                        (self.spin_temp, s.temperature_c)):
             wdg.blockSignals(True)
             wdg.setValue(v)

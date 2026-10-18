@@ -282,7 +282,8 @@ It redraws as the setup changes and can be saved as a PNG.
 The **Stackup** toolbar button opens a window listing every copper and dielectric layer
 with its thickness (in µm, mm, mil or oz), each dielectric's material, εr and thermal
 conductivity, and each copper layer's conductor and resistivity, with the copper
-**Resistivity** and **TCR** for the whole board. The stackup is locked to KiCad's values by
+**Resistivity** and **TCR** for the whole board, and the AC solve's dielectric **Loss
+tangent** and **Default εr** (for dielectrics KiCad gives no εr). The stackup is locked to KiCad's values by
 default; untick **Lock to imported values** to try other thicknesses, materials and εr
 (choosing a material from the list sets its typical εr and thermal conductivity, and both
 can be typed over). Every DC
@@ -609,8 +610,8 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   dielectric: **Fixed** at one board temperature, or **From DC thermal co-simulation**, the
   copper temperatures of the last DC solve with thermal co-simulation (or of DC results
   opened from a file).
-* **Mesh tab**: mesh size, minimum edge at plated holes (which sets the via inductance),
-  dielectric loss tangent and default εr.
+* **Mesh tab**: mesh size and minimum edge at plated holes (which sets the via inductance).
+  The dielectric loss tangent and default εr are in the Stackup window.
 
 | Capacitor models | Target calculator |
 |---|---|
