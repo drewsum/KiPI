@@ -285,6 +285,18 @@ libraries for a bug report.
 The **PI setup** panel on the right enables setup of the power tree. Each list has **Add**,
 **Duplicate** and **Remove** buttons. Hover over any field for a tooltip saying what it does.
 
+**Import…** at the top of the panel fills the power tree from a Tomachie power-tree file
+(`<design>.pdn.json`, read from the schematic and the parts' datasheets): each rail's source,
+regulators as LDOs or switchers with their input pins, efficiency, quiescent current, dropout
+and input range, load switches and series parts as DC connections with their DC resistance,
+and each load's current and tolerance (the rail's stated range, raised to the datasheet's
+minimum supply voltage where that is higher). Schematic nets are matched to board nets through
+the pads. KiPI solves one value per item, so where the file gives a range the typical current
+or resistance is used; the log lists every minimum and maximum left out, every current the
+file does not know (imported as 0 A, to fill in by hand) and everything that could not be
+placed on the board. Settings, thermal and the AC setup are kept. Review the result, then
+solve.
+
 
 Pins are chosen with a picker: pick the net, then the part (type to search), then optionally
 the pin numbers (e.g. `1,2,5`; blank means all of that part's pins on the net). Problems such

@@ -463,6 +463,7 @@ class MainWindow(QMainWindow):
         self.solve_panel.cmb_group.activated.connect(self._group_activated)
         self.solve_panel.show_geometry.connect(self._show_geometry)
         self.solve_panel.save_requested.connect(self._save_setup)
+        self.solve_panel.import_requested.connect(self.import_pdn)
         self.solve_panel.arrows_toggled.connect(self.viewer.set_arrows_visible)
         self.solve_panel.via_selected.connect(self._show_via)
         # Each panel marks its own selection, while its mode is showing.
@@ -1142,6 +1143,44 @@ class MainWindow(QMainWindow):
         self.plot.clear()
         self.board_map.clear()
         return setup
+
+    def import_pdn(self):
+        """Replace the power tree with the one in a Tomachie .pdn.json (#120)."""
+        if self.snapshot is None:
+            QMessageBox.information(self, "KiPI", "Load or open the board first.")
+            return
+        current = self.solve_panel.setup
+        if (current.vrms or current.loads or current.links) and QMessageBox.question(
+                self, "KiPI", "Replace the VRMs, loads and DC connections with the ones in "
+                              "the file? Settings, thermal and the AC setup are kept."
+        ) != QMessageBox.Yes:
+            return
+        start = str(self._setup_path.parent) if self._setup_path else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Tomachie power tree", start,
+            "Tomachie power tree (*.pdn.json);;JSON (*.json)")
+        if not path:
+            return
+        from kipi.dc.pi.importers.tomachie_pdn import PdnImportError, import_tomachie_pdn
+        name = Path(path).name
+        try:
+            setup, notes = import_tomachie_pdn(path, self.snapshot, current)
+        except (PdnImportError, ValueError, KeyError, TypeError, OSError) as e:
+            QMessageBox.critical(self, "KiPI", f"Could not import {name}:\n\n{e}")
+            return
+        self.log(f"Imported {name}: {len(setup.vrms)} VRM(s), {len(setup.loads)} load(s), "
+                 f"{len(setup.links)} DC connection(s)"
+                 + (f"; {len(notes)} note(s) on what did not map cleanly:" if notes else ""))
+        for note in notes:
+            self.log(f"  {note}", logging.WARNING)
+        used = setup.pin_nets()
+        self._set_checked(lambda it: it.checkState() == Qt.Checked
+                          or it.data(Qt.UserRole) in used)
+        label = f"Imported from {name}"
+        self.solve_panel.set_board(self.snapshot, setup, label)
+        self.ac_panel.set_board(self.snapshot, setup, label)
+        self._refresh_power_tree()
+        self._save_setup()
 
     def _save_setup(self):
         if self._setup_path is None:

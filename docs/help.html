@@ -739,7 +739,11 @@ guess uses it.</p>
 <!-- ================================================================== DC SETUP -->
 <h2 id="dc-setup">DC setup tabs</h2>
 <p>The <b>PI setup</b> dock on the right. <b>Save</b> at its top writes the setup next to the
-board (DC and AC share one file). Problems that stop a solve are listed in red under the tabs
+board (DC and AC share one file). <b>Import…</b> beside it fills the VRMs, loads and series
+links from a Tomachie power-tree file (<code>.pdn.json</code>), keeping the settings, thermal
+and AC setup. Where the file gives a minimum, typical and maximum, the typical current or
+resistance is used, and the log lists what was left out or could not be placed on the
+board. Problems that stop a solve are listed in red under the tabs
 as you edit. The VRMs, Loads and Series links tabs share one layout: a list with <b>Add</b>,
 <b>Duplicate</b> and <b>Remove</b>, and an editor for the selected entry below it.</p>
 

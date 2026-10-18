@@ -180,6 +180,16 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   filled hole of that rule is filled with (copper, conductive or non-conductive epoxy). The
   defaults are IPC-6012 Class 2 minimum average plating (through and blind 20 µm, buried
   13 µm, microvia 12 µm). The DC and AC solves, the Notes tab and both HTML reports use them.
+- **Import a Tomachie power tree** (#120, from PR #43 by @Tomachie). **Import…** beside the
+  DC setup's Save fills the VRMs, loads and DC connections from a Tomachie `.pdn.json`:
+  sources; LDOs and switchers with their input pins, efficiency, quiescent current, dropout
+  and input range; load switches as DC connections with their on-resistance; series parts
+  with their datasheet DC resistance; each load's current, and a tolerance from its rail's
+  stated range, raised to the datasheet's minimum supply voltage where that is higher.
+  Schematic nets are matched to board nets through the pads. KiPI takes one current per load
+  and one resistance per DC connection, so the typical is used; the log lists each minimum
+  and maximum left out, each current the file does not know (imported as 0 A) and whatever
+  could not be placed on the board. Settings, thermal and the AC setup are kept.
 - **Filled vias** (#89). A via the KiCad board marks as filled carries its core too when its
   rule's fill conducts: copper makes the whole hole copper, conductive epoxy adds its core at
   the resistivity entered. A via whose fill is left to the design rules is solved unfilled,

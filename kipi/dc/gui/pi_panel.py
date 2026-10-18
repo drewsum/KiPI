@@ -1170,6 +1170,7 @@ class PIPanel(QWidget, PartSelection):
     group_changed = Signal(str)
     show_geometry = Signal()
     save_requested = Signal()
+    import_requested = Signal()            # fill the setup from a power-tree file
     arrows_toggled = Signal(bool)
     via_selected = Signal(str, str)        # group name, via / PTH pad id
     # The VRM, load or series link selected in the setup: kind ("vrm", "load", "link"),
@@ -1193,7 +1194,13 @@ class PIPanel(QWidget, PartSelection):
         b_save = QPushButton("Save", self)
         b_save.setToolTip("Save the setup next to the board")
         b_save.clicked.connect(self.save_requested.emit)
+        b_import = QPushButton("Import…", self)
+        b_import.setToolTip("Fill the power tree (VRMs, loads and DC connections) from a "
+                            "Tomachie power-tree file (.pdn.json). Settings, thermal and the "
+                            "AC setup are kept; the log lists what did not map.")
+        b_import.clicked.connect(self.import_requested.emit)
         row.addWidget(self.lbl_file, 1)
+        row.addWidget(b_import)
         row.addWidget(b_save)
         lay.addLayout(row)
 
