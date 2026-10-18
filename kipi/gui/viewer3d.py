@@ -72,8 +72,8 @@ def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
 
 # The scale bar sits against the view's right edge (next to the setup panes), leaving a
 # small gap, so it covers as little of the board as it can.
-_BAR_RIGHT = 0.975
-_BAR_WIDTH = 0.05
+_BAR_RIGHT = 0.995
+_BAR_WIDTH = 0.03
 _BAR_Y, _BAR_HEIGHT = 0.25, 0.5
 
 
