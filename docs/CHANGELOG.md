@@ -21,11 +21,13 @@ milestones rather than versions that were ever set.
   as SVG templates; where Qt cannot render them, the tooltip is its text alone.
 - **3D views in DC PDF reports** (#133). A PDF can't show the interactive 3D views, so
   they go inside it as an attached web page of their own, `<report>_3d.html` (Plotly and
-  the views only, about 1–2 MB compressed). Open it from the PDF viewer's attachments
-  panel (Acrobat, Foxit, PDF-XChange, Firefox, Okular; Acrobat opens the PDF on that panel)
-  and it opens in the web browser. The static views stay as they are. Like the notes
-  field, it is added to Qt's file as an incremental update; should that fail, the page is
-  saved beside the PDF instead. A PDF's own 3D (U3D or PRC) was ruled out: only Acrobat
+  the views only, about 1–2 MB compressed). A bold **3D Results View** link at the top of
+  the report and under each net group opens it in the web browser: the link itself in
+  Acrobat, Foxit and PDF-XChange (through Acrobat's JavaScript), and a paperclip beside it
+  in Firefox and Okular. It is also in the viewer's attachments panel (Acrobat opens the
+  PDF on that panel). The static views stay as they are. Like the notes field, it is added
+  to Qt's file as an incremental update; should that fail, the page is saved beside the
+  PDF instead and the links open it there. A PDF's own 3D (U3D or PRC) was ruled out: only Acrobat
   shows it, with 3D off by default.
 - **Load models** (#17). A part's supplies in a YAML file of their own (`.yml` or `.yaml`,
   nothing else): for each supply its pins and ground pins, current or pin groups,

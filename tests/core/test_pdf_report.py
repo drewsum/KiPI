@@ -3,6 +3,7 @@ setting that picks the format, the panels' option, and HTML where a PDF cannot b
 DC report's 3D views go in it as an attached web page (#133)."""
 
 import os
+import re
 from datetime import datetime
 
 import pytest
@@ -101,6 +102,23 @@ def _attached(data: bytes):
     return out
 
 
+def _page_annots(data: bytes):
+    """[[annotation, ...] per page] the PDF ends with, found from its catalog."""
+    import re
+    obj = _objects(data)
+    trailer = data[data.rindex(b"trailer"):]
+    catalog = obj(int(re.search(rb"/Root (\d+) 0 R", trailer).group(1)))
+    pages = obj(int(re.search(rb"/Pages (\d+) 0 R", catalog).group(1)))
+    out = []
+    for kid in re.findall(rb"(\d+) 0 R", re.search(rb"/Kids\s*\[([^\]]*)\]", pages).group(1)):
+        page = obj(int(kid))
+        m = re.search(rb"/Annots (\d+) 0 R", page)
+        arr = obj(int(m.group(1))) if m else (
+            re.search(rb"/Annots\s*\[(.*?)\]", page, re.S) or [b"", b""])[1]
+        out.append([obj(int(n)) for n in re.findall(rb"(\d+) 0 R", arr)])
+    return out
+
+
 def _notes_field(data: bytes):
     """The notes field the PDF ends with, checked as a reader finds it: through the
     catalog's form and page 1."""
@@ -151,6 +169,12 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
     for name in tree.groups:
         assert f"<h2>{name}</h2>" in page
     assert not (tmp_path / "r_3d.html").exists()
+    # Linked from the top and from each group, each link with a paperclip beside it.
+    assert "<b>3D Results View:</b>" in html
+    assert html.count(pdf.file_link("r_3d.html")) == len(tree.groups) + 1
+    annots = [a for page in _page_annots(data) for a in page]
+    assert sum(b"exportDataObject" in a for a in annots) == len(tree.groups) + 1
+    assert sum(b"/Subtype /FileAttachment" in a for a in annots) == len(tree.groups) + 1
     # The User notes: a box after every result, with a fillable field over it.
     assert html.rindex("<h2") == html.index("<h2 id='user-notes'")
     assert "Click in the box" not in html
@@ -264,7 +288,9 @@ def test_another_reader_fills_the_notes_and_keeps_them(dc, tmp_path):
     reader = pypdf.PdfReader(path, strict=True)
     assert list(reader.get_fields()) == ["User notes"]
     writer = pypdf.PdfWriter(clone_from=reader)
-    writer.update_page_form_field_values(writer.pages[0], {"User notes": "Checked (A.B.)"})
+    page, = [p for p in writer.pages if "/Annots" in p and any(
+        a.get_object().get("/T") == "User notes" for a in p["/Annots"])]   # the last page
+    writer.update_page_form_field_values(page, {"User notes": "Checked (A.B.)"})
     writer.write(tmp_path / "filled.pdf")
     filled = pypdf.PdfReader(tmp_path / "filled.pdf").get_fields()
     assert filled["User notes"]["/V"] == "Checked (A.B.)"
@@ -302,6 +328,53 @@ def test_files_go_in_with_the_notes_field(tmp_path):
     assert got["a.txt"] == b"x" * 5000 and got["b _.html"] == "<p>ü</p>".encode()
     assert pdf._pdf_text("b é.html") in data             # the whole name, for the viewer
     assert b"/Subtype /text#2Fhtml" in data and b"/Subtype /text#2Fplain" in data
+
+
+def test_a_link_opens_its_attachment(tmp_path):
+    """A link to an attached file runs Acrobat's JavaScript to open it, with a paperclip
+    beside it, on the same page, holding the file, for viewers without that."""
+    box = f"<table class='notes'><tr><td>{pdf.NOTES_MARKER}</td></tr></table>"
+    html = (f"<p>3D: <a href='{pdf.file_link('v.html')}'>v.html</a></p>"
+            + "<p>line</p>" * 80 + f"<p>again <a href='{pdf.file_link('v.html')}'>v.html</a></p>"
+            f"<p><a href='{pdf.file_link('gone.html')}'>not attached</a></p>" + box)
+    path = pdf.write_pdf(html, tmp_path / "r.pdf",
+                         attachments=[("v.html", b"<p>3D</p>", "views")])
+    data = path.read_bytes()
+    assert _attached(data) == {"v.html": b"<p>3D</p>"}
+    _notes_field(data)
+    pages = _page_annots(data)
+    assert len(pages) > 1
+    for page in pages[0], pages[-1]:
+        link, = [a for a in page if b"exportDataObject" in a]
+        assert b'cName: "v.html"' in link and b"nLaunch: 2" in link
+        assert b"/URI" not in link
+        clip, = [a for a in page if b"/Subtype /FileAttachment" in a]
+        assert b"/Name /Paperclip" in clip and b"/AP << /N " in clip
+        spec = int(re.search(rb"/FS (\d+) 0 R", clip).group(1))
+        assert b"(v.html)" in _objects(data)(spec)
+        lx0, ly0, lx1, ly1 = _rect(link)
+        cx0, cy0, cx1, cy1 = _rect(clip)
+        assert cx0 == pytest.approx(lx1 + pdf.CLIP_GAP_PT, abs=0.01)
+        assert cy0 < (ly0 + ly1) / 2 < cy1                     # beside it, on its line
+    # A link to a file not attached is left as Qt wrote it.
+    assert sum(b"gone.html" in a for page in pages for a in page) == 1
+
+
+def test_links_open_the_files_beside_where_they_cannot_go_in(tmp_path, monkeypatch):
+    def broken(*a):
+        raise ValueError("odd PDF")
+
+    monkeypatch.setattr(pdf, "attach_files", broken)
+    html = f"<p><a href='{pdf.file_link('r_3d.html')}'>r_3d.html</a></p>"
+    data = pdf.write_pdf(html, tmp_path / "r.pdf",
+                         attachments=[("r_3d.html", b"<html>3D</html>", "views")]).read_bytes()
+    link, = [a for page in _page_annots(data) for a in page if b"/Subtype /Link" in a]
+    assert b"/S /Launch /F (r_3d.html)" in link and b"/URI" not in link
+    assert (tmp_path / "r_3d.html").is_file()
+
+
+def _rect(annot: bytes):
+    return [float(x) for x in re.search(rb"/Rect \[([^\]]+)\]", annot).group(1).split()]
 
 
 @pytest.mark.parametrize("names", ["", "/Names 5 0 R"])

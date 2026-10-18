@@ -411,6 +411,14 @@ def views_name(path: Path) -> str:
     return f"{Path(path).stem}_3d.html"
 
 
+def _views_link(path: Path) -> str:
+    """A PDF report's link to its attached 3D views; nothing may follow it on its line,
+    where the paperclip goes."""
+    from kipi.core.pdf import file_link
+    name = views_name(path)
+    return f"<a href='{_e(file_link(name))}'>{_e(name)}</a>"
+
+
 def views_page(title: str, meta: str, views: List[tuple]) -> bytes:
     """The 3D views of a PDF report, as a page of their own: ``views`` are (group name,
     Plotly HTML) pairs."""
@@ -467,11 +475,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
     if pdf and tree.groups:
-        parts.append(f"<p class='note'>The interactive 3D view of each net group is in "
-                     f"<b>{_e(views_name(path))}</b>, a web page attached to this PDF: open "
-                     "it from your PDF viewer's attachments panel (the paperclip) and it "
-                     "opens in your web browser. Where a viewer cannot open attachments, save "
-                     "it from there, or with a tool that extracts PDF attachments.</p>")
+        parts.append(f"<p><b>3D Results View:</b> {_views_link(path)}</p>")
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -626,8 +630,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         parts.append(f"<p>{role}; nets: {_e(', '.join(g.nets))}.</p>")
         if pdf:
             views.append((name, _plotly_3d(scene, snap, f"plot{gi}")))
-            parts.append(f"<p class='note'>Interactive 3D view: in the attached "
-                         f"{_e(views_name(path))}.</p>")
+            parts.append(f"<p class='note'>Interactive 3D view: {_views_link(path)}</p>")
         else:
             parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
             parts.append(f"<p class='note'>{_e(VIEW_NOTE)}</p>")

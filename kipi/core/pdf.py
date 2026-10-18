@@ -14,7 +14,10 @@ fail, the PDF keeps the empty box, to write in on paper.
 
 Files can go in the PDF as well (#133): the DC report's interactive 3D views, as a web page
 of their own that PDF viewers list as an attachment. They are added the same way, and
-where that fails they are written beside the PDF instead.
+where that fails they are written beside the PDF instead. A link to :func:`file_link` in
+the HTML opens the attached file: Qt writes it as a link, which is made to open the file
+(Acrobat's JavaScript, run by Acrobat, Foxit and PDF-XChange), with a paperclip beside it
+that opens the file in viewers without that (Firefox, Okular).
 
 A heading the page ends under starts the next page instead, with what it heads.
 
@@ -42,6 +45,9 @@ NOTES_IMAGE = "kipi-notes-box"
 NOTES_HEIGHT_PT = 110                    # about eight lines at 10 pt
 NOTES_INSET_PT = 2                       # the field inside the box's border
 NOTES_FONT_PT = 10
+FILE_LINK = "kipi-attachment:"           # an <a href> to an attached file, by its name
+CLIP_W_PT, CLIP_H_PT = 9, 15             # the paperclip beside such a link
+CLIP_GAP_PT = 3
 # What Qt's rich text understands of the reports' style.
 CSS = """
 body { font-family: "Segoe UI", Helvetica, Arial, sans-serif; color: #222; font-size: 9pt; }
@@ -57,6 +63,7 @@ th { background-color: #f0f0f0; }
 .note { color: #666; font-size: 8pt; }
 table.maps td { border: none; padding: 2px; }
 table.notes td { border: 1px solid #999; text-align: left; }
+a { color: #1a5fb4; text-decoration: underline; }
 """
 # Qt sizes a table to its contents; the full page width spreads a wide one's columns out
 # instead of breaking their words.
@@ -105,7 +112,17 @@ def write_pdf(html: str, path, title: str = "",
                     path.with_name(name).write_bytes(content)
                 except OSError as e:
                     log.warning("Could not save %s: %s", name, e)
+            try:
+                link_files_beside(path)
+            except Exception as e:  # noqa: BLE001 - the links stay, opening nothing
+                log.warning("The PDF report's links to %s open nothing: %s",
+                            ", ".join(a[0] for a in attachments), e)
     return path
+
+
+def file_link(name: str) -> str:
+    """The href of a link to the attached file ``name``."""
+    return FILE_LINK + name
 
 
 def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
@@ -338,6 +355,87 @@ class _Update:
         self.path.write_bytes(bytes(out))
 
 
+def _pages(u: _Update, catalog: bytes) -> List[int]:
+    """The page objects, in order, of a flat page tree."""
+    pages = int(re.search(rb"/Pages (\d+) 0 R", catalog).group(1))
+    kids = re.search(rb"/Kids\s*\[(.*?)\]", u.body(pages), re.S)
+    return [int(k) for k in re.findall(rb"(\d+) 0 R", kids.group(1))]
+
+
+def _annots(u: _Update, page_obj: int) -> List[int]:
+    """The annotations on a page."""
+    page_dict = u.body(page_obj)
+    m = re.search(rb"/Annots\s+(\d+) 0 R", page_dict)
+    arr = u.body(int(m.group(1))) if m else (
+        re.search(rb"/Annots\s*\[(.*?)\]", page_dict, re.S) or [b"", b""])[1]
+    return [int(k) for k in re.findall(rb"(\d+) 0 R", arr)]
+
+
+def _add_annots(u: _Update, page_obj: int, new: List[int]) -> None:
+    """Put the annotations ``new`` on a page."""
+    refs = b" ".join(f"{n} 0 R".encode() for n in new)
+    page_dict = u.body(page_obj)
+    annots = re.search(rb"/Annots\s+(\d+) 0 R", page_dict)
+    if annots:                                    # Qt: an array object of its own
+        arr = u.body(int(annots.group(1)))
+        u.put(int(annots.group(1)), arr[:arr.rindex(b"]")] + b" " + refs + b"]")
+    elif b"/Annots" in page_dict:
+        u.put(page_obj, re.sub(rb"/Annots\s*\[", b"/Annots [" + refs + b" ", page_dict,
+                               count=1))
+    else:
+        u.put(page_obj, page_dict[:page_dict.rindex(b">>")] + b"/Annots [" + refs + b"]\n>>")
+
+
+def _file_links(u: _Update, catalog: bytes):
+    """(page, link annotation, file name, its rectangle) for each of Qt's links to
+    :func:`file_link`."""
+    out = []
+    for page_obj in _pages(u, catalog):
+        for n in _annots(u, page_obj):
+            body = u.body(n)
+            m = re.search(rb"/URI\s*\(" + re.escape(FILE_LINK.encode()) + rb"([^)]*)\)", body)
+            if m and b"/Link" in body:
+                rect = re.search(rb"/Rect\s*\[([^\]]*)\]", body).group(1)
+                out.append((page_obj, n, m.group(1).decode("latin-1"),
+                            [float(x) for x in rect.split()]))
+    return out
+
+
+def _rect(r) -> bytes:
+    return ("/Rect [" + " ".join(f"{x:.2f}" for x in r) + "]").encode()
+
+
+def _paperclip(u: _Update) -> int:
+    """The appearance of the paperclip beside a link to a file: one stroked wire."""
+    ap = u.new()
+
+    def up(x0, x1, y):                            # a half circle over (x0, y) to (x1, y)
+        h = (x1 - x0) * 2 / 3
+        return f"{x0} {y + h:.2f} {x1} {y + h:.2f} {x1} {y} c "
+
+    def down(x0, x1, y):
+        h = (x0 - x1) * 2 / 3
+        return f"{x0} {y - h:.2f} {x1} {y - h:.2f} {x1} {y} c "
+
+    path = ("0.10 0.37 0.71 RG 1.1 w 1 J 1 j 4.5 5.5 m 4.5 11.5 l " + up(4.5, 6.5, 11.5)
+            + "6.5 3.5 l " + down(6.5, 2.5, 3.5) + "2.5 12 l " + up(2.5, 8.5, 12)
+            + "8.5 6 l S").encode()
+    u.put(ap, f"<< /Type /XObject /Subtype /Form /BBox [0 0 {CLIP_W_PT} {CLIP_H_PT}] "
+              f"/Length {len(path)} >>\nstream\n".encode() + path + b"\nendstream")
+    return ap
+
+
+def link_files_beside(path) -> None:
+    """Make the PDF's links to :func:`file_link` open the files of those names beside it
+    (where they could not be attached)."""
+    u = _Update(path)
+    for _page, n, name, rect in _file_links(u, u.body(u.root)):
+        u.put(n, b"<< /Type /Annot /Subtype /Link " + _rect(rect) + b" /Border [0 0 0] "
+                 b"/A << /S /Launch /F " + _pdf_string(name) + b" >> >>")
+    if u.objects:
+        u.write()
+
+
 def add_text_field(path, page: int, rect: tuple, name: str) -> None:
     """Add a multi-line text field over ``rect`` (PDF points, x0 y0 x1 y1) on ``page`` of
     the PDF at ``path``, as an incremental update. For a file as Qt writes it: a classic
@@ -347,26 +445,15 @@ def add_text_field(path, page: int, rect: tuple, name: str) -> None:
     catalog = u.body(root)
     if b"/AcroForm" in catalog:
         raise ValueError("the PDF has a form already")
-    pages = int(re.search(rb"/Pages (\d+) 0 R", catalog).group(1))
-    kids = re.search(rb"/Kids\s*\[(.*?)\]", u.body(pages), re.S)
-    refs = [int(k) for k in re.findall(rb"(\d+) 0 R", kids.group(1))]
+    refs = _pages(u, catalog)
     page_obj = refs[page]
-    page_dict = u.body(page_obj)
-    if not re.search(rb"/Type\s*/Page\b", page_dict):
+    if not re.search(rb"/Type\s*/Page\b", u.body(page_obj)):
         raise ValueError("nested page tree")
 
     field, font, appearance = u.new(), u.new(), u.new()
     ref = f"{field} 0 R".encode()
     x0, y0, x1, y1 = rect
-    annots = re.search(rb"/Annots\s+(\d+) 0 R", page_dict)
-    if annots:                                    # Qt: an array object of its own
-        arr = u.body(int(annots.group(1)))
-        u.put(int(annots.group(1)), arr[:arr.rindex(b"]")] + b" " + ref + b"]")
-    elif b"/Annots" in page_dict:
-        page_dict = re.sub(rb"/Annots\s*\[", b"/Annots [" + ref + b" ", page_dict, count=1)
-        u.put(page_obj, page_dict)
-    else:
-        u.put(page_obj, page_dict[:page_dict.rindex(b">>")] + b"/Annots [" + ref + b"]\n>>")
+    _add_annots(u, page_obj, [field])
     da = f"/Helv {NOTES_FONT_PT} Tf 0 g".encode()
     u.put(root, catalog[:catalog.rindex(b">>")]
           + b"/AcroForm << /Fields [" + ref + b"] /NeedAppearances true /DA ("
@@ -404,6 +491,7 @@ def attach_files(path, files: Sequence[Tuple[str, bytes, str]]) -> None:
         raise ValueError("the PDF has a page mode already")
     when = _dt.datetime.now().strftime("D:%Y%m%d%H%M%S")
     entries = []
+    specs = {}
     for name, content, desc in files:
         mime = (mimetypes.guess_type(name)[0] or "application/octet-stream").replace("/", "#2F")
         plain = name.encode("ascii", "replace").decode().replace("?", "_")  # /UF has it all
@@ -416,6 +504,7 @@ def attach_files(path, files: Sequence[Tuple[str, bytes, str]]) -> None:
               + b" /Desc " + _pdf_text(desc) + f" /EF << /F {stream} 0 R /UF {stream} 0 R >>"
               .encode() + b" /AFRelationship /Supplement >>")
         entries.append((_pdf_string(plain), f" {spec} 0 R".encode()))
+        specs[name] = (plain, spec, desc)
     tree = b"<< /Names [" + b" ".join(k + v for k, v in sorted(entries)) + b"] >>"  # by name
     names = re.search(rb"/Names\s+(\d+) 0 R", catalog)
     if names:                                     # Qt: a dictionary object of its own
@@ -432,4 +521,26 @@ def attach_files(path, files: Sequence[Tuple[str, bytes, str]]) -> None:
         u.put(n, b"<< /EmbeddedFiles " + tree + b" >>")
         extra = f"/Names {n} 0 R ".encode()
     u.put(u.root, catalog[:catalog.rindex(b">>")] + extra + b"/PageMode /UseAttachments\n>>")
+    # Links to the files: opened by Acrobat's JavaScript (saved to a temporary file and
+    # opened, as the attachments panel does), with a paperclip after each, which viewers
+    # without it open the file from.
+    clip, clips = None, {}
+    for page_obj, n, name, (x0, y0, x1, y1) in _file_links(u, catalog):
+        if name not in specs:
+            continue
+        plain, spec, desc = specs[name]
+        js = f'this.exportDataObject({{cName: "{plain}", nLaunch: 2}});'
+        u.put(n, b"<< /Type /Annot /Subtype /Link " + _rect((x0, y0, x1, y1))
+                 + b" /Border [0 0 0] /A << /S /JavaScript /JS " + _pdf_string(js) + b" >> >>")
+        clip = clip or _paperclip(u)
+        mid = (y0 + y1) / 2
+        a = u.new()
+        u.put(a, b"<< /Type /Annot /Subtype /FileAttachment "
+                 + _rect((x1 + CLIP_GAP_PT, mid - CLIP_H_PT / 2, x1 + CLIP_GAP_PT + CLIP_W_PT,
+                          mid + CLIP_H_PT / 2))
+                 + f" /FS {spec} 0 R /Name /Paperclip /AP << /N {clip} 0 R >> ".encode()
+                 + b"/Contents " + _pdf_text(f"{name}: {desc}") + b" >>")
+        clips.setdefault(page_obj, []).append(a)
+    for page_obj, new in clips.items():
+        _add_annots(u, page_obj, new)
     u.write()
