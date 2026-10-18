@@ -216,7 +216,8 @@ def _remove_pending(parent) -> None:
 def _off_unless_chosen() -> None:
     """While PARDISO is turned off but still there, keep KiPI from using it."""
     import os
-    if _settings().value(CHOICE_KEY) == "off" and installed()             and not os.environ.get("KIPI_DIRECT_SOLVER"):
+    if _settings().value(CHOICE_KEY) == "off" and installed() \
+            and not os.environ.get("KIPI_DIRECT_SOLVER"):
         os.environ["KIPI_DIRECT_SOLVER"] = "superlu"
 
 

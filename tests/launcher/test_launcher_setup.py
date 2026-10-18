@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -244,7 +244,10 @@ def started(tmp_path, monkeypatch):
     """The launcher with a scratch home, a stand-in setup and no KiPI started."""
     monkeypatch.setenv("KIPI_HOME", str(tmp_path / "KiPI"))
     monkeypatch.delenv("KICAD_API_SOCKET", raising=False)
-    got = {"launched": [], "performed": [], "answers": ["n", "y"], "out": []}
+    got = {"launched": [], "performed": [], "answers": ["n", "y"], "out": [], "icon": []}
+    from kipi.launcher import shortcut              # never a real KiPI.lnk in the repo
+    monkeypatch.setattr(shortcut, "keep_folder_icon",
+                        lambda root=None, stamp=None: got["icon"].append(stamp))
     monkeypatch.setattr(launcher.system, "find_python", lambda commands=None: (PY, []))
     monkeypatch.setattr(launcher.system, "pardiso_supported", lambda: (True, ""))
     monkeypatch.setattr(launcher.deps, "make_plan",
@@ -420,12 +423,68 @@ def test_a_linux_menu_entry(tmp_path, monkeypatch):
     text = path.read_text()
     assert f'Exec="{sys.executable}" "{Path("/opt/KiPI/kipi_launcher.py")}" %f' in text
     assert "Name=KiPI" in text and "Terminal=false" in text
+    assert "StartupWMClass=KiPI" in text                # groups with the launcher's window
 
 
-def test_macos_says_how_to_start_kipi_instead():
+def test_a_macos_app_that_runs_the_launcher(tmp_path):
+    """#127: an app with the KiPI icon in ~/Applications, instead of a Python file."""
+    from kipi.launcher import shortcut
+    path = shortcut.create("darwin", home=tmp_path)
+    assert path == tmp_path / "Applications" / "KiPI.app"
+    contents = path / "Contents"
+    plist = (contents / "Info.plist").read_text()
+    assert "<string>KiPI</string>" in plist and "<key>CFBundleIconFile</key>" in plist
+    script = (contents / "MacOS" / "KiPI").read_text()
+    assert script.startswith("#!/bin/sh\nexec ") and "kipi_launcher.pyw" in script
+    assert sys.executable in script
+    if sys.platform != "win32":
+        assert os.access(contents / "MacOS" / "KiPI", os.X_OK)
+    icns = (contents / "Resources" / "kipi.icns").read_bytes()
+    png = (paths.KIPI_ROOT / "resources" / "kipi_256.png").read_bytes()
+    assert icns[:4] == b"icns" and int.from_bytes(icns[4:8], "big") == len(icns)
+    assert icns[8:12] == b"ic08" and icns[16:] == png
+
+
+def test_the_mac_script_quotes_paths_with_spaces_and_quotes():
+    from kipi.launcher import shortcut
+    text = shortcut.mac_script("/opt/my python/bin/python3", PurePosixPath("/Users/a/it's KiPI"))
+    assert "exec '/opt/my python/bin/python3' '/Users/a/it'\\''s KiPI/kipi_launcher.pyw'" \
+        in text
+
+
+def test_other_platforms_say_how_to_start_kipi_instead():
     from kipi.launcher import shortcut
     with pytest.raises(shortcut.ShortcutError, match="kipi_launcher.py"):
-        shortcut.create("darwin")
+        shortcut.create("freebsd14")
+
+
+def test_every_start_keeps_the_folder_shortcut(started, tmp_path):
+    assert launcher.main(["--console"]) == 0
+    assert started["icon"] == [tmp_path / "KiPI" / "folder-shortcut.txt"]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows shortcut")
+def test_a_kipi_icon_in_the_kipi_folder(tmp_path, monkeypatch):
+    """#127: PowerShell for real, in a scratch copy of the folder; made once, not every start."""
+    from kipi.launcher import shortcut
+    root, stamp = tmp_path / "KiPI folder", tmp_path / "data" / "stamp.txt"
+    root.mkdir()
+    (root / "desktop.ini").write_text("[.ShellClassInfo]\nIconResource=resources\\kipi.ico,0\n")
+    shortcut.keep_folder_icon(root, stamp)
+    lnk = root / "KiPI.lnk"
+    assert lnk.is_file() and stamp.is_file()
+    from kipi.launcher import appid
+    assert appid.read_file_property(lnk, appid.PKEY_ID) == appid.APP_ID
+    import ctypes
+    attrs = ctypes.windll.kernel32.GetFileAttributesW(str(root / "desktop.ini"))
+    assert attrs & 0x6 == 0x6                               # hidden and system
+    assert ctypes.windll.kernel32.GetFileAttributesW(str(root)) & 0x5   # read-only or system
+    monkeypatch.setattr(shortcut, "_write_lnk", lambda *a: pytest.fail("made again"))
+    shortcut.keep_folder_icon(root, stamp)
+    lnk.unlink()                                            # gone: made again, quietly
+    monkeypatch.setattr(shortcut, "_write_lnk",
+                        lambda *a: (_ for _ in ()).throw(shortcut.ShortcutError("no")))
+    shortcut.keep_folder_icon(root, stamp)                  # never raises
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Start menu")

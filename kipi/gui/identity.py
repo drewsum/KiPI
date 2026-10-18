@@ -11,7 +11,8 @@ interpreter's name and icon. Each platform needs its own fix:
 * macOS: the app name in the menu bar comes from the main bundle's CFBundleName, set
   before Qt starts; the Dock icon comes from the application icon.
 * Linux: the window icon and WM_CLASS / Wayland app id ("kipi") name the window; GNOME on
-  Wayland also needs a matching .desktop file, so a hidden one is written for the user.
+  Wayland also needs a matching .desktop file, so a hidden one is written for the user,
+  unless the launcher's menu entry is there already.
 
 Everything here is best effort: a failure is logged and never stops KiPI starting.
 """
@@ -24,10 +25,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from kipi.launcher.appid import (
-    APP_ID, PKEY_ID, PKEY_PREVENT_PINNING, PKEY_RELAUNCH_COMMAND, PKEY_RELAUNCH_DISPLAY_NAME,
-    PKEY_RELAUNCH_ICON, set_properties, win_property_store,
-)
+from kipi.launcher.appid import APP_ID, set_process_app_id  # noqa: F401 - tests use APP_ID
+from kipi.launcher.appid import tag_window as tag_windows_button
 
 log = logging.getLogger(__name__)
 
@@ -98,10 +97,7 @@ def _try(fn, *args) -> None:
 # --- Windows --------------------------------------------------------------------------
 
 def _set_windows_app_id() -> None:
-    import ctypes
-    hr = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(ctypes.c_wchar_p(APP_ID))
-    if hr != 0:
-        raise OSError(f"SetCurrentProcessExplicitAppUserModelID failed: {hr:#x}")
+    set_process_app_id()
 
 
 def relaunch_command() -> Optional[str]:
@@ -117,17 +113,7 @@ def relaunch_command() -> Optional[str]:
 
 
 def _set_windows_relaunch_properties(hwnd: int) -> None:
-    ico = RESOURCES / "kipi.ico"
-    command = relaunch_command()
-    # PreventPinning has to be set before the ID. The display name and icon only count
-    # when a relaunch command is set too.
-    values = [(PKEY_PREVENT_PINNING, command is None)]
-    if command:
-        values += [(PKEY_RELAUNCH_COMMAND, command), (PKEY_RELAUNCH_DISPLAY_NAME, NAME)]
-        if ico.is_file():
-            values.append((PKEY_RELAUNCH_ICON, f"{ico},0"))
-    values.append((PKEY_ID, APP_ID))
-    set_properties(*win_property_store(hwnd), values)
+    tag_windows_button(hwnd, relaunch_command(), NAME, RESOURCES / "kipi.ico")
 
 
 # --- macOS ----------------------------------------------------------------------------
@@ -187,7 +173,10 @@ def _write_desktop_file() -> None:
     base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
     path = base / "applications" / f"{DESKTOP_NAME}.desktop"
     text = desktop_entry()
-    if path.is_file() and path.read_text(encoding="utf-8") == text:
-        return
+    if path.is_file():
+        old = path.read_text(encoding="utf-8")
+        # The launcher's menu entry (--create-shortcut) serves the window just as well.
+        if old == text or "kipi_launcher" in old:
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

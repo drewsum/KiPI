@@ -34,24 +34,64 @@ def _sharp_on_high_dpi() -> None:
             pass
 
 
+def _kipi_on_taskbar() -> None:
+    """Windows: KiPI's taskbar button and icon for this window, not Python's (#127)."""
+    if sys.platform == "win32":
+        try:
+            from kipi.launcher.appid import set_process_app_id
+            set_process_app_id()
+        except Exception:  # noqa: BLE001 - cosmetic
+            pass
+
+
 class TkUI:
     def __init__(self):
         _sharp_on_high_dpi()
-        self.root = tk.Tk()             # raises TclError with no display: the caller falls back
+        _kipi_on_taskbar()
+        # WM_CLASS ("kipi", "Kipi") names the window for Linux panels, which match it to
+        # kipi.desktop by name. Raises TclError with no display: the caller falls back.
+        self.root = tk.Tk(baseName="kipi", className="KiPI")
         self.root.title("KiPI setup")
         self.root.minsize(560, 0)
-        try:
-            icon = KIPI_ROOT / "resources" / "kipi_48.png"
-            self._icon = tk.PhotoImage(file=str(icon))
-            self.root.iconphoto(True, self._icon)
-        except (tk.TclError, OSError):
-            pass
+        self._set_icon()
+        self._tagged = False
         self.root.protocol("WM_DELETE_WINDOW", self._close_clicked)
         self._on_close = self.root.quit
         self.frame: Optional[ttk.Frame] = None
         self.root.withdraw()
 
     # --- window plumbing ----------------------------------------------------------------
+    def _set_icon(self) -> None:
+        """The KiPI icon in the title bar, taskbar, panel or Dock (macOS takes it from
+        here too). Windows gets the .ico, with sizes made for it."""
+        res = KIPI_ROOT / "resources"
+        try:
+            self._icons = [tk.PhotoImage(file=str(res / n))
+                           for n in ("kipi_256.png", "kipi_48.png") if (res / n).is_file()]
+            if self._icons:
+                self.root.iconphoto(True, *self._icons)
+        except (tk.TclError, OSError):
+            pass
+        if sys.platform == "win32" and (res / "kipi.ico").is_file():
+            try:
+                self.root.iconbitmap(default=str(res / "kipi.ico"))
+            except tk.TclError:
+                pass
+
+    def _tag_taskbar_button(self) -> None:
+        """Windows: pinning the setup window's button pins the launcher, as KiPI's does."""
+        self._tagged = True
+        if sys.platform != "win32":
+            return
+        try:
+            from kipi.launcher.appid import tag_window
+            from kipi.launcher.shortcut import windows_target
+            target, args = windows_target(KIPI_ROOT)
+            tag_window(int(self.root.wm_frame(), 16), f'"{target}" {args}', "KiPI",
+                       KIPI_ROOT / "resources" / "kipi.ico")
+        except Exception:  # noqa: BLE001 - cosmetic
+            pass
+
     def _page(self) -> ttk.Frame:
         """A fresh, empty page in the window."""
         if self.frame is not None:
@@ -69,6 +109,8 @@ class TkUI:
         self.root.geometry(f"+{max(0, x)}+{max(0, y)}")
         self.root.lift()
         self.root.update()
+        if not self._tagged:
+            self._tag_taskbar_button()
 
     def _close_clicked(self) -> None:
         self._on_close()

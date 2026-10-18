@@ -114,6 +114,12 @@ KiPI runs two ways, from the same folder:
    python kipi_launcher.py                      # or: python kipi_launcher.py <board>.kipi.json.gz
    ```
 
+   After the first start there is a **KiPI** shortcut with KiPI's icon next to it on
+   Windows, to start it from then on (and the folder shows the KiPI icon). A Python file
+   cannot have an icon of its own, so on Linux and macOS run
+   `python3 kipi_launcher.py --create-shortcut` once: it adds KiPI to the applications
+   menu (Linux) or makes `~/Applications/KiPI.app` (macOS), with the KiPI icon.
+
 The first start sets up KiPI. The setup window lists every package KiPI will install with
 its size, checked with PyPI for your computer (about 254 MB to download and 810 MB on disk
 on Windows), and nothing is installed until you click **Install**. On Windows and Linux
@@ -165,7 +171,7 @@ python kipi_launcher.py --setup              # the setup window again (add or re
 python kipi_launcher.py --add-pardiso        # or --remove-pardiso, without questions
 python kipi_launcher.py --repair             # reinstall everything from scratch
 python kipi_launcher.py --reset              # delete KiPI's environment
-python kipi_launcher.py --create-shortcut    # add KiPI to the Start menu / applications menu
+python kipi_launcher.py --create-shortcut    # add KiPI to the Start menu / app menu / ~/Applications
 ```
 
 If setup fails, the launcher says why; everything the installer printed is in the `logs`
