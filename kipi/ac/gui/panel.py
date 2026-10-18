@@ -99,7 +99,8 @@ class CapEditor(_Editor):
         # the field's element picked out, the DC bias curve and aging.
         art = {self.cap: ("cap_model", "c"), self.esl: ("cap_model", "l"),
                self.esr: ("cap_model", "r"), self.rated: ("dc_bias", "rated"),
-               self.kept: ("dc_bias", "kept"), self.aging: ("aging", "aging")}
+               self.kept: ("dc_bias", "kept"), self.aging: ("aging", "aging"),
+               self.dielectric: ("dielectric", "x7r")}
         for w, text in (
                 (self.name, "A name for this model, e.g. the part number or value"),
                 (self.cap, "Capacitance of one part, at no DC bias. For a ceramic (X5R, "
