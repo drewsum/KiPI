@@ -92,7 +92,7 @@ def test_thermal_results_tab(app, hot):
     from kipi.dc.pi.tree import solve_tree
     snap, s, tree = hot
     panel = PIPanel()
-    panel.set_board(snap, s, "test")
+    panel.set_board(snap, s)
     tabs = panel.res_tabs
     titles = lambda: [tabs.tabText(i) for i in range(tabs.count())]
     assert "Thermal" not in titles()

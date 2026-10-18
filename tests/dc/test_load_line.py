@@ -111,7 +111,7 @@ def test_editor_and_notes_show_the_load_line():
     _app = QApplication.instance() or QApplication([])  # noqa: F841
     s = setup("ldo")
     panel = PIPanel()
-    panel.set_board(board(), s, "test")
+    panel.set_board(board(), s)
     panel.vrm_list.lst.setCurrentRow(1)
     ed = panel.vrm_list.editor
     assert ed.load_line.text() == "none"
@@ -133,7 +133,7 @@ def test_editor_input_range_is_one_row_in_volts_or_percent():
     _app = QApplication.instance() or QApplication([])  # noqa: F841
     s = setup("smps")
     panel = PIPanel()
-    panel.set_board(board(), s, "test")
+    panel.set_board(board(), s)
     panel.vrm_list.lst.setCurrentRow(1)
     ed = panel.vrm_list.editor
     assert ed.form.labelForField(ed.vin_row).text() == "Input range"
@@ -168,7 +168,7 @@ def test_editor_vrm_dc_accuracy_is_min_and_max_in_percent_or_volts():
     _app = QApplication.instance() or QApplication([])  # noqa: F841
     s = setup("ldo")
     panel = PIPanel()
-    panel.set_board(board(), s, "test")
+    panel.set_board(board(), s)
     panel.vrm_list.lst.setCurrentRow(1)                            # the 3.3 V LDO
     ed = panel.vrm_list.editor
     v = s.vrms[1]
@@ -201,7 +201,7 @@ def test_editor_load_tolerance_is_min_and_max_in_percent_or_volts():
     _app = QApplication.instance() or QApplication([])  # noqa: F841
     s = setup("ldo")                                   # U2: ±1 % of U1's 3.3 V
     panel = PIPanel()
-    panel.set_board(board(), s, "test")
+    panel.set_board(board(), s)
     panel.load_list.lst.setCurrentRow(0)
     ed = panel.load_list.editor
     u2 = s.loads[0]

@@ -514,8 +514,6 @@ class MainWindow(QMainWindow):
         # that pick is how the results come back.
         self.solve_panel.cmb_group.activated.connect(self._group_activated)
         self.solve_panel.show_geometry.connect(self._show_geometry)
-        self.solve_panel.save_requested.connect(self._save_setup)
-        self.solve_panel.import_requested.connect(self.import_pdn)
         self.solve_panel.arrows_toggled.connect(self.viewer.set_arrows_visible)
         self.solve_panel.via_selected.connect(self._show_via)
         # Each panel marks its own selection, while its mode is showing.
@@ -528,7 +526,6 @@ class MainWindow(QMainWindow):
         self._setup_path = None
         self._saved = None              # the setup as its file has it
         self.ac_panel = ACPanel(self)
-        self.ac_panel.save_requested.connect(self._save_setup)
         self.ac_panel.solve_requested.connect(self.run_ac_solve)
         self.ac_panel.result_selected.connect(self._show_ac_result)
         self.ac_panel.results_saved.connect(lambda path: self.log(f"Saved AC results to {path}"))
@@ -538,14 +535,24 @@ class MainWindow(QMainWindow):
             panel.setup_changed.connect(self._model_timer.start)
             panel.setup_changed.connect(self._refresh_power_tree)
             panel.setup_changed.connect(self._show_unsaved)
-        # One setup dock; it shows the panel of the current analysis mode.
+        # One setup dock: the setup file's bar, then the panel of the current analysis mode.
+        # The bar stays outside the scrolling, so Import and Save are always in view.
+        from kipi.gui.setup_file_bar import SetupFileBar
+        self.setup_bar = SetupFileBar(self)
+        self.setup_bar.import_requested.connect(self.import_pdn)
+        self.setup_bar.save_requested.connect(self._save_setup)
         self.setup_stack = QStackedWidget(self)
         self.setup_stack.addWidget(self.solve_panel)
         self.setup_stack.addWidget(self.ac_panel)
+        holder = QWidget(self)
+        col = QVBoxLayout(holder)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.addWidget(self.setup_bar)
+        col.addWidget(_scrolling(self.setup_stack), 1)
         dock = QDockWidget(MODES[0][2], self)
         dock.setObjectName("solve_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        dock.setWidget(_scrolling(self.setup_stack))
+        dock.setWidget(holder)
         self.solve_dock = dock
         dock.setMinimumWidth(420)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
@@ -1209,8 +1216,9 @@ class MainWindow(QMainWindow):
                 label = f"Could not read {found.name}; starting empty"
         self._setup_path = path
         self._saved = copy.deepcopy(setup)
-        self.solve_panel.set_board(snap, setup, label)
-        self.ac_panel.set_board(snap, setup, label)
+        self.solve_panel.set_board(snap, setup)
+        self.ac_panel.set_board(snap, setup)
+        self.setup_bar.set_label(label)
         self._refresh_power_tree()
         self.plot.clear()
         self.board_map.clear()
@@ -1252,11 +1260,10 @@ class MainWindow(QMainWindow):
         self._set_checked(lambda it: it.checkState() == Qt.Checked
                           or it.data(Qt.UserRole) in used)
         label = f"Imported from {name}"
-        self.solve_panel.set_board(self.snapshot, setup, label)
-        self.ac_panel.set_board(self.snapshot, setup, label)
+        self.solve_panel.set_board(self.snapshot, setup)
+        self.ac_panel.set_board(self.snapshot, setup)
         self._refresh_power_tree()
-        self.solve_panel.lbl_file.setText(f"{label} - not saved")
-        self.ac_panel.set_label(f"{label} - not saved")
+        self.setup_bar.set_label(f"{label} - not saved")
         # Last in the Log, under the notes, so it is the line in view.
         self.log(f"== Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
                  + (f"; {len(notes)} note(s) above" if notes else "")
@@ -1274,8 +1281,7 @@ class MainWindow(QMainWindow):
             self._setup_path = self.solve_panel.setup.save(self._setup_path)
             self._saved = copy.deepcopy(self.solve_panel.setup)
             self._show_unsaved()
-            self.solve_panel.lbl_file.setText(f"Setup: {self._setup_path}")
-            self.ac_panel.set_label(f"Setup: {self._setup_path}")
+            self.setup_bar.set_label(f"Setup: {self._setup_path}")
             self.log(f"Saved PI setup to {self._setup_path}")
         except OSError as e:
             self.log(f"Could not save the setup: {e}", logging.WARNING)
@@ -1894,8 +1900,8 @@ class MainWindow(QMainWindow):
     def _unsaved(self) -> bool:
         if self.snapshot is None or self._saved is None:
             return False
-        now = self.solve_panel.setup
-        now.nets = self._checked_nets()
+        now = copy.copy(self.solve_panel.setup)       # compared, not changed: the net
+        now.nets = self._checked_nets()                # list may still be filling in
         saved = self._saved
         # An AC rail or ground left empty follows the VRM's; the AC panel filling it in
         # once the nets are known is not an edit.
@@ -1907,10 +1913,7 @@ class MainWindow(QMainWindow):
 
     def _show_unsaved(self):
         """Outline the Save buttons while the setup has changes not saved."""
-        from kipi.gui.save_button import mark_unsaved
-        unsaved = self._unsaved()
-        for panel in (self.solve_panel, self.ac_panel):
-            mark_unsaved(panel.btn_save, unsaved, panel.save_tip)
+        self.setup_bar.set_unsaved(self._unsaved())
 
     def _keep_or_drop_changes(self) -> bool:
         """The setup file is written only by Save. Before the setup is left (closing, or

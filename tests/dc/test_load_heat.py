@@ -119,7 +119,7 @@ def test_load_power_checkbox(qapp_offscreen):
     snap = board()
     s = setup("ldo", ground=True)
     panel = PIPanel()
-    panel.set_board(snap, s, "test")
+    panel.set_board(snap, s)
     box_ = panel.chk_load_power
     assert not box_.isChecked() and not box_.isEnabled()      # off, and thermal is off
     panel.chk_thermal.setChecked(True)
@@ -128,7 +128,7 @@ def test_load_power_checkbox(qapp_offscreen):
     assert s.thermal.load_power
     s2 = setup("ldo")
     s2.thermal.load_power = True
-    panel.set_board(snap, s2, "test")                           # a saved setup's choice shows
+    panel.set_board(snap, s2)                           # a saved setup's choice shows
     assert panel.chk_load_power.isChecked()
 
 

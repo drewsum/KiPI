@@ -51,7 +51,7 @@ def editor(app):
     from kipi.dc.pi.model import PISetup
     setup = PISetup()
     panel = ACPanel()
-    panel.set_board(_board(), setup, "test")
+    panel.set_board(_board(), setup)
     panel.set_nets(["+3V3", "GND"])
     panel.cap_list._add()
     yield setup, panel.cap_list.editor

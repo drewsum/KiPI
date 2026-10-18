@@ -110,7 +110,7 @@ def test_a_json_setup_is_read_with_a_warning_and_saved_as_yaml(app, tmp_path):
     w = _window(app, _board(tmp_path))
     assert w._checked_nets() == ["VIN"]
     assert "deprecated" in w.log_view.toPlainText()
-    assert "saved as multiphase.kipi-setup.yml" in w.solve_panel.lbl_file.text()
+    assert "saved as multiphase.kipi-setup.yml" in w.setup_bar.lbl_file.text()
     _tick(app, w, {"VIN", "VOUT"})
     w._save_setup()
     w.close()

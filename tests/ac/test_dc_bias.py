@@ -128,7 +128,7 @@ def panel():
     p = ACPanel()
     snap = plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0)),
                             ("C2", "100n 50V C0G", (30.0, 30.0))])
-    p.set_board(snap, PISetup(), "test")
+    p.set_board(snap, PISetup())
     p.set_nets(["+3V3", "GND"])
     yield p
     p.close()

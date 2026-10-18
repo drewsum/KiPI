@@ -122,7 +122,7 @@ def panel():
     app = QApplication.instance() or QApplication([])   # noqa: F841
     p = ACPanel()
     p.set_board(plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0)),
-                                 ("C2", "100p NP0", (30.0, 30.0))]), PISetup(), "test")
+                                 ("C2", "100p NP0", (30.0, 30.0))]), PISetup())
     p.set_nets(["+3V3", "GND"])
     yield p
     p.close()

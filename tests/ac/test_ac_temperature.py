@@ -123,7 +123,7 @@ def panel():
     from kipi.ac.gui.panel import ACPanel
     app = QApplication.instance() or QApplication([])   # noqa: F841
     p = ACPanel()
-    p.set_board(plane_pair(), PISetup(), "test")
+    p.set_board(plane_pair(), PISetup())
     yield p
     p.close()
 
@@ -136,7 +136,7 @@ def test_the_temperature_controls(panel):
     assert panel.spin_temp.isEnabled()
     setup = PISetup()
     setup.ac.temperature, setup.ac.temperature_c = "fixed", 90.0
-    panel.set_board(plane_pair(), setup, "test")                 # a setup read from a file
+    panel.set_board(plane_pair(), setup)                 # a setup read from a file
     assert panel.cmb_temp.currentData() == "fixed" and panel.spin_temp.value() == 90.0
 
 

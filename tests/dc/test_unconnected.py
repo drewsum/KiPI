@@ -121,7 +121,7 @@ def test_results_table_shows_a_disconnected_load(qapp):
     snap = island_board()
     tree = solve_tree(snap, s)
     panel = PIPanel()
-    panel.set_board(snap, s, "test")
+    panel.set_board(snap, s)
     panel.show_results(tree, next(iter(tree.groups)))
     t = panel.tbl_loads
     row = next(r for r in range(t.rowCount()) if t.item(r, 0).text() == "U3")

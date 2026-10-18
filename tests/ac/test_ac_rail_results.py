@@ -34,7 +34,7 @@ def panel(app):
     setup = plane_setup(snap)
     setup.vrms.append(Vrm("VRM2", PinRef("U1", "+3V3", ["1"]), 3.3))
     p = ACPanel()
-    p.set_board(snap, setup, "test")
+    p.set_board(snap, setup)
     p.set_nets(["+3V3", "GND"])
     shown = []
     p.result_selected.connect(shown.append)
@@ -96,7 +96,7 @@ def test_removed_rail_forgets_its_results(panel):
 def test_new_board_forgets_every_rail(panel):
     p = panel
     p.show_result(_result("VRM1", 0.001))
-    p.set_board(p.snapshot, p.setup, "again")
+    p.set_board(p.snapshot, p.setup)
     _rail(p, "VRM2")
     _rail(p, "VRM1")
     assert p.result is None

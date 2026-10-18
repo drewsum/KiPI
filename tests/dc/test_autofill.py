@@ -138,7 +138,7 @@ def app():
 def panel_for(snap, setup, nets):
     from kipi.dc.gui.pi_panel import PIPanel
     panel = PIPanel()
-    panel.set_board(snap, setup, "test")
+    panel.set_board(snap, setup)
     panel.set_nets(nets)
     return panel
 
@@ -361,7 +361,7 @@ def test_probe_takes_its_parts_ground(app):
     setup = PISetup()
     setup.loads.append(Load("U3", PinRef("U3", "VSNS"), 1.0))
     panel = ACPanel()
-    panel.set_board(board(ground="RTN"), setup, "test")
+    panel.set_board(board(ground="RTN"), setup)
     panel.set_nets(["VSNS", "+3V3", "RTN"])
     panel.probe_list._add()
     p, ed = setup.probes[0], panel.probe_list.editor

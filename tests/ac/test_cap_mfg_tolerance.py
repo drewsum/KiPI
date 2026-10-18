@@ -93,7 +93,7 @@ def panel():
     from kipi.ac.gui.panel import ACPanel
     app = QApplication.instance() or QApplication([])   # noqa: F841
     p = ACPanel()
-    p.set_board(plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0))]), PISetup(), "test")
+    p.set_board(plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0))]), PISetup())
     p.set_nets(["+3V3", "GND"])
     yield p
     p.close()
