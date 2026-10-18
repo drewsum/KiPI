@@ -32,7 +32,7 @@ def test_aging_is_logarithmic_in_hours():
 
 
 def test_aging_and_dc_bias_combine():
-    m = CapModel("X5R", 10e-6, dc_bias=True, rated_v=6.3, kept_at_rated_pct=40,
+    m = CapModel("X5R", 10e-6, rated_v=6.3, kept_at_rated_pct=40,
                  dielectric="X5R", aging_pct_per_decade=3.0)
     assert m.capacitance_at(6.3, 1e4) == pytest.approx(10e-6 * 0.97 * 0.4)
     assert m.capacitance_at(6.3) == pytest.approx(4e-6)
@@ -103,7 +103,7 @@ def test_solve_ages_only_models_with_a_dielectric(board, tmp_path):
 def test_solve_with_aging_and_dc_bias(board):
     setup = _setup(board, aging=True, aging_hours=1e4)
     m = setup.caps[0]
-    m.dc_bias, m.rated_v = True, 6.3
+    m.rated_v = 6.3
     v, c = solve_ac(board, setup, "VRM1", "GND").cap_bias["C1"]
     assert v == 3.3 and c == pytest.approx(m.capacitance_at(3.3) * 0.98)
     assert math.isclose(c, m.capacitance_at(3.3, 1e4))

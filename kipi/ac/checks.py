@@ -111,9 +111,6 @@ def validate_ac(setup: PISetup, vrm_name: str, gnd: str) -> List[str]:
                                         ("ESR", m.esr_ohm)) if not v > 0]
         if missing and m.refs:
             errors.append(f"Capacitor model {m.name}: enter its {', '.join(missing)}")
-        if m.dc_bias and m.refs and s.dc_bias and not (m.rated_v or 0) > 0:
-            errors.append(f"Capacitor model {m.name}: enter its voltage rating to estimate "
-                          "DC bias")
         for ref in m.refs:
             if ref in seen:
                 errors.append(f"{ref} is in two capacitor models ({seen[ref]}, {m.name})")

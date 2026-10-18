@@ -506,12 +506,11 @@ series links with DC mode (fields only DC mode uses are grayed out) and adds:
   The table shows each part's footprint, so 0402 and 0603 parts of one value can get
   different models. Enter only the part's own ESL: its mounting (pads,
   vias, planes) is simulated. **Important**: Ensure that capacitors of the same value in different case sizes are modelled independently, as no two capacitors are created the same.
-  **Estimate DC bias** derates a ceramic model (X5R, X7R…) by the DC voltage across each of
-  its parts: enter its **Voltage rating** and how much capacitance it **Keeps at rating**
+  A ceramic model (X5R, X7R…) with a **Voltage rating** is derated by the DC voltage across
+  each of its parts: enter the rating and how much capacitance it **Keeps at rating**
   (from the datasheet's DC bias curve; 40 % by default). The voltage is what the last DC
   solve found across each part, or else the rail's VRM set point. **Models from values**
-  reads the rating from values such as `10uF 6.3V X5R` and ticks the box for class II
-  dielectrics.
+  reads the rating from values such as `10uF 6.3V X5R` for class II dielectrics.
   A model's **Dielectric** (X7R, X5R, Y5V…) fills in its typical **Aging** rate, in % of
   capacitance lost per decade of hours (enter the datasheet's rate if it gives one), and
   gives its capacitance a typical temperature curve.

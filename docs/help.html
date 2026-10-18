@@ -1121,20 +1121,19 @@ are required.</p>
     among the capacitors that have none yet, named after the value, with the capacitance read
     from it, and the voltage rating when the value gives one (<code>10uF 6.3V X5R</code>).
     Enter ESL and ESR yourself.</td></tr>
-  <tr><td>Capacitance</td><td class="wrap">Per part, with no DC bias. For a ceramic, tick
-    <b>Estimate DC bias</b>, or enter the effective value at the rail's voltage if the
-    datasheet gives it.</td></tr>
+  <tr><td>Capacitance</td><td class="wrap">Per part, with no DC bias. For a ceramic, enter
+    its <b>Voltage rating</b> to estimate DC bias, or enter the effective value at the rail's
+    voltage if the datasheet gives it.</td></tr>
   <tr><td>ESL</td><td class="wrap">The part's own inductance (datasheet), not including
     mounting.</td></tr>
   <tr><td>ESR</td><td class="wrap">Per part.</td></tr>
-  <tr><td><b>Estimate DC bias</b></td><td class="wrap">Class II ceramics (X5R, X7R, X6S…) lose
-    capacitance with DC voltage. Ticked, each part's capacitance is derated by the DC voltage
-    across it: what the last DC solve found across its pads, or else the rail's VRM set
-    point. The Results notes and the HTML report give the voltages and the capacitance left.
-    <b>Models from values</b> ticks it for values naming a class II dielectric. Leave it
-    unticked for C0G, polymer and electrolytic parts.</td></tr>
-  <tr><td>Voltage rating</td><td class="wrap">The part's rated DC voltage, which the estimate
-    is scaled by. Needed when Estimate DC bias is ticked.</td></tr>
+  <tr><td>Voltage rating</td><td class="wrap">The part's rated DC voltage. Class II ceramics
+    (X5R, X7R, X6S…) lose capacitance with DC voltage; with a rating, each part's capacitance
+    is derated by the DC voltage across it: what the last DC solve found across its pads, or
+    else the rail's VRM set point. The Results notes and the HTML report give the voltages
+    and the capacitance left. <b>Models from values</b> fills it in for values naming a class
+    II dielectric. Leave it <b>not set</b> for polymer and electrolytic parts; a model with a
+    C0G dielectric is never derated.</td></tr>
   <tr><td>Dielectric</td><td class="wrap">The ceramic dielectric (C0G, X7R, X5R, Y5V…), for
     aging and temperature. Picking one fills in its typical aging rate, and with a
     <b>Temperature</b> in the Sweep tab the capacitance follows the dielectric's typical
@@ -1261,7 +1260,7 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
     <i>Every point</i> solves the copper at each sweep frequency: exact and slowest. Raise
     this if sharp plane resonances look under-resolved.</td></tr>
   <tr><td>Capacitor DC bias</td><td class="wrap">Ticked (the default), the capacitor models
-    with <b>Estimate DC bias</b> are derated by the DC voltage across each part. Untick it to
+    with a <b>Voltage rating</b> are derated by the DC voltage across each part. Untick it to
     solve with every model's capacitance as entered.</td></tr>
   <tr><td>Temperature</td><td class="wrap"><i>Not modeled</i> (the default): copper at 20 °C
     and capacitors at their rated values. <i>Fixed</i>: the whole board at <b>Board

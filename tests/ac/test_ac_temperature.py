@@ -34,7 +34,7 @@ def test_temperature_curves():
 
 
 def test_temperature_aging_and_bias_combine():
-    m = CapModel("X7R", 10e-6, dc_bias=True, rated_v=6.3, kept_at_rated_pct=40,
+    m = CapModel("X7R", 10e-6, rated_v=6.3, kept_at_rated_pct=40,
                  dielectric="X7R", aging_pct_per_decade=2.0)
     assert m.capacitance_at(6.3, 1e4, 125.0) == pytest.approx(10e-6 * 0.4 * 0.98 * 0.88)
 

@@ -116,8 +116,8 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
 - The VRM, load or series link selected in the setup is marked in amber in the 3D view.
   Clicking it in its list ticks **PI Models** and brings the view to it, and clicking a
   part's name (or dot) in 3D selects it in the setup (#96).
-- Capacitor **DC bias** (#74). A capacitor model can **Estimate DC bias**: with its
-  **Voltage rating** and the capacitance it **Keeps at rating** (40 % by default), each of
+- Capacitor **DC bias** (#74). A capacitor model with a **Voltage rating** is derated by
+  DC bias (not one with a C0G dielectric): with its rating and the capacitance it **Keeps at rating** (40 % by default), each of
   its parts is derated by the DC voltage across it, from the last DC solve or else the
   rail's VRM set point. **Capacitor DC bias** in the Sweep tab turns it off for every model.
   **Models from values** reads the rating from values like `10uF 6.3V X5R` and ticks the
@@ -151,6 +151,9 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   the tolerance (a menu when several VRMs drive it).
 
 ### Changed
+- A capacitor model no longer has an **Estimate DC bias** box: a **Voltage rating** turns
+  the DC bias estimate on. **Models from values** keeps the rating only for class II
+  ceramics (X5R, X7R…), and a C0G model is never derated.
 - A load's **tolerance has a separate min and max**, on one row like the VRM input range,
   each in % from the VRM set point (e.g. -3 % / +5 %) or in volts (e.g. 3.135 to 3.465 V),
   and either one optional. A load passes when every pin is within it. The results table,

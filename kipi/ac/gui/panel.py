@@ -75,11 +75,9 @@ class CapEditor(_Editor):
         f.addRow("Capacitance", self.cap)
         f.addRow("ESL", self.esl)
         f.addRow("ESR", self.esr)
-        self.chk_bias = QCheckBox("Estimate DC bias")
         self.rated = _spin(0, 1e4, 0, 3, " V", 1)
         self.rated.setSpecialValueText("not set")
         self.kept = _spin(1, 100, 40, 1, " %", 5)
-        f.addRow(self.chk_bias)
         f.addRow("Voltage rating", self.rated)
         f.addRow("Kept at rating", self.kept)
         self.dielectric = QComboBox()
@@ -91,16 +89,16 @@ class CapEditor(_Editor):
         f.addRow("Aging", self.aging)
         for w, text in (
                 (self.name, "A name for this model, e.g. the part number or value"),
-                (self.cap, "Capacitance of one part, at no DC bias. Tick Estimate DC bias "
-                           "for a ceramic (X5R, X7R…), or enter the effective value at the "
-                           "rail's voltage if the datasheet gives it."),
-                (self.chk_bias, "Derate the capacitance by the DC voltage across each part, "
-                                "as class II ceramics (X5R, X7R…) lose capacitance with "
-                                "voltage. The voltage is the last DC solve's across the "
-                                "part, or else the rail's VRM set point. Leave unticked for "
-                                "C0G, polymer and electrolytic parts."),
-                (self.rated, "The part's DC voltage rating, which the DC bias estimate is "
-                             "scaled by"),
+                (self.cap, "Capacitance of one part, at no DC bias. For a ceramic (X5R, "
+                           "X7R…), enter its voltage rating to estimate DC bias, or enter "
+                           "the effective value at the rail's voltage if the datasheet "
+                           "gives it."),
+                (self.rated, "The part's DC voltage rating. With one, the capacitance is "
+                             "derated by the DC voltage across each part, as class II "
+                             "ceramics (X5R, X7R…) lose capacitance with voltage: the last "
+                             "DC solve's voltage across the part, or else the rail's VRM set "
+                             "point. Leave it 'not set' for polymer and electrolytic parts; "
+                             "a C0G dielectric is never derated."),
                 (self.kept, "How much of its capacitance the part keeps at its rated "
                             "voltage, from the datasheet's DC bias curve (typically 30 to "
                             "50 %; smaller cases lose more). The curve is shaped like a "
@@ -119,8 +117,7 @@ class CapEditor(_Editor):
                 (self.esr, "Equivalent series resistance of one part, from its datasheet")):
             tip(f, w, text)
         self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept)
-        self.chk_bias.toggled.connect(self._store)
-        self.chk_bias.toggled.connect(self.kept.setEnabled)
+        self.rated.valueChanged.connect(lambda v: self.kept.setEnabled(v > 0))
         self.dielectric.currentIndexChanged.connect(self._dielectric_changed)
         self._watch(self.aging)
 
@@ -186,10 +183,9 @@ class CapEditor(_Editor):
         self.cap.setValue(m.capacitance_f * 1e6)
         self.esl.setValue(m.esl_h * 1e9)
         self.esr.setValue(m.esr_ohm * 1e3)
-        self.chk_bias.setChecked(m.dc_bias)
         self.rated.setValue(m.rated_v or 0.0)
         self.kept.setValue(m.kept_at_rated_pct)
-        self.kept.setEnabled(m.dc_bias)
+        self.kept.setEnabled(bool(m.rated_v))
         i = self.dielectric.findData(m.dielectric)
         if i < 0:                                  # one KiPI does not list: keep it
             self.dielectric.addItem(m.dielectric, m.dielectric)
@@ -204,7 +200,6 @@ class CapEditor(_Editor):
         m.capacitance_f = self.cap.value() * 1e-6
         m.esl_h = self.esl.value() * 1e-9
         m.esr_ohm = self.esr.value() * 1e-3
-        m.dc_bias = self.chk_bias.isChecked()
         m.rated_v = self.rated.value() or None
         m.kept_at_rated_pct = self.kept.value()
         m.dielectric = self.dielectric.currentData() or ""
@@ -696,7 +691,7 @@ class ACPanel(QWidget):
         self.chk_bias = QCheckBox("Capacitor DC bias")
         self.chk_bias.setChecked(s.dc_bias)
         f.addRow(self.chk_bias)
-        tip(f, self.chk_bias, "Derate the capacitor models that have Estimate DC bias ticked, "
+        tip(f, self.chk_bias, "Derate the capacitor models that have a voltage rating "
                               "by the DC voltage across each part (from the last DC solve, "
                               "or else the rail's VRM set point). Untick to solve with every "
                               "model's capacitance as entered.")
@@ -1023,9 +1018,10 @@ class ACPanel(QWidget):
             farads = parse_capacitance(value) or 0.0
             rated = parse_voltage_rating(value)
             diel = parse_dielectric(value)
+            # A rating turns on the DC bias estimate: only for class II ceramics.
             self.setup.caps.append(CapModel(name, farads, 0.0, 0.0, refs,
-                                            dc_bias=rated is not None and is_class2(value),
-                                            rated_v=rated, dielectric=diel,
+                                            rated_v=rated if is_class2(value) else None,
+                                            dielectric=diel,
                                             aging_pct_per_decade=AGING_PCT_PER_DECADE.get(
                                                 diel, 0.0)))
         self.cap_list.reload()
@@ -1042,7 +1038,7 @@ class ACPanel(QWidget):
     def _describe_cap(m: CapModel) -> str:
         vals = (f"{_fmt_farads(m.capacitance_f)}, {m.esl_h * 1e9:g} nH, {m.esr_ohm * 1e3:g} mΩ"
                 if m.capacitance_f and m.esl_h and m.esr_ohm else "values needed")
-        bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias and m.rated_v else ""
+        bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias else ""
         bias += f", {m.dielectric}" if m.dielectric else ""
         return (f"{m.name}: {vals}{bias} "
                 f"({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})")

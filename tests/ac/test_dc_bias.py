@@ -21,16 +21,16 @@ SMALL = dict(max_edge_mm=2.0, min_edge_mm=0.15, grading=0.6)
 
 
 def test_derating_curve():
-    m = CapModel("X5R", 10e-6, 0.5e-9, 5e-3, dc_bias=True, rated_v=6.3, kept_at_rated_pct=40)
+    m = CapModel("X5R", 10e-6, 0.5e-9, 5e-3, rated_v=6.3, kept_at_rated_pct=40)
     assert m.capacitance_at(0.0) == 10e-6
     assert m.capacitance_at(6.3) == pytest.approx(4e-6)
     assert m.capacitance_at(-6.3) == pytest.approx(4e-6)
     cs = [m.capacitance_at(v) for v in (1.0, 2.0, 3.3, 5.0, 10.0)]
     assert all(a > b for a, b in zip(cs, cs[1:]))            # less the higher the bias
     assert 4e-6 < m.capacitance_at(3.3) < 10e-6
-    for off in (CapModel("C0G", 1e-9, dc_bias=False, rated_v=50),
-                CapModel("no rating", 1e-6, dc_bias=True)):
-        assert off.capacitance_at(5.0) == off.capacitance_f
+    for off in (CapModel("C0G", 1e-9, rated_v=50, dielectric="C0G"),
+                CapModel("no rating", 1e-6)):
+        assert not off.dc_bias and off.capacitance_at(5.0) == off.capacitance_f
 
 
 @pytest.mark.parametrize("value, volts, class2", [
@@ -45,32 +45,34 @@ def test_rating_and_dielectric_from_the_value(value, volts, class2):
 
 def test_bias_fields_are_saved_and_old_setups_load():
     setup = PISetup()
-    setup.caps.append(CapModel("A", 1e-6, 1e-9, 1e-3, ["C1"], True, 16.0, 35.0))
+    setup.caps.append(CapModel("A", 1e-6, 1e-9, 1e-3, ["C1"], 16.0, 35.0))
     setup.ac.dc_bias = False
     back = PISetup.from_dict(setup.to_dict())
     assert back.caps[0].dc_bias and back.caps[0].rated_v == 16.0
     assert back.caps[0].kept_at_rated_pct == 35.0 and back.ac.dc_bias is False
     d = setup.to_dict()
-    for k in ("dc_bias", "rated_v", "kept_at_rated_pct"):
+    for k in ("rated_v", "kept_at_rated_pct"):
         del d["caps"][0][k]
     del d["ac"]["dc_bias"]
     old = PISetup.from_dict(d)
     assert not old.caps[0].dc_bias and old.caps[0].rated_v is None and old.ac.dc_bias
+    d = setup.to_dict()
+    d["caps"][0]["dc_bias"] = False                # the old tick box: the rating decides
+    assert PISetup.from_dict(d).caps[0].dc_bias
 
 
-def test_a_model_estimating_bias_needs_a_rating():
+def test_a_model_without_a_rating_is_not_derated():
     snap = plane_pair(caps=[("C1", "10u", (25.0, 25.0))])
     setup = _setup(snap, rated_v=None)
-    assert any("voltage rating" in e for e in validate_ac(setup, "VRM1", "GND"))
-    setup.ac.dc_bias = False                       # switched off: the rating isn't needed
     assert not any("voltage rating" in e for e in validate_ac(setup, "VRM1", "GND"))
+    assert not setup.caps[0].dc_bias
 
 
 def _setup(snap, rated_v=6.3, **ac):
     setup = plane_setup(snap, f_start_hz=1e4, f_stop_hz=1e8, points_per_decade=5,
                         field_points_per_decade=2, **SMALL, **ac)
-    setup.caps.append(CapModel("10u", 10e-6, 0.5e-9, 5e-3, ["C1"], dc_bias=True,
-                               rated_v=rated_v, kept_at_rated_pct=40.0))
+    setup.caps.append(CapModel("10u", 10e-6, 0.5e-9, 5e-3, ["C1"], rated_v=rated_v,
+                               kept_at_rated_pct=40.0))
     return setup
 
 
@@ -137,15 +139,16 @@ def test_models_from_values_read_the_rating(panel):
     by_name = {m.name: m for m in panel.setup.caps}
     x5r, c0g = by_name["10uF 6.3V X5R"], by_name["100n 50V C0G"]
     assert x5r.dc_bias and x5r.rated_v == 6.3
-    assert not c0g.dc_bias and c0g.rated_v == 50.0
+    assert not c0g.dc_bias and c0g.rated_v is None
 
 
 def test_the_editor_and_the_sweep_switch(panel):
     panel.cap_list._add()
     ed = panel.cap_list.editor
     m = panel.setup.caps[-1]
-    ed.rated.setValue(16.0)
-    ed.chk_bias.setChecked(True)
+    assert not hasattr(ed, "chk_bias") and not ed.kept.isEnabled()
+    ed.rated.setValue(16.0)                         # a rating is all it takes
+    assert ed.kept.isEnabled()
     ed.kept.setValue(30.0)
     assert m.dc_bias and m.rated_v == 16.0 and m.kept_at_rated_pct == 30.0
     assert "DC bias 16 V rated" in panel._describe_cap(m)

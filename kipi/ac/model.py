@@ -56,22 +56,27 @@ class CapModel:
     esl_h: float = 0.0
     esr_ohm: float = 0.0
     refs: List[str] = field(default_factory=list)   # footprint references using this model
-    # DC bias (#74): derate the capacitance by the DC voltage across each part.
-    dc_bias: bool = False
+    # DC bias (#74): with a rating, the capacitance is derated by the DC voltage across
+    # each part (not for a C0G dielectric).
     rated_v: Optional[float] = None     # DC voltage rating
     kept_at_rated_pct: float = DEFAULT_KEPT_AT_RATED_PCT   # capacitance left at rated_v
     # Aging (#109): the dielectric ("" when not set: not aged) and its aging rate.
     dielectric: str = ""
     aging_pct_per_decade: float = 0.0
 
+    @property
+    def dc_bias(self) -> bool:
+        """Whether the model is derated by DC bias: it has a voltage rating."""
+        return bool(self.rated_v and self.rated_v > 0) and self.dielectric != "C0G"
+
     def capacitance_at(self, volts: float, hours: Optional[float] = None,
                        temp_c: Optional[float] = None) -> float:
         """One part's capacitance with ``volts`` DC across it after ``hours`` of operation
         (None: not aged) at ``temp_c`` (None: 25 °C): derated when the model estimates DC
-        bias and has a rating, and aged and moved with temperature when it has a
+        bias (has a rating), and aged and moved with temperature when it has a
         dielectric; else its capacitance as entered."""
         c = self.capacitance_f * self.aged(hours) * self.at_temperature(temp_c)
-        if not (self.dc_bias and self.rated_v and self.rated_v > 0 and volts):
+        if not (self.dc_bias and volts):
             return c
         kept = min(max(self.kept_at_rated_pct, 1.0), 100.0) / 100.0
         k = 1.0 / kept - 1.0

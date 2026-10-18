@@ -152,7 +152,7 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
         m = port.element
         if port.kind != "cap":
             continue
-        biased = s.dc_bias and m.dc_bias and bool(m.rated_v)
+        biased = s.dc_bias and m.dc_bias
         aged = m.aged(hours) < 1.0
         t = temps.get(port.name)
         warmed = t is not None and m.at_temperature(t) != 1.0
