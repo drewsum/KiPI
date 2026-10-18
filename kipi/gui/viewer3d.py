@@ -95,7 +95,8 @@ def _bar_title_actor(title: str):
     prop.SetJustificationToRight()
     prop.SetVerticalJustificationToBottom()
     actor.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-    actor.SetPosition(_BAR_RIGHT, _BAR_Y + _BAR_HEIGHT - 0.012)   # just over the bar
+    # actor.SetPosition(_BAR_RIGHT, _BAR_Y + _BAR_HEIGHT - 0.012)   # just over the bar
+    actor.SetPosition(_BAR_RIGHT, _BAR_Y + _BAR_HEIGHT)   # just over the bar
     actor.SetPickable(False)
     return actor
 
@@ -918,6 +919,8 @@ class Viewer3D(QWidget):
             bar = bars[title]
             bar.SetTextPositionToPrecedeScalarBar()
             bar.SetVerticalTitleSeparation(12)
+            # Control the spacing between tick labels and the color bar
+            bar.SetTextPad(-2)
             # pyvista keys the bar by its title, so the title is kept but not drawn.
             bar.GetTitleTextProperty().SetOpacity(0.0)
             actor = _bar_title_actor(title)
