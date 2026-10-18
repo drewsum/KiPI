@@ -37,7 +37,8 @@ _MODEL_SPECULAR = 0.3
 _PI_COLORS = {"vrm": ((0.25, 1.0, 0.35), (0.10, 0.45, 0.16)),
               "load": ((0.10, 0.95, 1.0), (0.04, 0.38, 0.45)),
               "link": ((1.0, 0.35, 1.0), (0.48, 0.14, 0.48)),
-              "cap": ((0.95, 0.95, 0.95), (0.32, 0.33, 0.37))}
+              "cap": ((0.95, 0.95, 0.95), (0.32, 0.33, 0.37)),
+              "probe": ((0.70, 0.55, 1.0), (0.33, 0.20, 0.62))}
 _PI_POINT_PX = {"power": 14, "ground": 9}       # rail pins, ground pins
 _PI_LABEL_LIFT_MM = 1.0
 # The part selected in the setup (#96): larger dots and its name, in amber.
@@ -430,9 +431,11 @@ class Viewer3D(QWidget):
 
     # ------------------------------------------------------- PI Models markers
     def set_pi_markers(self, markers):
-        """Mark the DC setup's VRMs, loads, series links and capacitors: a point on each of
-        their pads and the part's name (see :func:`kipi.dc.viz.markers.pi_markers`). Shown over
-        the copper only, not over results."""
+        """Mark the setup's parts: a point on each of their pads and the part's name. DC
+        mode's are its VRMs, loads, series links and capacitors
+        (:func:`kipi.dc.viz.markers.pi_markers`), AC mode's its VRMs, series links, probes
+        and capacitors (:func:`kipi.ac.viz.markers.ac_markers`). Shown over the copper
+        only, not over results."""
         self._pi_markers = list(markers)
         self._draw_pi_markers()
         self._apply_visibility()

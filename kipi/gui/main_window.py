@@ -390,14 +390,16 @@ class MainWindow(QMainWindow):
             feats.addLayout(r)
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate",
-                     "pi": "Mark the DC setup's VRMs (green), loads (cyan), series "
-                           "links (magenta) and capacitors with a model (white) on the "
-                           "nets shown: a dot on each of their "
-                           "pads, larger on the rail and smaller on ground, and the "
-                           "part's name. In DC mode, over the copper only, not over "
-                           "results. Off to start with. The part selected in the setup "
-                           "is marked in amber, and clicking a part's name selects it "
-                           "there.",
+                     "pi": "Mark the parts of the current analysis on the nets shown: a "
+                           "dot on each of their pads, larger on the rail and smaller on "
+                           "ground, and the part's name. In DC mode its VRMs (green), "
+                           "loads (cyan), series links (magenta) and capacitors with a "
+                           "model (white); in AC mode its VRMs, series links, probes "
+                           "(violet) and capacitors, the probes in place of the loads, "
+                           "which no impedance sweep uses. Over the copper only, not over "
+                           "results. Off to start with. In DC mode the part selected in "
+                           "the setup is marked in amber, and clicking a part's name "
+                           "selects it there.",
                      "models": "Show the 3D models of every part on the board. KiCad's "
                                "kicad-cli reads them from the saved board file. The copper "
                                "and result views each remember this; over results they "
@@ -985,14 +987,22 @@ class MainWindow(QMainWindow):
 
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):
-        """Mark the DC setup's VRMs, loads, series links and capacitors on the ticked nets
-        (#84). The
-        markers belong to DC mode: AC mode's view has none."""
+        """Mark the parts the current mode solves, on the ticked nets (#84): DC mode's VRMs,
+        loads, series links and capacitors, or, in AC mode, the VRMs, series links, probes
+        and capacitors of an impedance sweep."""
         if self._closed:
             return
-        from kipi.dc.viz.markers import pi_markers
-        markers = (pi_markers(self.snapshot, self.solve_panel.setup, self._checked_set())
-                   if self.mode == "dc" and self.snapshot is not None else [])
+        if self.snapshot is None:
+            self.viewer.set_pi_markers([])
+            return
+        # Both panels edit the one setup, which holds each mode's parts.
+        setup, nets = self.solve_panel.setup, self._checked_set()
+        if self.mode == "dc":
+            from kipi.dc.viz.markers import pi_markers
+            markers = pi_markers(self.snapshot, setup, nets)
+        else:
+            from kipi.ac.viz.markers import ac_markers
+            markers = ac_markers(self.snapshot, setup, nets)
         self.viewer.set_pi_markers(markers)
 
     def _pi_part_selected(self, kind: str, name: str, by_user: bool):

@@ -29,7 +29,7 @@ analysis modes:
 
 New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
 **F1**) walks through every button, the workflows and what the results mean. Every
-control in KiPI has a tooltip.
+control in KiPI has a tooltip. The **[Solver Guide](docs/how-it-works.html)** goes into detail on the engineering analysis this tool computes and how it does it.
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
@@ -248,10 +248,11 @@ Below that:
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
   shows or hides vias, pads, the board, **PI Models** and part **3D Models**. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
-* **PI Models** Marks the setup's VRMs, loads, series links and capacitors with a
-  model: a dot on each of their pads on the nets shown, with the part's name. It starts unticked; over results the
-  marks are hidden. Clicking a VRM, load or series link in the setup lists marks it in amber and brings the view to
-  it; clicking a part's name (or dot) in 3D selects it in the setup.
+* **PI Models** Marks the parts of the current analysis: a dot on each of their pads on the nets shown, with the
+  part's name. In DC mode its VRMs, loads, series links and capacitors with a model; in AC mode its VRMs, series
+  links, probes and capacitors, the probes in place of the loads, which no impedance sweep uses. It starts unticked;
+  over results the marks are hidden. In DC mode, clicking a VRM, load or series link in the setup lists marks it in
+  amber and brings the view to it; clicking a part's name (or dot) in 3D selects it in the setup.
 * **3D Models** shows the KiCad 3D models of every part on the board. When viewing results they start hidden; tick
   **3D Models** to show them on results. The geometry and result views each remember their own setting.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or

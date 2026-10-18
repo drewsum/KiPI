@@ -114,6 +114,25 @@ def test_markers_are_drawn_over_the_copper_only():
     assert v._pi_actors == {} and props.GetNumberOfItems() == 0
 
 
+def test_ac_mode_draws_its_probes_in_their_own_color():
+    from kipi.ac.model import Probe
+    from kipi.ac.viz.markers import ac_markers
+    from kipi.gui.viewer3d import _PI_COLORS
+    v = _view()
+    setup = two_phase(ground=True)
+    setup.probes.append(Probe("U2 core", PinRef("U2", "VOUT", ["1"]),
+                              PinRef("U2", "GND", ["2"])))
+    v.set_pi_markers(ac_markers(board(), setup, {"VOUT", "GND"}))
+    assert set(v._pi_actors) == {"pi_vrm_power", "pi_vrm_ground", "pi_vrm_labels",
+                                "pi_probe_power", "pi_probe_ground",
+                                "pi_probe_labels"} == _visible(v)
+    dots = v._pi_actors["pi_probe_power"]
+    np.testing.assert_allclose(dots.GetProperty().GetColor(), _PI_COLORS["probe"][0])
+    assert _PI_COLORS["probe"] not in [c for k, c in _PI_COLORS.items() if k != "probe"]
+    v.set_feature_visible("pi", False)
+    assert _visible(v) == set()
+
+
 def test_markers_follow_the_z_scale():
     v = _view()
     v.set_pi_markers(pi_markers(board(), two_phase(), {"VOUT"}))
@@ -183,8 +202,10 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_the_window_marks_the_dc_setup_in_dc_mode(app, no_3d, monkeypatch):
+def test_the_window_marks_each_modes_parts(app, no_3d, monkeypatch):
+    """DC mode marks the loads; AC mode marks the probes in their place (#84)."""
     from qtpy.QtWidgets import QCheckBox
+    from kipi.ac.model import Probe
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
     labels = [cb.text() for cb in w.findChildren(QCheckBox)]
@@ -192,15 +213,20 @@ def test_the_window_marks_the_dc_setup_in_dc_mode(app, no_3d, monkeypatch):
     assert not w.chk_pi.isChecked() and w.chk_models.text() == "3D Models"
     w.snapshot = board()
     w.solve_panel.setup = two_phase()
+    w.solve_panel.setup.probes.append(Probe("U2 core", PinRef("U2", "VOUT", ["1"]),
+                                            PinRef("U2", "GND", ["2"])))
     monkeypatch.setattr(w, "_checked_set", lambda: frozenset({"VOUT"}))
     drawn = []
     w.viewer.set_pi_markers = lambda markers: drawn.append([m.name for m in markers])
     w._sync_pi_markers()
     assert drawn[-1] == ["VRM U1", "Load U2"]
     w.set_mode("ac")
-    assert drawn[-1] == []
+    assert drawn[-1] == ["VRM U1", "Probe U2 core"]
     w.set_mode("dc")
     assert drawn[-1] == ["VRM U1", "Load U2"]
+    w.snapshot = None                                     # no board: nothing to mark
+    w._sync_pi_markers()
+    assert drawn[-1] == []
     w.close()
 
 

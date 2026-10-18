@@ -9,6 +9,10 @@ milestones rather than versions that were ever set.
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
 
 ### Added
+- **PI Models** marks AC mode's parts too, having marked only DC mode's: the setup's VRMs,
+  series links, probes (violet) and capacitors with a model, on their pads on the nets
+  shown. The probes take the DC loads' place, the loads having no part in an impedance
+  sweep. The tick, the dot sizes and the names work as in DC mode.
 - Capacitor models have an optional **Manufacturing tolerance** (% of nominal), and the
   Sweep tab a **Capacitor manufacturing tolerance** tick that solves every model which has
   one at the low end of it: the tolerance is subtracted, so a ±10 % model keeps 90 % of its
