@@ -209,10 +209,19 @@ def _via_type(node: Node) -> str:
     return "through"
 
 
-def _via_filled(node: Node) -> Optional[bool]:
-    """``(filling yes|no)`` (KiCad 9+); None when the file leaves it to the design rules."""
+#: The last board format before KiCad 10, which added "filling from the design rules".
+KICAD9_FORMAT = 20241229
+
+
+def _via_filled(node: Node, file_format: int) -> Optional[bool]:
+    """``(filling yes|no)``. With no filling, a KiCad 9 file means unfilled; a KiCad 10
+    file writes ``(filling no)`` for an unfilled via, so there no filling means the design
+    rules decide (None). This is what the KiCad API reports for the same vias (checked on
+    KiCad 9 and 10 boards: yoshi, CM4S, PSU-EXT, MiniLabs)."""
     v = value(node, "filling", None)
-    return None if v is None else v not in ("no", "false")
+    if v is None:
+        return False if file_format <= KICAD9_FORMAT else None
+    return v not in ("no", "false")
 
 
 def _via_pads(node: Node, span: List[int], size: float) -> Dict[int, float]:
@@ -237,7 +246,8 @@ def _via_pads(node: Node, span: List[int], size: float) -> Dict[int, float]:
     return out
 
 
-def read_vias(root: Node, stackup: Stackup, nets: Nets) -> Tuple[List[Via], List[Via]]:
+def read_vias(root: Node, stackup: Stackup, nets: Nets,
+              file_format: int) -> Tuple[List[Via], List[Via]]:
     """The vias, and those set to remove their pads on unconnected layers."""
     all_cu = [c.id for c in stackup.copper]
     vias, trim = [], []
@@ -251,7 +261,7 @@ def read_vias(root: Node, stackup: Stackup, nets: Nets) -> Tuple[List[Via], List
         pads = _via_pads(node, span, size)
         via = Via(id=uuid(node), net=nets.of(node), position=xy(child(node, "at")),
                   drill_mm=drill, diameter_mm=max(pads.values(), default=size), layers=span,
-                  via_type=_via_type(node), filled=_via_filled(node), pad_mm=pads)
+                  via_type=_via_type(node), filled=_via_filled(node, file_format), pad_mm=pads)
         vias.append(via)
         if flag(node, "remove_unused_layers"):
             trim.append((via, flag(node, "keep_end_layers")))
@@ -534,7 +544,7 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
     progress.check_cancel()
 
     with progress.timed("Reading vias"):
-        vias, via_trim = read_vias(root, stackup, nets)
+        vias, via_trim = read_vias(root, stackup, nets, version)
         progress.info(f"{len(vias)} vias ({sum(1 for v in vias if v.filled)} filled)")
     progress.check_cancel()
 

@@ -18,10 +18,17 @@ def via(extra: str = ""):
                  '(net "N") (uuid "v1"))')
 
 
-@pytest.mark.parametrize("text,expect", [("(filling yes)", True), ("(filling no)", False),
-                                         ("", None)])
-def test_via_filling(text, expect):
-    assert _via_filled(via(text)) is expect
+KICAD9, KICAD10 = 20241229, 20260206
+
+
+@pytest.mark.parametrize("text,fmt,expect", [
+    ("(filling yes)", KICAD10, True), ("(filling no)", KICAD10, False),
+    ("", KICAD10, None),            # KiCad 10 writes (filling no); none = design rules
+    ("(filling yes)", KICAD9, True),
+    ("", KICAD9, False),            # KiCad 9 omits (filling no): the API says unfilled
+])
+def test_via_filling(text, fmt, expect):
+    assert _via_filled(via(text), fmt) is expect
 
 
 def test_normal_padstack_is_one_pad_on_every_layer():
