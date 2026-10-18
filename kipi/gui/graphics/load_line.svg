@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="160" viewBox="0 0 280 160">
+  <rect x="0" y="0" width="280" height="160" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <path d="M40,14 V124 H266" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <text x="34" y="24" fill="{muted}" text-anchor="end">V</text>
+    <text x="153" y="146" fill="{muted}" text-anchor="middle">output current</text>
+    <path d="M40,34 H256" stroke="{muted}" stroke-width="1.2" stroke-dasharray="4,3"/>
+    <text x="256" y="28" fill="{muted}" text-anchor="end">set voltage</text>
+    <path d="M40,34 L256,98" stroke="{ll}" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M200,34 V81" stroke="{fg}" stroke-width="1.4"/>
+    <path d="M196,38 l4,-4 l4,4 M196,77 l4,4 l4,-4" stroke="{fg}" stroke-width="1.4" fill="none"/>
+    <text x="206" y="62" fill="{fg}">droop = I · R</text>
+    <text x="52" y="92" fill="{ll}">slope: the load line R</text>
+    <path d="M200,124 v-4" stroke="{muted}" stroke-width="1.2"/>
+    <text x="200" y="136" fill="{muted}" text-anchor="middle" font-size="10">I</text>
+  </g>
+</svg>

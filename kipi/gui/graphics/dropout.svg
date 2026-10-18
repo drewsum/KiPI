@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="170" viewBox="0 0 280 170">
+  <rect x="0" y="0" width="280" height="170" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <rect x="41" y="14" width="109" height="109" fill="{warn}" opacity="0.6"/>
+    <text x="46" y="28" fill="{fg}">out of</text>
+    <text x="46" y="42" fill="{fg}">regulation</text>
+    <path d="M40,14 V124 H266" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <text x="34" y="24" fill="{muted}" text-anchor="end">V</text>
+    <text x="153" y="164" fill="{muted}" text-anchor="middle">input voltage</text>
+    <path d="M40,124 L130,34" stroke="{muted}" stroke-width="1.2" stroke-dasharray="4,3"/>
+    <text x="46" y="70" fill="{muted}">out = in</text>
+    <path d="M60,124 L150,40 H256" stroke="{fg}" stroke-width="2.4" fill="none" stroke-linejoin="round"/>
+    <text x="256" y="32" fill="{fg}" text-anchor="end">set voltage</text>
+    <path d="M124,52 H150" stroke="{dropout}" stroke-width="2"/>
+    <path d="M128,48 l-4,4 l4,4 M146,48 l4,4 l-4,4" stroke="{dropout}" stroke-width="2" fill="none"/>
+    <text x="156" y="62" fill="{dropout}">dropout</text>
+    <path d="M168,138 H246 M168,133 v10 M246,133 v10" stroke="{range}" stroke-width="2" fill="none"/>
+    <text x="207" y="152" fill="{range}" text-anchor="middle">input range</text>
+  </g>
+</svg>

@@ -41,6 +41,7 @@ from kipi.dc.pi.model import (
 )
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
+from kipi.gui.tooltip_art import art_tip
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS, scale_decimals
@@ -463,6 +464,15 @@ class VrmEditor(_Editor):
         f.addRow("Ground pins", self.ground)
         f.addRow("Sense pins", self.sense)
         f.addRow("Ground sense pins", self.ground_sense)
+        # Drawings under the tooltips (#116), the field's part picked out.
+        art = {self.kind: ("vrm_types",), self.eff: ("vrm_types", "smps"),
+               self.iq: ("vrm_types", "ldo"), self.load_line: ("load_line", "ll"),
+               self.dropout: ("dropout", "dropout"), self.vin_row: ("dropout", "range"),
+               self.vin_row.min: ("dropout", "range"), self.vin_row.max: ("dropout", "range"),
+               self.acc_row: ("accuracy", "min", "max"), self.acc_row.min: ("accuracy", "min"),
+               self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
+               self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
+               self.ground_sense: ("remote_sense", "gsense")}
         for w, text in (
                 (self.name, "A name for this regulator, used in the results tables"),
                 (self.kind, "Source: an ideal supply with no input (a connector, a bench "
@@ -531,7 +541,7 @@ class VrmEditor(_Editor):
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
                                     "set voltage is held relative to these pins instead of "
                                     "0 V (needs ground pins)")):
-            tip(f, w, text)
+            tip(f, w, art_tip(text, *art[w]) if w in art else text)
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.bandwidth)
         self.vin_row.changed.connect(self._store)

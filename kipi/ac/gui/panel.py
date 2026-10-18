@@ -41,6 +41,7 @@ from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
 )
+from kipi.gui.tooltip_art import art_tip
 
 TITLE = "AC setup"
 
@@ -94,6 +95,11 @@ class CapEditor(_Editor):
         self.mfg_tol = _spin(0, 100, 0, 1, " %", 1)
         self.mfg_tol.setSpecialValueText("not set")
         f.addRow("Manufacturing tolerance", self.mfg_tol)
+        # Drawings under the tooltips (#116): the series model and its impedance curve with
+        # the field's element picked out, the DC bias curve and aging.
+        art = {self.cap: ("cap_model", "c"), self.esl: ("cap_model", "l"),
+               self.esr: ("cap_model", "r"), self.rated: ("dc_bias", "rated"),
+               self.kept: ("dc_bias", "kept"), self.aging: ("aging", "aging")}
         for w, text in (
                 (self.name, "A name for this model, e.g. the part number or value"),
                 (self.cap, "Capacitance of one part, at no DC bias. For a ceramic (X5R, "
@@ -127,7 +133,7 @@ class CapEditor(_Editor):
                 (self.esl, "Equivalent series inductance of the part itself (from its "
                            "datasheet); the board's mounting inductance is simulated"),
                 (self.esr, "Equivalent series resistance of one part, from its datasheet")):
-            tip(f, w, text)
+            tip(f, w, art_tip(text, *art[w]) if w in art else text)
         self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept,
                     self.mfg_tol)
         self.rated.valueChanged.connect(lambda v: self.kept.setEnabled(v > 0))

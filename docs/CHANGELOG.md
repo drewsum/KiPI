@@ -7,6 +7,14 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Drawings in tooltips** (#116). Tooltips on fields that are easier to see than to read
+  show a small drawing under their text, coloured to match the window (on a background a
+  shade darker), with the field's part picked out: the capacitor model (C, ESL and ESR in
+  series and the impedance curve each sets), the DC bias curve (voltage rating, kept at
+  rating) and aging; the VRM types, load line, dropout and input range, DC accuracy,
+  control loop bandwidth, phases and remote sense. The drawings live in one folder,
+  `kipi/gui/graphics/`, as SVG templates; where Qt cannot render them, the tooltip is its
+  text alone.
 - **Stackup cross-section** (#104). Beside the Stackup window's table, the layers are drawn
   to scale, top to bottom: copper in its layer colour, dielectrics in a colour for their
   material, each labelled with its thickness in the window's unit. The drawing follows
