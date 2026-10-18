@@ -252,7 +252,7 @@ class AboutDialog(QDialog):
         text.setText(
             f"<h2 style='margin-bottom:0'>{NAME}</h2>"
             f"<p style='margin-top:2px'>Version {__version__}</p>"
-            f"<p>{html.escape(DESCRIPTION)}<br>"
+            f"<p style='margin-top:4px; margin-bottom:4px;'>{html.escape(DESCRIPTION)}<br><br>"
             f"<a href='{html.escape(solver_guide_url())}'>Solver Guide</a>: what power "
             f"integrity analysis is and how the solvers work</p>"
             f"<p>Author: {AUTHOR} (<a href='mailto:{EMAIL}'>{EMAIL}</a>)<br>"
@@ -375,5 +375,6 @@ class AboutDialog(QDialog):
             return None
         movie.setScaledSize(QSize(ICON_SIZE, ICON_SIZE))
         label.setMovie(movie)
+        movie.setSpeed(200)
         movie.start()
         return movie

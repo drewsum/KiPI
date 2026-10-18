@@ -69,7 +69,7 @@ class Splash(QWidget):
         text.setWordWrap(True)
         text.setText(
             f"<h1 style='margin:0'>Welcome to {about.NAME}</h1>"
-            f"<p style='margin-top:4px'>{html.escape(about.DESCRIPTION)}</p>"
+            f"<p style='margin-top:4px; margin-bottom:12px;'>{html.escape(about.DESCRIPTION)}<br></p>"
             f"<table>{table}</table>"
             f"<p style='margin-bottom:0'>{about.AUTHOR} · {about.REPO}</p>")
         self.status = QLabel("Starting…", frame)
