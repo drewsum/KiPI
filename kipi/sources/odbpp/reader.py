@@ -592,17 +592,30 @@ def _loose_copper(board: _Board, cu_ids, used, tracks, vias, pads, zones,
     guessed = no_net = 0
     for lid, items in loose.items():
         pieces = [(g, n) for g, n in known.get(lid, []) if g is not None and n]
-        tree = STRtree([g for g, _ in pieces]) if pieces else None
-        for zid, g in items:
-            nets = set()
-            if tree is not None:
-                for i in tree.query(g, predicate="intersects"):
-                    nets.add(pieces[int(i)][1])
-            if len(nets) == 1:
+        # Pass after pass, each piece touching one net takes it, and the next pass sees
+        # it as known: a drawing's outline stroke touches only its own fill, itself
+        # loose, and takes the net once the fill has it.
+        left = list(items)
+        while left:
+            tree = STRtree([g for g, _ in pieces]) if pieces else None
+            netted, still = [], []
+            for zid, g in left:
+                nets = set()
+                if tree is not None:
+                    for i in tree.query(g, predicate="intersects"):
+                        nets.add(pieces[int(i)][1])
+                if len(nets) == 1:
+                    netted.append((zid, g, nets.pop()))
+                else:
+                    still.append((zid, g))
+            if not netted:
+                break
+            for zid, g, net in netted:
                 guessed += 1
-                out.append(_zone(zid, nets.pop(), {lid: [g]}, "graphic shape"))
-            else:
-                no_net += 1
+                out.append(_zone(zid, net, {lid: [g]}, "graphic shape"))
+                pieces.append((g, net))
+            left = still
+        no_net += len(left)
     if guessed:
         assumed.append(f"Copper drawings: {guessed} pieces of copper have no net in the file "
                        "and take the net of the copper they touch")
