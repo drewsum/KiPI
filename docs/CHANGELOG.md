@@ -7,6 +7,12 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Keyboard shortcuts** (#105). In the 3D view, Home snaps to the iso view and Z /
+  Shift+Z to the top / bottom view. Anywhere in the window: Ctrl+O open, F5 reload,
+  Ctrl+S save snapshot, F12 screenshot, Ctrl+Shift+O open results, Ctrl+L stackup,
+  Ctrl+T power tree, Ctrl+1 / Ctrl+2 DC / AC mode, Ctrl+Enter solve, Esc cancel the
+  running operation (only while one runs) and F1 help. Each tooltip names its key, and the
+  user guide lists them all.
 - **User notes in the HTML reports** (#128). The DC and AC reports have an editable User
   notes box at the end, after every result. A report opened from disk cannot save
   itself, so the notes are kept in the browser as they are typed (per file, restored when it is opened again),

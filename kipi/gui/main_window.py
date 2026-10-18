@@ -44,6 +44,18 @@ MAX_AUTO_NETS = 4
 FILE_SETTLE_MS = 800
 # Analysis modes, chosen in the toolbar: (key, label, setup dock title).
 MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"))
+# Keyboard shortcuts (#105). The view keys work while the 3D view has the focus, so that
+# Home and letters still reach the lists and text boxes; the rest work anywhere in the
+# window. Each is named in its control's tooltip and in the user guide.
+VIEW_KEYS = {"iso": "Home", "top": "Z", "bottom": "Shift+Z"}
+KEYS = {"open": "Ctrl+O", "reload": "F5", "save": "Ctrl+S", "screenshot": "F12",
+        "results": "Ctrl+Shift+O", "stackup": "Ctrl+L", "power_tree": "Ctrl+T",
+        "help": "F1", "solve": "Ctrl+Return", "cancel": "Esc", "dc": "Ctrl+1", "ac": "Ctrl+2"}
+
+
+def with_keys(tip: str, keys: str) -> str:
+    """``tip`` with its shortcut after it, as the tooltips show it."""
+    return f"{tip} ({keys})" if keys else tip
 VIA_PICK_PX = 10      # a click this close to a via barrel on screen selects it
 
 
@@ -141,6 +153,7 @@ class MainWindow(QMainWindow):
         self._build_left_panel()
         self._build_log_dock()
         self._build_solve_dock()
+        self._build_shortcuts()
         self.stackup_window = StackupWindow(self)
         self.stackup_window.stackup_changed.connect(self._stackup_changed)
         self.stackup_window.settings_changed.connect(self.solve_panel.setup_changed.emit)
@@ -158,11 +171,16 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         self.addToolBar(tb)
 
-        def act(text, slot, tip=""):
+        def act(text, slot, tip="", keys="", view=False):
             a = QAction(text, self)
-            a.setToolTip(tip or text)
+            a.setToolTip(with_keys(tip or text, keys))
             a.triggered.connect(slot)
             tb.addAction(a)
+            if keys:
+                a.setShortcut(keys)
+            if view:                    # only while the 3D view (or the toolbar) has focus
+                a.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+                self.viewer.addAction(a)
             return a
 
         # Reload and Refill zones follow the board's source (see _source_changed). As a
@@ -171,42 +189,50 @@ class MainWindow(QMainWindow):
         if self.host is Host.STANDALONE:
             self.act_open = act("Open…", self.open_board, "Open a board file: " +
                                 ", ".join(f.name for f in registry.FORMATS) +
-                                "; the arrow lists the boards opened lately")
+                                "; the arrow lists the boards opened lately",
+                                KEYS["open"])
             self.recent_menu = QMenu(self)
             self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
             self.act_open.setMenu(self.recent_menu)
             button = tb.widgetForAction(self.act_open)
             if isinstance(button, QToolButton):
                 button.setPopupMode(QToolButton.MenuButtonPopup)
-        self.act_reload = act("Reload", self.reload_board, "Re-read the board")
+        self.act_reload = act("Reload", self.reload_board, "Re-read the board",
+                              KEYS["reload"])
         self.chk_refill = QCheckBox("Refill zones", self)
         # A toolbar widget is shown and hidden through the action holding it.
         self._act_refill = tb.addWidget(self.chk_refill)
         tb.addSeparator()
         if self.host is Host.PLUGIN:
             act("Open snapshot…", self.open_snapshot,
-                "Load a saved board snapshot (.json / .json.gz), without KiCad running")
+                "Load a saved board snapshot (.json / .json.gz), without KiCad running",
+                KEYS["open"])
         self.act_save = act("Save snapshot…", self.save_snapshot,
-                            "Save the extracted board for offline use")
+                            "Save the extracted board for offline use", KEYS["save"])
         tb.addSeparator()
-        act("Top", lambda: self._show_3d(self.viewer.view_top), "Look down on the top of the board")
+        act("Top", lambda: self._show_3d(self.viewer.view_top),
+            "Look down on the top of the board", VIEW_KEYS["top"], view=True)
         act("Bottom", lambda: self._show_3d(self.viewer.view_bottom),
-            "Look up at the bottom of the board")
-        act("Iso", lambda: self._show_3d(self.viewer.view_iso), "Isometric view of the board")
+            "Look up at the bottom of the board", VIEW_KEYS["bottom"], view=True)
+        act("Iso", lambda: self._show_3d(self.viewer.view_iso), "Isometric view of the board",
+            VIEW_KEYS["iso"], view=True)
         act("Screenshot…", self.save_screenshot,
-            "Save the 3D view, or the impedance plot if it is showing, as a PNG")
+            "Save the 3D view, or the impedance plot if it is showing, as a PNG",
+            KEYS["screenshot"])
         tb.addSeparator()
-        self.act_open_results = act("Open results…", self.open_results)
+        self.act_open_results = act("Open results…", self.open_results, keys=KEYS["results"])
         self._set_open_results_tip()
         self.act_stackup = act("Stackup", self.show_stackup,
                                "The board's layers: thicknesses, εr and copper resistivity, "
-                               "for every analysis. Unlock to try another stackup.")
+                               "for every analysis. Unlock to try another stackup.",
+                               KEYS["stackup"])
         self.act_power_tree = act("Power tree", self.show_power_tree,
                                   "Block diagram of the setup: VRMs (by type), rails, series "
-                                  "links, loads and capacitors, in the direction power flows")
+                                  "links, loads and capacitors, in the direction power flows",
+                                  KEYS["power_tree"])
         tb.addSeparator()
-        self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser (F1)")
-        self.act_help.setShortcut("F1")
+        self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser",
+                            KEYS["help"])
         self.act_about = act("About", self.show_about, "Version, author and project links")
 
         # Analysis mode, at the far right.
@@ -220,11 +246,37 @@ class MainWindow(QMainWindow):
         for key, label, _ in MODES:
             rb = QRadioButton(label, tb)
             rb.setObjectName(f"mode_{key}")
-            rb.setToolTip(tips[key])
+            rb.setToolTip(with_keys(tips[key], KEYS[key]))
             rb.setChecked(key == self.mode)
             rb.toggled.connect(lambda on, k=key: on and self.set_mode(k))
             self.mode_buttons.addButton(rb)
             tb.addWidget(rb)
+
+    def _build_shortcuts(self):
+        """Keys with no toolbar button: Solve and Cancel."""
+        def key(name, slot):
+            a = QAction(self)
+            a.setShortcut(KEYS[name])
+            a.triggered.connect(slot)
+            self.addAction(a)
+            return a
+
+        for mode, _, _ in MODES:
+            key(mode, lambda _=False, m=mode: self._mode_button(m).setChecked(True))
+        key("solve", self._solve_shortcut)
+        # Esc is only taken while there is something to cancel; otherwise it still closes
+        # popups and dialogs as usual.
+        self.act_cancel = key("cancel", self._cancel_task)
+        self.act_cancel.setEnabled(False)
+        self.btn_cancel.setToolTip(with_keys(self.btn_cancel.toolTip(), KEYS["cancel"]))
+        for panel in (self.solve_panel, self.ac_panel):
+            panel.btn_solve.setToolTip(with_keys(panel.btn_solve.toolTip(), KEYS["solve"]))
+
+    def _solve_shortcut(self):
+        """Press the current mode's Solve button, when it can be pressed."""
+        button = self._mode_panel().btn_solve
+        if button.isEnabled():
+            button.click()
 
     def set_mode(self, mode: str):
         """Switch the analysis mode: the setup dock shows that mode's panel. The DC setup
@@ -259,11 +311,12 @@ class MainWindow(QMainWindow):
         self.log(f"Analysis mode: {mode.upper()}")
 
     def _set_open_results_tip(self):
-        self.act_open_results.setToolTip(
+        self.act_open_results.setToolTip(with_keys(
             "Reopen a saved DC or DC + thermal solve (.kipi-dc-results, .kipi-dc-thermal-results); "
             "load the board first"
             if self.mode == "dc" else
-            "Reopen saved AC impedance results (.kipi-ac-results); load the board first")
+            "Reopen saved AC impedance results (.kipi-ac-results); load the board first",
+            KEYS["results"]))
 
     def _set_plot_tab_shown(self, shown: bool):
         """Show the impedance and board map tabs only in AC mode. QTabWidget.setTabVisible
@@ -283,8 +336,11 @@ class MainWindow(QMainWindow):
         if then is not None:
             then()
 
+    def _mode_button(self, mode: str) -> QRadioButton:
+        return self.findChild(QRadioButton, f"mode_{mode}")
+
     def _check_mode_button(self, mode: str):
-        rb = self.findChild(QRadioButton, f"mode_{mode}")
+        rb = self._mode_button(mode)
         if rb is not None and not rb.isChecked():
             rb.blockSignals(True)
             rb.setChecked(True)          # the group unchecks the other button
@@ -607,6 +663,7 @@ class MainWindow(QMainWindow):
         task.finished.connect(lambda t=task: self._on_task_finished(t))
         self._task = task
         self.btn_cancel.setEnabled(True)
+        self.act_cancel.setEnabled(True)
         self.act_reload.setEnabled(False)
         from kipi.gui import app as kipi_app
         kipi_app.watchdog_start()
@@ -629,6 +686,7 @@ class MainWindow(QMainWindow):
         pending, self._pending_solve = getattr(self, "_pending_solve", None), None
         pending_ac, self._pending_ac = getattr(self, "_pending_ac", None), None
         self.btn_cancel.setEnabled(False)
+        self.act_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
         self.progress_bar.setRange(0, 1000)
         self.progress_bar.setValue(1000)
@@ -667,8 +725,8 @@ class MainWindow(QMainWindow):
             self.act_reload.setText(f"Load from {src.name}")
         else:
             self.act_reload.setText("Reload")
-        self.act_reload.setToolTip(f"Re-read the board from {src.description}" if src
-                                   else "Re-read the board")
+        self.act_reload.setToolTip(with_keys(f"Re-read the board from {src.description}"
+                                             if src else "Re-read the board", KEYS["reload"]))
         self.act_reload.setVisible(src is not None and src.caps.reload)
         self.chk_refill.setToolTip(f"Refill all zones in {src.name if src else 'the editor'} "
                                    "before reading (recommended)")

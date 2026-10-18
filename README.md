@@ -294,7 +294,8 @@ board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup you
 ![The Stackup window: copper and dielectric layers with thickness, material, εr, thermal conductivity and resistivity](docs/images/stackup.png)
 
 Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. Drag to rotate,
-scroll to zoom and shift-drag (or middle-drag) to pan. **About** shows the KiPI version and
+scroll to zoom and shift-drag (or middle-drag) to pan. In the 3D view, **Home** snaps to the
+iso view; the [user guide](docs/help.html#keys) lists every keyboard shortcut. **About** shows the KiPI version and
 project links, and **Copy version info** copies the versions of KiPI, Python and its
 libraries for a bug report.
 

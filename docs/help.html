@@ -134,6 +134,7 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#info">Info</a></li>
       </ol></li>
     <li><a href="#view3d">3D view and mouse</a></li>
+    <li><a href="#keys">Keyboard shortcuts</a></li>
     <li><a href="#log">Log and progress</a></li>
     <li class="group">DC analysis</li>
     <li><a href="#dc-concepts">DC concepts</a></li>
@@ -392,8 +393,9 @@ of decimals, plus more when a small typed value needs them.</p>
     <code>.kipi.json.gz</code>, to analyze later, on another machine, or to attach to a bug
     report.</td></tr>
   <tr><td><b>Top / Bottom / Iso</b></td><td class="wrap">Snap the 3D camera to look down on
-    the board, up at its underside, or from an isometric angle. They also bring the 3D view
-    to the front from the Impedance and Board map tabs.</td></tr>
+    the board, up at its underside, or from an isometric angle (keys <b>Z</b>,
+    <b>Shift+Z</b> and <b>Home</b>; see <a href="#keys">Keyboard shortcuts</a>). They also
+    bring the 3D view to the front from the Impedance and Board map tabs.</td></tr>
   <tr><td><b>Screenshot…</b></td><td class="wrap">Saves whatever is in the middle as a PNG:
     the 3D view, the impedance plot or the board map, whichever tab is showing.</td></tr>
   <tr><td><b>Open results…</b></td><td class="wrap">Reopens saved results without solving again. Load the same board
@@ -640,6 +642,36 @@ standalone KiPI does not.</p>
 <p>In AC mode two more tabs appear beside <b>3D view</b>: <b>Impedance</b>, with the
 <a href="#ac-plot">impedance plot</a>, and <b>Board map</b>, with the
 <a href="#ac-map">mesh and parts of the solve</a>.</p>
+</div>
+</details>
+
+<!-- ================================================================== KEYS -->
+<h2 id="keys">Keyboard shortcuts</h2>
+<details open>
+<summary>Every key</summary>
+<div class="body">
+<p>The view keys work once you have clicked in the 3D view, so that Home and letters still
+reach the lists and text boxes. The rest work anywhere in the main window. Each button's
+tooltip names its key. On macOS, <b>Ctrl</b> is the <b>Command</b> key.</p>
+<table>
+  <tr><th>Key</th><th>What it does</th></tr>
+  <tr><td><b>Home</b></td><td class="wrap">Iso view (in the 3D view)</td></tr>
+  <tr><td><b>Z</b> / <b>Shift+Z</b></td><td class="wrap">Top / bottom view (in the 3D
+    view)</td></tr>
+  <tr><td><b>Ctrl+O</b></td><td class="wrap"><b>Open…</b> (standalone) or <b>Open
+    snapshot…</b> (plugin)</td></tr>
+  <tr><td><b>F5</b></td><td class="wrap"><b>Reload</b>, or <b>Load from KiCad</b></td></tr>
+  <tr><td><b>Ctrl+S</b></td><td class="wrap"><b>Save snapshot…</b></td></tr>
+  <tr><td><b>F12</b></td><td class="wrap"><b>Screenshot…</b></td></tr>
+  <tr><td><b>Ctrl+Shift+O</b></td><td class="wrap"><b>Open results…</b></td></tr>
+  <tr><td><b>Ctrl+L</b></td><td class="wrap">The <a href="#stackup">Stackup window</a></td></tr>
+  <tr><td><b>Ctrl+T</b></td><td class="wrap">The <b>Power tree</b></td></tr>
+  <tr><td><b>Ctrl+1</b> / <b>Ctrl+2</b></td><td class="wrap">DC / AC mode</td></tr>
+  <tr><td><b>Ctrl+Enter</b></td><td class="wrap">Solve: <b>Solve all</b> in DC mode,
+    <b>Solve rail</b> in AC mode, when the button can be pressed</td></tr>
+  <tr><td><b>Esc</b></td><td class="wrap"><b>Cancel</b> the running operation</td></tr>
+  <tr><td><b>F1</b></td><td class="wrap">This guide</td></tr>
+</table>
 </div>
 </details>
 
