@@ -28,6 +28,12 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
 - AC Probes tab: **From DC load**, next to Add, Duplicate and Remove, adds a probe on the
   same supply and ground nets, parts and pins as the DC load picked from its dropdown. A
   load without ground pins gets its part's pins on its ground net.
+- **From DC load** also lists the input of every LDO and switcher, one entry per phase
+  ("VR4 phase 2 input"), and adds a probe on that phase's input and ground pins (#117). The
+  target calculator treats such a probe's regulator as its DC load: **Copy tolerance**
+  takes the tighter side of the regulator's input range (in volts, or in % of its input
+  rail), and **Copy current** and **Subtract DC drop** take its input current and the drop
+  at its input pins from the last power-tree solve.
 - **Standalone mode.** Started from KiCad's toolbar, KiPI runs as the plugin and reads the
   board open in the PCB editor. Started any other way (`python -m kipi`, or the `kipi`
   command of an installed package), it runs standalone: it opens board files and needs no

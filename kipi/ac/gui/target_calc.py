@@ -123,6 +123,9 @@ class TargetCalculator(QDialog):
         if t:
             tip = (f"Fill in the AC voltage tolerance from {t.label()}: ± its tighter side. "
                    "That is the whole tolerance; the DC drop uses up part of it.")
+        elif load and load.vrm_input:
+            tip = (f"{load.name}: its regulator has no input range, or no VRM feeds its "
+                   "input rail")
         elif load:
             tip = f"{load.name} has no tolerance, or no VRM feeding its rail"
         else:
@@ -145,9 +148,13 @@ class TargetCalculator(QDialog):
         self.btn_drop.setToolTip(tip)
         self.btn_current.setEnabled(bool(load and load.current_a))
         if load and load.current_a:
-            tip = (f"Fill in the load step from {load.name}'s current, {load.current_a:g} A: "
-                   "a step from no load to all of it. Lower it if the device's current steps "
-                   "by less.")
+            solved = " in the last DC solve" if load.vrm_input else ""
+            tip = (f"Fill in the load step from {load.name}'s current{solved}, "
+                   f"{load.current_a:.4g} A: a step from no load to all of it. Lower it if "
+                   "the device's current steps by less.")
+        elif load and load.vrm_input:
+            tip = (f"No DC result for {load.name}: its input current comes from the power "
+                   "tree, so solve it on the DC tab, then open the calculator again")
         elif load:
             tip = f"{load.name} draws no current"
         self.btn_current.setToolTip(tip)

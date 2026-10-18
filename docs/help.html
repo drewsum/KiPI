@@ -1197,6 +1197,10 @@ are required.</p>
     lines on the log-log plot. Below the first point the first |Z| holds, above the last the
     last holds. <b>Add point</b> adds one a decade above the last; ✕ removes one.</td></tr>
 </table>
+<p><b>From DC load</b> adds a probe on the same supply and ground pins as a DC load picked from
+its dropdown. The dropdown also lists the input of every LDO and switcher, one entry per phase
+(e.g. <i>VR4 phase 2 input</i>): a regulator's input pins load the rail feeding it just as a
+device does.</p>
 <p>A rail can have several probes, e.g. one per device; they are all solved together and each
 sees the others as open circuits.</p>
 </div>
@@ -1230,7 +1234,9 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
   <li><b>DC load</b>: the DC load whose tolerance and current the copy buttons use. A load
     on the probe's own supply and ground pins is used directly. Otherwise the dropdown
     offers the loads on the probe's part: supply pins on the same footprint, and ground pins
-    too where the load has them.</li>
+    too where the load has them. An LDO's or switcher's input pins count as a load too: its
+    <b>Input range</b> is the tolerance, and its input current and the DC drop at its input
+    pins come from the last DC solve.</li>
   <li><b>AC voltage tolerance</b>: how far the supply may move during a load transient, e.g.
     the AC part of a ±3 % spec on a 0.9 V rail: 27 mV.</li>
   <li><b>Copy tolerance from DC load</b> fills the AC voltage tolerance from a DC load's

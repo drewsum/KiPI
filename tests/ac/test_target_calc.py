@@ -322,3 +322,113 @@ def test_slew_rate_starts_at_10_a_per_us(app):
     from kipi.ac.gui import target_calc
     assert target_calc.TargetCalculator.last == (0.0, 0.0, 10.0)
     assert target_calc.TargetCalculator().slew.value() == 10.0
+
+
+# --- LDO and switcher inputs as loads (#117) -----------------------------------------------
+
+def _regulators():
+    """A 5 V source feeding an LDO (VR3, 4.5 to 5.5 V in) and a two-phase switcher (VR4)."""
+    from kipi.dc.pi.model import PinRef, PISetup, Vrm, VrmPhase
+    s = PISetup()
+    s.vrms.append(Vrm("VR5", PinRef("U7", "+5V"), 5.0))
+    s.vrms.append(Vrm("VR3", PinRef("U4", "+1V8", ["3"]), 1.8, kind="ldo",
+                      input=PinRef("U4", "+5V", ["1"]), ground=PinRef("U4", "GND", ["2"]),
+                      vin_min=4.5, vin_max=5.5))
+    s.vrms.append(Vrm("VR4", PinRef("U6", "+0V9", ["5"]), 0.9, kind="smps",
+                      input=PinRef("U6", "+5V", ["1"]), ground=PinRef("U6", "GND", ["9"]),
+                      phases=[VrmPhase(PinRef("U6", "+0V9", ["6"]), PinRef("U6", "+5V", ["2"]),
+                                       PinRef("U6", "GND", ["9"]))]))
+    return s
+
+
+def _vrm_tree():
+    """A power-tree result with VR3's and VR4's inputs solved."""
+    from kipi.dc.pi.results import PhaseReport, TreeResult, VrmReport
+    vr3 = VrmReport("VR3", "ldo", "+1V8", 1.8, 1.8, None, 0.5, 4.97, 0.501, 0.9, 2.49)
+    vr4 = VrmReport("VR4", "smps", "+0V9", 0.9, 0.9, None, 20.0, 4.95, 4.0, 18.0, 19.8,
+                    phases=[PhaseReport(1, 0.9, 10.0, 4.96, 1.9),
+                            PhaseReport(2, 0.9, 10.0, 4.94, 2.1)])
+    return TreeResult(vrms=[vr3, vr4])
+
+
+def test_regulator_inputs_one_per_phase():
+    from kipi.ac.target import vrm_inputs
+    s = _regulators()
+    assert [(n, v.name, k) for n, v, k in vrm_inputs(s)] == [
+        ("VR3 input", "VR3", 0), ("VR4 phase 1 input", "VR4", 0),
+        ("VR4 phase 2 input", "VR4", 1)]                 # the source has no input
+    s.vrms[2].phases[0].input = None                     # a phase without input pins
+    assert [n for n, _, _ in vrm_inputs(s)] == ["VR3 input", "VR4 phase 1 input"]
+
+
+def test_an_ldo_input_is_a_load_with_its_input_range():
+    from kipi.ac.target import probe_loads
+    from kipi.dc.pi.model import PinRef
+    s = _regulators()
+    ls = probe_loads(s, PinRef("U4", "+5V", ["1"]), PinRef("U4", "GND", ["2"]))
+    assert [(p.name, p.exact, p.vrm_input) for p in ls] == [("VR3 input", True, True)]
+    t = ls[0].tolerance
+    assert t.v_ac_v == pytest.approx(0.5) and t.label() == "VR3 input: 4.5 to 5.5 V (±500 mV)"
+    assert ls[0].current_a == 0 and ls[0].drop is None           # no DC solve yet
+    vr3 = s.vrms[1]
+    vr3.vin_min, vr3.vin_max, vr3.vin_pct = -10.0, 5.0, True       # +5 % of 5 V is tighter
+    t = probe_loads(s, PinRef("U4", "+5V"))[0].tolerance
+    assert t.v_ac_v == pytest.approx(0.25) and t.label() == "VR3 input: -10 / +5 % of 5 V"
+    vr3.vin_min = vr3.vin_max = None                             # no input range
+    assert probe_loads(s, PinRef("U4", "+5V"))[0].tolerance is None
+    s.vrms[0].output.net = "+12V"                                # nothing drives +5V
+    vr3.vin_min, vr3.vin_max, vr3.vin_pct = 4.5, 5.5, False
+    assert probe_loads(s, PinRef("U4", "+5V"))[0].tolerance is None
+    # Ground pins on another part: not this probe's load
+    assert probe_loads(s, PinRef("U4", "+5V"), PinRef("J1", "GND")) == []
+
+
+def test_regulator_inputs_take_current_and_drop_from_the_solve():
+    from kipi.ac.target import probe_loads
+    from kipi.dc.pi.model import PinRef
+    s, tree = _regulators(), _vrm_tree()
+    ldo = probe_loads(s, PinRef("U4", "+5V", ["1"]), None, tree)[0]
+    assert ldo.current_a == pytest.approx(0.501)
+    assert ldo.drop.v == pytest.approx(0.03) and ldo.drop.kind == "drop"
+    assert ldo.drop.label() == "VR3 input: 4.97 V of 5 V (30 mV drop)"
+    ls = probe_loads(s, PinRef("U6", "+5V", ["2"]), PinRef("U6", "GND", ["9"]), tree)
+    assert [(p.name, p.exact) for p in ls] == [("VR4 phase 2 input", True),
+                                               ("VR4 phase 1 input", False)]
+    assert ls[0].current_a == pytest.approx(2.1) and ls[0].drop.v == pytest.approx(0.06)
+    assert ls[1].current_a == pytest.approx(1.9) and ls[1].drop.v == pytest.approx(0.04)
+    assert ls[0].tolerance is None                     # VR4 has no input range
+
+
+def test_probe_from_a_regulator_input_takes_its_pins(app):
+    from qtpy.QtWidgets import QMenu
+    from kipi.ac.gui.panel import ACPanel
+    from kipi.dc.pi.model import Load, PinRef
+    panel = ACPanel()
+    panel.setEnabled(True)
+    menu = QMenu()
+    panel._fill_load_menu(menu)
+    assert [a.text() for a in menu.actions()] == ["No DC loads or regulator inputs in the setup"]
+    panel.setup = _regulators()
+    panel.setup.loads.append(Load("SoC", PinRef("U1", "+0V9"), 5.0))
+    panel._fill_load_menu(menu)
+    assert [a.text() for a in menu.actions() if not a.isSeparator()] == [
+        "SoC", "VR3 input", "VR4 phase 1 input", "VR4 phase 2 input"]
+    menu.actions()[-1].trigger()
+    probe = panel.setup.probes[-1]
+    assert probe.name == "VR4 phase 2 input"
+    assert probe.rail == PinRef("U6", "+5V", ["2"]) and probe.ground == PinRef("U6", "GND", ["9"])
+    assert probe.rail is not panel.setup.vrms[2].phases[0].input
+    assert panel.probe_from_vrm_input(panel.setup.vrms[1], 0).name == "VR3 input"
+
+
+def test_dialog_asks_for_a_dc_solve_for_a_regulators_current(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import ProbeLoad
+    monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
+    d = TargetCalculator(loads=[ProbeLoad("VR3 input", None, 0.0, True, vrm_input=True)])
+    assert not d.btn_current.isEnabled() and "solve it on the DC tab" in d.btn_current.toolTip()
+    assert "no input range" in d.btn_copy.toolTip()
+    d = TargetCalculator(loads=[ProbeLoad("VR3 input", None, 0.501, True, vrm_input=True)])
+    assert "in the last DC solve, 0.501 A" in d.btn_current.toolTip()
+    d.btn_current.click()
+    assert d.i_step.value() == pytest.approx(0.501)

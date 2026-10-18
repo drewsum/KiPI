@@ -35,7 +35,8 @@ from kipi.dc.gui.pi_panel import (
     make_searchable, new_link, new_vrm, parts_on_net, tip,
 )
 from kipi.dc.pi.autofill import guess_ground_pins
-from kipi.dc.pi.model import Load, PinRef, PISetup
+from kipi.ac.target import vrm_input_name, vrm_inputs
+from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
 )
@@ -580,9 +581,11 @@ class ACPanel(QWidget, PartSelection):
         self.cap_list.layout().insertWidget(0, b_values)
         self.probe_list = ItemList(lambda: self.setup.probes, ProbeEditor(self),
                                    self._new_probe, self._describe_probe, noun="probe")
-        # A probe on a DC load's pins, picked from a dropdown of the setup's loads.
+        # A probe on a DC load's pins, picked from a dropdown of the setup's loads and
+        # its LDOs' and switchers' inputs.
         b_load = QPushButton("From DC load")
-        b_load.setToolTip("Add a probe on the same supply and ground pins as a DC load")
+        b_load.setToolTip("Add a probe on the same supply and ground pins as a DC load, or "
+                          "on an LDO's or switcher's input pins (one per phase)")
         menu = QMenu(b_load)
         menu.aboutToShow.connect(lambda: self._fill_load_menu(menu))
         b_load.setMenu(menu)
@@ -1048,20 +1051,38 @@ class ACPanel(QWidget, PartSelection):
         for load in self.setup.loads:
             menu.addAction(load.name, lambda load=load: self.probe_list.add(
                 self.probe_from_load(load)))
-        if not self.setup.loads:
-            menu.addAction("No DC loads in the setup").setEnabled(False)
+        # An LDO's or switcher's input loads the rail feeding it (#117): one per phase.
+        inputs = vrm_inputs(self.setup)
+        if self.setup.loads and inputs:
+            menu.addSeparator()
+        for name, vrm, k in inputs:
+            menu.addAction(name, lambda vrm=vrm, k=k: self.probe_list.add(
+                self.probe_from_vrm_input(vrm, k)))
+        if not self.setup.loads and not inputs:
+            menu.addAction("No DC loads or regulator inputs in the setup").setEnabled(False)
 
     def probe_from_load(self, load: Load) -> Probe:
         """A probe on ``load``'s supply and ground pins, named after it. A load without
         ground pins gets its part's pins on its ground net, else the busiest part on the
         panel's ground."""
-        gnd = load.ground or guess_ground_pins(self.snapshot, self.setup, self._nets,
-                                               load.supply, [self.ground()])
+        return self._probe_on(load.name, load.supply, load.ground)
+
+    def probe_from_vrm_input(self, vrm: Vrm, phase: int) -> Probe:
+        """A probe on the input and ground pins of ``vrm``'s phase ``phase`` (from 0),
+        named after it, as :meth:`probe_from_load` makes one for a DC load."""
+        phases = vrm.all_phases()
+        ph = phases[phase]
+        return self._probe_on(vrm_input_name(vrm.name, phase, len(phases)), ph.input,
+                              ph.ground)
+
+    def _probe_on(self, name: str, supply: PinRef, ground: Optional[PinRef]) -> Probe:
+        gnd = ground or guess_ground_pins(self.snapshot, self.setup, self._nets,
+                                          supply, [self.ground()])
         if gnd is None:
-            net = self.ground() or next((n for n in self._nets if n != load.supply.net), "")
+            net = self.ground() or next((n for n in self._nets if n != supply.net), "")
             gnd = PinRef(self._first_part(net) if self.snapshot and net else "", net)
-        return Probe(_unique(load.name, [p.name for p in self.setup.probes]),
-                     copy.deepcopy(load.supply), copy.deepcopy(gnd))
+        return Probe(_unique(name, [p.name for p in self.setup.probes]),
+                     copy.deepcopy(supply), copy.deepcopy(gnd))
 
     def _models_from_values(self):
         if self.snapshot is None:

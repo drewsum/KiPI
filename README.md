@@ -519,7 +519,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   **Manufacturing tolerance** is optional: the part's capacitance tolerance in %, from its
   datasheet or value code (J ±5 %, K ±10 %, M ±20 %), applied by the sweep setting below.
 * **Probes tab**: Defines where to plot the PDN impedance, usually a device's supply and ground
-  pins. **From DC load** adds a probe on the same pins as a DC load you pick from its dropdown. Each probe has a target impedance and frequency range: **flat** (an impedance up to a frequency) or **custom**, a
+  pins. **From DC load** adds a probe on the same pins as a DC load you pick from its dropdown, or on an LDO's or switcher's input pins (one entry per phase). Each probe has a target impedance and frequency range: **flat** (an impedance up to a frequency) or **custom**, a
   piecewise-linear mask through frequency/impedance points on the log-log plot.
   **Target Impedance/Frequency Calculator** works out a flat target from the device's AC
   voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).
