@@ -520,7 +520,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   piecewise-linear mask through frequency/impedance points on the log-log plot.
   **Target Impedance/Frequency Calculator** works out a flat target from the device's AC
   voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).
-  It can copy the tolerance and the load step from a DC load on the probe's rail, and
+  It can copy the tolerance and the load step from the DC load on the probe's pins, and
   subtract the DC accuracy of the VRM driving the rail from the tolerance.
   Targets apply only above the rail's VRM **Control loop bandwidth**: the AC solve leaves
   the VRM out of circuit (the open-loop PDN impedance, capacitive only), and below its bandwidth the

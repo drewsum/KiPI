@@ -151,6 +151,9 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   the tolerance (a menu when several VRMs drive it).
 
 ### Changed
+- The Target Impedance/Frequency Calculator copies the tolerance and load step from the
+  DC load on the probe's pins, with no menu. A **DC load** dropdown picks among the loads on
+  the probe's part when none sits on its exact supply and ground pins.
 - Every VRM field can be edited from both the DC and the AC setup. Fields only one
   analysis uses (control loop bandwidth and DC accuracy in DC; efficiency, input range and
   the like in AC) are no longer grayed out; their tooltip says which analysis uses them.

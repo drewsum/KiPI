@@ -6,12 +6,13 @@ from typing import List, Optional, Tuple
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QMenu, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
 from kipi.ac.gui.plot import _eng
 from kipi.ac.target import (
-    LoadCurrent, LoadTolerance, Target, VrmAccuracy, target_from_transient,
+    ProbeLoad, Target, VrmAccuracy, target_from_transient,
 )
 from kipi.dc.gui.pi_panel import _spin
 
@@ -27,8 +28,7 @@ class TargetCalculator(QDialog):
     last: Tuple[float, float, float] = (0.0, 0.0, 10.0)
 
     def __init__(self, parent: Optional[QWidget] = None, probe_name: str = "",
-                 loads: Optional[List[LoadTolerance]] = None,
-                 currents: Optional[List[LoadCurrent]] = None,
+                 loads: Optional[List[ProbeLoad]] = None,
                  accuracies: Optional[List[VrmAccuracy]] = None):
         super().__init__(parent)
         self.setWindowTitle("Target Impedance/Frequency Calculator"
@@ -46,14 +46,23 @@ class TargetCalculator(QDialog):
             s.setValue(v)
             s.valueChanged.connect(self._update)
 
-        # Copy the AC tolerance from a DC load's tolerance (#87), and the load step from a
-        # DC load's current; a menu when several fit.
+        # Copy the AC tolerance (#87) and the load step from the DC load on the probe's
+        # pins; with none exactly on them, a dropdown picks among the loads on its part.
         self.loads = list(loads or [])
-        self.btn_copy = _copy_button(
-            "Copy tolerance from DC load", self.loads, self.copy_tolerance,
-            "Fill in the AC voltage tolerance from a DC load's tolerance: ± that % of its "
-            "VRM's voltage. That is the whole tolerance; the DC drop uses up part of it.",
-            "No DC load on this probe's rail has a tolerance and a VRM feeding it")
+        self.load = QComboBox()
+        for load in self.loads:
+            self.load.addItem(load.label())
+        if not self.loads:
+            self.load.addItem("None on this probe's part")
+        exact = sum(load.exact for load in self.loads) == 1
+        self.load.setEnabled(len(self.loads) > 1 and not exact)
+        self.load.setToolTip(
+            "The DC load on this probe's supply and ground pins" if exact else
+            "The DC load whose tolerance and current are copied: one with its supply pins "
+            "(and ground pins, where set) on the same part as this probe's")
+        self.load.currentIndexChanged.connect(self._load_changed)
+        self.btn_copy = QPushButton("Copy tolerance from DC load")
+        self.btn_copy.clicked.connect(lambda: self.copy_tolerance(self.selected_load()))
         # Take the DC accuracy of the rail's VRM off the AC tolerance.
         self.accuracies = list(accuracies or [])
         self.btn_accuracy = _copy_button(
@@ -62,18 +71,16 @@ class TargetCalculator(QDialog):
             "the larger side of it, which the output may sit away from its set voltage "
             "before any load step. Each click subtracts it again.",
             "No LDO or switcher driving this probe's rail has a DC accuracy set")
-        self.currents = list(currents or [])
-        self.btn_current = _copy_button(
-            "Copy current from DC load", self.currents, self.copy_current,
-            "Fill in the load step from a DC load's current: a step from no load to all of "
-            "it. Lower it if the device's current steps by less.",
-            "No DC load on this probe's rail draws a current")
+        self.btn_current = QPushButton("Copy current from DC load")
+        self.btn_current.clicked.connect(lambda: self.copy_current(self.selected_load()))
+        self._load_changed()
 
         self.lbl_z, self.lbl_t, self.lbl_f = QLabel(), QLabel(), QLabel()
         for lbl in (self.lbl_z, self.lbl_t, self.lbl_f):
             lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         form = QFormLayout()
+        form.addRow("DC load", self.load)
         form.addRow("AC voltage tolerance", self.v_ac)
         form.addRow("", self.btn_copy)
         form.addRow("", self.btn_accuracy)
@@ -100,14 +107,41 @@ class TargetCalculator(QDialog):
         self.setMinimumWidth(420)
         self._update()
 
-    def copy_tolerance(self, t: LoadTolerance):
-        self.v_ac.setValue(t.v_ac_v * 1e3)
+    def selected_load(self) -> Optional[ProbeLoad]:
+        i = self.load.currentIndex()
+        return self.loads[i] if 0 <= i < len(self.loads) else None
+
+    def _load_changed(self, *_):
+        load = self.selected_load()
+        t = load and load.tolerance
+        self.btn_copy.setEnabled(bool(t))
+        if t:
+            tip = (f"Fill in the AC voltage tolerance from {t.label()}: ± its tighter side. "
+                   "That is the whole tolerance; the DC drop uses up part of it.")
+        elif load:
+            tip = f"{load.name} has no tolerance, or no VRM feeding its rail"
+        else:
+            tip = "No DC load on this probe's part"
+        self.btn_copy.setToolTip(tip)
+        self.btn_current.setEnabled(bool(load and load.current_a))
+        if load and load.current_a:
+            tip = (f"Fill in the load step from {load.name}'s current, {load.current_a:g} A: "
+                   "a step from no load to all of it. Lower it if the device's current steps "
+                   "by less.")
+        elif load:
+            tip = f"{load.name} draws no current"
+        self.btn_current.setToolTip(tip)
+
+    def copy_tolerance(self, load: Optional[ProbeLoad]):
+        if load and load.tolerance:
+            self.v_ac.setValue(load.tolerance.v_ac_v * 1e3)
 
     def subtract_accuracy(self, a: VrmAccuracy):
         self.v_ac.setValue(max(0.0, self.v_ac.value() - a.v * 1e3))
 
-    def copy_current(self, c: LoadCurrent):
-        self.i_step.setValue(c.current_a)
+    def copy_current(self, load: Optional[ProbeLoad]):
+        if load and load.current_a:
+            self.i_step.setValue(load.current_a)
 
     def target(self) -> Optional[Target]:
         return target_from_transient(self.v_ac.value() * 1e-3, self.i_step.value(),

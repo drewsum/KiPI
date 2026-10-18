@@ -75,7 +75,7 @@ def test_calculator_fills_the_probe_target(app, monkeypatch):
     assert probe.target_hz == pytest.approx(1 / (math.pi * 0.3e-6), rel=1e-4)
 
 
-# --- Copy tolerance from DC load (#87) --------------------------------------------------------
+# --- Copy tolerance and current from the probe's DC load (#87) -----------------------------
 
 def _setup():
     from kipi.dc.pi.model import DcLink, Load, PinRef, PISetup, Vrm
@@ -90,47 +90,82 @@ def _setup():
     return s
 
 
-def test_load_tolerances_on_the_probes_rail_own_part_first():
-    from kipi.ac.target import load_tolerances
+def test_probe_loads_are_the_loads_on_the_probes_part():
+    from kipi.ac.target import probe_loads
     from kipi.dc.pi.model import PinRef
-    ts = load_tolerances(_setup(), PinRef("U1", "+1V0", ["1"]))
-    assert [t.name for t in ts] == ["SoC", "FPGA core"]      # through the link to VR1
-    assert ts[0].v_ac_v == pytest.approx(0.05) and ts[0].nominal_v == 1.0
-    assert ts[1].label() == "FPGA core: ±3 % of 1 V"
-    assert [t.name for t in load_tolerances(_setup())] == ["FPGA core", "SoC", "IO"]
-    assert load_tolerances(_setup(), PinRef("U5", "+5V")) == []
+    ls = probe_loads(_setup(), PinRef("U1", "+1V0", ["1"]), PinRef("U1", "GND"))
+    assert [(p.name, p.current_a, p.exact) for p in ls] == [("SoC", 2.0, False),
+                                                            ("IO", 1.0, False)]
+    assert ls[0].tolerance.v_ac_v == pytest.approx(0.05)    # 5 % of VR1, through the link
+    assert ls[0].tolerance.label() == "SoC: ±5 % of 1 V"
+    assert ls[1].tolerance.v_ac_v == pytest.approx(0.33)
+    assert probe_loads(_setup(), PinRef("U5", "+5V")) == []
+    assert probe_loads(_setup(), None) == []
+
+
+def test_a_load_on_the_probes_pins_comes_first():
+    from kipi.ac.target import probe_loads
+    from kipi.dc.pi.model import PinRef
+    s = _setup()
+    io = s.loads[3]
+    io.supply, io.ground = PinRef("U1", "+1V0", ["2", "1"]), PinRef("U1", "GND", ["3"])
+    ls = probe_loads(s, PinRef("U1", "+1V0", ["1", "2"]), PinRef("U1", "GND", ["3"]))
+    assert [(p.name, p.exact) for p in ls] == [("IO", True), ("SoC", False)]
+    ls = probe_loads(s, PinRef("U1", "+1V0", ["1", "2"]), PinRef("U1", "GND", ["4"]))
+    assert [(p.name, p.exact) for p in ls] == [("SoC", False), ("IO", False)]
+    # Ground pins on another part: not this probe's load
+    assert [p.name for p in probe_loads(s, PinRef("U1", "+1V0"), PinRef("J1", "GND"))]         == ["SoC"]
 
 
 def test_an_uneven_tolerance_gives_its_tighter_side():
-    from kipi.ac.target import load_tolerances
+    from kipi.ac.target import probe_loads
     from kipi.dc.pi.model import PinRef
     s = _setup()
     soc = s.loads[1]
     soc.tol_min, soc.tol_max = -2.0, 5.0                     # -2 % of 1 V is tighter
-    t = load_tolerances(s, PinRef("U1", "+1V0"))[0]
+    t = probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance
     assert t.v_ac_v == pytest.approx(0.02) and t.label() == "SoC: -2 / +5 % of 1 V"
     soc.tol_min, soc.tol_max, soc.tol_pct = 0.97, 1.01, False  # volts: +10 mV is tighter
-    t = load_tolerances(s, PinRef("U1", "+1V0"))[0]
+    t = probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance
     assert t.v_ac_v == pytest.approx(0.01) and t.label() == "SoC: 0.97 to 1.01 V (±10 mV)"
     soc.tol_min, soc.tol_max = 1.05, None                     # 1 V is outside it: nothing
-    assert [t.name for t in load_tolerances(s, PinRef("U1", "+1V0"))] == ["FPGA core"]
+    assert probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance is None
 
 
-def test_dialog_copies_a_load_tolerance(app, monkeypatch):
+def test_dialog_copies_the_probes_load(app, monkeypatch):
     from kipi.ac.gui.target_calc import TargetCalculator
-    from kipi.ac.target import LoadTolerance
+    from kipi.ac.target import LoadTolerance, ProbeLoad
     monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
-    assert not TargetCalculator().btn_copy.isEnabled()        # no loads to copy from
-    d = TargetCalculator(loads=[LoadTolerance("SoC", "±5 %", 1.2, 0.06)])
-    assert d.btn_copy.isEnabled() and d.btn_copy.menu() is None
+    none = TargetCalculator()
+    assert not none.btn_copy.isEnabled() and not none.btn_current.isEnabled()
+    assert not none.load.isEnabled()
+    d = TargetCalculator(loads=[ProbeLoad("SoC", LoadTolerance("SoC", "±5 %", 1.2, 0.06),
+                                          2.5)])
+    assert not d.load.isEnabled() and d.load.currentText() == "SoC"
     d.btn_copy.click()
+    d.btn_current.click()
     assert d.v_ac.value() == pytest.approx(60)                # ±5 % of 1.2 V
-    two = TargetCalculator(loads=[LoadTolerance("A", "±5 %", 1.0, 0.05),
-                                  LoadTolerance("B", "±2 %", 3.3, 0.066)])
-    actions = two.btn_copy.menu().actions()
-    assert [a.text() for a in actions] == ["A: ±5 % of 1 V", "B: ±2 % of 3.3 V"]
-    actions[1].trigger()
-    assert two.v_ac.value() == pytest.approx(66)
+    assert d.i_step.value() == pytest.approx(2.5)
+
+
+def test_dialog_picks_among_the_parts_loads(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import LoadTolerance, ProbeLoad
+    monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
+    a = ProbeLoad("A", LoadTolerance("A", "±5 %", 1.0, 0.05), 1.0)
+    b = ProbeLoad("B", None, 4.0)
+    d = TargetCalculator(loads=[a, b])
+    assert d.load.isEnabled() and d.btn_copy.menu() is None
+    d.load.setCurrentIndex(1)
+    assert not d.btn_copy.isEnabled() and "B has no tolerance" in d.btn_copy.toolTip()
+    d.btn_current.click()
+    assert d.i_step.value() == pytest.approx(4.0)
+    d.load.setCurrentIndex(0)
+    d.btn_copy.click()
+    assert d.v_ac.value() == pytest.approx(50)
+    # One load on the probe's own pins: that one, no choice
+    exact = TargetCalculator(loads=[ProbeLoad("B", None, 4.0, exact=True), a])
+    assert not exact.load.isEnabled() and exact.selected_load().name == "B"
 
 
 def test_vrm_accuracies_on_the_probes_rail():
@@ -164,7 +199,7 @@ def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
     assert d.v_ac.value() == 0                                 # never below zero
 
 
-def test_probe_editor_offers_the_rails_loads(app, monkeypatch):
+def test_probe_editor_offers_the_parts_loads(app, monkeypatch):
     from kipi.ac.gui import target_calc
     from kipi.ac.gui.panel import ACPanel
     from kipi.ac.model import Probe
@@ -177,42 +212,12 @@ def test_probe_editor_offers_the_rails_loads(app, monkeypatch):
     panel.probe_list.lst.setCurrentRow(0)
     seen = []
     monkeypatch.setattr(target_calc.TargetCalculator, "exec",
-                        lambda dlg: seen.append([[t.name for t in dlg.loads],
-                                                 [c.name for c in dlg.currents],
+                        lambda dlg: seen.append([[p.name for p in dlg.loads],
                                                  [a.name for a in dlg.accuracies]]) or 0)
     panel.setup.vrms[0].kind = "ldo"
     panel.setup.vrms[0].acc_min, panel.setup.vrms[0].acc_max = -1.0, 1.0
     panel.probe_list.editor.btn_calc.click()
-    assert seen == [[["SoC", "FPGA core"], ["SoC", "FPGA core", "No tolerance"], ["VR1"]]]
-
-
-# --- Copy current from DC load ------------------------------------------------------------
-
-def test_load_currents_on_the_probes_rail_own_part_first():
-    from kipi.ac.target import load_currents
-    from kipi.dc.pi.model import PinRef
-    cs = load_currents(_setup(), PinRef("U1", "+1V0", ["1"]))
-    assert [(c.name, c.current_a) for c in cs] == [("SoC", 2.0), ("FPGA core", 5.0),
-                                                   ("No tolerance", 1.0)]
-    assert cs[0].label() == "SoC: 2 A"
-    assert len(load_currents(_setup())) == 4
-    assert load_currents(_setup(), PinRef("U5", "+5V")) == []
-
-
-def test_dialog_copies_a_load_current(app, monkeypatch):
-    from kipi.ac.gui.target_calc import TargetCalculator
-    from kipi.ac.target import LoadCurrent
-    monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
-    assert not TargetCalculator().btn_current.isEnabled()
-    d = TargetCalculator(currents=[LoadCurrent("SoC", 2.5)])
-    assert d.btn_current.menu() is None
-    d.btn_current.click()
-    assert d.i_step.value() == pytest.approx(2.5)
-    two = TargetCalculator(currents=[LoadCurrent("A", 1.0), LoadCurrent("B", 4.0)])
-    actions = two.btn_current.menu().actions()
-    assert [a.text() for a in actions] == ["A: 1 A", "B: 4 A"]
-    actions[1].trigger()
-    assert two.i_step.value() == pytest.approx(4.0)
+    assert seen == [[["SoC", "IO"], ["VR1"]]]
 
 
 def test_slew_rate_starts_at_10_a_per_us(app):

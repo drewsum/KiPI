@@ -1216,13 +1216,15 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
 <div class="body">
 <p>Works out a flat target from the device's transient spec:</p>
 <ul>
+  <li><b>DC load</b>: the DC load whose tolerance and current the copy buttons use. A load
+    on the probe's own supply and ground pins is used directly. Otherwise the dropdown
+    offers the loads on the probe's part: supply pins on the same footprint, and ground pins
+    too where the load has them.</li>
   <li><b>AC voltage tolerance</b>: how far the supply may move during a load transient, e.g.
     the AC part of a ±3 % spec on a 0.9 V rail: 27 mV.</li>
   <li><b>Copy tolerance from DC load</b> fills the AC voltage tolerance from a DC load's
     tolerance: ± its tighter side, from the voltage of the VRM feeding it (2 % for
-    -2 % / +5 %). It offers the loads on
-    the probe's rail (including nets joined by series links), the probe's own part first, and
-    shows a menu when there are several. A DC tolerance is the whole budget, and the DC drop
+    -2 % / +5 %). A DC tolerance is the whole budget, and the DC drop
     uses up part of it, so lower the value if the AC part is smaller.</li>
   <li><b>Subtract VRM DC accuracy</b> takes the DC accuracy of the LDO or switcher driving
     the probe's rail off the AC voltage tolerance: the larger side of it (20 mV for
@@ -1230,7 +1232,7 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
     shows a menu when several VRMs drive the rail; each click subtracts again.</li>
   <li><b>Load step (ΔI)</b>: the size of the current step.</li>
   <li><b>Copy current from DC load</b> fills the load step from a DC load's current, a step
-    from no load to all of it, offering the loads on the probe's rail the same way. Lower it
+    from no load to all of it. Lower it
     if the device's current steps by less.</li>
   <li><b>Load step slew rate</b>: how fast it steps, A/µs; 10 A/µs until you change it.</li>
 </ul>

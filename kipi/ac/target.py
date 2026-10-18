@@ -16,11 +16,10 @@ The AC solve leaves the VRM out of circuit: it computes the *open-loop* PDN impe
 Below the converter's control loop bandwidth the loop holds the rail, so a target only
 applies above the VRM's bandwidth (:func:`judged_from`).
 
-The calculator's AC tolerance can be copied from a DC load's tolerance
-(:func:`load_tolerances`): +/- its tighter side, from the voltage of the VRM feeding the
-load. The DC accuracy of the VRM driving the rail can be taken off it
-(:func:`vrm_accuracies`): the larger side of it.
-Its load step can be copied from a DC load's current (:func:`load_currents`).
+The calculator's AC tolerance and load step can be copied from the DC load on the probe's
+pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from the voltage of the
+VRM feeding it, and its current. The DC accuracy of the VRM driving the rail can be taken
+off the tolerance (:func:`vrm_accuracies`): the larger side of it.
 """
 
 from __future__ import annotations
@@ -159,39 +158,44 @@ class VrmAccuracy:
 
 
 @dataclass
-class LoadCurrent:
-    name: str             # the DC load's name
-    current_a: float      # its total current
+class ProbeLoad:
+    name: str                           # the DC load's name
+    tolerance: Optional[LoadTolerance]  # the AC tolerance it allows, if it has one
+    current_a: float                    # its total current, 0 for none
+    exact: bool = False                 # its pins are the probe's pins
 
     def label(self) -> str:
-        return f"{self.name}: {self.current_a:g} A"
+        return self.name
 
 
-def _rail_loads(setup: "PISetup", rail: Optional["PinRef"]):
-    """``(load, its rail's nets)`` for the DC loads on the probe's rail ``rail`` (its nets
-    joined by series links), the probe's own part first; every load without a rail."""
+def _same_pins(a: Optional["PinRef"], b: Optional["PinRef"]) -> bool:
+    return bool(a and b) and (a.ref, a.net, sorted(a.pins)) == (b.ref, b.net, sorted(b.pins))
+
+
+def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
+                ground: Optional["PinRef"] = None) -> List[ProbeLoad]:
+    """The DC loads on the probe's part: their supply pins on the footprint of the probe's
+    supply pins ``rail``, and their ground pins, where both have them, on the footprint of
+    its ``ground``. A load whose supply and ground pins are the probe's own comes first,
+    ``exact``; a load without ground pins matches on its supply pins alone."""
     from kipi.dc.pi.model import net_groups
-    groups = net_groups(setup, [rail.net] if rail else [])
-    out = [(load, groups[load.supply.net]) for load in setup.loads]
-    if rail:
-        out = [(load, group) for load, group in out if rail.net in group]
-        out.sort(key=lambda lg: lg[0].supply.ref != rail.ref)
-    return out
-
-
-def load_tolerances(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[LoadTolerance]:
-    """DC loads with a tolerance and a VRM feeding their rail. With the probe's supply pins
-    ``rail``, only loads on that rail (its nets joined by series links), the probe's own
-    part first."""
+    if rail is None:
+        return []
     out = []
-    for load, group in _rail_loads(setup, rail):
-        if not load.has_tolerance():
+    for load in setup.loads:
+        if load.supply.ref != rail.ref or (ground and load.ground
+                                           and load.ground.ref != ground.ref):
             continue
-        vrm = next((v for v in setup.vrms
-                    if v.voltage and any(ph.output.net in group for ph in v.all_phases())), None)
-        t = vrm and LoadTolerance.of(load, vrm.voltage)
-        if t:
-            out.append(t)
+        tol = None
+        if load.has_tolerance():
+            group = net_groups(setup, [load.supply.net])[load.supply.net]
+            vrm = next((v for v in setup.vrms if v.voltage
+                        and any(ph.output.net in group for ph in v.all_phases())), None)
+            tol = vrm and LoadTolerance.of(load, vrm.voltage)
+        exact = _same_pins(load.supply, rail) and (load.ground is None
+                                                   or _same_pins(load.ground, ground))
+        out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact))
+    out.sort(key=lambda p: not p.exact)
     return out
 
 
@@ -208,10 +212,3 @@ def vrm_accuracies(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[Vr
             continue
         out.append(VrmAccuracy(v.name, v.accuracy_label(), acc))
     return out
-
-
-def load_currents(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[LoadCurrent]:
-    """DC loads drawing a current, for the calculator's load step: with the probe's supply
-    pins ``rail``, only loads on that rail, the probe's own part first."""
-    return [LoadCurrent(load.name, abs(load.total_current()))
-            for load, _ in _rail_loads(setup, rail) if load.total_current()]
