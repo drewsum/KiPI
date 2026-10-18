@@ -330,6 +330,12 @@ float them in their own windows.</p>
     <b>Install</b>. Later starts open KiPI straight away. To add or remove PARDISO later,
     use <b>About → Manage dependencies…</b>: KiPI closes, the setup opens, and KiPI starts
     again afterwards.</li>
+  <li><b>Pin to the taskbar</b> (Windows): right-click KiPI's taskbar button while it is
+    open, or its Start menu shortcut (<code>python kipi_launcher.py
+    --create-shortcut</code>), and choose <i>Pin to taskbar</i>. The pinned button starts
+    standalone KiPI through the launcher, even when it was pinned from the plugin, since
+    only KiCad can start the plugin; a running KiPI of either kind shows on that
+    button.</li>
   <li>While KiPI starts it shows a <b>welcome screen</b> with the logo, its version, whether
     it runs as the plugin or standalone, and the versions of Python and its main packages.
     It closes on its own after one play of the animation, or when you click it.</li>

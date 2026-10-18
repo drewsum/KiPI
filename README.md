@@ -169,6 +169,11 @@ python kipi_launcher.py --create-shortcut    # add KiPI to the Start menu / appl
 If setup fails, the launcher says why; everything the installer printed is in the `logs`
 folder next to the environment.
 
+On Windows, KiPI can be pinned to the taskbar: right-click its taskbar button while it is
+open (plugin or standalone), or its Start menu shortcut, and choose *Pin to taskbar*. The
+pinned button starts standalone KiPI through the launcher, as KiCad is needed to start the
+plugin.
+
 ### Optional: faster solves on large boards (Windows and Linux, x86-64)
 
 KiPI solves each rail with SciPy's single-threaded sparse solver, or with AMG when a rail

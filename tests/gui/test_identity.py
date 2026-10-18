@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -28,6 +29,19 @@ def test_linux_desktop_entry_is_hidden_and_matches_the_window():
     assert "StartupWMClass=KiPI" in text and "kipi_256.png" in text
 
 
+def test_a_pinned_button_runs_the_launcher(monkeypatch, tmp_path):
+    monkeypatch.delenv("KIPI_LAUNCHER_PYTHON", raising=False)
+    cmd = identity.relaunch_command()
+    assert cmd.endswith(f'"{identity.ROOT / "kipi_launcher.pyw"}"')
+    assert str(Path(sys.executable).parent) in cmd
+    python = tmp_path / "python.exe"
+    (tmp_path / "pythonw.exe").write_text("")
+    monkeypatch.setenv("KIPI_LAUNCHER_PYTHON", str(python))
+    assert identity.relaunch_command().startswith(f'"{tmp_path / "pythonw.exe"}" ')
+    monkeypatch.setattr(identity, "ROOT", tmp_path)            # no launcher: no pinning
+    assert identity.relaunch_command() is None
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows taskbar properties")
 def test_windows_taskbar_button_is_kipi():
     from qtpy.QtWidgets import QWidget
@@ -40,4 +54,7 @@ def test_windows_taskbar_button_is_kipi():
     h = int(w.winId())
     assert identity.read_windows_property(h, identity._PKEY_ID) == identity.APP_ID
     assert identity.read_windows_property(h, identity._PKEY_RELAUNCH_DISPLAY_NAME) == "KiPI"
+    assert identity.read_windows_property(h, identity._PKEY_PREVENT_PINNING) is False
+    assert "kipi_launcher.pyw" in identity.read_windows_property(
+        h, identity._PKEY_RELAUNCH_COMMAND)
     w.close()

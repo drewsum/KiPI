@@ -136,6 +136,11 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   temperature, or **From DC thermal co-simulation**, from the copper temperatures of the
   last DC solve with thermal co-simulation or of DC results opened from a file. The Results
   notes and the HTML report give the temperatures used.
+- KiPI can be **pinned to the Windows taskbar**. Its taskbar button used to refuse
+  pinning, as only KiCad could start KiPI; a pinned button now starts standalone KiPI
+  through the launcher (from the plugin too). The launcher's Start menu shortcut carries
+  KiPI's taskbar ID, so pinning it and the open KiPI share one button. Without the
+  launcher next to KiPI, pinning stays off.
 - The Target Impedance/Frequency Calculator has a **Copy current from DC load** button
   beside the load step. It fills the load step from the current of a DC load on the
   probe's rail, the probe's own part first, with a menu when there are several.

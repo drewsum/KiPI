@@ -1,6 +1,7 @@
 """Put standalone KiPI in the Start menu (Windows) or the applications menu (Linux), so
 it starts like any other app. The shortcut runs this folder's launcher with the Python
-that is running it now."""
+that is running it now. On Windows it carries KiPI's AppUserModelID, so pinning it to the
+taskbar and the running KiPI share one button."""
 
 from __future__ import annotations
 
@@ -71,6 +72,11 @@ def create(platform: Optional[str] = None, root: Path = KIPI_ROOT) -> Path:
             raise ShortcutError(f"could not run PowerShell: {e}") from e
         if out.returncode != 0 or not path.is_file():
             raise ShortcutError((out.stderr or out.stdout).strip()[-300:] or "PowerShell failed")
+        try:
+            from kipi.gui.identity import set_shortcut_app_id    # standard library only
+            set_shortcut_app_id(path)
+        except Exception:  # noqa: BLE001 - the shortcut works without; a pin gets its own button
+            pass
         return path
     if platform.startswith("linux"):
         path = linux_path()
