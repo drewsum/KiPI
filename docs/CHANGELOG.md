@@ -112,6 +112,20 @@ milestones rather than versions that were ever set.
   Importing a STEP file of the whole board is not done yet.
 
 ### Changed
+- **Each copper layer has its own temperature** (#34). The electro-thermal solve took the
+  board as one temperature through its thickness; now every copper layer is solved as its
+  own sheet. Heat goes onto the layer it is made on (copper loss on its own layer, a via's
+  loss on the layers it spans, a part's heat on the layers of its pads), crosses the
+  laminate at each dielectric's through-plane conductivity (FR4 core 0.3 W/m·K, against
+  0.8 in the plane), and goes down plated holes on any net, so thermal vias count. Only the
+  top and bottom layers lose heat to the air. The copper resistivity in the DC and AC
+  solves, the Temperature field of the 3D view, the Thermal tab's hottest copper per layer
+  and its limits, and the capacitor temperatures of the AC solve all read each layer's
+  own temperature. The report draws one temperature map per copper layer, on one color
+  scale, and lists the through-plane conductivities. Heat concentrated on one side, as
+  under a regulator, now runs hotter on that side than before and cooler on the others;
+  heat spread over the board changes little. Results saved before open as one sheet, as
+  they were solved.
 - **Faster AC solves on boards with many ground vias** (#123). The AC mesh is refined
   toward plated holes, where via inductance is decided, and on a board stitched with
   hundreds of ground vias that refinement was most of the mesh. It now happens only at

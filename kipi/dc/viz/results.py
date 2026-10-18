@@ -20,6 +20,7 @@ import pyvista as pv
 from scipy.spatial import cKDTree
 
 from kipi.core.model.board import BoardSnapshot, Stackup
+from kipi.core.temperature import at as temperature_at
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.viz.meshes import slab_from_triangles
 
@@ -229,8 +230,8 @@ def build_result_scene(board: Union[BoardSnapshot, Stackup], result, n_sides: in
         slab, source = slab_from_triangles(pts2, tris, cu.z_bottom_mm, cu.thickness_mm)
         slab.point_data["V"] = np.tile(v, 2)
         slab.point_data["drop_mV"] = np.tile((v_ref - v) * 1e3, 2)
-        temp = (np.asarray(temperature(pts2), dtype=float) if temperature is not None
-                else np.full(len(pts2), np.nan))
+        temp = (np.broadcast_to(temperature_at(temperature, pts2, lid), (len(pts2),))
+                if temperature is not None else np.full(len(pts2), np.nan))
         slab.point_data["T"] = np.tile(temp, 2)
         slab.cell_data["J"] = tri_j[source]
         slab.cell_data["P"] = tri_p[source]

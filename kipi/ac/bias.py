@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from kipi.core.model.board import BoardSnapshot
+from kipi.core.temperature import at as temperature_at
 
 # A pad's voltage is read at the nearest mesh node on its layers, if one is this close.
 NEAREST_NODE_MM = 2.0
@@ -110,26 +111,36 @@ def temperature_source(setup, dc_result):
                                       f"its results, first. Using {fixed:g} °C.")
     sampler = thermal.sampler()
 
-    def warm(xy):
-        t = np.asarray(sampler(np.atleast_2d(xy)), dtype=float).ravel()
+    def known(t):
+        t = np.asarray(t, dtype=float).ravel()
         return np.where(np.isfinite(t), t, fixed)
+
+    def warm(xy):
+        return known(sampler(np.atleast_2d(xy)))
+    if hasattr(sampler, "on_layers"):     # each copper layer's own (kipi.core.temperature)
+        warm.on_layers = lambda xy, layers: known(sampler.on_layers(xy, layers))
     return warm, "the DC thermal co-simulation's temperatures", ""
 
 
 def part_temperatures(snap: BoardSnapshot, ports, temperature) -> Dict[str, float]:
-    """Each capacitor port's temperature: at the middle of its pads."""
+    """Each capacitor port's temperature: at the middle of its pads, on the copper layer
+    its pads are on (the hottest layer there, for pads on several)."""
     if temperature is None:
         return {}
-    pos = {p.id: p.position for p in snap.pads}
-    names, xy = [], []
+    pads = {p.id: p for p in snap.pads}
+    names, xy, layers = [], [], []
     for port in ports:
-        pts = [pos[i] for i in (*port.plus_pads, *port.minus_pads) if i in pos]
-        if port.kind == "cap" and pts:
+        on = [pads[i] for i in (*port.plus_pads, *port.minus_pads) if i in pads]
+        if port.kind == "cap" and on:
             names.append(port.name)
-            xy.append(np.mean(pts, axis=0))
+            xy.append(np.mean([p.position for p in on], axis=0))
+            sides = {lid for p in on for lid in p.layers}
+            layers.append(sides.pop() if len(sides) == 1 else -1)
     if not names:
         return {}
-    return dict(zip(names, (float(t) for t in temperature(np.array(xy)))))
+    t = np.broadcast_to(temperature_at(temperature, np.array(xy), np.array(layers)),
+                        (len(names),))
+    return dict(zip(names, (float(v) for v in t)))
 
 
 def apply_derating(ports, setup, vrm, volts: Dict[str, float],

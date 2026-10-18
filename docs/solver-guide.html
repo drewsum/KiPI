@@ -331,20 +331,30 @@ every load downstream of it.</p>
 <h2 id="thermal">Electro-thermal co-simulation</h2>
 <p>The power lost in the copper, <i>I²R</i>, turns into heat. On a high-current rail that
 heat raises the board temperature by tens of degrees, and the heat from neighboring planes,
-regulators and loads adds to it. KiPI's thermal model spreads that heat across the whole board:</p>
-<p class="eq">∇·(G<sub>th</sub> ∇T) − 2h (T − T<sub>amb</sub>) + q″ = 0</p>
+regulators and loads adds to it. KiPI's thermal model spreads that heat across the whole board,
+with a temperature for each copper layer <i>l</i>:</p>
+<p class="eq">∇·(G<sub>l</sub> ∇T<sub>l</sub>) + Σ<sub>m</sub> (T<sub>m</sub> − T<sub>l</sub>) / R<sub>lm</sub>
+− h (T<sub>l</sub> − T<sub>amb</sub>) + q″<sub>l</sub> = 0</p>
 <ul>
-  <li><i>G<sub>th</sub></i> is how well the board spreads heat sideways: every copper layer
-    (weighted by how much of each spot is copper, on any net) plus every dielectric layer's
-    in-plane conductivity, from its material in the stackup.</li>
-  <li><i>h</i> is the convection from each face to the air, about 10 W/m²K in still air
-    (with radiation) and rising with the airflow you set.</li>
-  <li><i>q″</i> is the heat per area: copper and via losses, series parts, VRM conversion
-    losses and, optionally, the loads' own power.</li>
+  <li><i>G<sub>l</sub></i> is how well layer <i>l</i> spreads heat sideways: its copper
+    (weighted by how much of each spot is copper, on any net) plus half the in-plane
+    conductivity of each dielectric it touches, from its material in the stackup.</li>
+  <li><i>R<sub>lm</sub></i> is the resistance through the laminate to the neighboring copper
+    layers <i>m</i> above and below, from each dielectric's through-plane conductivity. Glass
+    laminates conduct about half as well through their thickness as along it (FR4 core
+    0.3 W/m·K against 0.8). Every plated hole, via or component hole, on any net, adds its
+    barrel's copper in parallel, which is why thermal vias work.</li>
+  <li><i>h</i> is the convection to the air, about 10 W/m²K in still air (with radiation)
+    and rising with the airflow you set. Only the top and bottom layers touch the air.</li>
+  <li><i>q″<sub>l</sub></i> is the heat put into layer <i>l</i>: each layer's copper loss,
+    via losses shared by the layers the via spans, and the heat of series parts, VRMs and,
+    optionally, loads on the layers of their pads.</li>
 </ul>
-<p>Through its thickness the board is taken as one temperature at each point. For FR4, the
-resistance across 1.6 mm is about a tenth of the resistance from the surface into the air,
-so the layers sit within a degree or two of each other.</p>
+<p>Spread out, the layers sit within a degree or two of each other: across 1.6 mm of FR4 the
+resistance is about a tenth of the resistance from the surface into the air. Concentrated,
+they do not. A regulator on the top layer heats its own pads and the top copper around it;
+the planes below see that heat only after it crosses the laminate or goes down vias. KiPI
+reports each layer's own peak.</p>
 
 <h3 id="thermal-copper">Hot copper resists more</h3>
 <p>Copper's resistivity rises with temperature, by about <b>0.393% per °C</b> near room
@@ -358,9 +368,10 @@ resistance means more drop and more <i>I²R</i> loss, and that loss heats it fur
 co-simulation follows the loop:</p>
 <ol class="steps">
   <li>Solve the DC power tree at the current temperature map (20 °C everywhere at first).</li>
-  <li>Gather every loss on the board onto one grid, and solve the board temperature.</li>
-  <li>Set each triangle's resistivity from the temperature where it sits, and go back to
-    step 1.</li>
+  <li>Gather every loss on the board onto one grid, on the layer it is made on, and solve
+    each layer's temperature.</li>
+  <li>Set each triangle's resistivity from its own layer's temperature where it sits, and go
+    back to step 1.</li>
 </ol>
 <p>Each pass reports how much the peak temperature changed. On most boards it settles within
 a few passes, which is when DC drop and temperature agree. A rail that keeps heating from

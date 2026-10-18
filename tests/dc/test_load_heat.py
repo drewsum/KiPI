@@ -117,7 +117,7 @@ def test_dc_connection_losses_heat_its_pins():
     tree = SimpleNamespace(groups={"A + B": SimpleNamespace(result=res)}, vrms=[])
     for load_power in (False, True):
         s = SimpleNamespace(vrms=[], loads=[], thermal=ThermalSettings(load_power=load_power))
-        xy, w, _ = heat_sources(tree, snap, s)
+        xy, w, _, _ = heat_sources(tree, snap, s)
         at_r1 = np.isin(xy[:, 0], [9.5, 12.5]) & (xy[:, 1] == 0.5)
         assert w[at_r1].sum() == pytest.approx(2.0 ** 2 * 0.02, rel=1e-9)
 

@@ -58,6 +58,7 @@ from kipi.core.mesh.mesher import NetMesh, combine_meshes, mesh_net
 from kipi.core.model.board import BoardSnapshot, Stackup
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.solver import direct
+from kipi.core.temperature import at as temperature_at
 from kipi.dc.solver.fem import _merge_groups, triangle_geometry
 from kipi.dc.solver.setup import REF_TEMP_C
 from kipi.dc.solver.via_barrel import barrel_copper_area, rule_for
@@ -275,7 +276,8 @@ class ACSystem:
                     bar_a.append(ua)
                     bar_b.append(ub)
                     bar_g.append(a_barrel / (self._rho_at(self.dc.rho_ohm_mm,
-                                                          self.dc.tcr_per_c, bar.position)
+                                                          self.dc.tcr_per_c, bar.position,
+                                                          (la, lb))
                                              * max(dz, 1e-6)))
         bar_a, bar_b = np.asarray(bar_a, dtype=np.int64), np.asarray(bar_b, dtype=np.int64)
         self._bar_g = np.asarray(bar_g, dtype=float)
@@ -553,11 +555,13 @@ class ACSystem:
         acc += max(gap - t_sum, 0.0) / dflt
         return gap, gap / acc
 
-    def _rho_at(self, rho: float, tcr: float, xy) -> float:
-        """Resistivity ``rho`` (at the reference temperature) at copper point ``xy``."""
+    def _rho_at(self, rho: float, tcr: float, xy, layers) -> float:
+        """Resistivity ``rho`` (at the reference temperature) at copper point ``xy``, at
+        the mean temperature of the copper layer ids ``layers`` there."""
         if self.temperature is None:
             return rho
-        t = float(np.asarray(self.temperature(np.atleast_2d(xy)), dtype=float).ravel()[0])
+        t = float(np.mean(temperature_at(self.temperature, np.tile(xy, (len(layers), 1)),
+                                         np.asarray(layers))))
         return rho * (1.0 + tcr * (t - REF_TEMP_C))
 
     def _rho_bins(self, cen: np.ndarray, tri_li: np.ndarray):
@@ -569,7 +573,8 @@ class ACSystem:
             self._tri_bin, self._bin_li, self._bin_rho = tri_li, np.arange(len(layers)), rho
             return
         tcr = np.array([self.dc.tcr_for(cu.name) for cu in layers])
-        temps = np.asarray(self.temperature(cen), dtype=float).ravel()
+        ids = np.array([cu.id for cu in layers])
+        temps = temperature_at(self.temperature, cen, ids[tri_li]).ravel()
         temps = np.where(np.isfinite(temps), temps, REF_TEMP_C)
         factor = np.maximum(1.0 + tcr[tri_li] * (temps - REF_TEMP_C), 0.05)
         q = np.round(np.log(factor) / RHO_STEP).astype(np.int64)

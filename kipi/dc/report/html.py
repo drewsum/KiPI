@@ -119,21 +119,32 @@ def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
     return _png(fig)
 
 
-def _thermal_map(th, outline) -> str:
+def _thermal_maps(th, snap: BoardSnapshot, outline) -> List[str]:
+    """One map per copper layer of the result, on one color scale; a result without
+    layers is one board map."""
+    names = {cu.id: cu.name for cu in snap.stackup.copper}
+    layers = [lid for lid in th.layers if lid in names] if len(th.layers) == len(th.temps)         else []
+    lo, hi = float(np.nanmin(th.temps)), float(np.nanmax(th.temps))
+    if not layers:
+        return [_thermal_map(th, outline, None, "Board temperature", lo, hi)]
+    return [_thermal_map(th, outline, lid, names[lid], lo, hi) for lid in layers]
+
+
+def _thermal_map(th, outline, layer, title, vmin, vmax) -> str:
     from matplotlib.figure import Figure
     fig = Figure(figsize=(6.0, 4.8))
     ax = fig.add_subplot(111)
     ext = [th.x[0], th.x[-1], th.y[-1], th.y[0]]
-    m = ax.imshow(th.temps, extent=ext, cmap="inferno", origin="upper",
-                  interpolation="bilinear")
+    m = ax.imshow(th.layer_temps(layer), extent=ext, cmap="inferno", origin="upper",
+                  interpolation="bilinear", vmin=vmin, vmax=vmax)
     if outline is not None:
         for ring in outline:
             a = np.asarray(ring + ring[:1])
             ax.plot(a[:, 0], a[:, 1], color="#bbb", lw=0.6)
-    x, y, t = th.hottest()
+    x, y, t = th.hottest(layer)
     ax.plot([x], [y], marker="+", color="cyan", ms=12)
     ax.set_aspect("equal")
-    ax.set_title(f"Board temperature (peak {t:.1f} °C)", fontsize=10)
+    ax.set_title(f"{title} (peak {t:.1f} °C)", fontsize=10)
     ax.set_xlabel("x (mm)", fontsize=8)
     ax.set_ylabel("y (mm)", fontsize=8)
     ax.tick_params(labelsize=7)
@@ -583,7 +594,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      + (f" ({sum(max(v, 0.0) for v in loads_w.values()):.3g} W of it from the "
                         "loads)" if with_loads else ", load power not included")
                      + f"; peak <b>{tmax:.1f} °C</b> at "
-                     f"({x:.1f}, {y:.1f}) mm. Ambient {th.settings.ambient_c:g} °C, airflow "
+                     f"({x:.1f}, {y:.1f}) mm{th.peak_layer(snap.stackup)}. Ambient "
+                     f"{th.settings.ambient_c:g} °C, airflow "
                      f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
         if getattr(th, "heat_by_kind", None):
             parts.append(f"<p>Heat by source: {_e(th.heat_breakdown())}.</p>")
@@ -611,12 +623,14 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             parts.append("<p class='note'>The hottest solved copper on each layer. "
                          + (f"Limits: {lim}; overall {_verdict(verdict)}." if lim
                             else "No temperature limits were set.") + "</p>")
-        parts.append(maps_html([_thermal_map(th, outline)], pdf))
+        parts.append(maps_html(_thermal_maps(th, snap, outline), pdf))
         if th.dielectrics:
-            parts.append("<h3>Laminate (in-plane thermal conductivity)</h3>" + _table(
-                ["Stackup material", "Thickness (mm)", "Taken as", "k (W/m·K)"],
+            parts.append("<h3>Laminate (thermal conductivity)</h3>" + _table(
+                ["Stackup material", "Thickness (mm)", "Taken as", "In-plane k (W/m·K)",
+                 "Through-plane k (W/m·K)"],
                 [[_e(m or "(unnamed)"), _num(t, ".3f"),
-                  _e(i.matched) + (" ⚠" if i.assumed else ""), _num(i.k_w_mk, "g")]
+                  _e(i.matched) + (" ⚠" if i.assumed else ""), _num(i.k_w_mk, "g"),
+                  _num(i.k_through, "g")]
                  for m, t, i in th.dielectrics]))
         parts.append(_table(["Iteration", "Heat (W)", "Peak (°C)", "Max change (°C)"],
                             [[str(h["iteration"]), _num(h["heat_w"]), _num(h["t_max"], ".2f"),

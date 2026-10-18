@@ -1538,17 +1538,22 @@ class PIPanel(QWidget, PartSelection):
             judged = (f'<span style="color:{color}"><b>{"PASS" if verdict else "FAIL"}</b>'
                       f"</span>: {html.escape(limits_text(limits))}.")
         self.lbl_thermal.setText(
-            f"Peak board temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
-            f"({x:.1f}, {y:.1f}) mm; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
+            f"Peak copper temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
+            f"({x:.1f}, {y:.1f}) mm{self._peak_layer(th)}; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
             f"ambient {ambient:g} °C, airflow {th.settings.airflow_m_s:g} m/s.<br>{judged}")
         details = ["Iterations: " + ", ".join(
             f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history)]
         if th.dielectrics:
             details.append("Dielectrics: " + "; ".join(
                 f"{html.escape(m or '(unnamed)')} {d:.3f} mm → {html.escape(i.matched)}, "
-                f"{i.k_w_mk:g} W/m·K{' ⚠ assumed' if i.assumed else ''}"
+                f"{i.k_w_mk:g} W/m·K in-plane, {i.k_through:g} through"
+                f"{' ⚠ assumed' if i.assumed else ''}"
                 for m, d, i in th.dielectrics))
         self.lbl_thermal_details.setText("<br>".join(details))
+
+    def _peak_layer(self, th) -> str:
+        st = getattr(getattr(self, "snapshot", None), "stackup", None)
+        return th.peak_layer(st) if st is not None else ""
 
     def _temp_row_clicked(self, row, _col):
         it = self.tbl_temps.item(row, 5)
@@ -2088,7 +2093,8 @@ class PIPanel(QWidget, PartSelection):
             x, y, tmax = th.hottest()
             notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board"
                             f"{_load_heat(th)}, peak "
-                            f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
+                            f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm"
+                            f"{self._peak_layer(th)}, ambient "
                             f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s "
                             "(details in the Thermal tab)")
             if getattr(th, "heat_by_kind", None):

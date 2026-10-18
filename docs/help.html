@@ -479,7 +479,10 @@ its thickness in the table.</p>
     Choosing a material sets its typical εr (a datasheet value near 1 GHz; type another if
     your laminate's differs) and its in-plane thermal conductivity <b>k</b>, which the
     electro-thermal solve uses. Type over k, unlocked, if your laminate's differs; choosing a
-    material again goes back to its typical value. A ⚠ beside k means KiPI did not recognize
+    material again goes back to its typical value. The solve also needs the conductivity
+    through the laminate, from one copper layer to the next: KiPI takes the material's typical
+    through-plane value (FR4 core 0.3 W/m·K), and a k you type keeps the material's ratio of
+    the two. A ⚠ beside k means KiPI did not recognize
     KiCad's name and took the layer as FR4. Setups from before 0.8.0 with a Thermal tab
     <b>Laminate k</b> open with that value as every dielectric's k.</td></tr>
   <tr><td><b>Material</b> (copper layers)</td><td class="wrap">What each copper layer is
@@ -1041,7 +1044,10 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
 </table>
 <p>Heat comes from every solved net and layer, vias, DC connections (I²R, at their pins), VRM
-conversion loss and, with <b>Include load power dissipation</b>, the loads. The report's
+conversion loss and, with <b>Include load power dissipation</b>, the loads. Each copper layer
+has its own temperature: heat goes onto the layer it is made on (a part's on the layers of its
+pads), crosses the laminate to the layers above and below, and goes down plated holes on any
+net. Only the top and bottom layers lose heat to the air. The report's
 <b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
@@ -1113,7 +1119,8 @@ color the copper in 3D.</p>
     Hot spots that the thermal solve will pick up.</td></tr>
   <tr><td>Via current (mA)</td><td class="wrap">Current in each via barrel.</td><td class="wrap">
     Vias doing all the work while neighbors idle.</td></tr>
-  <tr><td>Temperature (°C)</td><td class="wrap">Board temperature (electro-thermal only).</td>
+  <tr><td>Temperature (°C)</td><td class="wrap">Each layer's copper temperature
+    (electro-thermal only).</td>
     <td class="wrap">Peak location and rise.</td></tr>
 </table>
 <p><b>Show copper</b> returns to the plain geometry; pick a group or field again to bring the
@@ -1153,8 +1160,9 @@ scale, a minimum of zero or below falls back to four decades below the maximum.<
   <tr><td><b>Losses</b></td><td class="wrap">Copper loss per group and layer, in vias and
     series parts, with the total and each VRM's conversion loss at the bottom.</td></tr>
   <tr><td><b>Thermal</b></td><td class="wrap">After an electro-thermal solve: the hottest copper
-    on each layer, its rise and location, PASS/FAIL against the limits, the iteration history
-    and the dielectric conductivities used. Double-click a row to show its group's
+    on each layer, at that layer's own temperature, its rise and location, PASS/FAIL against
+    the limits, the iteration history and the dielectric conductivities used, in-plane and
+    through. Double-click a row to show its group's
     temperature.</td></tr>
   <tr><td><b>Notes</b></td><td class="wrap">Solve time, the nets in each group, pin group
     results, warnings and excluded groups.</td></tr>
@@ -1453,7 +1461,8 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
   <tr><td>Temperature</td><td class="wrap"><i>Not modeled</i> (the default): copper at 20 °C
     and capacitors at their rated values. <i>Fixed</i>: the whole board at <b>Board
     temperature</b>. <i>From DC thermal co-simulation</i>: each copper triangle and capacitor
-    at the temperature the last DC solve with thermal co-simulation found there; DC results
+    at the temperature the last DC solve with thermal co-simulation found there, on its own
+    copper layer; DC results
     opened from a file work too. Without one, the AC solve uses the Board temperature and
     says so. The copper's resistivity follows its temperature coefficient (from the DC
     settings), and models with a dielectric follow its temperature curve.</td></tr>

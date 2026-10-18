@@ -28,6 +28,7 @@ from kipi.core.mesh.mesher import NetMesh
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.solver.spd import SpdSolver
+from kipi.core.temperature import at as temperature_at
 from kipi.dc.solver.setup import REF_TEMP_C, SHORT_OHMS, NetProblem, SolveSettings
 from kipi.dc.solver.via_barrel import barrel_copper_area, rule_for
 
@@ -110,12 +111,14 @@ def _merge_groups(n: int, groups: List[np.ndarray]) -> Tuple[np.ndarray, int]:
     return labels, count
 
 
-def _rho_factor(problem: NetProblem, xy: np.ndarray, tcr=None) -> Optional[np.ndarray]:
-    """rho(T) / rho(REF_TEMP_C) at the given points, or None when no temperature. ``tcr`` is
-    the temperature coefficient at each point (default: the setup's)."""
+def _rho_factor(problem: NetProblem, xy: np.ndarray, tcr=None,
+                layers=None) -> Optional[np.ndarray]:
+    """rho(T) / rho(REF_TEMP_C) at the given points, on copper layer ids ``layers`` (per
+    point, or one for all; None: the hottest layer), or None when no temperature. ``tcr``
+    is the temperature coefficient at each point (default: the setup's)."""
     if problem.temperature is None:
         return None
-    t = np.asarray(problem.temperature(xy), dtype=float)
+    t = temperature_at(problem.temperature, xy, layers)
     tcr = problem.settings.tcr_per_c if tcr is None else tcr
     return np.maximum(1.0 + tcr * (t - REF_TEMP_C), 0.05)
 
@@ -177,7 +180,8 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
     # One value for a single layer (or several alike), else one per triangle.
     tri_tcr = (np.array([tcr[l] for l in mesh.tri_layer]) if len(set(tcr.values())) > 1
                else next(iter(tcr.values()), None))
-    rho_factor = _rho_factor(problem, mesh.points[mesh.tris].mean(axis=1), tri_tcr)
+    rho_factor = _rho_factor(problem, mesh.points[mesh.tris].mean(axis=1), tri_tcr,
+                             mesh.tri_layer)
     if rho_factor is not None:
         gs = gs / rho_factor
     coef = gs / (4 * area)
@@ -196,8 +200,9 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
         for la, lb in zip(layers[:-1], layers[1:]):
             dz = abs(st.layer(la).z_mid_mm - st.layer(lb).z_mid_mm)
             g = a_barrel / (s.rho_ohm_mm * max(dz, 1e-6))
-            if problem.temperature is not None:
-                g /= float(_rho_factor(problem, np.asarray([bar.position]))[0])
+            if problem.temperature is not None:     # the mean of the two layers' copper
+                g /= float(np.mean(_rho_factor(problem, np.asarray([bar.position] * 2),
+                                               layers=np.array([la, lb]))))
             na = merged_of[bar.ring_nodes[la][0]]
             nb = merged_of[bar.ring_nodes[lb][0]]
             if na == nb:

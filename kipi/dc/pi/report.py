@@ -27,6 +27,7 @@ from kipi import __version__, compat
 from kipi.core import results_io
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
+from kipi.core.temperature import at as temperature_at
 from kipi.dc.pi.tree import drop_or_boost
 
 RESULTS_FORMAT = 2          # 2: JSON and arrays (#99); 1: a gzipped pickle
@@ -96,7 +97,7 @@ def layer_temps(tree, snap: BoardSnapshot, limits=None) -> List[LayerTempRow]:
     th = getattr(tree, "thermal", None)
     if th is None:
         return []
-    T = th.sampler()
+    T = th.sampler()             # each layer's own copper (kipi.core.temperature)
     ambient = th.settings.ambient_c
     best: Dict[int, tuple] = {}             # layer id -> (t, x, y, group)
     for g in tree.groups.values():
@@ -104,7 +105,7 @@ def layer_temps(tree, snap: BoardSnapshot, limits=None) -> List[LayerTempRow]:
         for lid in np.unique(mesh.tri_layer):
             nodes = np.unique(mesh.tris[mesh.tri_layer == lid])
             pts = mesh.points[nodes]
-            t = np.asarray(T(pts), dtype=float)
+            t = np.broadcast_to(temperature_at(T, pts, int(lid)), (len(pts),))
             k = int(np.argmax(t))
             if lid not in best or t[k] > best[lid][0]:
                 best[lid] = (float(t[k]), float(pts[k, 0]), float(pts[k, 1]), g.name)

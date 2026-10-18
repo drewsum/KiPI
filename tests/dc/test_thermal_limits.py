@@ -52,7 +52,8 @@ def test_hottest_copper_per_layer(hot):
         assert 25.0 < r.t_max <= th.t_max + 1e-9
         assert r.rise == pytest.approx(r.t_max - 25.0) and r.passed is None
         assert r.group in tree.groups
-        assert th.sampler()([[r.x, r.y]])[0] == pytest.approx(r.t_max)
+        lid = next(cu.id for cu in snap.stackup.copper if cu.name == r.layer)
+        assert th.sampler().on_layers([[r.x, r.y]], lid)[0] == pytest.approx(r.t_max)
     assert thermal_passed(rows) is None
     peak = max(r.t_max for r in rows)
     lim = ThermalSettings(max_temp_c=(25.0 + peak) / 2)  # between ambient and the peak
