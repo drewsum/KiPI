@@ -130,6 +130,42 @@ def test_probe_editor_offers_the_rails_loads(app, monkeypatch):
     panel.probe_list.lst.setCurrentRow(0)
     seen = []
     monkeypatch.setattr(target_calc.TargetCalculator, "exec",
-                        lambda dlg: seen.append([t.name for t in dlg.loads]) or 0)
+                        lambda dlg: seen.append([[t.name for t in dlg.loads],
+                                                 [c.name for c in dlg.currents]]) or 0)
     panel.probe_list.editor.btn_calc.click()
-    assert seen == [["SoC", "FPGA core"]]
+    assert seen == [[["SoC", "FPGA core"], ["SoC", "FPGA core", "No tolerance"]]]
+
+
+# --- Copy current from DC load ------------------------------------------------------------
+
+def test_load_currents_on_the_probes_rail_own_part_first():
+    from kipi.ac.target import load_currents
+    from kipi.dc.pi.model import PinRef
+    cs = load_currents(_setup(), PinRef("U1", "+1V0", ["1"]))
+    assert [(c.name, c.current_a) for c in cs] == [("SoC", 2.0), ("FPGA core", 5.0),
+                                                   ("No tolerance", 1.0)]
+    assert cs[0].label() == "SoC: 2 A"
+    assert len(load_currents(_setup())) == 4
+    assert load_currents(_setup(), PinRef("U5", "+5V")) == []
+
+
+def test_dialog_copies_a_load_current(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import LoadCurrent
+    monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
+    assert not TargetCalculator().btn_current.isEnabled()
+    d = TargetCalculator(currents=[LoadCurrent("SoC", 2.5)])
+    assert d.btn_current.menu() is None
+    d.btn_current.click()
+    assert d.i_step.value() == pytest.approx(2.5)
+    two = TargetCalculator(currents=[LoadCurrent("A", 1.0), LoadCurrent("B", 4.0)])
+    actions = two.btn_current.menu().actions()
+    assert [a.text() for a in actions] == ["A: 1 A", "B: 4 A"]
+    actions[1].trigger()
+    assert two.i_step.value() == pytest.approx(4.0)
+
+
+def test_slew_rate_starts_at_10_a_per_us(app):
+    from kipi.ac.gui import target_calc
+    assert target_calc.TargetCalculator.last == (0.0, 0.0, 10.0)
+    assert target_calc.TargetCalculator().slew.value() == 10.0

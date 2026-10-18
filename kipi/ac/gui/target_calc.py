@@ -10,7 +10,7 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.ac.gui.plot import _eng
-from kipi.ac.target import LoadTolerance, Target, target_from_transient
+from kipi.ac.target import LoadCurrent, LoadTolerance, Target, target_from_transient
 from kipi.dc.gui.pi_panel import _spin
 
 NOTE = ("Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>, flat up to "
@@ -26,11 +26,13 @@ PAPER = (f'For more information on the target impedance approach, please see '
 
 
 class TargetCalculator(QDialog):
-    # The inputs last applied, offered again the next time the calculator opens.
-    last: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # The inputs last applied, offered again the next time the calculator opens; until
+    # then a 10 A/µs slew rate.
+    last: Tuple[float, float, float] = (0.0, 0.0, 10.0)
 
     def __init__(self, parent: Optional[QWidget] = None, probe_name: str = "",
-                 loads: Optional[List[LoadTolerance]] = None):
+                 loads: Optional[List[LoadTolerance]] = None,
+                 currents: Optional[List[LoadCurrent]] = None):
         super().__init__(parent)
         self.setWindowTitle("Target Impedance/Frequency Calculator"
                             + (f": {probe_name}" if probe_name else ""))
@@ -47,24 +49,20 @@ class TargetCalculator(QDialog):
             s.setValue(v)
             s.valueChanged.connect(self._update)
 
-        # Copy the AC tolerance from a DC load's tolerance (#87); a menu when several fit.
+        # Copy the AC tolerance from a DC load's tolerance (#87), and the load step from a
+        # DC load's current; a menu when several fit.
         self.loads = list(loads or [])
-        self.btn_copy = QPushButton("Copy tolerance from DC load")
-        if not self.loads:
-            self.btn_copy.setEnabled(False)
-            self.btn_copy.setToolTip("No DC load on this probe's rail has a tolerance and a "
-                                     "VRM feeding it")
-        else:
-            self.btn_copy.setToolTip("Fill in the AC voltage tolerance from a DC load's "
-                                     "tolerance: ± that % of its VRM's voltage. That is the "
-                                     "whole tolerance; the DC drop uses up part of it.")
-            if len(self.loads) == 1:
-                self.btn_copy.clicked.connect(lambda: self.copy_tolerance(self.loads[0]))
-            else:
-                menu = QMenu(self.btn_copy)
-                for t in self.loads:
-                    menu.addAction(t.label(), lambda t=t: self.copy_tolerance(t))
-                self.btn_copy.setMenu(menu)
+        self.btn_copy = _copy_button(
+            "Copy tolerance from DC load", self.loads, self.copy_tolerance,
+            "Fill in the AC voltage tolerance from a DC load's tolerance: ± that % of its "
+            "VRM's voltage. That is the whole tolerance; the DC drop uses up part of it.",
+            "No DC load on this probe's rail has a tolerance and a VRM feeding it")
+        self.currents = list(currents or [])
+        self.btn_current = _copy_button(
+            "Copy current from DC load", self.currents, self.copy_current,
+            "Fill in the load step from a DC load's current: a step from no load to all of "
+            "it. Lower it if the device's current steps by less.",
+            "No DC load on this probe's rail draws a current")
 
         self.lbl_z, self.lbl_t, self.lbl_f = QLabel(), QLabel(), QLabel()
         for lbl in (self.lbl_z, self.lbl_t, self.lbl_f):
@@ -74,6 +72,7 @@ class TargetCalculator(QDialog):
         form.addRow("AC voltage tolerance", self.v_ac)
         form.addRow("", self.btn_copy)
         form.addRow("Load step (ΔI)", self.i_step)
+        form.addRow("", self.btn_current)
         form.addRow("Load step slew rate", self.slew)
         form.addRow(QLabel(""))
         form.addRow("<b>Target impedance</b>", self.lbl_z)
@@ -106,6 +105,9 @@ class TargetCalculator(QDialog):
     def copy_tolerance(self, t: LoadTolerance):
         self.v_ac.setValue(t.v_ac_v * 1e3)
 
+    def copy_current(self, c: LoadCurrent):
+        self.i_step.setValue(c.current_a)
+
     def target(self) -> Optional[Target]:
         return target_from_transient(self.v_ac.value() * 1e-3, self.i_step.value(),
                                      self.slew.value() * 1e6)
@@ -126,3 +128,22 @@ class TargetCalculator(QDialog):
             return
         TargetCalculator.last = (self.v_ac.value(), self.i_step.value(), self.slew.value())
         super().accept()
+
+
+def _copy_button(text: str, items: list, copy, tip: str, none_tip: str) -> QPushButton:
+    """A button copying one of ``items`` (each with a ``label()``) into the calculator:
+    straight away for one, from a menu for several, disabled with ``none_tip`` for none."""
+    btn = QPushButton(text)
+    if not items:
+        btn.setEnabled(False)
+        btn.setToolTip(none_tip)
+        return btn
+    btn.setToolTip(tip)
+    if len(items) == 1:
+        btn.clicked.connect(lambda: copy(items[0]))
+    else:
+        menu = QMenu(btn)
+        for item in items:
+            menu.addAction(item.label(), lambda item=item: copy(item))
+        btn.setMenu(menu)
+    return btn

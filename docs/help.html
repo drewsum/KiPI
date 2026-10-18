@@ -1210,7 +1210,10 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
     shows a menu when there are several. A DC tolerance is the whole budget, and the DC drop
     uses up part of it, so lower the value if the AC part is smaller.</li>
   <li><b>Load step (ΔI)</b>: the size of the current step.</li>
-  <li><b>Load step slew rate</b>: how fast it steps, A/µs.</li>
+  <li><b>Copy current from DC load</b> fills the load step from a DC load's current, a step
+    from no load to all of it, offering the loads on the probe's rail the same way. Lower it
+    if the device's current steps by less.</li>
+  <li><b>Load step slew rate</b>: how fast it steps, A/µs; 10 A/µs until you change it.</li>
 </ul>
 <p>Then Z<sub>target</sub> = V<sub>AC</sub> / ΔI, flat up to f<sub>target</sub> = 1 / (π ·
 t<sub>rise</sub>), with t<sub>rise</sub> = ΔI / slew rate. <b>Use for probe</b> fills the probe's

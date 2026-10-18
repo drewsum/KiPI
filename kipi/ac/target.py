@@ -18,6 +18,7 @@ applies above the VRM's bandwidth (:func:`judged_from`).
 
 The calculator's AC tolerance can be copied from a DC load's tolerance
 (:func:`load_tolerances`): +/- that percentage of the voltage of the VRM feeding the load.
+Its load step can be copied from a DC load's current (:func:`load_currents`).
 """
 
 from __future__ import annotations
@@ -135,24 +136,44 @@ class LoadTolerance:
         return f"{self.name}: ±{self.pct:g} % of {self.nominal_v:g} V"
 
 
+@dataclass
+class LoadCurrent:
+    name: str             # the DC load's name
+    current_a: float      # its total current
+
+    def label(self) -> str:
+        return f"{self.name}: {self.current_a:g} A"
+
+
+def _rail_loads(setup: "PISetup", rail: Optional["PinRef"]):
+    """``(load, its rail's nets)`` for the DC loads on the probe's rail ``rail`` (its nets
+    joined by series links), the probe's own part first; every load without a rail."""
+    from kipi.dc.pi.model import net_groups
+    groups = net_groups(setup, [rail.net] if rail else [])
+    out = [(load, groups[load.supply.net]) for load in setup.loads]
+    if rail:
+        out = [(load, group) for load, group in out if rail.net in group]
+        out.sort(key=lambda lg: lg[0].supply.ref != rail.ref)
+    return out
+
+
 def load_tolerances(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[LoadTolerance]:
     """DC loads with a tolerance and a VRM feeding their rail. With the probe's supply pins
     ``rail``, only loads on that rail (its nets joined by series links), the probe's own
     part first."""
-    from kipi.dc.pi.model import net_groups
-    groups = net_groups(setup, [rail.net] if rail else [])
     out = []
-    for load in setup.loads:
+    for load, group in _rail_loads(setup, rail):
         if not load.tolerance_pct:
-            continue
-        group = groups[load.supply.net]
-        if rail and rail.net not in group:
             continue
         vrm = next((v for v in setup.vrms
                     if v.voltage and any(ph.output.net in group for ph in v.all_phases())), None)
         if vrm:
             out.append(LoadTolerance(load.name, load.tolerance_pct, vrm.voltage))
-    if rail:
-        own = {l.name for l in setup.loads if l.supply.ref == rail.ref}
-        out.sort(key=lambda t: t.name not in own)
     return out
+
+
+def load_currents(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[LoadCurrent]:
+    """DC loads drawing a current, for the calculator's load step: with the probe's supply
+    pins ``rail``, only loads on that rail, the probe's own part first."""
+    return [LoadCurrent(load.name, abs(load.total_current()))
+            for load, _ in _rail_loads(setup, rail) if load.total_current()]

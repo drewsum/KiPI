@@ -136,8 +136,13 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   temperature, or **From DC thermal co-simulation**, from the copper temperatures of the
   last DC solve with thermal co-simulation or of DC results opened from a file. The Results
   notes and the HTML report give the temperatures used.
+- The Target Impedance/Frequency Calculator has a **Copy current from DC load** button
+  beside the load step. It fills the load step from the current of a DC load on the
+  probe's rail, the probe's own part first, with a menu when there are several.
 
 ### Changed
+- The Target Impedance/Frequency Calculator's slew rate starts at 10 A/µs instead of
+  empty.
 - `python -m kipi` with no arguments starts standalone instead of connecting to the running
   KiCad. Use `KIPI_HOST=plugin python -m kipi` for the old behavior; `--dump` still
   extracts from the running KiCad.
