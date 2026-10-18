@@ -465,12 +465,12 @@ class MainWindow(QMainWindow):
                      "pi": "Mark the parts of the current analysis on the nets shown: a "
                            "dot on each of their pads, larger on the rail and smaller on "
                            "ground, and the part's name. In DC mode its VRMs (green), "
-                           "loads (cyan), series links (magenta) and capacitors with a "
-                           "model (white); in AC mode its VRMs, series links, probes "
-                           "(violet) and capacitors, the probes in place of the loads, "
-                           "which no impedance sweep uses. Over the copper only, not over "
-                           "results. Off to start with. The VRM, load, series link or "
-                           "probe selected in the setup is marked in amber, and clicking "
+                           "loads (cyan) and series links (magenta); in AC mode its VRMs, "
+                           "series links, probes (violet) and capacitors with a model "
+                           "(white), the probes in place of the loads, which no impedance "
+                           "sweep uses. Over the copper only, not over results. Off to "
+                           "start with. The VRM, load, series link, probe or capacitor "
+                           "model selected in the setup is marked in amber, and clicking "
                            "its name selects it there.",
                      "models": "Show the 3D models of every part on the board. KiCad's "
                                "kicad-cli reads them from the saved board file; with none, "
@@ -1111,8 +1111,8 @@ class MainWindow(QMainWindow):
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):
         """Mark the parts the current mode solves, on the ticked nets (#84): DC mode's VRMs,
-        loads, series links and capacitors, or, in AC mode, the VRMs, series links, probes
-        and capacitors of an impedance sweep."""
+        loads and series links, or, in AC mode, the VRMs, series links, probes and
+        modelled capacitors of an impedance sweep."""
         if self._closed:
             return
         if self.snapshot is None:

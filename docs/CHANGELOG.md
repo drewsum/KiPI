@@ -122,6 +122,8 @@ milestones rather than versions that were ever set.
 - **Snap to selected works for capacitor models.** Picking a model in AC mode's
   Capacitors tab marks every part it names in amber and, with Snap to selected ticked,
   brings the view to them; clicking a capacitor in 3D selects its model.
+- **Capacitors are marked in AC mode only.** PI Models no longer marks the modelled
+  capacitors in DC mode, whose solve has no use for them.
 - **Loss tangent and Default εr moved to the Stackup window** (#134), from the AC setup's
   Mesh tab, beside the copper Resistivity and TCR. Like those they are setup settings, so
   they can be changed while the stackup is locked; setups keep them as before.

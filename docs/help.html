@@ -586,10 +586,11 @@ Hiding layers does not change the result colors; set the
   <tr><td id="pi-models"><b>PI Models</b></td><td class="wrap">Marks the parts the current
     analysis uses on the copper: a dot on each of their pads, larger on the rail's pins and
     smaller on ground, with the part's name above. In DC mode those are the setup's
-    <b>VRMs</b> (green), <b>loads</b> (cyan), <b>series links</b> (magenta) and
-    <b>capacitors</b> with a model (white). In AC mode the <b>probes</b> (violet) take the
-    loads' place — the impedance is looked into at a probe, and a load's current says
-    nothing about it — beside the same VRMs, series links and capacitors. Only pads on a
+    <b>VRMs</b> (green), <b>loads</b> (cyan) and <b>series links</b> (magenta). In AC mode
+    the <b>probes</b> (violet) take the loads' place — the impedance is looked into at a
+    probe, and a load's current says nothing about it — beside the same VRMs and series
+    links and the <b>capacitors</b> with a model (white), which only an impedance sweep
+    uses. Only pads on a
     net shown are marked, and the marks follow setup edits. They are drawn over the plain
     copper only, not over results. Unticked to start with.<br>
     Clicking a VRM, load, series link, probe or capacitor model in the setup's lists marks it
