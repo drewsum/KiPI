@@ -9,6 +9,9 @@ milestones rather than versions that were ever set.
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
 
 ### Added
+- AC Probes tab: **From DC load**, next to Add, Duplicate and Remove, adds a probe on the
+  same supply and ground nets, parts and pins as the DC load picked from its dropdown. A
+  load without ground pins gets its part's pins on its ground net.
 - **Standalone mode.** Started from KiCad's toolbar, KiPI runs as the plugin and reads the
   board open in the PCB editor. Started any other way (`python -m kipi`, or the `kipi`
   command of an installed package), it runs standalone: it opens board files and needs no

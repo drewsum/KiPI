@@ -48,6 +48,24 @@ def test_dialog_computes_and_remembers_inputs(app, monkeypatch):
     assert again.target().z_ohm == pytest.approx(5e-3)
 
 
+def test_probe_from_a_dc_load_takes_its_pins(app):
+    from kipi.ac.gui.panel import ACPanel
+    from kipi.ac.model import Probe
+    from kipi.dc.pi.model import Load, PinRef
+    panel = ACPanel()
+    panel.setup.loads.append(Load("SoC", PinRef("U1", "+1V0", ["1", "3"]), 5.0,
+                                  ground=PinRef("U1", "GND", ["2"])))
+    panel.setup.probes.append(Probe("SoC", PinRef("U2", "+1V0"), PinRef("U2", "GND")))
+    panel.setEnabled(True)
+    probe = panel.probe_from_load(panel.setup.loads[0])
+    assert probe.name == "SoC 1"                      # the name is taken
+    assert probe.rail == PinRef("U1", "+1V0", ["1", "3"])
+    assert probe.ground == PinRef("U1", "GND", ["2"])
+    assert probe.rail is not panel.setup.loads[0].supply
+    panel.probe_list.add(probe)
+    assert panel.setup.probes[-1] is probe and panel.probe_list.current() is probe
+
+
 def test_calculator_fills_the_probe_target(app, monkeypatch):
     from kipi.ac.gui import target_calc
     from kipi.ac.gui.panel import ACPanel

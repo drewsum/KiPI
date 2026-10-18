@@ -8,6 +8,7 @@ one ground net.
 
 from __future__ import annotations
 
+import copy
 import html
 import re
 from pathlib import Path
@@ -18,7 +19,7 @@ from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QSlider, QSpinBox,
+    QHeaderView, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSlider, QSpinBox,
     QTableWidget, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -33,7 +34,8 @@ from kipi.dc.gui.pi_panel import (
     ItemList, LinkEditor, PIPanel, VrmEditor, _Editor, _spin, _unique, make_searchable,
     new_link, new_vrm, parts_on_net, tip,
 )
-from kipi.dc.pi.model import PinRef, PISetup
+from kipi.dc.pi.autofill import guess_ground_pins
+from kipi.dc.pi.model import Load, PinRef, PISetup
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
 )
@@ -561,6 +563,13 @@ class ACPanel(QWidget):
         self.cap_list.layout().insertWidget(0, b_values)
         self.probe_list = ItemList(lambda: self.setup.probes, ProbeEditor(self),
                                    self._new_probe, self._describe_probe, noun="probe")
+        # A probe on a DC load's pins, picked from a dropdown of the setup's loads.
+        b_load = QPushButton("From DC load")
+        b_load.setToolTip("Add a probe on the same supply and ground pins as a DC load")
+        menu = QMenu(b_load)
+        menu.aboutToShow.connect(lambda: self._fill_load_menu(menu))
+        b_load.setMenu(menu)
+        self.probe_list.buttons.insertWidget(1, b_load)
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.link_list, "Series links")
         self.tabs.addTab(self.cap_list, "Capacitors")
@@ -998,6 +1007,26 @@ class ACPanel(QWidget):
         gref = ref if ref in gnd_parts else self._first_part(gnd)
         return Probe(_unique(ref or "PROBE1", [p.name for p in self.setup.probes]),
                      PinRef(ref, net), PinRef(gref, gnd))
+
+    def _fill_load_menu(self, menu: QMenu):
+        menu.clear()
+        for load in self.setup.loads:
+            menu.addAction(load.name, lambda load=load: self.probe_list.add(
+                self.probe_from_load(load)))
+        if not self.setup.loads:
+            menu.addAction("No DC loads in the setup").setEnabled(False)
+
+    def probe_from_load(self, load: Load) -> Probe:
+        """A probe on ``load``'s supply and ground pins, named after it. A load without
+        ground pins gets its part's pins on its ground net, else the busiest part on the
+        panel's ground."""
+        gnd = load.ground or guess_ground_pins(self.snapshot, self.setup, self._nets,
+                                               load.supply, [self.ground()])
+        if gnd is None:
+            net = self.ground() or next((n for n in self._nets if n != load.supply.net), "")
+            gnd = PinRef(self._first_part(net) if self.snapshot and net else "", net)
+        return Probe(_unique(load.name, [p.name for p in self.setup.probes]),
+                     copy.deepcopy(load.supply), copy.deepcopy(gnd))
 
     def _models_from_values(self):
         if self.snapshot is None:

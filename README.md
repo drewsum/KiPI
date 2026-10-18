@@ -516,7 +516,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   gives its capacitance a typical temperature curve.
   **Models from values** reads the dielectric from the value too.
 * **Probes tab**: Defines where to plot the PDN impedance, usually a device's supply and ground
-  pins. Each probe has a target impedance and frequency range: **flat** (an impedance up to a frequency) or **custom**, a
+  pins. **From DC load** adds a probe on the same pins as a DC load you pick from its dropdown. Each probe has a target impedance and frequency range: **flat** (an impedance up to a frequency) or **custom**, a
   piecewise-linear mask through frequency/impedance points on the log-log plot.
   **Target Impedance/Frequency Calculator** works out a flat target from the device's AC
   voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).

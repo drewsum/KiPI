@@ -972,7 +972,8 @@ class ItemList(QWidget):
         self.lst.currentRowChanged.connect(self._select)
         self.lst.itemClicked.connect(lambda _: self.selected.emit(self.current(), True))
         self.lst.setToolTip(f"Select a {noun} to edit it below")
-        row = QHBoxLayout()
+        #: The Add / Duplicate / Remove row, for panels that add buttons of their own.
+        self.buttons = row = QHBoxLayout()
         for text, slot, what in (("Add", self._add, f"Add a new {noun}"),
                                  ("Duplicate", self._dup, f"Add a copy of the selected {noun}"),
                                  ("Remove", self._remove, f"Delete the selected {noun}")):
@@ -1042,7 +1043,10 @@ class ItemList(QWidget):
         self.selected.emit(self.current(), False)     # its name may have changed
 
     def _add(self):
-        obj = self.make_new()
+        self.add(self.make_new())
+
+    def add(self, obj):
+        """Append ``obj`` (None: nothing) and select it."""
         if obj is None:
             return
         self.items().append(obj)
