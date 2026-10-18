@@ -12,6 +12,8 @@ fields, so the field is added to Qt's file afterwards as an incremental update (
 and a cross-reference section appended; Qt's own bytes are left as they are). Should that
 fail, the PDF keeps the empty box, to write in on paper.
 
+A heading the page ends under starts the next page instead, with what it heads.
+
 Safe on a worker thread (QTextDocument and QPdfWriter need no window), but the application
 must exist: Qt needs it for fonts.
 """
@@ -52,6 +54,8 @@ table.notes td { border: 1px solid #999; text-align: left; }
 # Qt sizes a table to its contents; the full page width spreads a wide one's columns out
 # instead of breaking their words.
 _TABLE = re.compile(r"<table(?! class='maps')")
+_HEADING = re.compile(r"<h[1-6]\b")
+_PAGE_BREAK = " style='page-break-before: always'"
 _DATA_IMAGE = re.compile(r"""src=(['"])data:image/(png|jpeg);base64,([A-Za-z0-9+/=]+)\1""")
 
 
@@ -87,10 +91,8 @@ def write_pdf(html: str, path, title: str = "") -> Path:
 def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
     """Print ``html`` page by page. Returns where the notes box landed (page index and its
     rectangle in PDF points), None without one."""
-    from qtpy.QtCore import QLocale, QMarginsF, QRectF, QSizeF, QUrl
-    from qtpy.QtGui import (
-        QImage, QPageLayout, QPageSize, QPainter, QPdfWriter, QTextDocument,
-    )
+    from qtpy.QtCore import QRectF, QSizeF, QUrl
+    from qtpy.QtGui import QImage, QPageLayout, QPainter, QTextDocument
 
     doc = QTextDocument()
     doc.setDefaultStyleSheet(CSS)
@@ -114,12 +116,7 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
     doc.addResource(QTextDocument.ImageResource, QUrl(NOTES_IMAGE), blank)
     html = html.replace(NOTES_MARKER, f"<img src='{NOTES_IMAGE}' width='1' "
                                       f"height='{round(NOTES_HEIGHT_PT * 96 / 72)}'>")
-    writer = QPdfWriter(str(path))
-    writer.setTitle(title)
-    writer.setCreator("KiPI")
-    us = QLocale().measurementSystem() == QLocale.ImperialUSSystem
-    writer.setPageSize(QPageSize(QPageSize.Letter if us else QPageSize.A4))
-    writer.setPageMargins(QMarginsF(*[PAGE_MARGIN_MM] * 4), QPageLayout.Millimeter)
+    writer = _writer(path, title)
 
     # Laid out on the writer itself, in its pixels, one page at a time (what print() does,
     # but here the notes box's place on the page is known).
@@ -132,7 +129,17 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
         doc.setHtml(text)
         doc.setDocumentMargin(0)           # the page margins are the writer's
 
+    # A heading the page ends under goes over with what it heads: one page break at a
+    # time, the first such heading on, each laid out again (a break moves all after it).
+    breaks = set()
     load(html)
+    while _heading_count(doc) == len(_HEADING.findall(html)):  # each one the HTML's
+        i = _stranded_heading(doc, h)
+        if i is None or i in breaks:
+            break
+        breaks.add(i)
+        load(_break_before(html, breaks))
+    html = _break_before(html, breaks)
     layout = doc.documentLayout()
     notes = None
     table = _notes_table(doc)
@@ -167,6 +174,76 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
         painter.end()
     del writer                      # finishes the file
     return notes
+
+
+def _writer(path, title=""):
+    """The PDF writer: Letter where the locale measures in inches, else A4."""
+    from qtpy.QtCore import QLocale, QMarginsF
+    from qtpy.QtGui import QPageLayout, QPageSize, QPdfWriter
+    writer = QPdfWriter(str(path))
+    writer.setTitle(title)
+    writer.setCreator("KiPI")
+    us = QLocale().measurementSystem() == QLocale.ImperialUSSystem
+    writer.setPageSize(QPageSize(QPageSize.Letter if us else QPageSize.A4))
+    writer.setPageMargins(QMarginsF(*[PAGE_MARGIN_MM] * 4), QPageLayout.Millimeter)
+    return writer
+
+
+def _line(layout, block):
+    """The top and bottom of ``block``'s first line where it was laid out, in
+    document pixels: a line a page break pushed down counts where it landed."""
+    lines = block.layout()
+    if lines.lineCount() == 0:
+        return None
+    line = lines.lineAt(0)
+    top = layout.blockBoundingRect(block).top() + line.y()
+    return top, top + line.height()
+
+
+def _stranded_heading(doc, h):
+    """The number (in the document's order) of the first heading left at the foot of a
+    page: on another page than the first line of what it heads, or for the notes box, its
+    whole box. Headings one after another go together, by the first. None if no heading
+    is."""
+    from qtpy.QtGui import QTextCursor
+    layout = doc.documentLayout()
+    notes = _notes_table(doc)
+    count, run = 0, None                   # run: the first of the headings just passed
+    block = doc.begin()
+    while block.isValid():
+        if block.blockFormat().headingLevel():
+            line = _line(layout, block)
+            if run is None and line is not None:
+                run = (count, int(line[0] // h))
+            count += 1
+        elif run is not None and block.text().strip():
+            table = QTextCursor(block).currentTable()
+            if notes is not None and table is not None \
+                    and table.firstPosition() == notes.firstPosition():
+                end = layout.frameBoundingRect(table).bottom()
+            else:
+                line = _line(layout, block)
+                end = line[1] if line else None
+            if end is not None and int((end - 1) // h) != run[1]:
+                return run[0]
+            run = None
+        block = block.next()
+    return None
+
+
+def _heading_count(doc):
+    count, block = 0, doc.begin()
+    while block.isValid():
+        count += bool(block.blockFormat().headingLevel())
+        block = block.next()
+    return count
+
+
+def _break_before(html, which):
+    """``html`` with a page break before each heading numbered in ``which``."""
+    count = iter(range(1 << 30))
+    return _HEADING.sub(lambda m: m.group(0) + (_PAGE_BREAK if next(count) in which else ""),
+                        html)
 
 
 def _notes_table(doc):

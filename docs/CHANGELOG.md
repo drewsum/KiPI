@@ -32,7 +32,8 @@ milestones rather than versions that were ever set.
   it in any PDF viewer that fills forms (Acrobat, web browsers, Preview)
   and save the PDF to keep the notes; printed, it is a box to write in. Qt cannot make
   form fields, so KiPI adds the field to Qt's file as an incremental update, and should
-  that fail the box stays without it. It opens in the PDF viewer. Where a
+  that fail the box stays without it. A heading that would end a page starts the next
+  one instead, with the table or text it heads. It opens in the PDF viewer. Where a
   PDF cannot be made, KiPI writes the HTML report instead and the log says why. The
   *Report* button is now *Open report*.
 

@@ -95,6 +95,11 @@ def _notes_field(data: bytes):
 def _static(html):
     assert "<script" not in html and "plotly" not in html.lower()
     assert "contenteditable" not in html and "<details" not in html and "<nav>" not in html
+    # Qt reads every heading as one, so a heading at a page's foot can be moved.
+    from qtpy.QtGui import QTextDocument
+    doc = QTextDocument()
+    doc.setHtml(html)
+    assert pdf._heading_count(doc) == len(pdf._HEADING.findall(html)) > 3
 
 
 def test_dc_report_as_pdf(dc, tmp_path, printed):
@@ -248,6 +253,39 @@ def test_a_box_that_would_split_starts_a_page(tmp_path):
         path = pdf.write_pdf("<p>line</p>" * n + box, tmp_path / f"r{n}.pdf")
         x0, y0, x1, y1 = _notes_field(path.read_bytes())
         assert y1 - y0 == pytest.approx(pdf.NOTES_HEIGHT_PT, abs=12)    # whole, on one page
+
+
+def test_a_heading_goes_with_what_it_heads(tmp_path, monkeypatch):
+    """A heading the page would end under starts the next page, with its table, or with
+    the paragraph under a heading straight after it."""
+    from qtpy.QtCore import QSizeF
+    from qtpy.QtGui import QTextDocument
+    laid = []
+    real = pdf._break_before
+    monkeypatch.setattr(pdf, "_break_before", lambda html, which: (
+        laid.append(real(html, which)), laid[-1])[1])
+    moved = 0
+    for n in range(30, 80):
+        laid.clear()
+        pdf.write_pdf("<p>line</p>" * n + "<h2>Table</h2><table><tr><td>a</td></tr>"
+                      "<tr><td>b</td></tr></table><h2>Two</h2><h3>headings</h3><p>text</p>",
+                      tmp_path / f"r{n}.pdf")
+        moved += "page-break-before" in laid[-1]
+        writer = pdf._writer(tmp_path / "w.pdf")
+        doc = QTextDocument()
+        doc.setDefaultStyleSheet(pdf.CSS)
+        doc.documentLayout().setPaintDevice(writer)
+        doc.setPageSize(QSizeF(writer.width(), writer.height()))
+        doc.setHtml(laid[-1].replace("<table", "<table width='100%'"))
+        doc.setDocumentMargin(0)
+        page, block = {}, doc.begin()
+        while block.isValid():
+            if block.text() in ("Table", "a", "Two", "headings", "text"):
+                top, bottom = pdf._line(doc.documentLayout(), block)
+                page[block.text()] = int((bottom - 1) // writer.height())
+            block = block.next()
+        assert page["Table"] == page["a"] and page["Two"] == page["headings"] == page["text"]
+    assert moved                                # some of these needed a page break
 
 
 @pytest.mark.parametrize("annots", ["", "/Annots [7 0 R]"])
