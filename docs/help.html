@@ -331,7 +331,9 @@ float them in their own windows.</p>
     offers PARDISO on Windows and Linux x86-64; nothing is installed until you click
     <b>Install</b>. Later starts open KiPI straight away. To add or remove PARDISO later,
     use <b>About → Manage dependencies…</b>: KiPI closes, the setup opens, and KiPI starts
-    again afterwards.</li>
+    again afterwards.
+    <figure><img src="images/launcher_setup.png" alt="The launcher's setup window listing packages and the PARDISO option">
+<figcaption>The setup window on a first start.</figcaption></figure></li>
   <li><b>Pin to the taskbar</b> (Windows): right-click KiPI's taskbar button while it is
     open, or its Start menu shortcut (<code>python kipi_launcher.py
     --create-shortcut</code>), and choose <i>Pin to taskbar</i>. The pinned button starts
@@ -435,6 +437,8 @@ of decimals, plus more when a small typed value needs them.</p>
 each copper layer and each dielectric with its thickness, each dielectric's material, εr and
 in-plane thermal conductivity, and each copper layer's conductor and resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
 draws it. The window can stay open beside the main window.</p>
+<figure><img src="images/stackup.png" alt="The Stackup window listing copper and dielectric layers">
+<figcaption>The Stackup window.</figcaption></figure>
 <details open>
 <summary>Controls</summary>
 <div class="body">
@@ -578,6 +582,8 @@ Hiding layers does not change the result colors; set the
     hidden, and ticking <b>3D Models</b> there shows them too. Each view remembers its own
     setting. See <a href="#part-models">Part 3D models</a> below.</td></tr>
 </table>
+<figure><img src="images/pi_models.png" alt="PI Models marks on the board, the selected switcher in amber">
+<figcaption>PI Models, snapped to the selected +3.3V switcher.</figcaption></figure>
 <h4 id="part-models">Part 3D models</h4>
 <ul>
   <li>KiPI asks KiCad's command-line tool, <code>kicad-cli</code>, to export just the parts it
@@ -666,6 +672,8 @@ most one VRM. Ground nets used by VRM or load ground pins are their own groups.<
 leaves back to the source: downstream rails first, then each VRM's input current (from its
 output current, efficiency or quiescent current) is applied as a load upstream. So the
 12 V input rail carries the current of everything it feeds.</p>
+<figure><img src="images/power_tree.png" alt="Power tree block diagram of the multiphase buck example">
+<figcaption>The <b>Power tree</b> window: the multiphase buck example.</figcaption></figure>
 <h4>Voltage reference</h4>
 <p>Voltages are measured against the source's ground (0 V). If ground pins are given, the
 ground return is solved too and a load's ground rises above 0 V. The figure to compare with
@@ -890,6 +898,8 @@ many groups will be solved, e.g. <b>Solve 3 of 5 net groups</b>.</p>
     conducts. Defaults: IPC-6012 Class 2 minimum averages.</td></tr>
 </table>
 <p>The defaults suit most boards; set the via plating your fabricator states.</p>
+<figure><img src="images/setup_mesh.png" alt="The Mesh tab with the via plating rules">
+<figcaption>The Mesh tab and its via plating rules.</figcaption></figure>
 </div>
 </details>
 
@@ -1423,6 +1433,8 @@ mesh once it is built. The tab comes to the front for the solve; the
 </table>
 <p>The map belongs to each rail's result, so switching <b>Rail</b> shows that rail's map, and
 saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
+<figure><img src="images/ac_board_map.png" alt="Board map of the core rail's mesh with the probe and capacitors">
+<figcaption>The Board map of the multiphase buck's core rail.</figcaption></figure>
 </div>
 </details>
 

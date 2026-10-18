@@ -212,6 +212,10 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   put into the board by source (copper, vias, DC connections, VRM conversion, loads).
 
 ### Changed
+- README and user guide screenshots retaken for 0.8.0 (#118): the main window, setup tabs,
+  DC results, HTML report and AC views show the current interface. New screenshots of the
+  launcher's setup window, PI Models, the Power tree and Stackup windows, the via plating
+  rules and the AC Board map.
 - Stackup window: **Lock to imported values** now also locks each copper layer's conductor
   and its resistivity in the table, which could be changed while locked. Locking keeps the
   conductor chosen rather than resetting it; the board's Resistivity and TCR stay editable.

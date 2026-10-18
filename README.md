@@ -134,6 +134,8 @@ uses Python's own venv and pip. Later starts open KiPI straight
 away, and the launcher sets up again by itself when a new KiPI needs different packages.
 With no window available (no tkinter, or `--console`), setup asks in the terminal instead.
 
+![The launcher's setup window on a first start: every package with its size, and the optional PARDISO solver](docs/images/launcher_setup.png)
+
 KiPI's window title then ends in *(standalone)*. Use **Open…** to open a board (its arrow
 lists the boards opened lately) and **Reload** to read it again; when the board file is
 saved, KiPI offers to read it again by itself. KiCad-only controls (*Load from KiCad*,
@@ -261,10 +263,14 @@ Below that:
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
   via in the PCB editor. Thi can be used to pinpoint hot spots, find outliers in voltage drop, and find vias with heavy current.
 
+![PI Models marking the parts of the analysis, snapped to the selected +3.3V switcher](docs/images/pi_models.png)
+
 The **Power tree** toolbar button opens a block diagram of the modelled power network, left to right in
 the direction power flows: sources and regulators (each VRM type in its own color and
 tag), the rails they drive, series links, and the loads and capacitor models on each rail.
 It redraws as the setup changes and can be saved as a PNG.
+
+![The power tree of the multiphase buck example: a 12 V source, the 4-phase switcher, the 0.9 V core rail, its load and capacitor models](docs/images/power_tree.png)
 
 The **Stackup** toolbar button opens a window listing every copper and dielectric layer
 with its thickness (in µm, mm, mil or oz), each dielectric's material, εr and thermal
@@ -277,6 +283,8 @@ and AC analysis uses the edited stackup, and the setup keeps it. A copper layer'
 (copper foils, silver, gold, aluminum, nickel or tin) sets its resistivity, TCR and thermal
 conductivity, and like the thicknesses is changed with the lock unticked; locking again keeps it as set. This can be used to explore how material and thickness properties impact power distribution performance. KiCad's API cannot change a
 board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup yourself.
+
+![The Stackup window: copper and dielectric layers with thickness, material, εr, thermal conductivity and resistivity](docs/images/stackup.png)
 
 Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. Drag to rotate,
 scroll to zoom and shift-drag (or middle-drag) to pan. **About** shows the KiPI version and
@@ -399,6 +407,8 @@ The defaults are IPC-6012 Class 2 minimum average plating (through and blind 20 
 13 µm, microvia 12 µm); set what your fabricator states. Each via's pad is read per layer
 from its padstack, so a pad removed from an unused inner layer is not counted as copper.
 
+![The Mesh tab with the via plating rules](docs/images/setup_mesh.png)
+
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
 the board and the warmer copper become more resistive. The heat is the copper and via
 losses, the DC connections, each VRM's conversion loss, and each load: by default all the
@@ -494,13 +504,13 @@ or boost from the VRM regulation voltage, current and power density, and the pad
 copper** returns to the plain geometry view; pick the rail in the results pane again, or another field, to get
 the results back without resimulation.
 
-![Voltage across the +3.3V plane, with the Loads results table](docs/images/voltage.png)
+![Voltage drop along the +12V input plane, from the input connector to the two loads, with the Loads results table](docs/images/voltage.png)
 
-![Current density with flow arrows on the 5 A +12Vin input path](docs/images/current_density.png)
+![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
 | Via current | Temperature |
 |---|---|
-| ![Via current, with the Vias table ranked by current](docs/images/via_current.png) | ![Board temperature from the electro-thermal solve, with the Notes tab](docs/images/temperature.png) |
+| ![Via current, with the Vias table ranked by current](docs/images/via_current.png) | ![Board temperature from the electro-thermal solve, with the Thermal results tab](docs/images/temperature.png) |
 
 Result tabs (click a column header to sort by it; click again to reverse). The setup's
 tables (capacitor parts, custom target points, load pin groups) and the HTML reports'
@@ -608,6 +618,8 @@ another rail's curves without solving again. **Export CSV…** writes |Z|, R and
 frequency. **Save results…** writes every solved rail to a `.kipi-ac-results` file, which
 **Open results…** reloads in AC mode (load the board first). Like DC results files, these are
 JSON and arrays in a zip, safe to share.
+
+![The Board map of the core rail's solve: the VCORE and GND mesh, the probe and the capacitors by model](docs/images/ac_board_map.png)
 
 Tick **HTML report** next to **Solve rail** to also write
 `<board>_<rail>_ac_report_<date>_<time>.html` next to the board after each solve. It opens in your web browser when the solve
