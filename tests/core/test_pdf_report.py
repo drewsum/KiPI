@@ -61,6 +61,37 @@ def printed(monkeypatch):
     return got
 
 
+def _notes_field(data: bytes):
+    """The notes field the PDF ends with, checked as a reader finds it: through the last
+    cross-reference section (each offset at its object), the catalog's form and page 1."""
+    import re
+    xref = int(re.findall(rb"startxref\s+(\d+)", data)[-1])
+    table = data[xref:data.index(b"trailer", xref)]
+    offsets = {int(n): int(o) for n, o in re.findall(rb"(\d+) 1\n(\d{10}) 00000 n", table)}
+    for n, off in offsets.items():
+        assert data[off:].startswith(f"{n} 0 obj".encode())
+
+    def obj(n):
+        start = offsets.get(n)
+        if start is None:                                  # unchanged: Qt's own
+            start = re.search(rf"(?m)^{n} 0 obj".encode(), data).start()
+        return data[start:data.index(b"endobj", start)]
+
+    trailer = data[data.rindex(b"trailer"):]
+    assert b"/Prev " in trailer
+    catalog = obj(int(re.search(rb"/Root (\d+) 0 R", trailer).group(1)))
+    field = int(re.search(rb"/AcroForm << /Fields \[(\d+) 0 R\]", catalog).group(1))
+    text = obj(field)
+    pages = obj(int(re.search(rb"/Pages (\d+) 0 R", catalog).group(1)))
+    kids = re.findall(rb"(\d+) 0 R", re.search(rb"/Kids\s*\[([^\]]*)\]", pages).group(1))
+    page = re.search(rb"/P (\d+) 0 R", text).group(1)
+    assert page in kids
+    annots = re.search(rb"/Annots (\d+) 0 R", obj(int(page)))
+    assert f"{field} 0 R".encode() in obj(int(annots.group(1)))
+    assert b"/FT /Tx" in text and b"/Ff 4096" in text and b"/T (User notes)" in text
+    return [float(x) for x in re.search(rb"/Rect \[([^\]]+)\]", text).group(1).split()]
+
+
 def _static(html):
     assert "<script" not in html and "plotly" not in html.lower()
     assert "contenteditable" not in html and "<details" not in html and "<nav>" not in html
@@ -78,12 +109,17 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
     assert "id='pins'" in html and "id='loads'" in html
     assert html.count("data:image/png;base64,") >= 2 * len(tree.groups)
     assert not (tmp_path / "r.html").exists()
+    # The User notes: a box above the tables, with a fillable field over it.
+    assert html.index(pdf.NOTES_MARKER) < html.index("id='loads'")
+    x0, y0, x1, y1 = _notes_field(data)
+    assert x1 - x0 > 400 and y1 - y0 == pytest.approx(pdf.NOTES_HEIGHT_PT, abs=12)
 
 
 def test_ac_report_as_pdf(ac, tmp_path, printed):
     result, snap, s = ac
     path = write_ac_report(tmp_path / "r.pdf", result, snap, s)
     assert path.read_bytes().startswith(b"%PDF")
+    _notes_field(path.read_bytes())
     html, = printed
     _static(html)
     for anchor in ("probes", "impedance", "map", "caps", "model"):
@@ -175,3 +211,63 @@ def test_panel_report_option(mode, ac, dc):
     assert settings.report_format == "html"
     opt.chk.setChecked(False)
     assert not settings.html_report and not opt.cmb.isEnabled()
+
+
+def test_another_reader_fills_the_notes_and_keeps_them(dc, tmp_path):
+    pypdf = pytest.importorskip("pypdf")
+    tree, scenes, snap, s = dc
+    path = write_report(tmp_path / "r.pdf", tree, scenes, snap, s)
+    reader = pypdf.PdfReader(path, strict=True)
+    assert list(reader.get_fields()) == ["User notes"]
+    writer = pypdf.PdfWriter(clone_from=reader)
+    writer.update_page_form_field_values(writer.pages[0], {"User notes": "Checked (A.B.)"})
+    writer.write(tmp_path / "filled.pdf")
+    filled = pypdf.PdfReader(tmp_path / "filled.pdf").get_fields()
+    assert filled["User notes"]["/V"] == "Checked (A.B.)"
+
+
+def test_the_box_stays_when_the_field_cannot_be_added(tmp_path, monkeypatch):
+    def broken(*a):
+        raise ValueError("odd PDF")
+
+    monkeypatch.setattr(pdf, "add_text_field", broken)
+    html = f"<h2>User notes</h2><table class='notes'><tr><td>{pdf.NOTES_MARKER}</td></tr></table>"
+    data = pdf.write_pdf(html, tmp_path / "r.pdf").read_bytes()
+    assert data.startswith(b"%PDF") and b"/AcroForm" not in data
+
+
+def test_no_marker_no_field(tmp_path):
+    data = pdf.write_pdf("<p>no notes</p>", tmp_path / "r.pdf").read_bytes()
+    assert b"/AcroForm" not in data
+
+
+def test_a_box_that_would_split_starts_a_page(tmp_path):
+    box = f"<table class='notes'><tr><td>{pdf.NOTES_MARKER}</td></tr></table>"
+    for n in range(30, 80, 4):                 # some of these land across a page break
+        path = pdf.write_pdf("<p>line</p>" * n + box, tmp_path / f"r{n}.pdf")
+        x0, y0, x1, y1 = _notes_field(path.read_bytes())
+        assert y1 - y0 == pytest.approx(pdf.NOTES_HEIGHT_PT, abs=12)    # whole, on one page
+
+
+@pytest.mark.parametrize("annots", ["", "/Annots [7 0 R]"])
+def test_the_field_joins_any_page(tmp_path, annots):
+    """Pages with no annotations, or a direct array of them, take the field as well."""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] {annots} >>"]
+    out = b"%PDF-1.4\n"
+    offsets = []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode()
+    xref = len(out)
+    out += b"xref\n0 4\n0000000000 65535 f \n" + b"".join(
+        f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    path = tmp_path / "p.pdf"
+    path.write_bytes(out)
+    pdf.add_text_field(path, 0, (10, 10, 200, 100), "User notes")
+    data = path.read_bytes()
+    assert data.startswith(out)                      # the original bytes kept
+    page = data[data.rindex(b"3 0 obj"):]
+    assert b"/Annots [4 0 R" in page and (b"7 0 R" in page) == bool(annots)
+    assert b"/AcroForm << /Fields [4 0 R]" in data and f"/Prev {xref}".encode() in data

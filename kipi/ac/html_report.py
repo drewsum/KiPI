@@ -423,8 +423,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
             margin = f"{20 * math.log10(t[0] / zmax):+.2f} dB"
         rows.append([_e(c.name), pins, _ohms(float(np.min(c.mag))), _ohms(zmax), _hz(fmax),
                      _e(_target_text(c)), margin, _verdict(ok)])
-    if not pdf:
-        parts.append(notes_section())
+    parts.append(notes_section(pdf))
     parts.append("<h2 id='probes'>Probes</h2>")
     parts.append(_table(["Probe", "Pins (rail / ground)", "Min |Z|", "Worst |Z|", "at",
                          "Target", "Margin", "Result"], rows))

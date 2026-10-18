@@ -28,7 +28,11 @@ milestones rather than versions that were ever set.
   choice of HTML or PDF beside it (saved with the setup; older setups keep HTML). The PDF
   has the same tables and maps, printed by Qt (already one of KiPI's packages), with
   images of the AC impedance plot and board map. It leaves out what needs a browser: the
-  DC 3D view, sortable columns and the User notes box. It opens in the PDF viewer. Where a
+  DC 3D view and sortable columns. Its User notes box is a fillable form field: type in
+  it in any PDF viewer that fills forms (Acrobat, web browsers, Preview)
+  and save the PDF to keep the notes; printed, it is a box to write in. Qt cannot make
+  form fields, so KiPI adds the field to Qt's file as an incremental update, and should
+  that fail the box stays without it. It opens in the PDF viewer. Where a
   PDF cannot be made, KiPI writes the HTML report instead and the log says why. The
   *Report* button is now *Open report*.
 

@@ -293,8 +293,14 @@ NOTES_JS = r"""
 """
 
 
-def notes_section() -> str:
-    """The editable notes box (#128)."""
+def notes_section(pdf: bool = False) -> str:
+    """The editable notes box (#128); in a PDF, a box with a form field to type in."""
+    if pdf:
+        from kipi.core.pdf import NOTES_MARKER
+        return ("<h2 id='user-notes'>User notes</h2><p class='note'>Click in the box to type "
+                "(Acrobat, a web browser, Preview and most PDF viewers can), then save the "
+                f"PDF to keep the notes in it. Printed, it is a box to write in.</p>"
+                f"<table class='notes'><tr><td>{NOTES_MARKER}</td></tr></table>")
     return ("<section id='user-notes-section'><h2 id='user-notes'>User notes</h2>"
             "<div id='user-notes-text' contenteditable='true' spellcheck='true' "
             "data-placeholder='Click to add notes: what was checked, by whom, what to change…'>"
@@ -434,8 +440,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
 
-    if not pdf:
-        parts.append(notes_section())
+    parts.append(notes_section(pdf))
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
