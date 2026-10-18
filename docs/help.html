@@ -683,6 +683,11 @@ tooltip names its key. On macOS, <b>Ctrl</b> is the <b>Command</b> key.</p>
 <p>The bottom dock shows the current stage, a progress bar, and <b>Cancel</b>, which stops the
 running task (loading, building nets or solving). The log streams every stage with its
 timing, solver residuals and warnings: warnings are amber, errors red, stage headers blue.</p>
+<p>While anything runs, the right end of the status bar shows a turning spinner with the
+operation and how long it has taken so far (part 3D models loading in the background
+included). The spinner keeps turning while KiPI works; a stage that cannot say how far it
+is moves the progress bar back and forth instead. While the window itself is busy, drawing
+a big solve's results or saving a snapshot, the mouse pointer shows the wait cursor.</p>
 <p>Each session also writes a log file to <code>kipi/</code> in your temporary folder
 (<code>%TEMP%</code> on Windows, <code>$TMPDIR</code> on macOS, <code>/tmp</code> on Linux).
 See <a href="#troubleshooting">Troubleshooting</a>.</p>

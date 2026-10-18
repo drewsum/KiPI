@@ -7,6 +7,12 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Signs of life while KiPI works** (#111). The status bar shows a turning spinner with
+  the operation's name and the time it has taken while any task runs, part 3D models
+  loading included. Each new stage moves the progress bar until it reports how far it is,
+  instead of leaving the last stage's full bar still. The window shows the wait cursor
+  while it draws a task's results, saves a snapshot or applies a stackup change, and the
+  CSV and VTK exports now run in the background, with the spinner and progress bar.
 - **Keyboard shortcuts** (#105). In the 3D view, Home snaps to the iso view and Z /
   Shift+Z to the top / bottom view. Anywhere in the window: Ctrl+O open, F5 reload,
   Ctrl+S save snapshot, F12 screenshot, Ctrl+Shift+O open results, Ctrl+L stackup,

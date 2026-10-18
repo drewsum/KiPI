@@ -27,6 +27,7 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import PIPanel
 from kipi.dc.pi.tree import fmt_drop
+from kipi.gui.heartbeat import Heartbeat, busy_cursor
 from kipi.gui.stackup_window import StackupWindow
 from kipi.gui.viewer3d import Viewer3D
 from kipi.gui.worker import QtProgress, Task
@@ -610,6 +611,8 @@ class MainWindow(QMainWindow):
         dock.setWidget(w)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.resizeDocks([dock], [200], Qt.Vertical)
+        self.heartbeat = Heartbeat(self)          # turns while any task runs (#111)
+        self.statusBar().addPermanentWidget(self.heartbeat)
 
     # ============================================================ logging
     def log(self, text: str, level: int = logging.INFO):
@@ -623,6 +626,9 @@ class MainWindow(QMainWindow):
     def _on_stage(self, name: str):
         self.lbl_stage.setText(name)
         self.statusBar().showMessage(name)
+        # A new stage moves until it reports how far it is, so the last stage's full bar
+        # does not sit still while this one works.
+        self.progress_bar.setRange(0, 0)
 
     def _on_fraction(self, f: float):
         if f < 0:
@@ -658,10 +664,12 @@ class MainWindow(QMainWindow):
         if on_partial is not None:
             prog.sig_partial.connect(on_partial)
         task = Task(fn, prog, self)
-        task.done.connect(on_done)
+        task.done.connect(lambda result: self._task_done(on_done, result))
         task.failed.connect(lambda tb: self._on_task_failed(name, tb))
         task.finished.connect(lambda t=task: self._on_task_finished(t))
         self._task = task
+        self.heartbeat.start(task, name)
+        self.progress_bar.setRange(0, 0)          # moving until the first stage reports
         self.btn_cancel.setEnabled(True)
         self.act_cancel.setEnabled(True)
         self.act_reload.setEnabled(False)
@@ -671,7 +679,14 @@ class MainWindow(QMainWindow):
         task.start()
         return task
 
+    def _task_done(self, on_done, result):
+        """A task's result is drawn in the UI thread, which can take a while for a big
+        solve: the wait cursor shows meanwhile."""
+        with busy_cursor():
+            on_done(result)
+
     def _on_task_finished(self, task=None):
+        self.heartbeat.stop(task)
         # A task's done() may already have started the next task (loading a board
         # starts the net build). Its "finished" arrives after that, and must not reset
         # the UI or stop the watchdog for the task that is now running.
@@ -843,8 +858,9 @@ class MainWindow(QMainWindow):
         from kipi.core.model.snapshot_io import save
         self._own_write_until = time.monotonic() + 2.0   # may be the file Reload reads
         # A snapshot is the board as its source has it; edited thicknesses live in the setup.
-        save(dataclasses.replace(self.snapshot, stackup=self._imported_stackup
-                                 or self.snapshot.stackup), path)
+        with busy_cursor():
+            save(dataclasses.replace(self.snapshot, stackup=self._imported_stackup
+                                     or self.snapshot.stackup), path)
         self.log(f"Snapshot saved to {path}")
 
     def save_screenshot(self):
@@ -1179,6 +1195,7 @@ class MainWindow(QMainWindow):
         task.done.connect(lambda found: self._models_loaded(gen, found))
         task.finished.connect(self._model_task_finished)
         self._model_task = task
+        self.heartbeat.start(task, "Loading 3D models")
         task.start()
 
     def _models_loaded(self, gen: int, found: dict):
@@ -1188,6 +1205,7 @@ class MainWindow(QMainWindow):
         self._sync_models()
 
     def _model_task_finished(self):
+        self.heartbeat.stop(self._model_task)
         self._model_task = None
         if self._models_pending:
             self._models_pending = False
@@ -1478,6 +1496,10 @@ class MainWindow(QMainWindow):
             self._pending_stackup = st
             self.log("Stackup change waits for the current task to finish")
             return
+        with busy_cursor():
+            self._apply_stackup(snap, st)
+
+    def _apply_stackup(self, snap, st):
         from kipi.core.model.stackup import to_setup
         from kipi.core.viz.meshes import board_body
         snap.stackup = st
@@ -1533,18 +1555,32 @@ class MainWindow(QMainWindow):
                     self._save_results(path)
                 return
             folder = QFileDialog.getExistingDirectory(self, "Export to folder", start)
-            if not folder:
-                return
-            if kind == "csv":
-                paths = report.export_csv(self._tree, self.snapshot, folder, self._results_stem(),
-                                          self.solve_panel.setup.via_current_limit_a,
-                                          self.solve_panel.setup.thermal)
-            else:
-                paths = report.export_vtk(self._tree, self._scenes, self.snapshot, folder,
-                                          self._results_stem())
-            self.log(f"Exported {len(paths)} file(s) to {folder}")
         except OSError as e:
             QMessageBox.warning(self, "KiPI", f"Export failed: {e}")
+            return
+        if not folder:
+            return
+        tree, scenes, snap, stem = self._tree, self._scenes, self.snapshot, self._results_stem()
+        setup = self.solve_panel.setup
+
+        def work(progress):
+            """In the background: a big board's VTK files take a while (#111)."""
+            with progress.timed(f"Exporting {'CSV' if kind == 'csv' else 'VTK'} files"):
+                try:
+                    if kind == "csv":
+                        return report.export_csv(tree, snap, folder, stem,
+                                                 setup.via_current_limit_a, setup.thermal)
+                    return report.export_vtk(tree, scenes, snap, folder, stem)
+                except OSError as e:
+                    return e
+
+        def done(paths):
+            if isinstance(paths, OSError):
+                QMessageBox.warning(self, "KiPI", f"Export failed: {paths}")
+            else:
+                self.log(f"Exported {len(paths)} file(s) to {folder}")
+
+        self._run(work, done, "Exporting")
 
     def open_results(self):
         if self.snapshot is None:
