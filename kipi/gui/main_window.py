@@ -252,11 +252,13 @@ class MainWindow(QMainWindow):
             self.mode_buttons.addButton(rb)
             tb.addWidget(rb)
 
-    def _set_mode_enabled(self, on: bool):
-        """The DC / AC switch is greyed out while a task runs: the mode cannot change
-        until it finishes or is cancelled."""
+    def _set_controls_enabled(self, on: bool):
+        """The DC / AC switch, Import and Save are greyed out while a task runs (reading
+        the board, building nets, a solve) and come back when it finishes or is
+        cancelled; Import and Save also wait for a board."""
         for rb in self.mode_buttons.buttons():
             rb.setEnabled(on)
+        self.setup_bar.setEnabled(on and self.snapshot is not None)
 
     def set_mode(self, mode: str):
         """Switch the analysis mode: the setup dock shows that mode's panel. The DC setup
@@ -547,6 +549,7 @@ class MainWindow(QMainWindow):
         self.setup_bar = SetupFileBar(self)
         self.setup_bar.import_requested.connect(self.import_pdn)
         self.setup_bar.save_requested.connect(self._save_setup)
+        self.setup_bar.setEnabled(False)                       # until a board is read
         self.setup_stack = QStackedWidget(self)
         self.setup_stack.addWidget(self.solve_panel)
         self.setup_stack.addWidget(self.ac_panel)
@@ -658,7 +661,7 @@ class MainWindow(QMainWindow):
         self._task = task
         self.btn_cancel.setEnabled(True)
         self.act_reload.setEnabled(False)
-        self._set_mode_enabled(False)          # offered only when it can be taken
+        self._set_controls_enabled(False)      # offered only when they can be taken
         from kipi.gui import app as kipi_app
         kipi_app.watchdog_start()
         log.info("Task started: %s", name)
@@ -681,7 +684,7 @@ class MainWindow(QMainWindow):
         pending_ac, self._pending_ac = getattr(self, "_pending_ac", None), None
         self.btn_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
-        self._set_mode_enabled(True)
+        self._set_controls_enabled(True)
         self.progress_bar.setRange(0, 1000)
         self.progress_bar.setValue(0)          # empty when idle: a full bar reads as busy
         self.lbl_stage.setText("Idle")
@@ -882,6 +885,7 @@ class MainWindow(QMainWindow):
         setup.nets = self._checked_nets()
         self._saved = copy.deepcopy(setup)
         self._show_unsaved()
+        self.setup_bar.setEnabled(not self._busy())
         self._show_board_summary()
         from kipi.core.viz.meshes import board_body
         self.viewer.set_board(*board_body(snap))
