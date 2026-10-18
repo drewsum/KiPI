@@ -502,8 +502,9 @@ class MainWindow(QMainWindow):
         self.btn_guess.clicked.connect(self.guess_models)
         feat_rows[1].addWidget(self.btn_guess)
         self.chk_snap = QCheckBox("Snap to selected", g_view)
-        self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link or probe "
-                                 "when it is clicked in the setup's lists. Untick it to keep "
+        self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link, probe or "
+                                 "capacitor model (all its parts) when it is clicked in the "
+                                 "setup's lists. Untick it to keep "
                                  "the view where it is; the part is still marked in amber. "
                                  "Available while PI Models is ticked.")
         # QSettings may hand a bool back as "true" / "false" (an INI file, the registry).
@@ -1133,17 +1134,17 @@ class MainWindow(QMainWindow):
 
     def _pi_part_selected(self, kind: str, name: str, by_user: bool):
         """Mark the part selected in the current mode's setup lists in the 3D view: a VRM,
-        load or series link in DC mode, a VRM, series link or probe in AC mode. With PI Models
+        load or series link in DC mode, a VRM, series link, probe or capacitor model (all
+        its parts) in AC mode. With PI Models
         shown and Snap to selected ticked, one the user picked brings the view to it (#96)."""
         self.viewer.set_pi_selected((kind, name) if kind else None)
         if not (by_user and kind and self.chk_pi.isChecked() and self.chk_snap.isChecked()):
             return
-        m = next((m for m in self.viewer.pi_markers if (m.kind, m.item) == (kind, name)),
-                 None)
-        if m is None:
+        marks = [m for m in self.viewer.pi_markers if m.is_item(kind, name)]
+        if not marks:
             self.statusBar().showMessage(f"{name} has no pads on the nets shown", 5000)
             return
-        self.viewer.focus_on(np.vstack([m.power, m.ground]))
+        self.viewer.focus_on(np.vstack([p for m in marks for p in (m.power, m.ground)]))
 
     # ============================================================ part models
     def _wanted_models(self) -> List[str]:
@@ -1848,8 +1849,11 @@ class MainWindow(QMainWindow):
             return
         # A PI Models name (or dot) selects its part in the current mode's setup (#96).
         marker = self.viewer.pi_marker_at(screen_xy)
-        if marker is not None and self._mode_panel().select_part(marker.kind, marker.item):
-            self.statusBar().showMessage(f"Selected {marker.name} in the setup", 5000)
+        if marker is not None and self._mode_panel().select_part(marker.kind,
+                                                                 marker.setup_item):
+            what = (f"model {marker.setup_item} ({marker.name})" if marker.kind == "cap"
+                    else marker.name)
+            self.statusBar().showMessage(f"Selected {what} in the setup", 5000)
             return
         segs, ids = self._via_candidates()
         via_id = None

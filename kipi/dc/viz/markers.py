@@ -34,6 +34,19 @@ class PartMarker:
     power: np.ndarray                           # rail pins (N, 3): drawn larger
     ground: np.ndarray                          # ground pins and ground sense (M, 3)
     item: str = ""                              # the setup item's name (#96), e.g. "3V3"
+    models: Tuple[str, ...] = ()                # a capacitor's: the models naming it
+
+    def is_item(self, kind: str, name: str) -> bool:
+        """Whether this marks the setup item ``name`` of marker kind ``kind``: a capacitor
+        model names several parts, each marked on its own."""
+        if kind != self.kind:
+            return False
+        return name in self.models if self.kind == "cap" else name == self.item
+
+    @property
+    def setup_item(self) -> str:
+        """The setup item to select for this part: a capacitor's (first) model."""
+        return self.models[0] if self.kind == "cap" and self.models else self.item
 
     @property
     def anchor(self) -> np.ndarray:
@@ -114,8 +127,14 @@ def cap_markers(snap: BoardSnapshot, setup, nets, sides: Dict[str, str]) -> List
     """Markers of the capacitors that have a model, which both modes solve."""
     grounds = _ground_nets(setup)
     out = []
-    for ref in sorted({r for c in setup.caps for r in c.refs if r}):
-        m = PartMarker("cap", ref, *cap_points(snap, ref, nets, grounds, sides), ref)
+    models: Dict[str, List[str]] = {}
+    for c in setup.caps:
+        for r in c.refs:
+            if r and c.name not in models.setdefault(r, []):
+                models[r].append(c.name)
+    for ref in sorted(models):
+        m = PartMarker("cap", ref, *cap_points(snap, ref, nets, grounds, sides), ref,
+                       tuple(models[ref]))
         if len(m.power) or len(m.ground):
             out.append(m)
     return out

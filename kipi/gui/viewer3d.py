@@ -479,15 +479,15 @@ class Viewer3D(QWidget):
                 anchors[:, 2] += _PI_LABEL_LIFT_MM        # clear of the part's dots
                 self._pi_actors[name] = _pi_labels_actor(anchors, [m.name for m in parts],
                                                          colors[1])
-        sel = self._selected_marker()
-        if sel is not None:             # drawn last, so over the part's own dots and name
+        sel = self._selected_markers()
+        if sel:                         # drawn last, so over the parts' own dots and names
             self._pi_actors["pi_selected_dots"] = _pi_dots_actor(
-                view(np.vstack([sel.power, sel.ground])), _PI_SELECTED_COLORS[0],
-                _PI_SELECTED_PX)
-            anchor = view(sel.anchor[None, :])
-            anchor[:, 2] += _PI_LABEL_LIFT_MM
+                view(np.vstack([p for m in sel for p in (m.power, m.ground)])),
+                _PI_SELECTED_COLORS[0], _PI_SELECTED_PX)
+            anchors = view(np.array([m.anchor for m in sel]))
+            anchors[:, 2] += _PI_LABEL_LIFT_MM
             self._pi_actors["pi_selected_label"] = _pi_labels_actor(
-                anchor, [sel.name], _PI_SELECTED_COLORS[1])
+                anchors, [m.name for m in sel], _PI_SELECTED_COLORS[1])
         for actor in self._pi_actors.values():
             renderer.AddViewProp(actor)
 
@@ -499,13 +499,15 @@ class Viewer3D(QWidget):
     def pi_markers(self) -> list:
         return list(self._pi_markers)
 
-    def _selected_marker(self):
-        return next((m for m in self._pi_markers if (m.kind, m.item) == self._pi_selected),
-                    None)
+    def _selected_markers(self) -> list:
+        """The markers of the selected setup item: several for a capacitor model."""
+        if self._pi_selected is None:
+            return []
+        return [m for m in self._pi_markers if m.is_item(*self._pi_selected)]
 
     def set_pi_selected(self, key: Optional[Tuple[str, str]]):
-        """Highlight the part selected in the setup, ``(kind, item name)``, or none (#96).
-        Shown with the PI Models markers."""
+        """Highlight the part selected in the setup, ``(kind, item name)``, or none (#96):
+        every part of a capacitor model. Shown with the PI Models markers."""
         if key == self._pi_selected:
             return
         self._pi_selected = key
@@ -516,7 +518,7 @@ class Viewer3D(QWidget):
     def _start_blink(self):
         """Blink the selected part's dots and name between amber and red a few times."""
         self._blink_timer.stop()
-        self._blink_left = 2 * _PI_BLINKS if self._selected_marker() is not None else 0
+        self._blink_left = 2 * _PI_BLINKS if self._selected_markers() else 0
         if self._blink_left:
             self._blink_timer.start()
 

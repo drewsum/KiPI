@@ -556,8 +556,9 @@ class ACPanel(QWidget, PartSelection):
     result_selected = Signal(object)               # ACResult shown in the plot; None clears it
     setup_changed = Signal()                       # any edit to the setup
     results_saved = Signal(str)                    # path of a saved results file
-    # The VRM, series link or probe selected in the setup: kind ("vrm", "link", "probe"),
-    # name, and whether the user picked it; ("", "", False) for none (#96).
+    # The VRM, series link, capacitor model or probe selected in the setup: kind ("vrm",
+    # "link", "cap", "probe"), name, and whether the user picked it; ("", "", False) for
+    # none (#96).
     part_selected = Signal(str, str, bool)
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -711,7 +712,8 @@ class ACPanel(QWidget, PartSelection):
         return (self.vrm_list, self.link_list, self.cap_list, self.probe_list)
 
     def _part_lists(self):
-        return {"vrm": self.vrm_list, "link": self.link_list, "probe": self.probe_list}
+        return {"vrm": self.vrm_list, "link": self.link_list, "cap": self.cap_list,
+                "probe": self.probe_list}
 
     # ------------------------------------------------------------------ tabs
     def _sweep_tab(self) -> QWidget:

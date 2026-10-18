@@ -65,6 +65,25 @@ def test_capacitors_with_a_model_are_marked_by_reference():
     assert "C1" not in _by_name(pi_markers(snap, setup, {"VIN"}))
 
 
+def _two_caps(snap, setup):
+    from kipi.ac.model import CapModel
+    snap.pads.append(pad("c1_1", "VOUT", "C1", "1", box(2, 0, 3, 1)))
+    snap.pads.append(pad("c2_1", "VOUT", "C2", "1", box(12, 0, 13, 1)))
+    setup.caps.append(CapModel("10u", 10e-6, 1e-9, 0.005, ["C1", "C2"]))
+    setup.caps.append(CapModel("bulk", 10e-6, 1e-9, 0.005, ["C2"]))
+
+
+def test_a_capacitor_model_is_every_part_it_names():
+    snap, setup = board(), two_phase()
+    _two_caps(snap, setup)
+    m = _by_name(pi_markers(snap, setup, {"VOUT"}))
+    assert m["C1"].models == ("10u",) and m["C2"].models == ("10u", "bulk")
+    assert [n for n, x in m.items() if x.is_item("cap", "10u")] == ["C1", "C2"]
+    assert [n for n, x in m.items() if x.is_item("cap", "bulk")] == ["C2"]
+    assert not m["C1"].is_item("cap", "C1")               # a model's name, not a part's
+    assert m["C2"].setup_item == "10u" and m["Load U2"].setup_item == "U2"
+
+
 # --- Drawing -----------------------------------------------------------------------------
 
 pv = pytest.importorskip("pyvista")
@@ -93,7 +112,7 @@ def _view():
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
     for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
-                 "set_feature_visible", "_place_models", "_selected_marker", "set_pi_selected",
+                 "set_feature_visible", "_place_models", "_selected_markers", "set_pi_selected",
                  "pi_marker_at", "_to_screen", "focus_on", "_start_blink", "_blink_step",
                  "_paint_selected"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
@@ -356,7 +375,7 @@ def test_picking_a_probe_in_the_ac_setup_marks_it_and_goes_there(app, no_3d, mon
     lst.lst.itemClicked.emit(lst.lst.item(0))
     assert len(focused) == 1
     np.testing.assert_allclose(focused[0][:, :2].mean(axis=0), [5.5, 0.5])
-    w.ac_panel.tabs.setCurrentWidget(w.ac_panel.cap_list)      # capacitors: none
+    w.ac_panel.tabs.setCurrentWidget(w.ac_panel.cap_list)      # no capacitor models
     assert marked[-1] is None
     w.ac_panel.tabs.setCurrentWidget(w.ac_panel.vrm_list)
     assert marked[-1] == ("vrm", "J1")
@@ -368,6 +387,50 @@ def test_picking_a_probe_in_the_ac_setup_marks_it_and_goes_there(app, no_3d, mon
     assert marked[-1][0] == "load"
     w.set_mode("ac")
     assert marked[-1] == ("vrm", "J1")
+    w.close()
+
+
+def test_picking_a_capacitor_model_marks_its_parts_and_goes_there(app, no_3d, monkeypatch):
+    w = _ac_window(monkeypatch)
+    _two_caps(w.snapshot, w.ac_panel.setup)
+    w.ac_panel.cap_list.reload()
+    w._sync_pi_markers()
+    marked, focused = [], []
+    monkeypatch.setattr(w.viewer, "set_pi_selected", marked.append)
+    monkeypatch.setattr(w.viewer, "focus_on", focused.append)
+    w.chk_snap.blockSignals(True)                  # not saved to the user's settings
+    w.chk_snap.setChecked(True)
+    w.chk_pi.setChecked(True)
+    lst = w.ac_panel.cap_list
+    w.ac_panel.tabs.setCurrentWidget(lst)
+    assert marked[-1] == ("cap", "10u") and not focused
+    lst.lst.itemClicked.emit(lst.lst.item(0))
+    assert len(focused) == 1
+    np.testing.assert_allclose(focused[0][:, :2].mean(axis=0), [7.5, 0.5])   # C1 and C2
+    w.close()
+
+
+def test_a_capacitor_model_lights_up_all_its_parts():
+    v = _view()
+    snap, setup = board(), two_phase()
+    _two_caps(snap, setup)
+    v.set_pi_markers(pi_markers(snap, setup, {"VOUT"}))
+    v.set_pi_selected(("cap", "10u"))
+    assert v._pi_actors["pi_selected_dots"].GetMapper().GetInput().GetNumberOfPoints() == 2
+    assert v._blink_timer.active
+
+
+def test_clicking_a_capacitor_in_3d_selects_its_model(app, no_3d, monkeypatch):
+    from kipi.ac.viz.markers import ac_markers
+    w = _ac_window(monkeypatch)
+    _two_caps(w.snapshot, w.ac_panel.setup)
+    w.ac_panel.cap_list.reload()
+    c2 = next(m for m in ac_markers(w.snapshot, w.ac_panel.setup, {"VOUT"}) if m.name == "C2")
+    monkeypatch.setattr(w.viewer, "pi_marker_at", lambda xy: c2)
+    w._on_click(None, (10, 10))
+    assert w.ac_panel.tabs.currentWidget() is w.ac_panel.cap_list
+    assert w.ac_panel.cap_list.current().name == "10u"
+    assert "10u" in w.statusBar().currentMessage()
     w.close()
 
 
