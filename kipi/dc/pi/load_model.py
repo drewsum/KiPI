@@ -14,12 +14,11 @@ A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
         current_a: 1.2              # or pin_groups, each drawing its own current
         pin_groups: [{name: core, pins: [F7, F9], current_a: 0.8}]
         tolerance: {min: -3, max: 3, unit: "%"}     # unit V, ±V or %
-        heat_w: 0.9
         target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[hz, ohm], ...]}
         load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}
 
 Every key but ``name`` is optional, and only the ones given are applied. The DC loads take
-the current, pin groups, tolerance and heat; the AC probes the target, or one worked out
+the current, pin groups and tolerance; the AC probes the target, or one worked out
 from the load step as the target calculator does (with the AC tolerance given, else the
 tighter side of the DC tolerance). A model exported from a setup holds every load and probe
 on one reference designator, one supply each, so a part with several supplies keeps them
@@ -58,7 +57,6 @@ class SupplyModel:
     tol_min: Optional[float] = None
     tol_max: Optional[float] = None
     tol_unit: str = PERCENT
-    heat_w: Optional[float] = None
     target_ohm: Optional[float] = None
     target_hz: Optional[float] = None
     target_points: List[Tuple[float, float]] = field(default_factory=list)
@@ -193,7 +191,6 @@ def _supply(d, i: int) -> SupplyModel:
         s.tol_unit = str(tol.get("unit", PERCENT)).replace("+/-", "±").strip()
         if s.tol_unit not in UNITS:
             raise ModelError(f"{where}: tolerance unit must be V, ±V or %")
-    s.heat_w = _num(d, "heat_w", where)
     target = d.get("target")
     if isinstance(target, dict):
         s.target_ohm = _num(target, "ohm", where)
@@ -225,8 +222,6 @@ def _supply_dict(s: SupplyModel) -> dict:
         d["tolerance"] = {k: v for k, v in (("min", s.tol_min), ("max", s.tol_max))
                           if v is not None}
         d["tolerance"]["unit"] = s.tol_unit
-    if s.heat_w is not None:
-        d["heat_w"] = s.heat_w
     if s.target_points:
         d["target"] = {"points": [[f, z] for f, z in s.target_points]}
     elif s.target_ohm is not None:
@@ -266,8 +261,7 @@ def model_of(setup: PISetup, ref: str, part: str = "") -> LoadModel:
                         list(l.ground.pins) if l.ground and l.ground.ref == ref else [],
                         None if l.groups else l.current,
                         [PinGroup(list(g.pins), g.current, g.name) for g in l.groups],
-                        l.tol_min, l.tol_max, range_unit(l.tol_pct, l.tol_dv),
-                        l.dissipation_w)
+                        l.tol_min, l.tol_max, range_unit(l.tol_pct, l.tol_dv))
         model.supplies.append(s)
         by_net.setdefault(l.supply.net, s)
     for p in setup.probes:
@@ -323,9 +317,6 @@ def apply_to_load(load: Load, s: SupplyModel) -> List[str]:
         load.tol_min, load.tol_max = s.tol_min, s.tol_max
         load.tol_pct, load.tol_dv = s.tol_unit == PERCENT, s.tol_unit == DELTA_VOLTS
         done.append("tolerance")
-    if s.heat_w is not None:
-        load.dissipation_w = s.heat_w
-        done.append("heat")
     return done
 
 

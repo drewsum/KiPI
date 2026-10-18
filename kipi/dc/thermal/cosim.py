@@ -77,7 +77,7 @@ def load_powers(tree: TreeResult, snap: BoardSnapshot, setup: PISetup) -> Dict[s
     """Per load: (watts, pad xy (N, 2)) with watts the sum over every solved supply and
     ground pin of the current it draws times its voltage (#62); the ground pins return
     the current, so this is I x (V supply - V ground) pin by pin. A load without ground
-    pins is taken as returning at 0 V. A load's stated Heat replaces the sum. Loads whose
+    pins is taken as returning at 0 V. Loads whose
     supply was not solved are left out."""
     pos = {p.id: p.position for p in snap.pads}
     terminals = {}
@@ -102,8 +102,6 @@ def load_powers(tree: TreeResult, snap: BoardSnapshot, setup: PISetup) -> Dict[s
             else:                       # no per-pin record: the load's current shared equally
                 sign = -1.0 if t.name.endswith(" (return)") else 1.0
                 watts += sign * t.current * t.v_mean
-        if getattr(l, "dissipation_w", None) is not None:
-            watts = l.dissipation_w         # the part passes most of its power on
         out[l.name] = (watts, np.asarray([pos[pid] for pid in pads]).reshape(-1, 2))
     return out
 

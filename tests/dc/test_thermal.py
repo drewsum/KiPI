@@ -120,23 +120,13 @@ def test_loads_heat_the_board_with_the_power_they_take():
     assert th.heat_by_kind["VRM conversion"] == pytest.approx(u1.p_loss, rel=1e-9)
 
 
-def test_stated_dissipation_replaces_supply_power():
-    snap = board()
-    s = setup("ldo")
-    s.loads[0].dissipation_w = 0.25          # a part passing most of its power on
-    res = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=True))
-    assert res.thermal.heat_by_kind["loads"] == pytest.approx(0.25)
-
-
 def test_load_heat_raises_the_board_temperature():
     snap = board()
     s = setup("ldo")
     hot = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
                                                    load_power=True))
-    s.loads[0].dissipation_w = 0.0
     cool = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=True))
+                                                   load_power=False))
     assert hot.thermal.t_max > cool.thermal.t_max + 1.0
 
 

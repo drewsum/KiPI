@@ -21,7 +21,7 @@ supplies:
       - {name: core, pins: [F7, F9], current_a: 0.8}
       - {pins: [H7], current_a: 0.4}
     tolerance: {min: -3, max: 3, unit: "%"}
-    heat_w: 0.9
+    heat_w: 0.9                 # from before #121: read and ignored
     load_step: {step_a: 0.6, slew_a_per_us: 5}
   - name: VCCAUX
     pins: [K1]
@@ -56,7 +56,7 @@ def test_a_model_file_reads_and_writes_back(tmp_path):
     assert [g.current for g in core.groups] == [0.8, 0.4] and core.groups[0].name == "core"
     assert (core.tol_min, core.tol_max, core.tol_unit) == (-3.0, 3.0, "%")
     assert (aux.tol_unit, aux.target_points) == ("±V", [(1e3, 0.1), (1e7, 0.2)])
-    assert (core.step_a, core.slew_a_per_us, core.heat_w) == (0.6, 5.0, 0.9)
+    assert (core.step_a, core.slew_a_per_us) == (0.6, 5.0)
     again = LoadModel.load(m.save(tmp_path / "again.yml"))
     assert again == m
     assert m.save(tmp_path / "again.json") == tmp_path / "again.json.yml"   # YAML only

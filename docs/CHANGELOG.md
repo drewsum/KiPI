@@ -121,6 +121,9 @@ milestones rather than versions that were ever set.
   452 s to 237 s, with every probe's impedance within 0.002 %. Leaving the far ground out
   altogether was tried and dropped. It saves more time but moves the impedance by 2–6 %,
   because the low-frequency return takes shortcuts through ground nowhere near the rail.
+- **Loads no longer have a Heat field** (#121). With Include load power dissipation ticked,
+  a load heats the board with the power it draws, pin current × pin voltage, as before.
+  Setups and load models saved with a Heat still open; the value is ignored.
 - **The 3D view in DC reports is lit evenly** (#122): Plotly shaded each flat facet of the
   copper, and the long thin triangles left by thinning the mesh came out in a patchwork of
   dark ones. The color is now the voltage alone.

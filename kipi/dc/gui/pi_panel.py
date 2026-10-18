@@ -767,7 +767,6 @@ class LoadEditor(_Editor):
         self.ground = self._picker(optional=True)
         # Tolerance, in % from the rail's nominal voltage or in volts.
         self.tol = RangeRow(self._rail_nominal)
-        self.heat = _optional_spin(0, 1000, 3, " W", 0.01)
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -777,7 +776,6 @@ class LoadEditor(_Editor):
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
-        f.addRow("Heat", self.heat)
         # Drawings under the tooltips (#116), the field's part picked out.
         art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
                self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
@@ -806,17 +804,13 @@ class LoadEditor(_Editor):
                 (self.tol.unit, "V: the lowest and highest voltage, in volts.\n±V: in volts "
                                 "below and above the rail's nominal voltage, the set voltage "
                                 "of the VRM driving it.\n%: in % from that nominal voltage."
-                                "\nSwitching converts the values when that VRM is known."),
-                (self.heat, "Optional: the heat the part puts into the board, when load "
-                            "power is included (Thermal tab). Not set: the power it draws, pin "
-                            "current × pin voltage. Set it for a part that passes most of its "
-                            "power on (load switch, LED or motor driver).")):
+                                "\nSwitching converts the values when that VRM is known.")):
             tip(f, w, text, art.get(w))
         self.groups.setToolTip(art_tip(
             "Pin groups: an optional name, the pin numbers (e.g. 15,28) and the current into "
             "those pins. Click a column header to sort by it.", "current_split", "groups"))
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
-        self._watch(self.name, self.current, self.mode, self.heat)
+        self._watch(self.name, self.current, self.mode)
         self.tol.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
@@ -903,7 +897,6 @@ class LoadEditor(_Editor):
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
         self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct, l.tol_dv)
-        _set_optional(self.heat, l.dissipation_w)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
@@ -941,7 +934,6 @@ class LoadEditor(_Editor):
                 self._show(self.ground, gnd)
         l.tol_min, l.tol_max = self.tol.values()
         l.tol_pct, l.tol_dv = self.tol.pct(), self.tol.dv()
-        l.dissipation_w = _get_optional(self.heat)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 

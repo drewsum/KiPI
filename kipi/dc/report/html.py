@@ -597,8 +597,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                 ["Part", "Kind", "Power (W)"], heat_rows))
             parts.append("<p class='note'>Heat put into the board at each part's pins. A DC "
                          "connection dissipates I²R. "
-                         + ("A load dissipates its stated Heat, else the sum over its supply "
-                            "and ground pins of pin current × pin voltage." if with_loads else
+                         + ("A load dissipates the sum over its supply and ground pins of pin "
+                            "current × pin voltage." if with_loads else
                             "Load power is not included (Thermal settings tab).") + "</p>")
         temps = layer_temps(tree, snap, setup.thermal)
         if temps:

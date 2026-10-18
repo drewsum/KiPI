@@ -921,9 +921,6 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     +0.15 V) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
     may be left "not set". PASS if every supply pin is within it. Switching the unit
     converts the values when a VRM drives the load's rail.</td></tr>
-  <tr><td>Heat</td><td class="wrap">Optional, W: the heat the part puts into the board in the
-    electro-thermal solve, when load power is included. Not set: the power it draws. Set it
-    for a part that passes most of its power on, such as a load switch.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
 <h4 id="load-models">Load models</h4>
@@ -956,7 +953,6 @@ supplies:
     ground_pins: [A1, A10]
     current_a: 1.2              # or pin_groups: [{name: core, pins: [F7], current_a: 0.8}, ...]
     tolerance: {min: -3, max: 3, unit: "%"}     # V, ±V or %
-    heat_w: 0.9
     target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[1.0e3, 0.01], [1.0e8, 0.1]]}
     load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}</pre>
 <p>Every key but <code>name</code> is optional.</p>
