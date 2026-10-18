@@ -159,6 +159,38 @@ def test_editor_input_range_is_one_row_in_volts_or_percent():
     panel.close()
 
 
+def test_editor_vrm_dc_accuracy_is_min_and_max_in_percent_or_volts():
+    import os
+    pytest.importorskip("qtpy")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from qtpy.QtWidgets import QApplication
+    from kipi.dc.gui.pi_panel import PIPanel
+    _app = QApplication.instance() or QApplication([])  # noqa: F841
+    s = setup("ldo")
+    panel = PIPanel()
+    panel.set_board(board(), s, "test")
+    panel.vrm_list.lst.setCurrentRow(1)                            # the 3.3 V LDO
+    ed = panel.vrm_list.editor
+    v = s.vrms[1]
+    assert ed.form.labelForField(ed.acc_row).text() == "DC accuracy"
+    assert ed.form.isRowVisible(ed.acc_row) and ed.acc_row.pct()
+    assert not ed.acc_row.min.isEnabled()                          # AC only: grayed in DC
+    ed.acc_row.min.setValue(-1.0)
+    ed.acc_row.max.setValue(2.0)
+    assert (v.acc_min, v.acc_max, v.acc_pct) == (-1.0, 2.0, True)
+    assert v.accuracy_v() == pytest.approx(0.066)                  # +2 % of 3.3 V
+    ed.acc_row.unit.setCurrentIndex(ed.acc_row.unit.findData("V"))
+    assert (v.acc_min, v.acc_max) == (pytest.approx(3.267), pytest.approx(3.366))
+    assert v.acc_pct is False and v.accuracy_v() == pytest.approx(0.066)
+    v2 = PISetup.from_dict(s.to_dict()).vrms[1]
+    assert (v2.acc_min, v2.acc_max, v2.acc_pct) == (v.acc_min, v.acc_max, False)
+    panel.vrm_list.lst.setCurrentRow(0)                            # a source has none
+    assert not ed.form.isRowVisible(ed.acc_row)
+    v.acc_min, v.acc_max = 3.4, 3.3
+    assert any("DC accuracy minimum is above its maximum" in e for e in validate(s))
+    panel.close()
+
+
 def test_editor_load_tolerance_is_min_and_max_in_percent_or_volts():
     import os
     pytest.importorskip("qtpy")

@@ -133,6 +133,37 @@ def test_dialog_copies_a_load_tolerance(app, monkeypatch):
     assert two.v_ac.value() == pytest.approx(66)
 
 
+def test_vrm_accuracies_on_the_probes_rail():
+    from kipi.ac.target import vrm_accuracies
+    from kipi.dc.pi.model import PinRef
+    s = _setup()
+    vr1, vr2 = s.vrms
+    vr1.kind = vr2.kind = "smps"
+    vr1.acc_min, vr1.acc_max = -1.0, 2.0                      # +2 % of 1 V is larger
+    vr2.acc_min, vr2.acc_max, vr2.acc_pct = 3.25, 3.31, False  # -50 mV of 3.3 V
+    accs = vrm_accuracies(s, PinRef("U1", "+1V0"))             # through the link to VR1
+    assert [(a.name, a.label()) for a in accs] == [("VR1", "VR1: -1 / +2 % (±20 mV)")]
+    assert accs[0].v == pytest.approx(0.02)
+    assert [a.v for a in vrm_accuracies(s)] == [pytest.approx(0.02), pytest.approx(0.05)]
+    vr2.kind = "source"                                        # sources have none
+    assert [a.name for a in vrm_accuracies(s)] == ["VR1"]
+    vr1.acc_min = vr1.acc_max = None
+    assert vrm_accuracies(s, PinRef("U1", "+1V0")) == []
+
+
+def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import VrmAccuracy
+    monkeypatch.setattr(TargetCalculator, "last", (50.0, 0.0, 0.0))
+    assert not TargetCalculator().btn_accuracy.isEnabled()
+    d = TargetCalculator(accuracies=[VrmAccuracy("VR1", "±1 %", 0.012)])
+    d.btn_accuracy.click()
+    assert d.v_ac.value() == pytest.approx(38)                 # 50 mV - 12 mV
+    for _ in range(4):
+        d.btn_accuracy.click()
+    assert d.v_ac.value() == 0                                 # never below zero
+
+
 def test_probe_editor_offers_the_rails_loads(app, monkeypatch):
     from kipi.ac.gui import target_calc
     from kipi.ac.gui.panel import ACPanel
@@ -147,9 +178,12 @@ def test_probe_editor_offers_the_rails_loads(app, monkeypatch):
     seen = []
     monkeypatch.setattr(target_calc.TargetCalculator, "exec",
                         lambda dlg: seen.append([[t.name for t in dlg.loads],
-                                                 [c.name for c in dlg.currents]]) or 0)
+                                                 [c.name for c in dlg.currents],
+                                                 [a.name for a in dlg.accuracies]]) or 0)
+    panel.setup.vrms[0].kind = "ldo"
+    panel.setup.vrms[0].acc_min, panel.setup.vrms[0].acc_max = -1.0, 1.0
     panel.probe_list.editor.btn_calc.click()
-    assert seen == [[["SoC", "FPGA core"], ["SoC", "FPGA core", "No tolerance"]]]
+    assert seen == [[["SoC", "FPGA core"], ["SoC", "FPGA core", "No tolerance"], ["VR1"]]]
 
 
 # --- Copy current from DC load ------------------------------------------------------------

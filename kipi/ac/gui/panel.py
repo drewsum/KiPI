@@ -466,11 +466,12 @@ class ProbeEditor(_Editor):
 
     def _calculator(self):
         from kipi.ac.gui.target_calc import TargetCalculator
-        from kipi.ac.target import load_currents, load_tolerances
+        from kipi.ac.target import load_currents, load_tolerances, vrm_accuracies
         rail = self.rail.value() or self.obj.rail
         dlg = TargetCalculator(self, self.name.text().strip(),
                                load_tolerances(self.panel.setup, rail),
-                               load_currents(self.panel.setup, rail))
+                               load_currents(self.panel.setup, rail),
+                               vrm_accuracies(self.panel.setup, rail))
         if dlg.exec() and dlg.target() is not None:
             self.apply_target(dlg.target())
 

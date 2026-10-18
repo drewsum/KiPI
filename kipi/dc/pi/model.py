@@ -81,6 +81,12 @@ class Vrm:
     # The input range in % from the input rail's nominal voltage (that of the VRM feeding
     # it, see rail_nominal), e.g. -10 / +10, instead of in volts.
     vin_pct: bool = False
+    # DC accuracy of the set voltage (LDO / switcher), either end None: in % of it (e.g.
+    # -1 / +1), or with acc_pct False, the output's lowest and highest volts. The target
+    # calculator takes its larger side off the AC tolerance.
+    acc_min: Optional[float] = None
+    acc_max: Optional[float] = None
+    acc_pct: bool = True
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
     load_line_mohm: float = 0.0
@@ -96,6 +102,19 @@ class Vrm:
         for ph in self.all_phases():
             refs.extend((ph.output, ph.input, ph.ground))
         return [r for r in refs if r]
+
+    def has_accuracy(self) -> bool:
+        return self.acc_min is not None or self.acc_max is not None
+
+    def accuracy_label(self) -> str:
+        return tolerance_label(self.acc_min, self.acc_max, self.acc_pct)
+
+    def accuracy_v(self) -> Optional[float]:
+        """The larger side of the DC accuracy, volts from the set voltage; None if not set."""
+        lo, hi = ((self.acc_min, self.acc_max) if not self.acc_pct else
+                  pct_to_volts(self.voltage, self.acc_min, self.acc_max))
+        sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
+        return max(sides) if sides else None
 
 
 @dataclass
@@ -255,6 +274,8 @@ class PISetup:
                       current_limit_a=v.get("current_limit_a"),
                       dropout_v=v.get("dropout_v", 0.0), vin_min=v.get("vin_min"),
                       vin_max=v.get("vin_max"), vin_pct=v.get("vin_pct", False),
+                      acc_min=v.get("acc_min"), acc_max=v.get("acc_max"),
+                      acc_pct=v.get("acc_pct", True),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
                       bandwidth_khz=v.get("bandwidth_khz"))
                   for v in d.get("vrms", [])],
@@ -481,6 +502,8 @@ def validate(setup: PISetup) -> List[str]:
             errors.append(f"VRM {v.name}: the load line cannot be negative")
         if v.vin_min is not None and v.vin_max is not None and v.vin_min > v.vin_max:
             errors.append(f"VRM {v.name}: input range minimum is above its maximum")
+        if v.acc_min is not None and v.acc_max is not None and v.acc_min > v.acc_max:
+            errors.append(f"VRM {v.name}: DC accuracy minimum is above its maximum")
         if (v.vin_pct and v.kind != "source" and (v.vin_min, v.vin_max) != (None, None)
                 and rail_nominal(setup, v.input.net if v.input else None, v.name,
                                  groups) is None):

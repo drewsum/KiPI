@@ -144,6 +144,11 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
 - The Target Impedance/Frequency Calculator has a **Copy current from DC load** button
   beside the load step. It fills the load step from the current of a DC load on the
   probe's rail, the probe's own part first, with a menu when there are several.
+- LDOs and switchers have a **DC accuracy** row under the input range: min and max of the
+  output's DC error, in % of the set voltage or in volts. The Target Impedance/Frequency
+  Calculator has a **Subtract VRM DC accuracy** button under the AC voltage tolerance,
+  which takes the larger side of the accuracy of the VRM driving the probe's rail off
+  the tolerance (a menu when several VRMs drive it).
 
 ### Changed
 - A load's **tolerance has a separate min and max**, on one row like the VRM input range,

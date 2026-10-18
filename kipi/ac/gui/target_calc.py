@@ -10,7 +10,9 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.ac.gui.plot import _eng
-from kipi.ac.target import LoadCurrent, LoadTolerance, Target, target_from_transient
+from kipi.ac.target import (
+    LoadCurrent, LoadTolerance, Target, VrmAccuracy, target_from_transient,
+)
 from kipi.dc.gui.pi_panel import _spin
 
 NOTE = ("Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>, flat up to "
@@ -26,7 +28,8 @@ class TargetCalculator(QDialog):
 
     def __init__(self, parent: Optional[QWidget] = None, probe_name: str = "",
                  loads: Optional[List[LoadTolerance]] = None,
-                 currents: Optional[List[LoadCurrent]] = None):
+                 currents: Optional[List[LoadCurrent]] = None,
+                 accuracies: Optional[List[VrmAccuracy]] = None):
         super().__init__(parent)
         self.setWindowTitle("Target Impedance/Frequency Calculator"
                             + (f": {probe_name}" if probe_name else ""))
@@ -51,6 +54,14 @@ class TargetCalculator(QDialog):
             "Fill in the AC voltage tolerance from a DC load's tolerance: ± that % of its "
             "VRM's voltage. That is the whole tolerance; the DC drop uses up part of it.",
             "No DC load on this probe's rail has a tolerance and a VRM feeding it")
+        # Take the DC accuracy of the rail's VRM off the AC tolerance.
+        self.accuracies = list(accuracies or [])
+        self.btn_accuracy = _copy_button(
+            "Subtract VRM DC accuracy", self.accuracies, self.subtract_accuracy,
+            "Take the DC accuracy of the VRM driving this rail off the AC voltage tolerance: "
+            "the larger side of it, which the output may sit away from its set voltage "
+            "before any load step. Each click subtracts it again.",
+            "No LDO or switcher driving this probe's rail has a DC accuracy set")
         self.currents = list(currents or [])
         self.btn_current = _copy_button(
             "Copy current from DC load", self.currents, self.copy_current,
@@ -65,6 +76,7 @@ class TargetCalculator(QDialog):
         form = QFormLayout()
         form.addRow("AC voltage tolerance", self.v_ac)
         form.addRow("", self.btn_copy)
+        form.addRow("", self.btn_accuracy)
         form.addRow("Load step (ΔI)", self.i_step)
         form.addRow("", self.btn_current)
         form.addRow("Load step slew rate", self.slew)
@@ -90,6 +102,9 @@ class TargetCalculator(QDialog):
 
     def copy_tolerance(self, t: LoadTolerance):
         self.v_ac.setValue(t.v_ac_v * 1e3)
+
+    def subtract_accuracy(self, a: VrmAccuracy):
+        self.v_ac.setValue(max(0.0, self.v_ac.value() - a.v * 1e3))
 
     def copy_current(self, c: LoadCurrent):
         self.i_step.setValue(c.current_a)

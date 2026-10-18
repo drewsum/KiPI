@@ -430,6 +430,8 @@ class VrmEditor(_Editor):
         self.dropout = _spin(0, 100, 0, 3, " V", 0.05)
         # Input range, in volts or in % from the input rail's nominal voltage.
         self.vin_row = RangeRow(self._input_nominal)
+        # DC accuracy, in % of the set voltage or in volts.
+        self.acc_row = RangeRow(lambda: self.voltage.value() or None)
         self.input = self._picker(optional=True)
         self.sense = self._picker(optional=True)
         self.ground = self._picker(optional=True)
@@ -450,6 +452,7 @@ class VrmEditor(_Editor):
         f.addRow("Load line", self.load_line)
         f.addRow("Dropout", self.dropout)
         f.addRow("Input range", self.vin_row)
+        f.addRow("DC accuracy", self.acc_row)
         f.addRow("Control loop bandwidth", self.bandwidth)
         f.addRow("Phases", self.n_phases)
         f.addRow("Edit phase", self.cmb_phase)
@@ -490,6 +493,17 @@ class VrmEditor(_Editor):
                                     "rail's nominal voltage, the set voltage of the VRM "
                                     "driving it (e.g. min -10 %, max +10 %). Switching "
                                     "converts the values when that VRM is known."),
+                (self.acc_row, "Optional DC accuracy of the set voltage, from the "
+                               "datasheet (reference and feedback tolerance, line and load "
+                               "regulation). The target calculator can take it off the AC "
+                               "voltage tolerance."),
+                (self.acc_row.min, "How far below the set voltage the output may sit, e.g. "
+                                   "-1 %, or in V, the lowest output voltage"),
+                (self.acc_row.max, "How far above the set voltage the output may sit, e.g. "
+                                   "+1 %, or in V, the highest output voltage"),
+                (self.acc_row.unit, "%: the accuracy in % of the set voltage.\nV: the lowest "
+                                    "and highest output voltage. Switching converts the "
+                                    "values."),
                 (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
                                  "AC solve leaves the VRM out of circuit (the open-loop PDN "
                                  "impedance); below this frequency the loop holds the rail, "
@@ -519,6 +533,7 @@ class VrmEditor(_Editor):
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.bandwidth)
         self.vin_row.changed.connect(self._store)
+        self.acc_row.changed.connect(self._store)
         self.kind.currentIndexChanged.connect(self._kind_rows)
         self.n_phases.valueChanged.connect(self._phase_count_changed)
         self.cmb_phase.currentIndexChanged.connect(self._phase_selected)
@@ -532,12 +547,13 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.input, kind != "source")
         self.form.setRowVisible(self.dropout, kind == "ldo")
         self.form.setRowVisible(self.vin_row, kind != "source")
+        self.form.setRowVisible(self.acc_row, kind != "source")
         dc = self.mode == "dc"
         _gray((self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                self.input,
                self.sense, self.ground_sense, self.dropout, *self.vin_row.fields()),
               dc, "Used by the DC analysis only")
-        _gray((self.bandwidth,), not dc, "Used by the AC analysis only")
+        _gray((self.bandwidth, *self.acc_row.fields()), not dc, "Used by the AC analysis only")
 
     def _input_nominal(self) -> Optional[float]:
         inp = self.input.value()
@@ -602,6 +618,7 @@ class VrmEditor(_Editor):
         self._show_phase(v)
         self.dropout.setValue(v.dropout_v)
         self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct)
+        self.acc_row.set_values(v.acc_min, v.acc_max, v.acc_pct)
         self.sense.set_value(v.sense)
         self.ground_sense.set_value(v.ground_sense)
         self._kind_rows()
@@ -623,6 +640,8 @@ class VrmEditor(_Editor):
         v.dropout_v = self.dropout.value()
         v.vin_min, v.vin_max = self.vin_row.values()
         v.vin_pct = self.vin_row.pct()
+        v.acc_min, v.acc_max = self.acc_row.values()
+        v.acc_pct = self.acc_row.pct()
         v.bandwidth_khz = self.bandwidth.value() or None
         v.sense = self.sense.value()
         v.ground_sense = self.ground_sense.value()

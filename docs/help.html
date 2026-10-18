@@ -769,6 +769,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     solved input is outside its range (or an LDO below its dropout) cannot hold its output, and every load it
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
+  <tr><td>DC accuracy</td><td class="wrap">LDO and switcher only; used by the AC
+    <a href="#ac-calc">target calculator</a>, grayed out in DC. The output's DC error from
+    the datasheet (reference and feedback tolerance, line and load regulation): min and max
+    on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %) or in <b>V</b>, the lowest
+    and highest output voltage.</td></tr>
   <tr><td>Control loop bandwidth</td><td class="wrap">AC only; grayed out in DC. The AC solve
     leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
     frequency the converter's loop holds the rail. Probe targets are drawn and judged only
@@ -1220,6 +1225,10 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
     the probe's rail (including nets joined by series links), the probe's own part first, and
     shows a menu when there are several. A DC tolerance is the whole budget, and the DC drop
     uses up part of it, so lower the value if the AC part is smaller.</li>
+  <li><b>Subtract VRM DC accuracy</b> takes the DC accuracy of the LDO or switcher driving
+    the probe's rail off the AC voltage tolerance: the larger side of it (20 mV for
+    -1 % / +2 % of 1 V), as the output may already sit that far from its set voltage. It
+    shows a menu when several VRMs drive the rail; each click subtracts again.</li>
   <li><b>Load step (ΔI)</b>: the size of the current step.</li>
   <li><b>Copy current from DC load</b> fills the load step from a DC load's current, a step
     from no load to all of it, offering the loads on the probe's rail the same way. Lower it

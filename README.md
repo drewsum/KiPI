@@ -301,6 +301,7 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Load line | Optional, in mΩ: the VRM regulates to its set voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the set voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
 | Input range | Optional input range it regulates over: min and max, in V or in % from the input rail's nominal voltage (the set voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its set voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
+| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % of the set voltage or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
 | Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
 | Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its set voltage relative to these pins instead of 0 V (needs ground pins) |
@@ -520,7 +521,8 @@ series links with DC mode (fields only DC mode uses are grayed out) and adds:
   piecewise-linear mask through frequency/impedance points on the log-log plot.
   **Target Impedance/Frequency Calculator** works out a flat target from the device's AC
   voltage tolerance, load step and slew rate: Z = V / ΔI, up to f = 1 / (π · t_rise).
-  It can copy the tolerance and the load step from a DC load on the probe's rail.
+  It can copy the tolerance and the load step from a DC load on the probe's rail, and
+  subtract the DC accuracy of the VRM driving the rail from the tolerance.
   Targets apply only above the rail's VRM **Control loop bandwidth**: the AC solve leaves
   the VRM out of circuit (the open-loop PDN impedance, capacitive only), and below its bandwidth the
   converter's control loop is assumed to hold the rail. If the bandwidth is at or above the target frequency,

@@ -18,7 +18,8 @@ applies above the VRM's bandwidth (:func:`judged_from`).
 
 The calculator's AC tolerance can be copied from a DC load's tolerance
 (:func:`load_tolerances`): +/- its tighter side, from the voltage of the VRM feeding the
-load.
+load. The DC accuracy of the VRM driving the rail can be taken off it
+(:func:`vrm_accuracies`): the larger side of it.
 Its load step can be copied from a DC load's current (:func:`load_currents`).
 """
 
@@ -148,6 +149,16 @@ class LoadTolerance:
 
 
 @dataclass
+class VrmAccuracy:
+    name: str             # the VRM's name
+    accuracy: str         # as set: "±1 %", "1.19 to 1.21 V"
+    v: float              # its larger side, volts from the set voltage
+
+    def label(self) -> str:
+        return f"{self.name}: {self.accuracy} (±{self.v * 1e3:.4g} mV)"
+
+
+@dataclass
 class LoadCurrent:
     name: str             # the DC load's name
     current_a: float      # its total current
@@ -181,6 +192,21 @@ def load_tolerances(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[L
         t = vrm and LoadTolerance.of(load, vrm.voltage)
         if t:
             out.append(t)
+    return out
+
+
+def vrm_accuracies(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[VrmAccuracy]:
+    """LDOs and switchers with a DC accuracy: with the probe's supply pins ``rail``, only
+    those driving that rail (its nets joined by series links)."""
+    from kipi.dc.pi.model import net_groups
+    groups = net_groups(setup, [rail.net] if rail else [])
+    out = []
+    for v in setup.vrms:
+        acc = v.accuracy_v() if v.kind != "source" and v.has_accuracy() else None
+        if acc is None or (rail and not any(rail.net in groups[ph.output.net]
+                                            for ph in v.all_phases())):
+            continue
+        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc))
     return out
 
 
