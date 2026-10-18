@@ -7,6 +7,11 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Stackup cross-section** (#104). Beside the Stackup window's table, the layers are drawn
+  to scale, top to bottom: copper in its layer colour, dielectrics in a colour for their
+  material, each labelled with its thickness in the window's unit. The drawing follows
+  thicknesses as they are typed. Layers too thin to see are drawn 3 px tall (the label
+  gives the real thickness), and clicking a layer goes to its thickness in the table.
 - **Signs of life while KiPI works** (#111). The status bar shows a turning spinner with
   the operation's name and the time it has taken while any task runs, part 3D models
   loading included. Each new stage moves the progress bar until it reports how far it is,

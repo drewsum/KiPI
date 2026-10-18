@@ -1,5 +1,6 @@
 """The Stackup window: the board's layers with their thicknesses, materials, εr and
-resistivity, for every analysis (#61).
+resistivity, for every analysis (#61), and beside them a cross-section drawn to scale that
+follows the thicknesses as they are typed (#104).
 
 Locked (the default), the thicknesses, materials and εr are the ones read from KiCad, and
 the copper layers' conductors and resistivities cannot be changed.
@@ -31,6 +32,7 @@ from kipi.core.model.stackup import (
     dielectric_er, dielectric_k, dielectric_materials, restack, stack_order, thicknesses,
 )
 from kipi.dc.thermal.materials import catalog, lookup
+from kipi.gui.stackup_view import Band, StackupView
 from kipi.gui.unit_spin import UnitSpinBox
 
 # Thickness units, as mm per unit. 1 oz/ft² is taken as 35 µm, the usual nominal value
@@ -126,6 +128,8 @@ class StackupWindow(QDialog):
         self.table.setToolTip("The stackup, top to bottom. Values take units and prefixes, "
                               "like 35um or 0.2mm in a µm or mm field.")
         self.lbl_total = QLabel(self)
+        self.view = StackupView(self)
+        self.view.layer_clicked.connect(self._focus_row)
 
         g_cu = QGroupBox("Copper", self)
         f = QFormLayout(g_cu)
@@ -161,11 +165,14 @@ class StackupWindow(QDialog):
         row.addWidget(btn_close)
 
         lay.addLayout(top)
-        lay.addWidget(self.table, 1)
+        mid = QHBoxLayout()
+        mid.addWidget(self.table, 1)
+        mid.addWidget(self.view)
+        lay.addLayout(mid, 1)
         lay.addWidget(self.lbl_total)
         lay.addWidget(g_cu)
         lay.addLayout(row)
-        self.resize(900, 560)
+        self.resize(1150, 600)
         self._update_enabled()
 
     # ------------------------------------------------------------------ state
@@ -229,6 +236,7 @@ class StackupWindow(QDialog):
         if st is None:
             self._order, self._mm, self._er, self._mat, self._k = [], [], [], [], []
             self.lbl_total.setText("Load a board to see its stackup.")
+            self.view.set_bands([])
             return
         names = {c.id: c.name for c in st.copper}
         self._order = stack_order(st)
@@ -373,6 +381,30 @@ class StackupWindow(QDialog):
             box.blockSignals(False)
         self._show_k()
         self._show_total()
+        self._show_view()
+
+    def _show_view(self):
+        """The cross-section, with each layer's thickness in the unit chosen."""
+        unit = self.unit()
+        mats = iter(self._mat)
+        bands = []
+        for e, t in zip(self._order, self._mm):
+            copper = isinstance(e, CopperLayer)
+            u = row_unit(unit, copper)
+            thk = f"{t / THICKNESS_UNITS[u]:.{UNIT_DECIMALS[u]}f} {u}"
+            if copper:
+                bands.append(Band(f"{e.name}  {thk}", t, self._colors.get(e.id), True))
+            else:
+                mat = next(mats, "")
+                bands.append(Band(f"{mat or 'Dielectric'}  {thk}", t, material=mat))
+        self.view.set_bands(bands)
+
+    def _focus_row(self, i: int):
+        """A layer clicked in the cross-section: its thickness in the table."""
+        if 0 <= i < len(self._thk_spins):
+            self.table.scrollToItem(self.table.item(i, C_NAME))
+            self._thk_spins[i].setFocus()
+            self._thk_spins[i].selectAll()
 
     def _show_k(self):
         """Each dielectric's in-plane thermal conductivity: typed here, or its material's."""
@@ -432,6 +464,7 @@ class StackupWindow(QDialog):
     def _thickness_edited(self, i: int, value: float):
         u = row_unit(self.unit(), isinstance(self._order[i], CopperLayer))
         self._mm[i] = value * THICKNESS_UNITS[u]
+        self._show_view()                # at once; the analyses wait for the timer
         self._timer.start()
 
     def _er_edited(self, d: int, value: float):
@@ -460,6 +493,7 @@ class StackupWindow(QDialog):
         self._er_spins[d].setValue(self._er[d])
         self._er_spins[d].blockSignals(False)
         self._show_k()
+        self._show_view()
         self._timer.start()
 
     def _emit_edit(self):

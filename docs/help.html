@@ -439,6 +439,13 @@ of decimals, plus more when a small typed value needs them.</p>
 each copper layer and each dielectric with its thickness, each dielectric's material, εr and
 in-plane thermal conductivity, and each copper layer's conductor and resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
 draws it. The window can stay open beside the main window.</p>
+<p>Beside the table, a cross-section draws the layers to scale, top to bottom: copper in its
+layer colour, each dielectric in a colour for its material, and each layer's thickness
+beside it in the unit chosen. It follows the thicknesses as you type them. A layer too thin
+to see at the window's size, such as a copper foil on a thick board, is drawn 3 pixels
+tall, and its label gives the real thickness; where the labels do not all fit, only the
+copper layers are labelled and the rest show on hover. Click a layer in the drawing to edit
+its thickness in the table.</p>
 <figure><img src="images/stackup.png" alt="The Stackup window listing copper and dielectric layers">
 <figcaption>The Stackup window.</figcaption></figure>
 <details open>

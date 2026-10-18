@@ -290,6 +290,8 @@ and AC analysis uses the edited stackup, and the setup keeps it. A copper layer'
 (copper foils, silver, gold, aluminum, nickel or tin) sets its resistivity, TCR and thermal
 conductivity, and like the thicknesses is changed with the lock unticked; locking again keeps it as set. This can be used to explore how material and thickness properties impact power distribution performance. KiCad's API cannot change a
 board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup yourself.
+Beside the table, a cross-section draws the layers to scale with their thicknesses, and
+follows the thicknesses as they are typed.
 
 ![The Stackup window: copper and dielectric layers with thickness, material, εr, thermal conductivity and resistivity](docs/images/stackup.png)
 
