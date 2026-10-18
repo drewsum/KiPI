@@ -281,6 +281,13 @@ def _pad_angle(pad) -> Optional[float]:
         return None
 
 
+def _fp_angle(fp) -> Optional[float]:
+    try:
+        return float(fp.orientation.degrees)
+    except Exception:  # noqa: BLE001 - an API without it: the angle is not known
+        return None
+
+
 def _outline(board_shapes, progress) -> List[Poly]:
     """Board outline polygons from Edge.Cuts graphics (best effort)."""
     from kipy.board_types import BoardArc, BoardCircle, BoardPolygon, BoardRectangle, BoardSegment
@@ -425,7 +432,8 @@ def extract_board(board, refill_zones: bool = False,
                 id=fp.id.value, reference=ref, value=_field_text(fp.value_field),
                 position=pt(fp.position),
                 side="bottom" if fp.layer == BoardLayer.BL_B_Cu else "top",
-                pad_ids=[p.id.value for p in fpads], footprint=_footprint_name(fp)))
+                pad_ids=[p.id.value for p in fpads], footprint=_footprint_name(fp),
+                angle_deg=_fp_angle(fp)))
             for p in fpads:
                 pad_ref[p.id.value] = ref
             kpads.extend(fpads)

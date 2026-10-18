@@ -146,7 +146,8 @@ With no window available (no tkinter, or `--console`), setup asks in the termina
 KiPI's window title then ends in *(standalone)*. Use **Open…** to open a board (its arrow
 lists the boards opened lately) and **Reload** to read it again; when the board file is
 saved, KiPI offers to read it again by itself. KiCad-only controls (*Load from KiCad*,
-*Refill zones*, *Select in KiCad*, part 3D models) are hidden.
+*Refill zones*, *Select in KiCad*) are hidden; part 3D models are offered when KiCad is
+installed.
 
 A `.kicad_pcb` reads the same as the plugin reads it from KiCad: same copper, item ids and
 setup file, so a board set up in the plugin opens standalone with its setup, and the other
@@ -273,6 +274,9 @@ Below that:
   it to keep the view where it is. The choice is remembered.
 * **3D Models** shows the KiCad 3D models of every part on the board. When viewing results they start hidden; tick
   **3D Models** to show them on results. The geometry and result views each remember their own setting.
+  **Guess models** picks models from KiCad's library by footprint name for parts that have none (a board with no
+  KiCad board file, such as an ODB++ job); it is a guess, run only when clicked, and the log names each model it
+  picks.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
   via in the PCB editor. Thi can be used to pinpoint hot spots, find outliers in voltage drop, and find vias with heavy current.
 
@@ -696,7 +700,7 @@ details, and the same User notes box as the DC report.
   `KIPI_ALLOW_MULTIPLE_KICAD=1` before starting KiCad to skip it. This is enforced because the IPC plugin interface only supports one board instance.
 * **No part models:** the log says why. KiPI needs KiCad's `kicad-cli` (it looks in the
   connected KiCad, the PATH and the usual install folders; set `KIPI_KICAD_CLI` to its
-  path otherwise) and the board's `.kicad_pcb` file on disk. A part whose model file KiCad
+  path otherwise) and the board's `.kicad_pcb` file on disk; without one, click **Guess models**. A part whose model file KiCad
   cannot find is named with the missing path; KiCad's own 3D viewer shows the same gap.
 * **Logs:** each session writes to `kipi/kipi-<date>-<time>-<pid>.log` in the temporary
   folder (`%TEMP%` on Windows, `$TMPDIR` on macOS, `/tmp` on Linux), and the last
@@ -801,7 +805,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/sources/` | Where boards come from, each producing a `BoardSnapshot`; nothing else in KiPI imports kipy: |
 | `kipi/sources/base.py` | What the window asks of a source (`BoardSource`: read, re-read, refill, select) and of a design tool on this computer (`InstalledTool`: layer colors, part models) |
 | `kipi/sources/registry.py` | The board files **Open…** reads, and which source reads each |
-| `kipi/sources/kicad_ipc/` | The running KiCad, through the IPC API (kipy): board extraction, zone refill, KiCad instance checks, color theme, 3D models through kicad-cli |
+| `kipi/sources/kicad_ipc/` | The running KiCad, through the IPC API (kipy): board extraction, zone refill, KiCad instance checks, color theme, 3D models through kicad-cli (and guessed from its library by footprint name) |
 | `kipi/sources/kicad_pcb/` | KiCad board files read without KiCad: S-expression parser, pads, the `.kicad_pro`'s net classes |
 | `kipi/sources/odbpp/` | ODB++ jobs (folder, `.zip`, `.tgz`): the archive, layer features and symbols, the `eda/data` netlist and components, the stackup from the matrix |
 | `kipi/sources/snapshot_file.py` | A saved snapshot as a source |

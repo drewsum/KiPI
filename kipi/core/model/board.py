@@ -156,6 +156,9 @@ class Footprint:
     side: str               # "top" or "bottom"
     pad_ids: List[str] = field(default_factory=list)
     footprint: str = ""     # library footprint, e.g. "Capacitor_SMD:C_0402_1005Metric"
+    # Rotation on the board, degrees counter-clockwise as KiCad shows it. None in
+    # snapshots saved before it was recorded.
+    angle_deg: Optional[float] = None
 
 
 @dataclass

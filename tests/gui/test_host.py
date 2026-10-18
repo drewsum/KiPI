@@ -284,7 +284,11 @@ def test_from_a_terminal_kipi_is_standalone(started, board_file):
     assert main([str(board_file)]) == 0
     assert host.current() is Host.STANDALONE
     assert isinstance(started["source"], SnapshotFileSource)
-    assert started.get("tool") is None                  # no KiCad colors or models
+    # KiPI's own colors, and KiCad's part models only if KiCad is installed (#130)
+    from kipi.sources.kicad_ipc.source import KiCadPartModels
+    from kipi.core.viz.layer_colors import DEFAULT_COPPER
+    assert isinstance(started["tool"], KiCadPartModels)
+    assert started["tool"].layer_colors(None) == (dict(DEFAULT_COPPER), "KiPI default colors")
 
     started.clear()
     assert main([]) == 0

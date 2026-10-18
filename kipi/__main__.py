@@ -68,7 +68,8 @@ def main(argv=None) -> int:
     try:
         if host is Host.STANDALONE:
             from kipi.gui.app import run
-            return run(source=source, instance=instance)
+            from kipi.sources.kicad_ipc.source import KiCadPartModels
+            return run(source=source, tool=KiCadPartModels(), instance=instance)
         if path:
             from kipi.gui.app import run
             from kipi.core.model.snapshot_io import load

@@ -87,7 +87,8 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
               for p in d["pads"]],
         footprints=[Footprint(id=f["id"], reference=f["reference"], value=f["value"],
                               position=tuple(f["position"]), side=f["side"],
-                              pad_ids=list(f["pad_ids"]), footprint=f.get("footprint", ""))
+                              pad_ids=list(f["pad_ids"]), footprint=f.get("footprint", ""),
+                              angle_deg=f.get("angle_deg"))
                     for f in d["footprints"]],
         zones=[Zone(id=z["id"], net=z["net"], name=z["name"], priority=z["priority"],
                     filled=_layer_polys(z["filled"])) for z in d["zones"]],

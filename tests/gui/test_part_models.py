@@ -214,3 +214,56 @@ def test_a_closed_window_loads_no_more_models(app, no_3d, monkeypatch):
     assert not w._model_timer.isActive()
     w._sync_models()
     assert asked == [] and w._model_task is None
+
+
+def test_models_are_guessed_only_when_asked(app, no_3d, monkeypatch):
+    """With no board file, no models are guessed until Guess models is clicked; then only
+    the parts with none are guessed (#130)."""
+    from kipi.sources.kicad_ipc import model_guess, models3d
+    mesh = _part()
+    guessed = []
+
+    class Guess:
+        label = "a guess"
+
+        def load(self, refs, progress=None):
+            guessed.append(list(refs))
+            return {r: mesh if r == "L1" else None for r in refs}
+
+    w, shown, asked, said = _window(no_3d, monkeypatch)
+    monkeypatch.setattr(models3d, "board_file", lambda snap: None)
+    monkeypatch.setattr(model_guess, "guessed_models", lambda cli, snap: Guess())
+    w._sync_models()
+    _settle(app, w)
+    assert guessed == [] and asked == [] and shown[-1][0] == {}
+    assert any("Guess models" in s for s in said)          # the log says how
+
+    w.chk_models.setChecked(False)
+    w.guess_models()
+    assert w.chk_models.isChecked()                        # ticked for the models
+    w._sync_models()
+    _settle(app, w)
+    parts = sorted({p.footprint for p in w.snapshot.pads} - {""})
+    assert guessed == [parts]
+    assert set(shown[-1][0]) == {"L1"}
+
+    w.guess_models()                                       # again: only those still without
+    w._sync_models()
+    _settle(app, w)
+    assert guessed[-1] == [r for r in parts if r != "L1"]
+    w._sync_models()
+    _settle(app, w)
+    assert len(guessed) == 2                               # and not again unasked
+    w.close()
+
+
+def test_a_guess_with_no_library_says_why(app, no_3d, monkeypatch):
+    from kipi.sources.kicad_ipc import model_guess, models3d
+    w, shown, asked, said = _window(no_3d, monkeypatch)
+    monkeypatch.setattr(models3d, "board_file", lambda snap: None)
+    monkeypatch.setattr(model_guess, "library_dirs", lambda cli: [])
+    w.guess_models()
+    w._sync_models()
+    assert w._model_task is None
+    assert any("library was not found" in s for s in said)
+    w.close()

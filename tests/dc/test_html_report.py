@@ -37,6 +37,8 @@ def test_report_contents(tmp_path, thermal):
     assert ("Copper temperature by layer" in text) == thermal
     import re
     assert not re.search(r"<script[^>]+src=", text)        # plotly.js embedded: works offline
+    # #122: the copper is lit evenly, with no facet shading to patch it with dark triangles
+    assert text.count('"lighting":{"ambient":1.0,"diffuse":0.0') >= len(tree.groups)
     # #128: an editable notes box, last in the report, kept and saved by the page itself
     assert "contenteditable='true'" in text and "user-notes-save" in text
     assert text.rindex("<h2") == text.index("<h2 id='user-notes'")       # the last section

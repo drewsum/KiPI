@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
         self._model_task: Optional[Task] = None
         self._model_gen = 0                 # bumped per board; stale loads are dropped
         self._models_pending = False        # wanted parts changed while a load ran
+        self._guess_wanted = False          # Guess models clicked: run once models are in
         self._model_source = None           # the board's ModelProvider, False if none
         self._closed = False
         self._layer_colors_from = None      # where the layer colors were last read from
@@ -472,7 +473,8 @@ class MainWindow(QMainWindow):
                            "probe selected in the setup is marked in amber, and clicking "
                            "its name selects it there.",
                      "models": "Show the 3D models of every part on the board. KiCad's "
-                               "kicad-cli reads them from the saved board file. The copper "
+                               "kicad-cli reads them from the saved board file; with none, "
+                               "Guess models picks them from KiCad's library. The copper "
                                "and result views each remember this; over results they "
                                "start off."}
         for k, (name, label) in enumerate((("vias", "Vias"), ("pads", "Pads"),
@@ -487,6 +489,18 @@ class MainWindow(QMainWindow):
                 self.chk_pi = cb
         self.chk_models = cb
         self.chk_models.setVisible(self._tool.offers_part_models)
+        # Only on request: a guessed model may be the wrong part (#130).
+        self.btn_guess = QPushButton("Guess models", g_view)
+        self.btn_guess.setToolTip(
+            "Pick 3D models from KiCad's library for the parts that have none, by their "
+            "footprint name: for a board with no KiCad board file (an ODB++ job, a "
+            "snapshot away from its board), or parts whose models KiCad cannot find. "
+            "It is a guess: the log names each model picked by size code or the closest "
+            "name. Opening or reloading a board drops them.")
+        self.btn_guess.setVisible(self._tool.offers_part_models)
+        self.btn_guess.setEnabled(False)            # with a board loaded
+        self.btn_guess.clicked.connect(self.guess_models)
+        feat_rows[1].addWidget(self.btn_guess)
         self.chk_snap = QCheckBox("Snap to selected", g_view)
         self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link or probe "
                                  "when it is clicked in the setup's lists. Untick it to keep "
@@ -883,6 +897,8 @@ class MainWindow(QMainWindow):
         self._model_cache.clear()
         self._model_gen += 1
         self._model_source = None
+        self._guess_wanted = False
+        self.btn_guess.setEnabled(True)
         self._picked = None
         self.btn_select.setEnabled(False)
         self._set_title(snap.board_name)
@@ -1151,6 +1167,9 @@ class MainWindow(QMainWindow):
             self._load_models(todo)
         elif todo:
             self._models_pending = True
+        if (self._guess_wanted and wanted and self._model_task is None
+                and all(r in self._model_cache for r in wanted)):
+            self._run_guess(wanted)
         side = {f.reference: f.side for f in snap.footprints}
         shown = {r: (self._model_cache[r], side.get(r, "top")) for r in wanted
                  if self._model_cache.get(r) is not None}
@@ -1168,8 +1187,31 @@ class MainWindow(QMainWindow):
             self._model_source = provider or False
         return self._model_source
 
-    def _load_models(self, refs: List[str]):
-        provider = self._models_source()
+    def guess_models(self):
+        """Guess models from KiCad's library for the parts that have none (#130): once
+        the board's own models are in, ticking 3D Models if it is not."""
+        if self.snapshot is None:
+            return
+        self._guess_wanted = True
+        if self.chk_models.isChecked():
+            self._model_timer.start()
+        else:
+            self.chk_models.setChecked(True)        # starts the timer
+
+    def _run_guess(self, wanted: List[str]):
+        self._guess_wanted = False
+        refs = [r for r in wanted if self._model_cache.get(r) is None]
+        if not refs:
+            self.log("3D models: every part has one already")
+            return
+        provider, why = self._tool.guessed_models(self.snapshot)
+        if provider is None:
+            self.log(why, logging.WARNING)
+            return
+        self._load_models(refs, provider)
+
+    def _load_models(self, refs: List[str], provider=None):
+        provider = provider or self._models_source()
         if not provider:
             self._model_cache.update({r: None for r in refs})
             return
@@ -1207,7 +1249,7 @@ class MainWindow(QMainWindow):
     def _model_task_finished(self):
         self.heartbeat.stop(self._model_task)
         self._model_task = None
-        if self._models_pending:
+        if self._models_pending or self._guess_wanted:
             self._models_pending = False
             self._model_timer.start()
 
@@ -1935,6 +1977,7 @@ class MainWindow(QMainWindow):
         self._model_timer.stop()            # start no kicad-cli for a closed window
         self._changed_timer.stop()
         self._models_pending = False
+        self._guess_wanted = False
         self._closed = True
         for task in (self._task, self._model_task):
             if task is not None and task.isRunning():

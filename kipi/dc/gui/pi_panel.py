@@ -531,9 +531,11 @@ class VrmEditor(_Editor):
                                     "%: in % from that nominal voltage (e.g. min -10 %, max "
                                     "+10 %).\nSwitching converts the values when that VRM "
                                     "is known."),
-                (self.acc_row, "Optional DC accuracy of the set voltage, from the "
-                               "datasheet (reference and feedback tolerance, line and load "
-                               "regulation). The target calculator can take it off the AC "
+                (self.acc_row, "Optional DC accuracy of the set voltage (also called DC "
+                               "error or DC tolerance), from the datasheet. It comes from the "
+                               "regulator's reference accuracy, the feedback resistor "
+                               "tolerances, leakage into the FB pin, and line and load "
+                               "regulation. The target calculator can take it off the AC "
                                "voltage tolerance."),
                 (self.acc_row.min, "How far below the set voltage the output may sit, e.g. "
                                    "-1 % or -0.01 V (±V), or in V, the lowest output voltage"),
@@ -544,8 +546,11 @@ class VrmEditor(_Editor):
                                     "below and above the set voltage.\nV: the lowest and "
                                     "highest output voltage.\nSwitching converts the "
                                     "values."),
-                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
-                                 "AC solve leaves the VRM out of circuit (the open-loop PDN "
+                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis), "
+                                 "also called the loop gain crossover, gain crossover or "
+                                 "control loop crossover frequency. It depends on the total "
+                                 "output capacitance and the loop tuning. The AC solve "
+                                 "leaves the VRM out of circuit (the open-loop PDN "
                                  "impedance); below this frequency the loop holds the rail, "
                                  "so probe targets are drawn and judged only above it. "
                                  "'none' judges the whole target."),

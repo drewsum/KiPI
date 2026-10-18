@@ -96,8 +96,29 @@ milestones rather than versions that were ever set.
   one instead, with the table or text it heads. It opens in the PDF viewer. Where a
   PDF cannot be made, KiPI writes the HTML report instead and the log says why. The
   *Report* button is now *Open report*.
+- **Guess models** (#130), beside *3D Models*: for a board with no KiCad board file to
+  read models from (an ODB++ job, a snapshot opened away from its board), or parts whose
+  models KiCad cannot find, it picks models from the library KiCad installs by each part's
+  footprint name. It looks for the whole name, a name the part's ends with (ODB++ from
+  KiCad names parts `Capacitor_SMD_C_0402_1005Metric`), the name it starts with (a
+  `_HandSolder` variant), a chip resistor, capacitor or inductor's size code
+  (`CAPC1005X55N`, `C0402`, `R0805`), and last the closest name. KiPI writes a board of just
+  those parts, each turned and on its side as on the board, and kicad-cli places the models
+  as it does for a KiCad board. It is a guess, so it runs only when clicked: a model not
+  found by the whole name is left out if it is far larger or smaller than the part's pads,
+  and the log names each one kept. Opening or reloading a board drops them. Standalone
+  KiPI now shows part 3D models too when KiCad is installed. Footprints now record their
+  rotation (ODB++ and KiCad boards, and snapshots); older snapshots take it from the pads.
+  Importing a STEP file of the whole board is not done yet.
 
 ### Changed
+- **The 3D view in DC reports is lit evenly** (#122): Plotly shaded each flat facet of the
+  copper, and the long thin triangles left by thinning the mesh came out in a patchwork of
+  dark ones. The color is now the voltage alone.
+- **DC accuracy and Control loop bandwidth tooltips** use the terms datasheets do (#135): DC
+  error or DC tolerance, from the reference accuracy, feedback resistor tolerances and
+  leakage into the FB pin; loop gain crossover, gain crossover or control loop crossover
+  frequency, set by the total output capacitance and the loop tuning.
 - **Loss tangent and Default εr moved to the Stackup window** (#134), from the AC setup's
   Mesh tab, beside the copper Resistivity and TCR. Like those they are setup settings, so
   they can be changed while the stackup is locked; setups keep them as before.

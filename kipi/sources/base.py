@@ -81,3 +81,8 @@ class InstalledTool:
         """What reads the part models of ``snap``, or None and why not ("" when part
         models are not offered at all)."""
         return None, ""
+
+    def guessed_models(self, snap: BoardSnapshot) -> Tuple[Optional[ModelProvider], str]:
+        """What guesses part models for ``snap`` from a model library, when the user asks
+        for it, or None and why not."""
+        return None, "No 3D model library to guess part models from"

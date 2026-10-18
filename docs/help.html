@@ -606,6 +606,9 @@ Hiding layers does not change the result colors; set the
     part on the board. In the geometry view they are on to start with; over results they start
     hidden, and ticking <b>3D Models</b> there shows them too. Each view remembers its own
     setting. See <a href="#part-models">Part 3D models</a> below.</td></tr>
+  <tr><td id="guess-models"><b>Guess models</b></td><td class="wrap">Picks models from KiCad's
+    library for the parts that have none, by footprint name, and ticks <b>3D Models</b>.
+    Only when clicked; see <a href="#part-models">Part 3D models</a>.</td></tr>
 </table>
 <figure><img src="images/pi_models.png" alt="PI Models marks on the board, the selected switcher in amber">
 <figcaption>PI Models, snapped to the selected +3.3V switcher.</figcaption></figure>
@@ -626,6 +629,18 @@ Hiding layers does not change the result colors; set the
   <li>A part whose model KiCad cannot find is named in the log with the missing path. If
     <code>kicad-cli</code> or the board file cannot be found, the log says so once and no
     models are drawn; see <a href="#ts-models">Troubleshooting</a>.</li>
+  <li><b>Guess models</b> is for a board with no KiCad board file to read models from (an
+    ODB++ job, a snapshot opened away from its board) and for parts whose models KiCad cannot
+    find. For each part with no model, it looks up the footprint (or ODB++ package) name in
+    the 3D model library KiCad installs: the whole name, a name the part's ends with
+    (<code>Capacitor_SMD_C_0402_1005Metric</code>), the name it starts with (a
+    <code>_HandSolder</code> variant), a chip resistor, capacitor or inductor's size code
+    (<code>CAPC1005X55N</code>, <code>C0402</code>, <code>R0805</code>), and last the closest
+    name. <code>kicad-cli</code> then places the models where the parts sit, turned and on
+    their side. It is a guess, so it never runs by itself: a model not found by the whole
+    name is left out if it is far larger or smaller than the part's pads, and the log names
+    each one kept. Opening or reloading the board drops them.</li>
+  <li>Standalone, part models are offered when KiCad is installed on the computer.</li>
 </ul>
 </div>
 </details>
@@ -855,11 +870,14 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
   <tr><td>DC accuracy</td><td class="wrap">LDO and switcher only; used by the AC
-    <a href="#ac-calc">target calculator</a>. The output's DC error from
-    the datasheet (reference and feedback tolerance, line and load regulation): min and max
+    <a href="#ac-calc">target calculator</a>. The output's DC error (DC accuracy or DC
+    tolerance) from the datasheet: the regulator's reference accuracy, the feedback resistor
+    tolerances, leakage into the FB pin, and line and load regulation. Min and max
     on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %), in <b>±V</b> from it (e.g.
     -0.01 V, +0.01 V) or in <b>V</b>, the lowest and highest output voltage.</td></tr>
-  <tr><td>Control loop bandwidth</td><td class="wrap">AC only. The AC solve
+  <tr><td>Control loop bandwidth</td><td class="wrap">AC only. Also called the loop
+    gain crossover, gain crossover or control loop crossover frequency; it depends on the
+    total output capacitance and the loop tuning. The AC solve
     leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
     frequency the converter's loop holds the rail. Probe targets are drawn and judged only
     above it (see <a href="#ac-bandwidth">Targets and the VRM bandwidth</a>);
@@ -1877,7 +1895,10 @@ standalone KiPI) from the temporary folder.</p></div>
     KiCad, the PATH, the usual install folders and a Flatpak KiCad. Otherwise set the
     environment variable <code>KIPI_KICAD_CLI</code> to its full path.</li>
   <li>It also needs the board's <code>.kicad_pcb</code> on disk, next to the project or the
-    snapshot. A snapshot opened on another machine usually has none.</li>
+    snapshot. A snapshot opened on another machine usually has none, nor does an ODB++ job:
+    click <a href="#guess-models">Guess models</a> to pick models from KiCad's library by
+    footprint name. It needs KiCad's 3D model library installed; if it is somewhere KiPI
+    does not look, set <code>KICAD10_3DMODEL_DIR</code> (or your KiCad version's) to it.</li>
   <li>A part whose model file KiCad cannot find is named in the log with the missing path;
     KiCad's own 3D viewer shows the same gap. Fix the path in the footprint's 3D model
     settings and save the board.</li>

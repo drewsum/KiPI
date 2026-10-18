@@ -195,6 +195,9 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
             x=p[:, 0], y=p[:, 1], z=p[:, 2], i=tri[:, 0], j=tri[:, 1], k=tri[:, 2],
             intensity=np.asarray(sheet.point_data["V"]), colorscale="Turbo", cmin=vmin,
             cmax=vmax, name=cu.name, showscale=not traces, flatshading=True,
+            # Lit evenly, so a color is only its voltage: shading each flat facet lit the
+            # thin triangles left by thinning at random, a patchwork of dark ones (#122).
+            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0, fresnel=0.0),
             colorbar=dict(title="V", len=0.7),
             hovertemplate=(f"{cu.name}<br>x %{{x:.2f}} mm<br>y %{{y:.2f}}"
                            "<br>V %{intensity:.5f}<extra></extra>")))
