@@ -376,9 +376,6 @@ To try it without a design of your own, open the example board in
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
 * **Ground pins** (optional) include the ground return. KiPI superimposes all VRM and load return currents to form a comprehensive GND plane current model.
-* **Heat** (optional, W) is what the part puts into the board in the electro-thermal solve,
-  when load power is included. Not set, it is the power the load draws (pin current × pin
-  voltage); set it for a part that passes most of its power on, such as a load switch.
 * **Tolerance** is the PASS/FAIL limit: a min and a max, each optional, in % from the VRM
   set point (e.g. -3 % / +5 %), in volts from it (±V, e.g. -0.1 / +0.15 V) or in volts (e.g.
   3.135 to 3.465 V). A load passes when every
@@ -452,10 +449,18 @@ from its padstack, so a pad removed from an unused inner layer is not counted as
 
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
 the board and the warmer copper become more resistive. The heat is the copper and via
-losses, the DC connections, each VRM's conversion loss, and each load: by default all the
-power it takes from its supply pins (V x I), spread over the pads of its footprint. A load's
-**Heat** field replaces that for a part that passes power on (a load switch, an LED or
-motor driver). The Notes tab and the report list the heat by source. Set:
+losses, the DC connections, each VRM's conversion loss and, if you include it, each load's
+power. The Notes tab and the report list the heat by source.
+
+Each copper layer has its own temperature. Heat goes onto the layer it is made on (a part's
+heat on the layers of its pads), crosses the laminate to the layers above and below, and goes
+down plated holes on any net, so thermal vias count. Only the top and bottom layers lose
+heat to the air. Solving each layer on its own was inspired by
+[KiCad Thermal Sim](https://github.com/PoeAlex/KiCad_Thermal_Sim) by
+[PoeAlex](https://github.com/PoeAlex), a KiCad plugin for heat spreading
+across copper layers.
+
+Set:
 
 ![Thermal settings](docs/images/setup_thermal.png)
 
@@ -467,6 +472,8 @@ motor driver). The Notes tab and the report list the heat by source. Set:
 * The laminate's in-plane thermal conductivity is each dielectric's **k** in the Stackup
   window, looked up from its material (FR4, prepreg types, polyimide, Kapton, PTFE, Rogers,
   ceramic, aluminum…; unrecognized names fall back to FR4 with a warning) or typed in there.
+  Its conductivity through the thickness is the material's typical value (FR4 core
+  0.3 W/m·K, against 0.8 in-plane); a typed k keeps the material's ratio of the two.
 * **Include load power dissipation** (off by default): each load also heats the board with
   the power it draws, the sum over its supply and ground pins of pin current × pin voltage,
   spread over those pins. DC connection (series link) I²R losses always heat their pins.
