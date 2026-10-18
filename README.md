@@ -2,7 +2,7 @@
   <img src="resources/kipi.gif" alt="KiPI logo" width="128">
 </p>
 
-# KiPI — DC and AC Power Integrity Simulator and KiCad Plugin
+# KiPI — DC and AC Power Integrity Simulator (also installable as KiCad Plugin)
 
 [![CI](https://github.com/drewsum/KiPI/actions/workflows/ci.yml/badge.svg)](https://github.com/drewsum/KiPI/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
