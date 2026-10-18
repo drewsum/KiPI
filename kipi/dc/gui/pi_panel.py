@@ -39,6 +39,7 @@ from kipi.dc.pi.model import (
     DEFAULT_VIA_CURRENT_LIMIT_A, DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup,
     group_name, net_groups, pct_to_volts, rail_nominal, validate, volts_to_pct,
 )
+from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi.tree import fmt_drop
@@ -1242,17 +1243,16 @@ class PIPanel(QWidget, PartSelection):
         self.btn_solve.setToolTip("Save the setup, then mesh and solve every ticked net group. "
                                   "Problems that stop the solve are listed above in red.")
         self.btn_solve.clicked.connect(lambda: self.solve_requested.emit(self.setup))
-        self.chk_report = QCheckBox("HTML report", self)
-        self.chk_report.setToolTip("Also write an HTML report (interactive 3D, per-layer maps "
-                                   "and tables) next to the board")
-        self.chk_report.toggled.connect(lambda on: setattr(self.setup, "html_report", on))
-        self.btn_report = QPushButton("Report", self)
-        self.btn_report.setToolTip("Open the last HTML report in your browser")
+        self.report_option = ReportOption("3D view, per-layer maps and tables",
+                                          self._report_changed, self)
+        self.chk_report = self.report_option.chk
+        self.btn_report = QPushButton("Open report", self)
+        self.btn_report.setToolTip("Open the last report in your browser or PDF viewer")
         self.btn_report.setVisible(False)
         self.btn_report.clicked.connect(self._open_report)
         self.report_path = None
         row.addWidget(self.btn_solve, 1)
-        row.addWidget(self.chk_report)
+        row.addWidget(self.report_option)
         row.addWidget(self.btn_report)
         lay.addLayout(row)
 
@@ -1333,6 +1333,9 @@ class PIPanel(QWidget, PartSelection):
     def set_report(self, path):
         self.report_path = path
         self.btn_report.setVisible(path is not None)
+
+    def _report_changed(self, on: bool, fmt: str):
+        self.setup.html_report, self.setup.report_format = on, fmt
 
     def _open_report(self):
         if self.report_path:
@@ -1811,11 +1814,11 @@ class PIPanel(QWidget, PartSelection):
                          (self.spin_airflow, t.airflow_m_s), (self.spin_tgrid, t.grid_mm),
                          (self.spin_max_t, t.max_temp_c or 0.0),
                          (self.spin_max_rise, t.max_rise_c or 0.0),
-                         (self.chk_thermal, t.enabled), (self.chk_load_power, t.load_power),
-                         (self.chk_report, setup.html_report)):
+                         (self.chk_thermal, t.enabled), (self.chk_load_power, t.load_power)):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
             wdg.blockSignals(False)
+        self.report_option.set_value(setup.html_report, setup.report_format)
         self._thermal_changed()
         self.setEnabled(True)
         self._refresh_pickers()

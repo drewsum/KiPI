@@ -174,7 +174,7 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#ac-plot">Impedance plot and cursor</a></li>
         <li><a href="#ac-map">Board map</a></li>
         <li><a href="#ac-table">Results table</a></li>
-        <li><a href="#ac-report">AC HTML report</a></li>
+        <li><a href="#ac-report">AC report</a></li>
         <li><a href="#ac-reading">Reading the curve</a></li>
       </ol></li>
     <li class="group">Workflows</li>
@@ -939,17 +939,20 @@ limits grade the last solve straight away when you change them.</p>
 <!-- ================================================================== DC SOLVING -->
 <h2 id="dc-solving">Solving</h2>
 <details open>
-<summary>Solve all, HTML report and Cancel</summary>
+<summary>Solve all, report and Cancel</summary>
 <div class="body">
 <p><b>Solve all</b> saves the setup, meshes every ticked net group and solves the power tree.
 It is disabled while there are problems (listed in red). If you click it while the 3D view is
 still building nets, the solve is queued and starts as soon as that finishes.</p>
-<p>Tick <b>HTML report</b> before solving to also write
+<p>Tick <b>Report</b> before solving to also write
 <code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the board; the
 time stamp keeps each solve's report instead of overwriting the last one. It opens in your web browser when the solve finishes, and
-<b>Report</b> opens it again later. The report is a single offline file with every
+<b>Open report</b> opens it again later. The report is a single offline file with every
 table, an interactive 3D view of each net group, per-layer statistics and maps, and the
 temperature map.</p>
+<p>Choose <b>PDF</b> beside <b>Report</b> for a <code>.pdf</code> to print or attach
+instead. It has the same tables and maps, without what needs a browser: the 3D view, the
+sortable columns and the User notes box. It opens in your PDF viewer.</p>
 <p>The report's <b>Pins</b> section, and <code>_pins.csv</code> in <b>Export ▾ Tables as
 CSV…</b>, list every pin each group was solved with. That covers VRM output, phase, input
 and sense pins, load supply and ground pins, and DC connection pins. Each row gives the pin's
@@ -1372,11 +1375,11 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
 nets with grounds first, defaulting to the VRM's ground pins' net. <b>Solve rail</b> saves the
 setup and runs the sweep; problems that stop it are listed in red above. The log shows the
 field solves as they go.</p>
-<p>Tick <b>HTML report</b> next to <b>Solve rail</b> to also write
-<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
-board after each rail's solve;
-the report opens in your web browser when the rail finishes solving, and <b>Report</b> opens
-the shown rail's report again later. See <a href="#ac-report">AC HTML report</a>.</p>
+<p>Tick <b>Report</b> next to <b>Solve rail</b> to also write
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> (or, with
+<b>PDF</b> chosen, <code>.pdf</code>) next to the board after each rail's solve;
+the report opens when the rail finishes solving, and <b>Open report</b> opens
+the shown rail's report again later. See <a href="#ac-report">AC report</a>.</p>
 <p>Each rail keeps its last result: switch <b>Rail</b> to look at another rail's curves
 without solving again. If you change the rail while a solve is running, the result is kept
 for its own rail and the notes say so.</p>
@@ -1462,9 +1465,9 @@ under its VRM in <b>Rail</b>. Rails whose VRM is no longer in the setup are left
 </details>
 
 <details id="ac-report">
-<summary>AC HTML report</summary>
+<summary>AC report</summary>
 <div class="body">
-<p>With <b>HTML report</b> ticked, each rail's solve also writes
+<p>With <b>Report</b> ticked, each rail's solve also writes
 <code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
 board; the time stamp keeps every solve's report. Like the DC report, it is a single offline file you can email. It holds:</p>
 <ul>
@@ -1481,6 +1484,10 @@ board; the time stamp keeps every solve's report. Like the DC report, it is a si
     links, the sweep, mesh and copper settings, and the solver's size, backend and time;</li>
   <li>notes: capacitors left out and any warnings.</li>
 </ul>
+<p>With <b>PDF</b> chosen, the report is a <code>.pdf</code> with the same sections, the
+impedance plot and board map as images (probes and targets; no hover or per-model curves),
+and no notes box. If a PDF can't be made, KiPI writes the HTML report instead and the log
+says why.</p>
 <p>If the report can't be written, the log says why; the solve's results are kept either
 way.</p>
 </div>

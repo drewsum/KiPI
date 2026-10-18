@@ -47,6 +47,19 @@ MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"))
 VIA_PICK_PX = 10      # a click this close to a via barrel on screen selects it
 
 
+def write_report_file(write, path, progress):
+    """``write(path)`` a solve's report; where a PDF cannot be made, the HTML report next to
+    where it would have been (#119). The path written is returned."""
+    from kipi.core.pdf import PdfError
+    with progress.timed(f"Writing {path.suffix.lstrip('.').upper()} report"):
+        try:
+            return write(path)
+        except PdfError as e:
+            progress.warn(f"Could not write the PDF report ({e}); writing it as HTML instead")
+    with progress.timed("Writing HTML report"):
+        return write(path.with_suffix(".html"))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, source: Optional[BoardSource] = None, tool: Optional[InstalledTool] = None,
                  snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None):
@@ -1230,7 +1243,8 @@ class MainWindow(QMainWindow):
         report_path = None
         if frozen.html_report and self._setup_path is not None:
             from kipi.dc.report.html import report_name
-            report_path = self._setup_path.parent / report_name(self._results_stem())
+            report_path = self._setup_path.parent / report_name(self._results_stem(),
+                                                                fmt=frozen.report_format)
 
         def work(progress):
             from kipi.core.mesh.mesher import MeshError
@@ -1250,12 +1264,12 @@ class MainWindow(QMainWindow):
                 scenes = build_scenes(tree, snap, progress)
             if report_path is not None:
                 from kipi.dc.report.html import write_report
-                with progress.timed("Writing HTML report"):
-                    try:
-                        tree.report_path = write_report(report_path, tree, scenes, snap, frozen,
-                                                        progress)
-                    except OSError as e:
-                        progress.warn(f"Could not write the report: {e}")
+                try:
+                    tree.report_path = write_report_file(
+                        lambda p: write_report(p, tree, scenes, snap, frozen, progress),
+                        report_path, progress)
+                except OSError as e:
+                    progress.warn(f"Could not write the report: {e}")
             return tree, scenes
 
         def done(out):
@@ -1303,7 +1317,8 @@ class MainWindow(QMainWindow):
         report_path = None
         if frozen.ac.html_report and self._setup_path is not None:
             from kipi.ac.html_report import report_name
-            report_path = self._setup_path.parent / report_name(self._results_stem(), vrm_name)
+            report_path = self._setup_path.parent / report_name(self._results_stem(), vrm_name,
+                                                                fmt=frozen.ac.report_format)
 
         def work(progress):
             from kipi.ac.solver import ACError, solve_ac
@@ -1316,12 +1331,12 @@ class MainWindow(QMainWindow):
                 return None, str(e)
             if report_path is not None:
                 from kipi.ac.html_report import write_ac_report
-                with progress.timed("Writing HTML report"):
-                    try:
-                        result.report_path = write_ac_report(report_path, result, snap, frozen,
-                                                             progress)
-                    except Exception as e:        # the solve's results stand without it
-                        progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+                try:
+                    result.report_path = write_report_file(
+                        lambda p: write_ac_report(p, result, snap, frozen, progress),
+                        report_path, progress)
+                except Exception as e:        # the solve's results stand without it
+                    progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
             return result, None
 
         def done(out):

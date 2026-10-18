@@ -21,7 +21,8 @@ analysis modes:
   parts (beads, resistors, load switches), then simulate the voltage drop net by net, across
   every copper layer. Inspect voltage, current density, via currents, copper power
   dissipation and (optionally) board temperature in a rotatable 3D view, with PASS/FAIL
-  checks for loads, VRMs, vias and temperature, and write an interactive HTML report.
+  checks for loads, VRMs, vias and temperature, and write an interactive HTML report or a
+  PDF.
 * **AC: PDN Impedance.** Give the decoupling capacitors RLC models and put probes on a
   device's power pins, then sweep the impedance of the power distribution network (planes,
   vias, mounting and capacitors) over frequency. Check it against a flat or custom target
@@ -470,10 +471,12 @@ tab, Solve x of n will be displayed). Every rail is meshed and solved, the downs
 back towards the source, so each VRM's input current includes everything it feeds. Progress
 and solver residuals stream into the log; **Cancel** stops the run.
 
-Tick **HTML report** before solving to also write
+Tick **Report** before solving to also write
 `<board>_kipi_report_<date>_<time>.html` next to the board (the time stamp keeps each
-solve's report rather than overwriting the last). It opens in your web browser when the solve finishes, and **Report** opens it
-again later. It is a single portable file, containing:
+solve's report rather than overwriting the last). It opens in your web browser when the solve finishes, and **Open report** opens it
+again later. Choose **PDF** beside it for a `.pdf` to print or attach instead: the same
+tables and maps, without the interactive 3D view and the notes box. The HTML report is a
+single portable file, containing:
 
 * the summary and every results table;
 * an interactive 3D view per rail (rotate, zoom, hover for values);
@@ -633,9 +636,10 @@ JSON and arrays in a zip, safe to share.
 
 ![The Board map of the core rail's solve: the VCORE and GND mesh, the probe and the capacitors by model](docs/images/ac_board_map.png)
 
-Tick **HTML report** next to **Solve rail** to also write
+Tick **Report** next to **Solve rail** to also write
 `<board>_<rail>_ac_report_<date>_<time>.html` next to the board after each solve. It opens in your web browser when the solve
-finishes, and **Report** opens it again later. Like the DC report, it is one
+finishes, and **Open report** opens it again later. Choose **PDF** for a `.pdf` instead,
+with images of the |Z| plot and the board map. Like the DC report, it is one
 portable file you can share. It has the probe table with margins, an interactive |Z|
 plot with the targets and each capacitor model's own curve, a board map of the rail's copper
 with the probes and capacitors marked, the capacitor models, the sweep, mesh and solver
@@ -771,7 +775,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/dc/solver/` | 2.5D DC conduction FEM: sheet conductance, via/PTH barrels, series parts, sources, loads |
 | `kipi/dc/pi/` | User power-tree setup (VRMs, loads, series links), JSON, validation, the guesses that pre-fill it, tree solver, results tables |
 | `kipi/dc/thermal/` | Board heat model, stackup material conductivities, electro-thermal iteration |
-| `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps) |
+| `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps), or a PDF of it (`kipi/core/pdf.py`) |
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
 | `kipi/dc/gui/` | The PI setup and results panel |
 | `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the board map data (`board_map.py`), the AC setup panel, impedance plot and Board map tab (`gui/`) |

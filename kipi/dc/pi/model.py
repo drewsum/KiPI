@@ -31,7 +31,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from kipi.ac.model import DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, Probe
+from kipi.ac.model import (
+    DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, Probe, report_format,
+)
 from kipi.dc.solver.setup import SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
 
@@ -217,7 +219,8 @@ class PISetup:
     # typical 0.3 mm via (#114).
     via_current_limit_a: Optional[float] = DEFAULT_VIA_CURRENT_LIMIT_A
     thermal: ThermalSettings = field(default_factory=ThermalSettings)   # off by default
-    html_report: bool = False                     # write an HTML report after solving
+    html_report: bool = False                     # write a report after solving
+    report_format: str = "html"                   # "html" or "pdf" (#119)
     # Nets ticked in the Board panel (the nets in scope). None = never chosen, so the
     # GUI guesses the main power and ground planes; [] = the user unticked them all.
     nets: Optional[List[str]] = None
@@ -296,6 +299,7 @@ class PISetup:
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
             html_report=bool(d.get("html_report", False)),
+            report_format=report_format(d.get("report_format")),
             nets=list(d["nets"]) if d.get("nets") is not None else None,
             excluded_nets=list(d.get("excluded_nets", [])),
             stackup=d.get("stackup") or None,

@@ -37,6 +37,7 @@ from kipi.dc.gui.pi_panel import (
 from kipi.dc.pi.autofill import guess_ground_pins
 from kipi.ac.target import vrm_input_name, vrm_inputs
 from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm
+from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
 )
@@ -631,13 +632,12 @@ class ACPanel(QWidget, PartSelection):
                                   "this rail. Problems that stop the solve are listed above "
                                   "in red.")
         self.btn_solve.clicked.connect(self._solve)
-        self.chk_report = QCheckBox("HTML report", self)
-        self.chk_report.setToolTip("Also write an HTML report (interactive impedance plot, "
-                                   "board map and tables) next to the board after each "
-                                   "rail's solve")
-        self.chk_report.toggled.connect(lambda on: setattr(self.setup.ac, "html_report", on))
-        self.btn_report = QPushButton("Report", self)
-        self.btn_report.setToolTip("Open the shown rail's HTML report in your browser")
+        self.report_option = ReportOption("impedance plot, board map and tables, after "
+                                          "each rail's solve", self._report_changed, self)
+        self.chk_report = self.report_option.chk
+        self.btn_report = QPushButton("Open report", self)
+        self.btn_report.setToolTip("Open the shown rail's report in your browser or PDF "
+                                   "viewer")
         self.btn_report.setVisible(False)
         self.btn_report.clicked.connect(self._open_report)
         row.addWidget(QLabel("Rail"))
@@ -647,7 +647,7 @@ class ACPanel(QWidget, PartSelection):
         lay.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(self.btn_solve, 1)
-        row.addWidget(self.chk_report)
+        row.addWidget(self.report_option)
         row.addWidget(self.btn_report)
         lay.addLayout(row)
 
@@ -876,7 +876,8 @@ class ACPanel(QWidget, PartSelection):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
-        for chk, on in ((self.chk_report, s.html_report), (self.chk_bias, s.dc_bias),
+        self.report_option.set_value(s.html_report, s.report_format)
+        for chk, on in ((self.chk_bias, s.dc_bias),
                         (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging)):
             chk.blockSignals(True)
             chk.setChecked(on)
@@ -1226,6 +1227,9 @@ class ACPanel(QWidget, PartSelection):
         self.btn_export.setEnabled(True)
         self.btn_report.setVisible(getattr(result, "report_path", None) is not None)
         self.result_selected.emit(result)
+
+    def _report_changed(self, on: bool, fmt: str):
+        self.setup.ac.html_report, self.setup.ac.report_format = on, fmt
 
     def _open_report(self):
         path = getattr(self.result, "report_path", None)

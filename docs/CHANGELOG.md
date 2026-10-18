@@ -24,6 +24,13 @@ milestones rather than versions that were ever set.
     that runs the launcher, instead of saying it is not supported.
   - Linux: the setup window and the `--create-shortcut` menu entry match, so the panel
     shows the KiPI icon; KiPI no longer replaces that menu entry with its hidden one.
+- **PDF reports** (#119). The DC and AC panels' *HTML report* tick is now *Report*, with a
+  choice of HTML or PDF beside it (saved with the setup; older setups keep HTML). The PDF
+  has the same tables and maps, printed by Qt (already one of KiPI's packages), with
+  images of the AC impedance plot and board map. It leaves out what needs a browser: the
+  DC 3D view, sortable columns and the User notes box. It opens in the PDF viewer. Where a
+  PDF cannot be made, KiPI writes the HTML report instead and the log says why. The
+  *Report* button is now *Open report*.
 
 ### Changed
 - **PARDISO is installed by default** where Intel MKL exists (Windows and Linux on x86-64),

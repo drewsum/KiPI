@@ -1,4 +1,4 @@
-"""Self-contained HTML report for a solved power tree.
+"""Self-contained HTML (or PDF) report for a solved power tree.
 
 One ``.html`` file with:
 * a summary and the load / VRM / DC connection / pin / loss / via tables,
@@ -8,6 +8,9 @@ One ``.html`` file with:
 
 Plotly's JavaScript is embedded once, so the report works offline and can be shared
 as a single file. Images are rendered with matplotlib's Agg backend (thread safe).
+
+A ``.pdf`` path gets the same report printed (#119): the tables and maps, without the 3D
+view, the notes box or anything else that needs a browser.
 """
 
 from __future__ import annotations
@@ -351,15 +354,45 @@ SORT_JS = r"""
 """
 
 
-def report_name(board_stem: str, when: Optional[_dt.datetime] = None) -> str:
-    """File name of the DC report: '<board>_kipi_report_<time stamp>.html', so each solve
-    keeps its own report (#66)."""
-    return f"{board_stem}_kipi_report_{timestamp(when)}.html"
+def report_name(board_stem: str, when: Optional[_dt.datetime] = None, fmt: str = "html") -> str:
+    """File name of the DC report: '<board>_kipi_report_<time stamp>.html' (or .pdf), so
+    each solve keeps its own report (#66)."""
+    return f"{board_stem}_kipi_report_{timestamp(when)}.{fmt}"
+
+
+def maps_html(images: List[str], pdf: bool) -> str:
+    """Figures side by side: wrapped by the browser, two to a row on a PDF page."""
+    images = [m for m in images if m]
+    if not pdf:
+        return "<div class='maps'>" + "".join(
+            f"<figure><img src='{m}'></figure>" for m in images) + "</div>"
+    width = 330 if len(images) > 1 else 440
+    rows = [images[i:i + 2] for i in range(0, len(images), 2)]
+    return "<table class='maps'>" + "".join(
+        "<tr>" + "".join(f"<td><img src='{m}' width='{width}'></td>" for m in r) + "</tr>"
+        for r in rows) + "</table>"
+
+
+def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool) -> Path:
+    """Write the report's body as a page that works offline, or print it to a PDF."""
+    body = "".join(parts)
+    if pdf:
+        from kipi.core.pdf import write_pdf
+        return write_pdf(f"<html><head><meta charset='utf-8'><title>{_e(title)}</title>"
+                         f"</head><body>{body}</body></html>", path, title)
+    import plotly.offline
+    js = plotly.offline.get_plotlyjs()
+    path.write_text(f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                    f"<title>{_e(title)}</title><style data-kipi>{css}</style>"
+                    f"<script type='text/javascript'>{js}</script>"
+                    f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
+                    + body + "</body></html>", encoding="utf-8")
+    return path
 
 
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,
                  progress=None) -> Path:
-    import plotly.offline
+    """Write the report to ``path``: a web page, or a PDF when it ends in .pdf (#119)."""
     from kipi.dc.pi.report import (
         layer_temps, limits_text, loss_rows, pin_rows, thermal_passed, via_rows,
     )
@@ -369,6 +402,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             progress.info(t)
 
     path = Path(path)
+    pdf = path.suffix.lower() == ".pdf"
     outline = [p.outline for p in snap.outline] if snap.outline else None
     names = {c.id: c.name for c in snap.stackup.copper}
     parts: List[str] = []
@@ -385,7 +419,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         nav.append("<a href='#thermal'>Thermal</a>")
     nav += [f"<a href='#g{i}'>{_e(n)}</a>" for i, n in enumerate(tree.groups)]
     nav.append("<a href='#user-notes'>User notes</a>")
-    parts.append("<nav>" + " ".join(nav) + "</nav>")
+    if not pdf:
+        parts.append("<nav>" + " ".join(nav) + "</nav>")
     s = setup.settings
     parts.append(f"<p class='note'>Mesh: max edge {s.max_edge_mm:g} mm, via grading "
                  f"{s.grading:g}, copper resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
@@ -399,7 +434,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
 
-    parts.append(notes_section())
+    if not pdf:
+        parts.append(notes_section())
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -452,8 +488,9 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             rows = [r for r in pins if r.group == name]
             if not rows:
                 continue
+            title = f"<b>{_e(name)}</b>: {len(rows)} pin(s)"
             parts.append(
-                f"<details><summary><b>{_e(name)}</b>: {len(rows)} pin(s)</summary>" +
+                (f"<h3>{title}</h3>" if pdf else f"<details><summary>{title}</summary>") +
                 _table(["Terminal", "Role", "Pin", "x (mm)", "y (mm)", "V", "Drop / boost (mV)",
                         "%", "I (mA)", "I is"],
                        [[_e(r.terminal), _e(r.role),
@@ -462,7 +499,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                          _num(abs(100.0 * r.deviation / r.nominal), ".3f") if r.nominal else "",
                          _num(None if r.current is None else r.current * 1e3, ".4g"),
                          _e(r.current_is)] for r in rows]) +
-                "</details>")
+                ("" if pdf else "</details>"))
         parts.append("<p class='note'>Every pin each group was solved with: VRM outputs, "
                      "phases, inputs and sense pins, load supply and ground pins and the pins "
                      "of DC connections. I is the current drawn from the copper at the pin; "
@@ -531,8 +568,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             parts.append("<p class='note'>The hottest solved copper on each layer. "
                          + (f"Limits: {lim}; overall {_verdict(verdict)}." if lim
                             else "No temperature limits were set.") + "</p>")
-        parts.append(f"<div class='maps'><figure><img src='{_thermal_map(th, outline)}'>"
-                     "</figure></div>")
+        parts.append(maps_html([_thermal_map(th, outline)], pdf))
         if th.dielectrics:
             parts.append("<h3>Laminate (in-plane thermal conductivity)</h3>" + _table(
                 ["Stackup material", "Thickness (mm)", "Taken as", "k (W/m·K)"],
@@ -552,11 +588,12 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         role = (f"driven by {_e(g.driver)}" if g.kind == "rail"
                 else f"ground, referenced at {_e(g.driver)}")
         parts.append(f"<p>{role}; nets: {_e(', '.join(g.nets))}.</p>")
-        parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
-        parts.append("<p class='note'>Drag to rotate, scroll to zoom, double-click to reset; "
-                     "hover for values. The 3D mesh is simplified for the report, and its color "
-                     "scale spans the 1st–99th percentile of voltages (the maps below are "
-                     "scaled per layer).</p>")
+        if not pdf:
+            parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
+            parts.append("<p class='note'>Drag to rotate, scroll to zoom, double-click to "
+                         "reset; hover for values. The 3D mesh is simplified for the report, "
+                         "and its color scale spans the 1st–99th percentile of voltages (the "
+                         "maps below are scaled per layer).</p>")
         rows = []
         tri_layer = g.result.mesh.tri_layer
         for lid, lr in scene.layers.items():
@@ -587,8 +624,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                                    outline=outline))
             maps.append(_layer_map(lr, lr.tri_j, True, f"{lname}: current density", "inferno",
                                    "A/mm²", clip_pct=99.5, outline=outline))
-        parts.append("<div class='maps'>" + "".join(
-            f"<figure><img src='{m}'></figure>" for m in maps if m) + "</div>")
+        parts.append(maps_html(maps, pdf))
         parts.append("<p class='note'>Current-density maps clip at the 99.5th percentile; pad "
                      "corners are singular and would otherwise wash out the map.</p>")
 
@@ -596,12 +632,6 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         parts.append("<h2>Notes</h2><ul>" + "".join(f"<li>{_e(w)}</li>" for w in tree.warnings)
                      + "</ul>")
 
-    js = plotly.offline.get_plotlyjs()
-    doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-           f"<title>KiPI report — {_e(snap.board_name)}</title><style data-kipi>{CSS}</style>"
-           f"<script type='text/javascript'>{js}</script>"
-           f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
-           + "".join(parts) + "</body></html>")
-    path.write_text(doc, encoding="utf-8")
+    finish(path, f"KiPI report — {snap.board_name}", parts, CSS, pdf)
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")
     return path
