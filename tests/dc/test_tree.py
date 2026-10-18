@@ -5,7 +5,9 @@ import math
 import pytest
 from shapely.geometry import box
 
-from kipi.dc.pi.model import DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate
+from kipi.dc.pi.model import (
+    DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate, vin_range,
+)
 from kipi.dc.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, solve_tree
 from kipi.dc.solver.fem import SolveError
 
@@ -305,6 +307,31 @@ def test_switcher_below_its_input_minimum_fails_the_loads_it_feeds():
     res = solve_tree(board(), s)
     assert "minimum" in by_name(res.vrms, "U1").regulation
     assert by_name(res.loads, "U2").verdict == OUT_OF_REGULATION
+
+
+def test_input_range_in_percent_is_of_the_input_rails_vrm():
+    s = setup("smps", eff=0.9)
+    u1 = s.vrms[1]
+    u1.vin_pct, u1.vin_min, u1.vin_max = True, -10.0, 5.0          # of J1's 12 V
+    assert vin_range(s, u1) == pytest.approx((10.8, 12.6))
+    assert not validate(s)
+    assert by_name(solve_tree(board(), s).vrms, "U1").regulation == ""
+    u1.vin_min, u1.vin_max = 10.0, 15.0                            # 13.2 V: above 12 V
+    res = solve_tree(board(), s)
+    assert "below its 13.2 V minimum" in by_name(res.vrms, "U1").regulation
+    assert by_name(res.loads, "U2").verdict == OUT_OF_REGULATION
+    s.vrms[0].voltage = -12.0                  # -10 % of a negative rail is its high end
+    u1.vin_min, u1.vin_max = -10.0, 5.0
+    assert vin_range(s, u1) == pytest.approx((-12.6, -10.8))
+    assert PISetup.from_dict(s.to_dict()).vrms[1].vin_pct is True
+
+
+def test_input_range_in_percent_needs_a_vrm_on_the_input_rail():
+    s = setup("smps", eff=0.9)
+    s.vrms[1].vin_pct, s.vrms[1].vin_max = True, 10.0
+    del s.vrms[0]
+    assert vin_range(s, s.vrms[0]) == (None, None)
+    assert any("in % needs a VRM" in e for e in validate(s))
 
 
 def test_unconverged_group_leaves_its_loads_unjudged(monkeypatch):

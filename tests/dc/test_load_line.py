@@ -124,6 +124,41 @@ def test_editor_and_notes_show_the_load_line():
     panel.close()
 
 
+def test_editor_input_range_is_one_row_in_volts_or_percent():
+    import os
+    pytest.importorskip("qtpy")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from qtpy.QtWidgets import QApplication
+    from kipi.dc.gui.pi_panel import PIPanel
+    _app = QApplication.instance() or QApplication([])  # noqa: F841
+    s = setup("smps")
+    panel = PIPanel()
+    panel.set_board(board(), s, "test")
+    panel.vrm_list.lst.setCurrentRow(1)
+    ed = panel.vrm_list.editor
+    assert ed.form.labelForField(ed.vin_row).text() == "Input range"
+    assert ed.vin_min.parent() is ed.vin_row and ed.vin_max.parent() is ed.vin_row
+    assert ed.form.labelForField(ed.vin_min) is None
+    ed.vin_min.setValue(10.8)
+    ed.vin_max.setValue(13.2)
+    assert (s.vrms[1].vin_min, s.vrms[1].vin_max, s.vrms[1].vin_pct) == (10.8, 13.2, False)
+    ed.vin_unit.setCurrentIndex(ed.vin_unit.findData("%"))         # of J1's 12 V
+    u1 = s.vrms[1]
+    assert u1.vin_pct and ed.vin_min.suffix() == " %"
+    assert (u1.vin_min, u1.vin_max) == (pytest.approx(-10.0), pytest.approx(10.0))
+    ed.vin_max.setValue(ed.vin_max.minimum())                      # "not set"
+    ed.vin_unit.setCurrentIndex(ed.vin_unit.findData("V"))
+    assert (u1.vin_min, u1.vin_max, u1.vin_pct) == (pytest.approx(10.8), None, False)
+    s.vrms[0].voltage = 0.0                    # no nominal input: nothing to convert from
+    ed.vin_unit.setCurrentIndex(ed.vin_unit.findData("%"))
+    assert (u1.vin_min, u1.vin_max, u1.vin_pct) == (None, None, True)
+    panel.vrm_list.lst.setCurrentRow(0)                            # a source has no input
+    assert not ed.form.isRowVisible(ed.vin_row)
+    panel.vrm_list.lst.setCurrentRow(1)
+    assert ed.vin_unit.currentData() == "%" and ed.vin_min.text() == "not set"
+    panel.close()
+
+
 def test_multiphase_load_line_droops_the_mean_phase_output():
     from phase_boards import board as phase_board, two_phase
     s = two_phase()

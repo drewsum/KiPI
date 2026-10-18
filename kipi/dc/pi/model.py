@@ -78,6 +78,9 @@ class Vrm:
     dropout_v: float = 0.0               # LDO: least input-output difference it regulates at
     vin_min: Optional[float] = None      # input range it regulates over (LDO / switcher)
     vin_max: Optional[float] = None
+    # The input range in % from the input rail's nominal voltage (that of the VRM feeding
+    # it, see input_nominal), e.g. -10 / +10, instead of in volts.
+    vin_pct: bool = False
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
     load_line_mohm: float = 0.0
@@ -200,7 +203,7 @@ class PISetup:
                                        pin(ph.get("ground"))) for ph in v.get("phases", [])],
                       current_limit_a=v.get("current_limit_a"),
                       dropout_v=v.get("dropout_v", 0.0), vin_min=v.get("vin_min"),
-                      vin_max=v.get("vin_max"),
+                      vin_max=v.get("vin_max"), vin_pct=v.get("vin_pct", False),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
                       bandwidth_khz=v.get("bandwidth_khz"))
                   for v in d.get("vrms", [])],
@@ -326,6 +329,30 @@ def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
     return {n: frozenset(groups[find(n)]) for n in nets}
 
 
+def input_nominal(setup: PISetup, input_net: Optional[str], skip: str = "",
+                  groups=None) -> Optional[float]:
+    """The nominal voltage of the rail ``input_net`` is on: the set voltage of a VRM
+    (other than ``skip``) driving it. None if no VRM does."""
+    if not input_net:
+        return None
+    groups = groups or net_groups(setup, [input_net])
+    group = groups.get(input_net, frozenset([input_net]))
+    return next((u.voltage for u in setup.vrms if u.name != skip and u.voltage
+                 and any(ph.output.net in group for ph in u.all_phases())), None)
+
+
+def vin_range(setup: PISetup, v: Vrm, groups=None) -> Tuple[Optional[float], Optional[float]]:
+    """The VRM's input range in volts, (min, max), either None when not set. A range in %
+    is taken from its input rail's nominal voltage; (None, None) without one."""
+    if not v.vin_pct:
+        return v.vin_min, v.vin_max
+    nom = input_nominal(setup, v.input.net if v.input else None, v.name, groups)
+    if nom is None:
+        return None, None
+    lo, hi = (None if p is None else nom * (1 + p / 100) for p in (v.vin_min, v.vin_max))
+    return (hi, lo) if nom < 0 else (lo, hi)     # -10 % of a negative rail is the higher end
+
+
 def group_name(group) -> str:
     return " + ".join(sorted(group))
 
@@ -395,6 +422,11 @@ def validate(setup: PISetup) -> List[str]:
             errors.append(f"VRM {v.name}: the load line cannot be negative")
         if v.vin_min is not None and v.vin_max is not None and v.vin_min > v.vin_max:
             errors.append(f"VRM {v.name}: input range minimum is above its maximum")
+        if (v.vin_pct and v.kind != "source" and (v.vin_min, v.vin_max) != (None, None)
+                and input_nominal(setup, v.input.net if v.input else None, v.name,
+                                  groups) is None):
+            errors.append(f"VRM {v.name}: an input range in % needs a VRM driving its input "
+                          "rail, whose voltage it is a % of; give the range in volts instead")
         if v.sense and groups[v.sense.net] != groups[v.output.net]:
             errors.append(f"VRM {v.name}: sense pins must be on the output net (or nets "
                           "DC-connected to it)")

@@ -37,7 +37,7 @@ from kipi.dc.pi.autofill import (
 )
 from kipi.dc.pi.model import (
     DEFAULT_VIA_CURRENT_LIMIT_A, DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup,
-    group_name, net_groups, validate,
+    group_name, input_nominal, net_groups, validate,
 )
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
 from kipi.gui.unit_spin import UnitSpinBox
@@ -360,8 +360,20 @@ class VrmEditor(_Editor):
         self.load_line = _spin(0, 1e6, 0, 3, " mΩ", 0.1)
         self.load_line.setSpecialValueText("none")
         self.dropout = _spin(0, 100, 0, 3, " V", 0.05)
+        # Input range on one row, in volts or in % from the input rail's nominal voltage.
         self.vin_min = _optional_volts()
         self.vin_max = _optional_volts()
+        self.vin_unit = QComboBox()
+        self.vin_unit.addItem("V", "V")
+        self.vin_unit.addItem("%", "%")
+        self.vin_row = QWidget()
+        h = QHBoxLayout(self.vin_row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(QLabel("min"))
+        h.addWidget(self.vin_min, 1)
+        h.addWidget(QLabel("max"))
+        h.addWidget(self.vin_max, 1)
+        h.addWidget(self.vin_unit)
         self.input = self._picker(optional=True)
         self.sense = self._picker(optional=True)
         self.ground = self._picker(optional=True)
@@ -381,8 +393,7 @@ class VrmEditor(_Editor):
         f.addRow("Output current limit", self.i_limit)
         f.addRow("Load line", self.load_line)
         f.addRow("Dropout", self.dropout)
-        f.addRow("Input min", self.vin_min)
-        f.addRow("Input max", self.vin_max)
+        f.addRow("Input range", self.vin_row)
         f.addRow("Control loop bandwidth", self.bandwidth)
         f.addRow("Phases", self.n_phases)
         f.addRow("Edit phase", self.cmb_phase)
@@ -413,10 +424,16 @@ class VrmEditor(_Editor):
                 (self.dropout, "LDO dropout: the least input-to-output difference it "
                                "regulates at. Below it, its loads are marked VRM OUT OF "
                                "REGULATION."),
+                (self.vin_row, "Optional input range it regulates over. A solved input "
+                               "outside it marks its loads VRM OUT OF REGULATION."),
                 (self.vin_min, "Optional lowest input voltage it regulates at. A lower solved "
                                "input marks its loads VRM OUT OF REGULATION."),
                 (self.vin_max, "Optional highest input voltage it regulates at. A higher "
                                "solved input marks its loads VRM OUT OF REGULATION."),
+                (self.vin_unit, "V: the input range in volts.\n%: in % from the input "
+                                "rail's nominal voltage, the set voltage of the VRM "
+                                "driving it (e.g. min -10 %, max +10 %). Switching converts "
+                                "the values when that VRM is known."),
                 (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
                                  "AC solve leaves the VRM out of circuit (the open-loop PDN "
                                  "impedance); below this frequency the loop holds the rail, "
@@ -446,6 +463,7 @@ class VrmEditor(_Editor):
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.vin_min, self.vin_max, self.bandwidth)
         self.kind.currentIndexChanged.connect(self._kind_rows)
+        self.vin_unit.currentIndexChanged.connect(self._vin_unit_changed)
         self.n_phases.valueChanged.connect(self._phase_count_changed)
         self.cmb_phase.currentIndexChanged.connect(self._phase_selected)
         self.output.cmb_net.currentIndexChanged.connect(
@@ -457,14 +475,51 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.iq, kind != "source")
         self.form.setRowVisible(self.input, kind != "source")
         self.form.setRowVisible(self.dropout, kind == "ldo")
-        self.form.setRowVisible(self.vin_min, kind != "source")
-        self.form.setRowVisible(self.vin_max, kind != "source")
+        self.form.setRowVisible(self.vin_row, kind != "source")
         dc = self.mode == "dc"
         _gray((self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                self.input,
                self.sense, self.ground_sense, self.dropout, self.vin_min,
-               self.vin_max), dc, "Used by the DC analysis only")
+               self.vin_max, self.vin_unit), dc, "Used by the DC analysis only")
         _gray((self.bandwidth,), not dc, "Used by the AC analysis only")
+
+    def _set_vin_unit(self, pct: bool):
+        """Show the input range fields in % or in volts (the values are set after)."""
+        step = 1.0 if pct else 0.1
+        for s in (self.vin_min, self.vin_max):
+            s.setSingleStep(step)
+            s.setRange(-1000 - step, 1000)          # one step below: "not set"
+            s.setSuffix(" %" if pct else " V")
+            s.setShownDecimals(2 if pct else 3)
+
+    def _input_nominal(self) -> Optional[float]:
+        inp = self.input.value()
+        return input_nominal(self.panel.setup, inp.net if inp else None,
+                             self.obj.name if self.obj else "")
+
+    def _vin_unit_changed(self, *_):
+        pct = self.vin_unit.currentData() == "%"
+        values = [_get_optional(self.vin_min), _get_optional(self.vin_max)]
+        if not self._loading:
+            # Convert the range to the new unit; without a nominal input voltage it
+            # can't be, and is cleared.
+            nom = self._input_nominal()
+            if nom is None:
+                values = [None, None]
+            else:
+                values = [None if x is None else
+                          ((x / nom - 1) * 100 if pct else nom * (1 + x / 100))
+                          for x in values]
+                if nom < 0:                     # the low end of a negative rail swaps
+                    values.reverse()
+        loading, self._loading = self._loading, True
+        try:
+            self._set_vin_unit(pct)
+            _set_optional(self.vin_min, values[0])
+            _set_optional(self.vin_max, values[1])
+        finally:
+            self._loading = loading
+        self._store()
 
     def _guess_voltage(self, net):
         """Picking the output net sets the voltage its name gives (3V3, +1.8V, V1P2...)."""
@@ -523,6 +578,8 @@ class VrmEditor(_Editor):
         self._phase_rows()
         self._show_phase(v)
         self.dropout.setValue(v.dropout_v)
+        self.vin_unit.setCurrentIndex(1 if v.vin_pct else 0)
+        self._set_vin_unit(v.vin_pct)
         _set_optional(self.vin_min, v.vin_min)
         _set_optional(self.vin_max, v.vin_max)
         self.sense.set_value(v.sense)
@@ -546,6 +603,7 @@ class VrmEditor(_Editor):
         v.dropout_v = self.dropout.value()
         v.vin_min = _get_optional(self.vin_min)
         v.vin_max = _get_optional(self.vin_max)
+        v.vin_pct = self.vin_unit.currentData() == "%"
         v.bandwidth_khz = self.bandwidth.value() or None
         v.sense = self.sense.value()
         v.ground_sense = self.ground_sense.value()

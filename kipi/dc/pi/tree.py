@@ -49,7 +49,9 @@ import numpy as np
 
 from kipi.core.mesh.mesher import mesh_nets
 from kipi.core.model.board import BoardSnapshot
-from kipi.dc.pi.model import Load, PISetup, PinRef, Vrm, active_setup, net_groups, validate
+from kipi.dc.pi.model import (
+    Load, PISetup, PinRef, Vrm, active_setup, net_groups, validate, vin_range,
+)
 from kipi.dc.pi.results import (  # also importable from here, where they were defined
     DISCONNECTED,
     NOT_CONVERGED,
@@ -557,10 +559,11 @@ class _TreeSolver:
             return ""
         vis = self.v_in[v.name]
         lo, hi = min(vis), max(vis)
-        if v.vin_min is not None and lo < v.vin_min:
-            return f"input {lo:.4f} V is below its {v.vin_min:g} V minimum"
-        if v.vin_max is not None and hi > v.vin_max:
-            return f"input {hi:.4f} V is above its {v.vin_max:g} V maximum"
+        vin_min, vin_max = vin_range(self.setup, v)
+        if vin_min is not None and lo < vin_min:
+            return f"input {lo:.4f} V is below its {vin_min:.4g} V minimum"
+        if vin_max is not None and hi > vin_max:
+            return f"input {hi:.4f} V is above its {vin_max:.4g} V maximum"
         if v.kind == "ldo":
             sign = 1.0 if v.voltage >= 0 else -1.0
             headroom = min(sign * (vi - vo) for vi, vo in zip(vis, self.v_out[v.name]))

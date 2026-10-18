@@ -146,6 +146,10 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   probe's rail, the probe's own part first, with a menu when there are several.
 
 ### Changed
+- A VRM's **input min and max share one row**, "Input range", and can be given in V or in
+  % from the input rail's nominal voltage, the set voltage of the VRM driving it (e.g.
+  -10 % / +10 %). Switching the unit converts the values when that VRM is known, and
+  clears them when not. A range in % with no VRM on the input rail is a setup error.
 - The Target Impedance/Frequency Calculator's slew rate starts at 10 A/µs instead of
   empty, and the calculator no longer cites the target impedance paper (the help still
   does).

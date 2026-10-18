@@ -762,8 +762,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     (<b>V target</b>). <b>none</b> holds the set voltage.</td></tr>
   <tr><td>Dropout</td><td class="wrap">LDO only: the least input-to-output difference at which it
     still regulates.</td></tr>
-  <tr><td>Input min / max</td><td class="wrap">Optional input range. A VRM whose solved input is
-    outside its range (or an LDO below its dropout) cannot hold its output, and every load it
+  <tr><td>Input range</td><td class="wrap">Optional input range, min and max on one row, in
+    <b>V</b> or in <b>%</b> from the input rail's nominal voltage (the set voltage of the VRM
+    driving it; e.g. min -10 %, max +10 %). Switching the unit converts the values when that
+    VRM is known. A range in % with no VRM driving the input is a setup error. A VRM whose
+    solved input is outside its range (or an LDO below its dropout) cannot hold its output, and every load it
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
   <tr><td>Control loop bandwidth</td><td class="wrap">AC only; grayed out in DC. The AC solve
@@ -1464,7 +1467,7 @@ way.</p>
     switcher's output.</li>
   <li>Add loads on each rail and solve. The VRMs table shows each converter's input current,
     which includes everything downstream, and its conversion loss.</li>
-  <li>Set <b>Input min/max</b> and <b>Dropout</b> to catch a regulator starved by upstream drop:
+  <li>Set <b>Input range</b> and <b>Dropout</b> to catch a regulator starved by upstream drop:
     its loads show <span class="fail">VRM OUT OF REGULATION</span>.</li>
 </ol>
 </div>
