@@ -537,6 +537,7 @@ class MainWindow(QMainWindow):
         for panel in (self.solve_panel, self.ac_panel):
             panel.setup_changed.connect(self._model_timer.start)
             panel.setup_changed.connect(self._refresh_power_tree)
+            panel.setup_changed.connect(self._show_unsaved)
         # One setup dock; it shows the panel of the current analysis mode.
         self.setup_stack = QStackedWidget(self)
         self.setup_stack.addWidget(self.solve_panel)
@@ -865,6 +866,7 @@ class MainWindow(QMainWindow):
         # would write now, so only later edits count as not saved.
         setup.nets = self._checked_nets()
         self._saved = copy.deepcopy(setup)
+        self._show_unsaved()
         self._show_board_summary()
         from kipi.core.viz.meshes import board_body
         self.viewer.set_board(*board_body(snap))
@@ -981,6 +983,7 @@ class MainWindow(QMainWindow):
     def _on_net_item_changed(self, item):
         self._checked_cache = None
         self._sync_timer.start()
+        self._show_unsaved()
 
     def _on_layer_item_changed(self, item):
         self.viewer.set_layer_visible(item.data(Qt.UserRole), item.checkState() == Qt.Checked)
@@ -1260,6 +1263,7 @@ class MainWindow(QMainWindow):
                  + ". Not saved: Save keeps it, the setup file is as it was")
         self.log_dock.show()
         self.log_dock.raise_()
+        self._show_unsaved()
 
     def _save_setup(self):
         if self._setup_path is None:
@@ -1269,6 +1273,7 @@ class MainWindow(QMainWindow):
         try:
             self._setup_path = self.solve_panel.setup.save(self._setup_path)
             self._saved = copy.deepcopy(self.solve_panel.setup)
+            self._show_unsaved()
             self.solve_panel.lbl_file.setText(f"Setup: {self._setup_path}")
             self.ac_panel.set_label(f"Setup: {self._setup_path}")
             self.log(f"Saved PI setup to {self._setup_path}")
@@ -1899,6 +1904,13 @@ class MainWindow(QMainWindow):
             saved.ac.rail = saved.ac.rail or now.ac.rail
             saved.ac.ground = saved.ac.ground or now.ac.ground
         return now != saved
+
+    def _show_unsaved(self):
+        """Outline the Save buttons while the setup has changes not saved."""
+        from kipi.gui.save_button import mark_unsaved
+        unsaved = self._unsaved()
+        for panel in (self.solve_panel, self.ac_panel):
+            mark_unsaved(panel.btn_save, unsaved, panel.save_tip)
 
     def _keep_or_drop_changes(self) -> bool:
         """The setup file is written only by Save. Before the setup is left (closing, or

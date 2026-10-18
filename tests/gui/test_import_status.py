@@ -51,6 +51,7 @@ def test_import_says_what_it_read_and_what_changed(app, no_3d, tmp_path, monkeyp
         # window asks about the changes.
         assert setup_file.read_text(encoding="utf-8") == "the user's own setup"
         assert "not saved" in w.solve_panel.lbl_file.text()
+        assert "#ff8c00" in w.solve_panel.btn_save.styleSheet()        # Save is outlined
         w.close()
         assert any("not saved" in q for q in asked)
         assert setup_file.read_text(encoding="utf-8") == "the user's own setup"

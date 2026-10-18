@@ -1192,7 +1192,8 @@ class PIPanel(QWidget, PartSelection):
         self.lbl_file.setStyleSheet("color: #999;")
         self.lbl_file.setWordWrap(True)
         b_save = QPushButton("Save", self)
-        b_save.setToolTip("Save the setup next to the board")
+        self.btn_save, self.save_tip = b_save, "Save the setup next to the board"
+        b_save.setToolTip(self.save_tip)
         b_save.clicked.connect(self.save_requested.emit)
         b_import = QPushButton("Import…", self)
         # Rich text, so Qt wraps it to a readable width.

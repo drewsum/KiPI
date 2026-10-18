@@ -561,7 +561,9 @@ class ACPanel(QWidget, PartSelection):
         self.lbl_file.setStyleSheet("color: #999;")
         self.lbl_file.setWordWrap(True)
         b_save = QPushButton("Save", self)
-        b_save.setToolTip("Save the setup next to the board (DC and AC share one file)")
+        self.btn_save = b_save
+        self.save_tip = "Save the setup next to the board (DC and AC share one file)"
+        b_save.setToolTip(self.save_tip)
         b_save.clicked.connect(self.save_requested.emit)
         row.addWidget(self.lbl_file, 1)
         row.addWidget(b_save)
