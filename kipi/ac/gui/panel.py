@@ -34,9 +34,13 @@ from kipi.dc.gui.pi_panel import (
     ItemList, LinkEditor, PartSelection, PIPanel, VrmEditor, _Editor, _spin, _unique,
     make_searchable, new_link, new_vrm, parts_on_net, tip,
 )
-from kipi.dc.pi.autofill import guess_ground_pins
+from kipi.dc.pi.autofill import guess_ground_pins, part_nets
+from kipi.dc.pi.load_model import apply_to_probe, new_items
 from kipi.ac.target import vrm_input_name, vrm_inputs
 from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm
+from kipi.gui.load_model_dialogs import (
+    ApplyDialog, PartsDialog, candidate_parts, export_model, model_button, open_model,
+)
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
@@ -602,6 +606,10 @@ class ACPanel(QWidget, PartSelection):
         menu.aboutToShow.connect(lambda: self._fill_load_menu(menu))
         b_load.setMenu(menu)
         self.probe_list.buttons.insertWidget(1, b_load)
+        # Load models (#17): a part's targets in a file, for many probes at once.
+        self.probe_list.buttons.addWidget(model_button(
+            self, "probe", self.apply_load_model, self.add_probes_from_model,
+            lambda: export_model(self, self.setup, self.snapshot)))
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.link_list, "Series links")
         self.tabs.addTab(self.cap_list, "Capacitors")
@@ -1048,6 +1056,65 @@ class ACPanel(QWidget, PartSelection):
         gref = ref if ref in gnd_parts else self._first_part(gnd)
         return Probe(_unique(ref or "PROBE1", [p.name for p in self.setup.probes]),
                      PinRef(ref, net), PinRef(gref, gnd))
+
+    def apply_load_model(self, model=None):
+        """Apply a load model file's targets (or ``model``'s) to the probes the user
+        ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        probes = self.setup.probes
+        if not probes:
+            QMessageBox.information(self, "Load model", "There are no probes to apply it to; "
+                                    "use Add probes from model file.")
+            return
+        dlg = ApplyDialog(model, [(p.name, p.rail) for p in probes], "probe", self)
+        if not dlg.exec():
+            return
+        missed = [probes[row].name for row, i in dlg.chosen()
+                  if not apply_to_probe(probes[row], model.supplies[i], self.setup)]
+        self.probe_list.reload()
+        self.probe_list.changed.emit()
+        if missed:
+            QMessageBox.information(
+                self, "Load model", "No target was set for " + ", ".join(missed) + ": their "
+                "supply in the model has no target, or a load step without an AC tolerance "
+                "and no VRM driving the rail to take one from its DC tolerance.")
+
+    def add_probes_from_model(self, model=None):
+        """Add a load model's probes on the parts the user ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        parts = candidate_parts(model, self.snapshot)
+        if not parts:
+            QMessageBox.information(self, "Load model", "No part on the board has the pins of "
+                                    "any of the model's supplies (adding probes needs its "
+                                    "pins).")
+            return
+        dlg = PartsDialog(model, parts, "probe", self)
+        if not dlg.exec():
+            return
+        added, no_ground = 0, []
+        for ref in dlg.chosen():
+            for s, rail, gnd in new_items(model, ref, part_nets(self.snapshot, ref)):
+                gnd = gnd or guess_ground_pins(self.snapshot, self.setup, self._nets, rail)
+                if gnd is None:
+                    no_ground.append(f"{ref} {s.name}")
+                    continue
+                probe = Probe(_unique(f"{ref} {s.name}", [p.name for p in self.setup.probes]),
+                              rail, gnd)
+                apply_to_probe(probe, s, self.setup)
+                self.setup.probes.append(probe)
+                added += 1
+        if added:
+            self.probe_list.reload()
+            self.probe_list.lst.setCurrentRow(self.probe_list.lst.count() - 1)
+            self.probe_list.changed.emit()
+        if no_ground:
+            QMessageBox.information(self, "Load model", "No probe for " + ", ".join(no_ground)
+                                    + ": no ground pins in the model, and none found on the "
+                                    "part.")
 
     def _fill_load_menu(self, menu: QMenu):
         menu.clear()

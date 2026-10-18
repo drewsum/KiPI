@@ -388,6 +388,25 @@ To try it without a design of your own, open the example board in
   **DISCONNECTED**. The Notes tab lists every unconnected pin. A rail with no load connected
   at all stops the solve.
 
+* **Load models** (**Model ▾** under the list): a part's supplies in a YAML file of their
+  own, with each supply's pins, current or pin groups, tolerance and heat, and its AC target
+  or the load step it comes from. **Export a part's model** writes every load and probe on
+  one reference designator; **Apply model file to loads** sets them on any number of loads
+  at once, each from the supply chosen beside it; **Add loads from model file** adds one load
+  per supply on every part ticked that has the supply's pins. The Probes list has the same
+  menu for targets. A model by hand:
+
+  ```yaml
+  kipi_load_model: 1
+  part: XC7A35T-1CSG324C
+  supplies:
+    - name: VCCINT
+      pins: [F7, F9, H7]
+      current_a: 1.2
+      tolerance: {min: -3, max: 3, unit: "%"}     # V, ±V or %
+      load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}
+  ```
+
 ![Load editor](docs/images/setup_loads.png)
 
 **Series links tab**: parts that pass DC from one net to another, such as sense

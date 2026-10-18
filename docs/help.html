@@ -906,6 +906,40 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     for a part that passes most of its power on, such as a load switch.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
+<h4 id="load-models">Load models</h4>
+<p>A <b>load model</b> is a part's supplies in a YAML file of their own: for each
+supply its pins, current or pin groups, tolerance and heat, and for the AC analysis its
+target impedance, or the load step it is worked out from. One model serves every copy of a
+part, on this board or another. The <b>Model ▾</b> button under the Loads list (and under the
+AC Probes list) has:</p>
+<ul>
+  <li><b>Apply model file to loads…</b>: pick a model, then tick the loads to apply it to,
+    each with the model supply to take beside it. Loads whose pins or name match a supply
+    come ticked. Only what the model gives is set; pins are left as they are.</li>
+  <li><b>Add loads from model file…</b>: one load per supply on each part ticked. The list
+    holds the parts that have the pins of at least one of the model's supplies; a load's net
+    is the one its pins are on, and its ground pins are the model's or, without them,
+    guessed as for a new load.</li>
+  <li><b>Export a part's model…</b>: every load and probe on one reference designator, one
+    supply each (named after the load, less its reference), so a part with several supplies
+    keeps them all.</li>
+</ul>
+<p>On the Probes list the same menu sets targets: the model's flat target or custom points,
+or one from its load step, slew rate and AC tolerance, as the target calculator works it out
+(without an AC tolerance, the tighter side of the DC tolerance of the rail's VRM voltage).
+A model file, by hand:</p>
+<pre>kipi_load_model: 1
+part: XC7A35T-1CSG324C
+supplies:
+  - name: VCCINT
+    pins: [F7, F9, H7]
+    ground_pins: [A1, A10]
+    current_a: 1.2              # or pin_groups: [{name: core, pins: [F7], current_a: 0.8}, ...]
+    tolerance: {min: -3, max: 3, unit: "%"}     # V, ±V or %
+    heat_w: 0.9
+    target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[1.0e3, 0.01], [1.0e8, 0.1]]}
+    load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}</pre>
+<p>Every key but <code>name</code> is optional.</p>
 </div>
 </details>
 
@@ -1294,6 +1328,8 @@ are required.</p>
 its dropdown. The dropdown also lists the input of every LDO and switcher, one entry per phase
 (e.g. <i>VR4 phase 2 input</i>): a regulator's input pins load the rail feeding it just as a
 device does.</p>
+<p><b>Model ▾</b> applies a <a href="#load-models">load model</a>'s targets to many probes at
+once, adds a model's probes for the parts ticked, or exports a part's model.</p>
 <p>A rail can have several probes, e.g. one per device; they are all solved together and each
 sees the others as open circuits.</p>
 </div>

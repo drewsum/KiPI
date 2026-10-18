@@ -23,7 +23,7 @@ from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTabWidget,
     QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
@@ -33,12 +33,16 @@ from kipi.core.model.nets import guess_voltage, sorted_nets, voltage_from_name
 from kipi.core.model.parts import is_capacitor_ref, resistor_ohms
 from kipi.dc.pi.autofill import (
     guess_ground_pins, guess_input_pins, guess_other_side, looks_like_ground,
-    next_phase_refs, other_net, setup_grounds,
+    next_phase_refs, other_net, part_nets, setup_grounds,
 )
+from kipi.dc.pi.load_model import apply_to_load, new_items
 from kipi.dc.pi.model import (
     DEFAULT_VIA_CURRENT_LIMIT_A, DELTA_VOLTS, PERCENT, VOLTS, DcLink, Load, PinRef, PISetup,
     Vrm, VrmPhase, active_setup, group_name, net_groups, range_unit, range_volts, rail_nominal,
     validate, volts_in,
+)
+from kipi.gui.load_model_dialogs import (
+    ApplyDialog, PartsDialog, candidate_parts, export_model, model_button, open_model,
 )
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
@@ -1257,6 +1261,10 @@ class PIPanel(QWidget, PartSelection):
                                   self._describe_load, noun="load")
         self.link_list = ItemList(lambda: self.setup.links, LinkEditor(self), self._new_link,
                                   self._describe_link, noun="series link")
+        # Load models (#17): a part's supplies in a file, for many loads at once.
+        self.load_list.buttons.addWidget(model_button(
+            self, "load", self.apply_load_model, self.add_loads_from_model,
+            lambda: export_model(self, self.setup, self.snapshot)))
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.load_list, "Loads")
         self.tabs.addTab(self.link_list, "Series links")
@@ -1937,6 +1945,51 @@ class PIPanel(QWidget, PartSelection):
         supply = PinRef(ref, net)
         return Load(_unique(ref or "LOAD1", [x.name for x in self.setup.loads]), supply, 0.1,
                     ground=guess_ground_pins(self.snapshot, self.setup, self._nets, supply))
+
+    def apply_load_model(self, model=None):
+        """Apply a load model file (or ``model``) to the loads the user ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        loads = self.setup.loads
+        if not loads:
+            QMessageBox.information(self, "Load model", "There are no loads to apply it to; "
+                                    "use Add loads from model file.")
+            return
+        dlg = ApplyDialog(model, [(l.name, l.supply) for l in loads], "load", self)
+        if not dlg.exec():
+            return
+        for row, i in dlg.chosen():
+            apply_to_load(loads[row], model.supplies[i])
+        self.load_list.reload()
+        self.load_list.changed.emit()
+
+    def add_loads_from_model(self, model=None):
+        """Add a load model's loads on the parts the user ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        parts = candidate_parts(model, self.snapshot)
+        if not parts:
+            QMessageBox.information(self, "Load model", "No part on the board has the pins of "
+                                    "any of the model's supplies (adding loads needs its pins).")
+            return
+        dlg = PartsDialog(model, parts, "load", self)
+        if not dlg.exec():
+            return
+        added = 0
+        for ref in dlg.chosen():
+            for s, rail, gnd in new_items(model, ref, part_nets(self.snapshot, ref)):
+                gnd = gnd or guess_ground_pins(self.snapshot, self.setup, self._nets, rail)
+                load = Load(_unique(f"{ref} {s.name}", [x.name for x in self.setup.loads]),
+                            rail, s.current_a or 0.0, ground=gnd)
+                apply_to_load(load, s)
+                self.setup.loads.append(load)
+                added += 1
+        if added:
+            self.load_list.reload()
+            self.load_list.lst.setCurrentRow(self.load_list.lst.count() - 1)
+            self.load_list.changed.emit()
 
     def _new_link(self):
         net = self._first_net()
