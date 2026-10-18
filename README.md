@@ -2,7 +2,7 @@
   <img src="resources/kipi.gif" alt="KiPI logo" width="128">
 </p>
 
-# KiPI — DC and AC power integrity for KiCad
+# KiPI — DC and AC Power Integrity Simulator and KiCad Plugin
 
 [![CI](https://github.com/drewsum/KiPI/actions/workflows/ci.yml/badge.svg)](https://github.com/drewsum/KiPI/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -14,7 +14,7 @@
 ([source](docs/solver-guide.html)): what PI analysis is, why it matters, and how KiPI's mesh
 and its DC, thermal and AC solvers work.
 
-KiPI is a power integrity analyzer that runs as a KiCad 9 and 10 IPC plugin. It has two
+KiPI is a power integrity analyzer that runs standalone or as a KiCad 9 and 10 IPC plugin. It has two
 analysis modes:
 
 * **DC: Voltage Drop.** Define voltage regulators (VRMs), loads (current into pins) and series
@@ -33,7 +33,7 @@ control in KiPI has a tooltip.
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
-**Status: 0.8.0 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). Mostly stable. Unit tests for KiCad 9/10 support on Windows, Mac and Linux. Solver accuracy tests on every merge into main. Pull a tagged release for stable code. 0.8.0 adds a standalone mode, for analyzing PCB layouts without KiCad running: KiCad board files and ODB++ so far, HYP and CCE to come!
+**Status: 0.8.0 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). Added a standalone mode. This tool can now run on its own, has an app launcher that handles dependencies, and can import data from arbitrary layouts. The author wants to add support for a variety of PCB file formats to be able to import. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there. 
 
 ## Install
 
@@ -45,7 +45,7 @@ KiPI runs two ways, from the same folder:
 * **Standalone**: KiPI started on its own, with its launcher, opens board files and needs
   no KiCad. The folder can be **anywhere**; the launcher installs the dependencies on the
   first start. It opens KiCad 7 to 10 board files (`.kicad_pcb`), ODB++ jobs and KiPI
-  snapshots (`.kipi.json.gz`). Reading HYP files is on the way
+  snapshots (`.kipi.json.gz`). Reading HYP an CCE files is on the way
   ([#45](https://github.com/drewsum/KiPI/issues/45)).
 
 ### As a KiCad plugin
@@ -114,11 +114,11 @@ KiPI runs two ways, from the same folder:
    python kipi_launcher.py                      # or: python kipi_launcher.py <board>.kipi.json.gz
    ```
 
-The first start sets KiPI up. The setup window lists every package KiPI will install with
+The first start sets up KiPI. The setup window lists every package KiPI will install with
 its size, checked with PyPI for your computer (about 254 MB to download and 810 MB on disk
 on Windows), and nothing is installed until you click **Install**. On Windows and Linux
 x86-64 it also offers [PARDISO](#optional-faster-solves-on-large-boards-windows-and-linux-x86-64),
-with its pros and cons. Everything goes into an environment of KiPI's own, outside the KiPI
+and mentions the advantages/disadvantages of using this solver. Everything goes into an environment of KiPI's own, outside the KiPI
 folder:
 
 | | KiPI's environment |
