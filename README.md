@@ -474,6 +474,12 @@ again later. It is a single portable file, containing:
 * per-layer statistics, with top-down voltage and current-density maps;
 * the board temperature map when thermal is on.
 
+Both the DC and the AC report have a **User notes** box near the top: click it and type
+what was checked, by whom, or what to change. A browser cannot write to a file it opened,
+so the notes are kept in that browser as you type (they are there the next time you open
+the same file) and **Save a copy with notes** downloads the report with the notes in it,
+to keep or share. Notes print with the report; an empty box does not.
+
 | Summary tables | Interactive 3D per net group |
 |---|---|
 | ![Report summary tables](docs/images/report_tables.png) | ![Report 3D voltage view](docs/images/report_3d.png) |
@@ -626,8 +632,8 @@ Tick **HTML report** next to **Solve rail** to also write
 finishes, and **Report** opens it again later. Like the DC report, it is one
 portable file you can share. It has the probe table with margins, an interactive |Z|
 plot with the targets and each capacitor model's own curve, a board map of the rail's copper
-with the probes and capacitors marked, the capacitor models, and the sweep, mesh and solver
-details.
+with the probes and capacitors marked, the capacitor models, the sweep, mesh and solver
+details, and the same User notes box as the DC report.
 
 ![The impedance plot of the example's 0.9 V core rail against its custom target, with the cursor on the anti-resonance and its values in the Info box](docs/images/ac_impedance.png)
 

@@ -232,7 +232,75 @@ nav a { margin-right: 12px; }
 details > summary { cursor: pointer; margin: 6px 0; }
 thead th { cursor: pointer; user-select: none; }
 thead th[data-sort=asc]::after { content: " \\25B2"; } thead th[data-sort=desc]::after { content: " \\25BC"; }
+#user-notes-text { min-height: 4em; background: white; border: 1px solid #ccc; padding: 8px 10px;
+                   border-radius: 3px; white-space: pre-wrap; outline: none; }
+#user-notes-text:focus { border-color: #4a90d9; }
+#user-notes-text.empty::before { content: attr(data-placeholder); color: #999; }
+#user-notes-text img { max-width: 100%; }
+.notes-bar { margin-top: 6px; font-size: 12px; color: #666; }
+.notes-bar button { margin-right: 10px; }
+@media print { .notes-bar { display: none; } #user-notes-text { border: none; padding: 0; }
+               #user-notes-text.empty::before { content: none; } .notes-empty { display: none; } }
 """
+
+# Notes anyone reading the report can type in (#128). A report is a file opened from disk,
+# which a page cannot write to, so the notes are kept in the browser as they are typed
+# (localStorage, per file) and "Save a copy with notes" downloads the report with them in
+# it, to keep or share. Plotly's drawn plots are emptied in the copy; it draws them again
+# when the copy is opened.
+NOTES_JS = r"""
+(function () {
+  var box = document.getElementById("user-notes-text");
+  var section = document.getElementById("user-notes-section");
+  var status = document.getElementById("user-notes-status");
+  var key = "kipi-notes:" + location.pathname;
+  function store(f) { try { return f(window.localStorage); } catch (e) { return undefined; } }
+  function empty() { return !box.textContent.trim() && !box.querySelector("img"); }
+  function mark() {
+    box.classList.toggle("empty", empty());
+    section.classList.toggle("notes-empty", empty());
+  }
+  var draft = store(function (s) { return s.getItem(key); });
+  if (draft !== null && draft !== undefined && draft !== box.innerHTML) {
+    box.innerHTML = draft;
+    status.textContent = "Notes restored from this browser.";
+  }
+  mark();
+  box.addEventListener("input", function () {
+    mark();
+    var ok = store(function (s) { s.setItem(key, box.innerHTML); return true; });
+    status.textContent = ok ? "Kept in this browser. Save a copy to keep them in the file."
+                            : "This browser cannot keep them: save a copy before closing.";
+  });
+  document.getElementById("user-notes-save").addEventListener("click", function () {
+    var root = document.documentElement.cloneNode(true);
+    root.querySelectorAll(".plotly-graph-div").forEach(function (d) { d.innerHTML = ""; });
+    root.querySelectorAll("head style:not([data-kipi])").forEach(function (s) { s.remove(); });
+    var st = root.querySelector("#user-notes-status");
+    if (st) st.textContent = "Notes are kept in this browser as you type.";
+    var blob = new Blob(["<!DOCTYPE html>" + root.outerHTML], {type: "text/html"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = decodeURIComponent(location.pathname.split("/").pop()) || "kipi_report.html";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+})();
+"""
+
+
+def notes_section() -> str:
+    """The editable notes box (#128)."""
+    return ("<section id='user-notes-section'><h2 id='user-notes'>User notes</h2>"
+            "<div id='user-notes-text' contenteditable='true' spellcheck='true' "
+            "data-placeholder='Click to add notes: what was checked, by whom, what to change…'>"
+            "</div>"
+            "<div class='notes-bar'><button type='button' id='user-notes-save'>Save a copy "
+            "with notes</button><span id='user-notes-status'>Notes are kept in this browser "
+            "as you type.</span></div>"
+            f"<script type='text/javascript'>{NOTES_JS}</script></section>")
+
 
 # Click a column header to sort the table by it; click again to reverse (#85). The keys
 # match the plugin's tables (kipi.gui.sortable): numbers with SI prefixes, natural text,
@@ -316,6 +384,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     if th is not None:
         nav.append("<a href='#thermal'>Thermal</a>")
     nav += [f"<a href='#g{i}'>{_e(n)}</a>" for i, n in enumerate(tree.groups)]
+    nav.append("<a href='#user-notes'>User notes</a>")
     parts.append("<nav>" + " ".join(nav) + "</nav>")
     s = setup.settings
     parts.append(f"<p class='note'>Mesh: max edge {s.max_edge_mm:g} mm, via grading "
@@ -329,6 +398,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  + ". Via plating, first matching rule (drill = hole in the laminate, plated "
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
+
+    parts.append(notes_section())
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -527,7 +598,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
 
     js = plotly.offline.get_plotlyjs()
     doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-           f"<title>KiPI report — {_e(snap.board_name)}</title><style>{CSS}</style>"
+           f"<title>KiPI report — {_e(snap.board_name)}</title><style data-kipi>{CSS}</style>"
            f"<script type='text/javascript'>{js}</script>"
            f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
            + "".join(parts) + "</body></html>")

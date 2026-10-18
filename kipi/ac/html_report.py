@@ -26,7 +26,7 @@ from kipi.ac.model import caps_dict
 from kipi.ac.solver.fem import dielectric_summary
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.naming import timestamp
-from kipi.dc.report.html import CSS, SORT_JS, _e, _table, _verdict
+from kipi.dc.report.html import CSS, SORT_JS, _e, _table, _verdict, notes_section
 
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf", "#bcbd22",
           "#8c564b", "#e377c2", "#7f7f7f")
@@ -309,7 +309,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                  "<a href='#map'>Board map</a> <a href='#caps'>Capacitors</a> "
                  "<a href='#model'>Model</a>"
                  + (" <a href='#notes'>Notes</a>" if result.warnings or result.missing_caps
-                    else "") + "</nav>")
+                    else "") + " <a href='#user-notes'>User notes</a></nav>")
     parts.append(f"<p>Rail <b>{_e(result.rail)}</b>: {_e(', '.join(result.rail_nets))} against "
                  f"{_e(result.ground)}, from {_hz(freqs[0])} to {_hz(freqs[-1])}. "
                  f"{len(result.caps)} capacitor(s) with models, {len(result.links)} series "
@@ -333,6 +333,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
             margin = f"{20 * math.log10(t[0] / zmax):+.2f} dB"
         rows.append([_e(c.name), pins, _ohms(float(np.min(c.mag))), _ohms(zmax), _hz(fmax),
                      _e(_target_text(c)), margin, _verdict(ok)])
+    parts.append(notes_section())
     parts.append("<h2 id='probes'>Probes</h2>")
     parts.append(_table(["Probe", "Pins (rail / ground)", "Min |Z|", "Worst |Z|", "at",
                          "Target", "Margin", "Result"], rows))
@@ -443,7 +444,8 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     js = plotly.offline.get_plotlyjs()
     doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
            f"<title>KiPI AC report — {_e(result.rail)} — {_e(snap.board_name)}</title>"
-           f"<style>{CSS}{CSS_EXTRA}</style><script type='text/javascript'>{js}</script>"
+           f"<style data-kipi>{CSS}{CSS_EXTRA}</style>"
+           f"<script type='text/javascript'>{js}</script>"
            f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
            + "".join(parts) + "</body></html>")
     path.write_text(doc, encoding="utf-8")

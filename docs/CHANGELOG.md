@@ -6,6 +6,13 @@ milestones rather than versions that were ever set.
 
 ## 0.9.0 (in development)
 
+### Added
+- **User notes in the HTML reports** (#128). The DC and AC reports have an editable User
+  notes box under the summary. A report opened from disk cannot save itself, so the notes
+  are kept in the browser as they are typed (per file, restored when it is opened again),
+  and *Save a copy with notes* downloads the report with them written in, plots and all, to
+  keep or share. The box is left out of a printout while it is empty.
+
 ### Changed
 - **PARDISO is installed by default** where Intel MKL exists (Windows and Linux on x86-64),
   with an opt-out (#129).

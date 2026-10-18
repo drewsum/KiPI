@@ -37,6 +37,10 @@ def test_report_contents(tmp_path, thermal):
     assert ("Copper temperature by layer" in text) == thermal
     import re
     assert not re.search(r"<script[^>]+src=", text)        # plotly.js embedded: works offline
+    # #128: an editable notes box, above the tables, kept and saved by the page itself
+    assert "contenteditable='true'" in text and "user-notes-save" in text
+    assert text.index("id='user-notes'") < text.index("id='loads'")
+    assert "<style data-kipi>" in text      # a saved copy keeps the report's own styles
 
 
 def test_report_mesh_keeps_copper(tmp_path):
