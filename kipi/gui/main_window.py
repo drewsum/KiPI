@@ -1230,15 +1230,10 @@ class MainWindow(QMainWindow):
             return
         from kipi.dc.pi.importers.import_summary import counts, group_notes, setup_changes
         notes = group_notes(notes)
-        summary = f"Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
-        self.log(f"== {summary}")
+        if notes:
+            self.log(f"Notes on {name}:")
         for note in notes:
             self.log(f"  {note}", logging.WARNING)
-        if notes:
-            summary += f". {len(notes)} note(s) in the Log"
-        self.statusBar().showMessage(summary)
-        self.log_dock.show()
-        self.log_dock.raise_()
         used = setup.pin_nets()
         self._set_checked(lambda it: it.checkState() == Qt.Checked
                           or it.data(Qt.UserRole) in used)
@@ -1247,6 +1242,11 @@ class MainWindow(QMainWindow):
         self.ac_panel.set_board(self.snapshot, setup, label)
         self._refresh_power_tree()
         self._save_setup()
+        # Last in the Log, under the notes and the save, so it is the line in view.
+        self.log(f"== Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
+                 + (f"; {len(notes)} note(s) above" if notes else ""))
+        self.log_dock.show()
+        self.log_dock.raise_()
 
     def _save_setup(self):
         if self._setup_path is None:
