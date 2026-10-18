@@ -1047,10 +1047,18 @@ time stamp keeps each solve's report instead of overwriting the last one. It ope
 table, an interactive 3D view of each net group, per-layer statistics and maps, and the
 temperature map.</p>
 <p>Choose <b>PDF</b> beside <b>Report</b> for a <code>.pdf</code> to print or attach
-instead. It has the same tables and maps, without what needs a browser: the 3D view and
-the sortable columns. It opens in your PDF viewer. Its <b>User notes</b> box is a form
-field: click in it and type in Acrobat, a web browser, Preview or most other PDF viewers,
-then save the PDF to keep the notes in it. Printed, it is an empty box to write in.</p>
+instead. It has the same tables and maps, without the sortable columns. It opens in your
+PDF viewer. Its <b>User notes</b> box is a form field: click in it and type in Acrobat, a
+web browser, Preview or most other PDF viewers, then save the PDF to keep the notes in it.
+Printed, it is an empty box to write in.</p>
+<p>A PDF can't show the interactive 3D views, so they travel inside it: a web page of their
+own, <code>&lt;report&gt;_3d.html</code>, attached to the PDF (nothing extra is written next
+to it). Open it from your PDF viewer's attachments panel, the paperclip, and it opens in
+your web browser. Acrobat, Foxit, PDF-XChange, Firefox and Okular list attachments, and
+Acrobat opens the PDF on that panel; Chrome's and Edge's own viewers and macOS Preview
+mostly don't, so there save the PDF and open it in one that does, or extract the
+attachment with a PDF tool. The static views stay in the PDF either way. It adds about
+1–2 MB to the PDF. Should the page fail to go in, KiPI saves it beside the PDF instead.</p>
 <p>The report's <b>Pins</b> section, and <code>_pins.csv</code> in <b>Export ▾ Tables as
 CSV…</b>, list every pin each group was solved with. That covers VRM output, phase, input
 and sense pins, load supply and ground pins, and DC connection pins. Each row gives the pin's

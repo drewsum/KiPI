@@ -505,7 +505,9 @@ Tick **Report** before solving to also write
 `<board>_kipi_report_<date>_<time>.html` next to the board (the time stamp keeps each
 solve's report rather than overwriting the last). It opens in your web browser when the solve finishes, and **Open report** opens it
 again later. Choose **PDF** beside it for a `.pdf` to print or attach instead: the same
-tables and maps, without the interactive 3D view. Its User notes box is a form field:
+tables and maps, with the interactive 3D views in a web page attached inside the PDF
+(`<report>_3d.html`; open it from the viewer's attachments panel and it opens in your
+browser). Its User notes box is a form field:
 type in it in Acrobat, a web browser, Preview or most other PDF viewers and save the PDF to
 keep the notes (printed, it is a box to write in). The HTML report is a
 single portable file, containing:

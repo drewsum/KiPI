@@ -19,6 +19,14 @@ milestones rather than versions that were ever set.
   and ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
   edge, via grading and min edge. The drawings live in one folder, `kipi/gui/graphics/`,
   as SVG templates; where Qt cannot render them, the tooltip is its text alone.
+- **3D views in DC PDF reports** (#133). A PDF can't show the interactive 3D views, so
+  they go inside it as an attached web page of their own, `<report>_3d.html` (Plotly and
+  the views only, about 1–2 MB compressed). Open it from the PDF viewer's attachments
+  panel (Acrobat, Foxit, PDF-XChange, Firefox, Okular; Acrobat opens the PDF on that panel)
+  and it opens in the web browser. The static views stay as they are. Like the notes
+  field, it is added to Qt's file as an incremental update; should that fail, the page is
+  saved beside the PDF instead. A PDF's own 3D (U3D or PRC) was ruled out: only Acrobat
+  shows it, with 3D off by default.
 - **Load models** (#17). A part's supplies in a YAML file of their own (`.yml` or `.yaml`,
   nothing else): for each supply its pins and ground pins, current or pin groups,
   tolerance (V, ±V or %) and heat, and for AC its target (flat or custom points) or the
@@ -77,8 +85,8 @@ milestones rather than versions that were ever set.
 - **PDF reports** (#119). The DC and AC panels' *HTML report* tick is now *Report*, with a
   choice of HTML or PDF beside it (saved with the setup; older setups keep HTML). The PDF
   has the same tables and maps, printed by Qt (already one of KiPI's packages), with
-  images of the AC impedance plot and board map. It leaves out what needs a browser: the
-  DC 3D view and sortable columns. Its User notes box is a fillable form field: type in
+  images of the AC impedance plot and board map. It leaves out the sortable columns, and
+  the DC 3D views go in it as an attachment (#133, below). Its User notes box is a fillable form field: type in
   it in any PDF viewer that fills forms (Acrobat, web browsers, Preview)
   and save the PDF to keep the notes; printed, it is a box to write in. Qt cannot make
   form fields, so KiPI adds the field to Qt's file as an incremental update, and should

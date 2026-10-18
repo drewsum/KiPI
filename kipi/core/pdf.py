@@ -12,6 +12,10 @@ fields, so the field is added to Qt's file afterwards as an incremental update (
 and a cross-reference section appended; Qt's own bytes are left as they are). Should that
 fail, the PDF keeps the empty box, to write in on paper.
 
+Files can go in the PDF as well (#133): the DC report's interactive 3D views, as a web page
+of their own that PDF viewers list as an attachment. They are added the same way, and
+where that fails they are written beside the PDF instead.
+
 A heading the page ends under starts the next page instead, with what it heads.
 
 Safe on a worker thread (QTextDocument and QPdfWriter need no window), but the application
@@ -21,10 +25,13 @@ must exist: Qt needs it for fonts.
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import logging
+import mimetypes
 import re
+import zlib
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -63,9 +70,11 @@ class PdfError(RuntimeError):
     """The PDF could not be made here (no Qt application, or Qt failed)."""
 
 
-def write_pdf(html: str, path, title: str = "") -> Path:
+def write_pdf(html: str, path, title: str = "",
+              attachments: Sequence[Tuple[str, bytes, str]] = ()) -> Path:
     """Lay out ``html`` on pages (Letter where the locale measures in inches, else A4) and
-    write it to ``path``. Raises :class:`PdfError` whatever goes wrong."""
+    write it to ``path``, with ``attachments`` ((file name, content, description) each) in
+    it. Raises :class:`PdfError` whatever goes wrong with the pages."""
     path = Path(path)
     try:
         from qtpy.QtGui import QGuiApplication
@@ -85,6 +94,17 @@ def write_pdf(html: str, path, title: str = "") -> Path:
             add_text_field(path, *notes, NOTES_NAME)
         except Exception as e:  # noqa: BLE001 - the box stays, to write in on paper
             log.warning("The PDF report's notes box is not fillable: %s", e)
+    if attachments:
+        try:
+            attach_files(path, attachments)
+        except Exception as e:  # noqa: BLE001 - the files go beside the PDF instead
+            log.warning("Could not attach files to the PDF report (%s); saving them beside "
+                        "it", e)
+            for name, content, _ in attachments:
+                try:
+                    path.with_name(name).write_bytes(content)
+                except OSError as e:
+                    log.warning("Could not save %s: %s", name, e)
     return path
 
 
@@ -268,76 +288,148 @@ def _pdf_string(text: str) -> bytes:
         .encode("latin-1", "replace") + b")"
 
 
+class _Update:
+    """An incremental update to a PDF as Qt writes it (a classic cross-reference table and a
+    flat page tree): objects appended, each new or replacing the last definition of its
+    number, with a cross-reference section of their own. The bytes before are kept."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.data = data = self.path.read_bytes()
+        self.starts = {}
+        for m in re.finditer(rb"(?m)^(\d+) 0 obj\b", data):
+            self.starts[int(m.group(1))] = m.end()     # the last definition of each object
+        self.tail = data[data.rindex(b"trailer"):]
+        self.size = int(re.search(rb"/Size (\d+)", self.tail).group(1))
+        self.root = int(re.search(rb"/Root (\d+) 0 R", self.tail).group(1))
+        self.prev = int(re.findall(rb"startxref\s+(\d+)", data)[-1])
+        self.objects: List[Tuple[int, bytes]] = []
+
+    def body(self, n: int) -> bytes:
+        if n not in self.starts:
+            raise ValueError(f"object {n} not found")
+        return self.data[self.starts[n]:self.data.index(b"endobj", self.starts[n])].strip()
+
+    def new(self) -> int:
+        """The number of a new object."""
+        self.size += 1
+        return self.size - 1
+
+    def put(self, n: int, text: bytes) -> None:
+        self.objects.append((n, text))
+
+    def write(self) -> None:
+        data = self.data
+        out = bytearray(data if data.endswith(b"\n") else data + b"\n")
+        offsets = []
+        for n, text in self.objects:
+            offsets.append((n, len(out)))
+            out += f"{n} 0 obj\n".encode() + text + b"\nendobj\n"
+        xref = len(out)
+        out += b"xref\n0 1\n0000000000 65535 f \n"     # the free list's head, as readers expect
+        for n, off in sorted(offsets):
+            out += f"{n} 1\n{off:010d} 00000 n \n".encode()
+        tail = self.tail
+        extra = b"".join(m.group(0) + b" " for m in [re.search(rb"/Info \d+ 0 R", tail),
+                                                      re.search(rb"/ID\s*\[[^\]]*\]", tail)]
+                         if m)
+        out += (f"trailer\n<< /Size {self.size} /Root {self.root} 0 R /Prev {self.prev} "
+                .encode() + extra + f">>\nstartxref\n{xref}\n%%EOF\n".encode())
+        self.path.write_bytes(bytes(out))
+
+
 def add_text_field(path, page: int, rect: tuple, name: str) -> None:
     """Add a multi-line text field over ``rect`` (PDF points, x0 y0 x1 y1) on ``page`` of
     the PDF at ``path``, as an incremental update. For a file as Qt writes it: a classic
     cross-reference table, a flat page tree and no form yet; anything else raises."""
-    path = Path(path)
-    data = path.read_bytes()
-    starts = {}
-    for m in re.finditer(rb"(?m)^(\d+) 0 obj\b", data):
-        starts[int(m.group(1))] = m.end()          # the last definition of each object
-
-    def body(n: int) -> bytes:
-        if n not in starts:
-            raise ValueError(f"object {n} not found")
-        return data[starts[n]:data.index(b"endobj", starts[n])].strip()
-
-    tail = data[data.rindex(b"trailer"):]
-    size = int(re.search(rb"/Size (\d+)", tail).group(1))
-    root = int(re.search(rb"/Root (\d+) 0 R", tail).group(1))
-    prev = int(re.findall(rb"startxref\s+(\d+)", data)[-1])
-    catalog = body(root)
+    u = _Update(path)
+    root = u.root
+    catalog = u.body(root)
     if b"/AcroForm" in catalog:
         raise ValueError("the PDF has a form already")
     pages = int(re.search(rb"/Pages (\d+) 0 R", catalog).group(1))
-    kids = re.search(rb"/Kids\s*\[(.*?)\]", body(pages), re.S)
+    kids = re.search(rb"/Kids\s*\[(.*?)\]", u.body(pages), re.S)
     refs = [int(k) for k in re.findall(rb"(\d+) 0 R", kids.group(1))]
     page_obj = refs[page]
-    page_dict = body(page_obj)
+    page_dict = u.body(page_obj)
     if not re.search(rb"/Type\s*/Page\b", page_dict):
         raise ValueError("nested page tree")
 
-    field, font, appearance = size, size + 1, size + 2
+    field, font, appearance = u.new(), u.new(), u.new()
     ref = f"{field} 0 R".encode()
     x0, y0, x1, y1 = rect
-    objects: List[Tuple[int, bytes]] = []
     annots = re.search(rb"/Annots\s+(\d+) 0 R", page_dict)
     if annots:                                    # Qt: an array object of its own
-        arr = body(int(annots.group(1)))
-        objects.append((int(annots.group(1)), arr[:arr.rindex(b"]")] + b" " + ref + b"]"))
+        arr = u.body(int(annots.group(1)))
+        u.put(int(annots.group(1)), arr[:arr.rindex(b"]")] + b" " + ref + b"]")
     elif b"/Annots" in page_dict:
         page_dict = re.sub(rb"/Annots\s*\[", b"/Annots [" + ref + b" ", page_dict, count=1)
-        objects.append((page_obj, page_dict))
+        u.put(page_obj, page_dict)
     else:
-        objects.append((page_obj, page_dict[:page_dict.rindex(b">>")] + b"/Annots [" + ref
-                        + b"]\n>>"))
+        u.put(page_obj, page_dict[:page_dict.rindex(b">>")] + b"/Annots [" + ref + b"]\n>>")
     da = f"/Helv {NOTES_FONT_PT} Tf 0 g".encode()
-    objects.append((root, catalog[:catalog.rindex(b">>")]
-                    + b"/AcroForm << /Fields [" + ref + b"] /NeedAppearances true /DA ("
-                    + da + b") /DR << /Font << /Helv " + f"{font} 0 R".encode()
-                    + b" >> >> >>\n>>"))
-    objects.append((field, b"<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 4096 /F 4 /T "
-                    + _pdf_string(name) + b" /TU " + _pdf_string(name) + b" /V () /DA ("
-                    + da + b") /P " + f"{page_obj} 0 R".encode()
-                    + f" /Rect [{x0:.2f} {y0:.2f} {x1:.2f} {y1:.2f}]".encode()
-                    + b" /AP << /N " + f"{appearance} 0 R".encode() + b" >> >>"))
-    objects.append((font, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
-                          b"/Encoding /WinAnsiEncoding >>"))
-    objects.append((appearance, f"<< /Type /XObject /Subtype /Form /BBox [0 0 {x1 - x0:.2f} "
-                                f"{y1 - y0:.2f}] /Length 0 >>\nstream\n\nendstream".encode()))
+    u.put(root, catalog[:catalog.rindex(b">>")]
+          + b"/AcroForm << /Fields [" + ref + b"] /NeedAppearances true /DA ("
+          + da + b") /DR << /Font << /Helv " + f"{font} 0 R".encode()
+          + b" >> >> >>\n>>")
+    u.put(field, b"<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 4096 /F 4 /T "
+          + _pdf_string(name) + b" /TU " + _pdf_string(name) + b" /V () /DA ("
+          + da + b") /P " + f"{page_obj} 0 R".encode()
+          + f" /Rect [{x0:.2f} {y0:.2f} {x1:.2f} {y1:.2f}]".encode()
+          + b" /AP << /N " + f"{appearance} 0 R".encode() + b" >> >>")
+    u.put(font, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                b"/Encoding /WinAnsiEncoding >>")
+    u.put(appearance, f"<< /Type /XObject /Subtype /Form /BBox [0 0 {x1 - x0:.2f} "
+                      f"{y1 - y0:.2f}] /Length 0 >>\nstream\n\nendstream".encode())
+    u.write()
 
-    out = bytearray(data if data.endswith(b"\n") else data + b"\n")
-    offsets = []
-    for n, text in objects:
-        offsets.append((n, len(out)))
-        out += f"{n} 0 obj\n".encode() + text + b"\nendobj\n"
-    xref = len(out)
-    out += b"xref\n0 1\n0000000000 65535 f \n"     # the free list's head, as readers expect
-    for n, off in sorted(offsets):
-        out += f"{n} 1\n{off:010d} 00000 n \n".encode()
-    extra = b"".join(m.group(0) + b" " for m in [re.search(rb"/Info \d+ 0 R", tail),
-                                                  re.search(rb"/ID\s*\[[^\]]*\]", tail)] if m)
-    out += (f"trailer\n<< /Size {size + 3} /Root {root} 0 R /Prev {prev} ".encode() + extra
-            + f">>\nstartxref\n{xref}\n%%EOF\n".encode())
-    path.write_bytes(bytes(out))
+
+# ---------------------------------------------------------------------------
+# Attached files
+# ---------------------------------------------------------------------------
+
+def _pdf_text(text: str) -> bytes:
+    """A PDF text string any character fits in (UTF-16 with its byte order mark)."""
+    return b"<" + ("﻿" + text).encode("utf-16-be").hex().upper().encode() + b">"
+
+
+def attach_files(path, files: Sequence[Tuple[str, bytes, str]]) -> None:
+    """Embed ``files`` ((name, content, description) each) in the PDF at ``path``, as an
+    incremental update: the catalog's EmbeddedFiles, which PDF viewers list in their
+    attachments panel, opened on that panel (/PageMode /UseAttachments). For a file as Qt
+    writes it, with no attachments or page mode yet; anything else raises."""
+    u = _Update(path)
+    catalog = u.body(u.root)
+    if b"/PageMode" in catalog:
+        raise ValueError("the PDF has a page mode already")
+    when = _dt.datetime.now().strftime("D:%Y%m%d%H%M%S")
+    entries = []
+    for name, content, desc in files:
+        mime = (mimetypes.guess_type(name)[0] or "application/octet-stream").replace("/", "#2F")
+        plain = name.encode("ascii", "replace").decode().replace("?", "_")  # /UF has it all
+        packed = zlib.compress(content, 9)
+        stream, spec = u.new(), u.new()
+        u.put(stream, f"<< /Type /EmbeddedFile /Subtype /{mime} /Filter /FlateDecode "
+                      f"/Length {len(packed)} /Params << /Size {len(content)} /ModDate "
+                      f"({when}) >> >>\nstream\n".encode() + packed + b"\nendstream")
+        u.put(spec, b"<< /Type /Filespec /F " + _pdf_string(plain) + b" /UF " + _pdf_text(name)
+              + b" /Desc " + _pdf_text(desc) + f" /EF << /F {stream} 0 R /UF {stream} 0 R >>"
+              .encode() + b" /AFRelationship /Supplement >>")
+        entries.append((_pdf_string(plain), f" {spec} 0 R".encode()))
+    tree = b"<< /Names [" + b" ".join(k + v for k, v in sorted(entries)) + b"] >>"  # by name
+    names = re.search(rb"/Names\s+(\d+) 0 R", catalog)
+    if names:                                     # Qt: a dictionary object of its own
+        n = int(names.group(1))
+        old = u.body(n)
+        if b"/EmbeddedFiles" in old:
+            raise ValueError("the PDF has attachments already")
+        u.put(n, old[:old.rindex(b">>")] + b"/EmbeddedFiles " + tree + b"\n>>")
+        extra = b""
+    elif b"/Names" in catalog:
+        raise ValueError("the PDF's names are not an object of their own")
+    else:
+        n = u.new()
+        u.put(n, b"<< /EmbeddedFiles " + tree + b" >>")
+        extra = f"/Names {n} 0 R ".encode()
+    u.put(u.root, catalog[:catalog.rindex(b">>")] + extra + b"/PageMode /UseAttachments\n>>")
+    u.write()

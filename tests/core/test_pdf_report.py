@@ -1,5 +1,6 @@
 """PDF reports (#119): the DC and AC reports printed without what needs a browser, the
-setting that picks the format, the panels' option, and HTML where a PDF cannot be made."""
+setting that picks the format, the panels' option, and HTML where a PDF cannot be made. The
+DC report's 3D views go in it as an attached web page (#133)."""
 
 import os
 from datetime import datetime
@@ -56,14 +57,14 @@ def printed(monkeypatch):
     """The HTML each report hands to the PDF writer, which still writes the file."""
     got = []
     real = pdf.write_pdf
-    monkeypatch.setattr(pdf, "write_pdf", lambda html, path, title="": (
-        got.append(html), real(html, path, title))[1])
+    monkeypatch.setattr(pdf, "write_pdf", lambda html, path, title="", **kw: (
+        got.append(html), real(html, path, title, **kw))[1])
     return got
 
 
-def _notes_field(data: bytes):
-    """The notes field the PDF ends with, checked as a reader finds it: through the last
-    cross-reference section (each offset at its object), the catalog's form and page 1."""
+def _objects(data: bytes):
+    """Each object's last definition, as a reader finds it: through the last
+    cross-reference section (each offset at its object), then the ones before."""
     import re
     xref = int(re.findall(rb"startxref\s+(\d+)", data)[-1])
     table = data[xref:data.index(b"trailer", xref)]
@@ -73,10 +74,38 @@ def _notes_field(data: bytes):
 
     def obj(n):
         start = offsets.get(n)
-        if start is None:                                  # unchanged: Qt's own
-            start = re.search(rf"(?m)^{n} 0 obj".encode(), data).start()
+        if start is None:                                  # an earlier section's
+            start = [m.start() for m in re.finditer(rf"(?m)^{n} 0 obj".encode(), data)][-1]
         return data[start:data.index(b"endobj", start)]
 
+    return obj
+
+
+def _attached(data: bytes):
+    """{name: content} of the files the PDF ends with, found from its catalog."""
+    import re
+    import zlib
+    obj = _objects(data)
+    trailer = data[data.rindex(b"trailer"):]
+    catalog = obj(int(re.search(rb"/Root (\d+) 0 R", trailer).group(1)))
+    assert b"/PageMode /UseAttachments" in catalog
+    names = obj(int(re.search(rb"/Names (\d+) 0 R", catalog).group(1)))
+    tree = re.search(rb"/EmbeddedFiles << /Names \[(.*?)\] >>", names, re.S).group(1)
+    out = {}
+    for name, spec in re.findall(rb"\(([^)]*)\) (\d+) 0 R", tree):
+        stream = obj(int(re.search(rb"/EF << /F (\d+) 0 R", obj(int(spec))).group(1)))
+        assert b"/Type /EmbeddedFile" in stream and b"/FlateDecode" in stream
+        length = int(re.search(rb"/Length (\d+)", stream).group(1))
+        start = stream.index(b"stream\n") + 7
+        out[name.decode()] = zlib.decompress(stream[start:start + length])
+    return out
+
+
+def _notes_field(data: bytes):
+    """The notes field the PDF ends with, checked as a reader finds it: through the
+    catalog's form and page 1."""
+    import re
+    obj = _objects(data)
     trailer = data[data.rindex(b"trailer"):]
     assert b"/Prev " in trailer
     catalog = obj(int(re.search(rb"/Root (\d+) 0 R", trailer).group(1)))
@@ -114,6 +143,14 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
     assert "id='pins'" in html and "id='loads'" in html
     assert html.count("data:image/png;base64,") >= 2 * len(tree.groups)
     assert not (tmp_path / "r.html").exists()
+    # The 3D views: a web page of their own in the PDF, named in it.
+    views = _attached(data)
+    assert list(views) == ["r_3d.html"] and "r_3d.html" in html
+    page = views["r_3d.html"].decode("utf-8")
+    assert page.count("Plotly.newPlot") == len(tree.groups) and "from r.pdf" in page
+    for name in tree.groups:
+        assert f"<h2>{name}</h2>" in page
+    assert not (tmp_path / "r_3d.html").exists()
     # The User notes: a box after every result, with a fillable field over it.
     assert html.rindex("<h2") == html.index("<h2 id='user-notes'")
     assert "Click in the box" not in html
@@ -124,7 +161,7 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
 def test_ac_report_as_pdf(ac, tmp_path, printed):
     result, snap, s = ac
     path = write_ac_report(tmp_path / "r.pdf", result, snap, s)
-    assert path.read_bytes().startswith(b"%PDF")
+    assert path.read_bytes().startswith(b"%PDF") and b"/EmbeddedFiles" not in path.read_bytes()
     _notes_field(path.read_bytes())
     html, = printed
     _static(html)
@@ -138,6 +175,7 @@ def test_the_html_reports_are_unchanged(dc, ac, tmp_path):
     tree, scenes, snap, s = dc
     text = write_report(tmp_path / "r.html", tree, scenes, snap, s).read_text("utf-8")
     assert text.count("Plotly.newPlot") == len(tree.groups) and "contenteditable" in text
+    assert "attached" not in text and not (tmp_path / "r_3d.html").exists()
     result, asnap, a = ac
     text = write_ac_report(tmp_path / "a.html", result, asnap, a).read_text("utf-8")
     assert "Plotly.newPlot" in text and "contenteditable" in text
@@ -230,6 +268,65 @@ def test_another_reader_fills_the_notes_and_keeps_them(dc, tmp_path):
     writer.write(tmp_path / "filled.pdf")
     filled = pypdf.PdfReader(tmp_path / "filled.pdf").get_fields()
     assert filled["User notes"]["/V"] == "Checked (A.B.)"
+
+
+def test_another_reader_finds_the_attachment(dc, tmp_path):
+    pypdf = pytest.importorskip("pypdf")
+    tree, scenes, snap, s = dc
+    path = write_report(tmp_path / "r.pdf", tree, scenes, snap, s)
+    reader = pypdf.PdfReader(path, strict=True)
+    content, = reader.attachments["r_3d.html"]
+    assert b"Plotly.newPlot" in content
+    assert list(reader.get_fields()) == ["User notes"]
+
+
+def test_attachments_go_beside_where_they_cannot_go_in(tmp_path, monkeypatch):
+    def broken(*a):
+        raise ValueError("odd PDF")
+
+    monkeypatch.setattr(pdf, "attach_files", broken)
+    path = pdf.write_pdf("<p>x</p>", tmp_path / "r.pdf",
+                         attachments=[("r_3d.html", b"<html>3D</html>", "views")])
+    assert b"/EmbeddedFiles" not in path.read_bytes()
+    assert (tmp_path / "r_3d.html").read_bytes() == b"<html>3D</html>"
+
+
+def test_files_go_in_with_the_notes_field(tmp_path):
+    box = f"<table class='notes'><tr><td>{pdf.NOTES_MARKER}</td></tr></table>"
+    files = [("b é.html", "<p>ü</p>".encode(), "Views — 3D"), ("a.txt", b"x" * 5000, "a")]
+    path = pdf.write_pdf("<p>x</p>" + box, tmp_path / "r.pdf", attachments=files)
+    data = path.read_bytes()
+    _notes_field(data)
+    got = _attached(data)
+    assert list(got) == ["a.txt", "b _.html"]            # sorted; the plain name an ASCII one
+    assert got["a.txt"] == b"x" * 5000 and got["b _.html"] == "<p>ü</p>".encode()
+    assert pdf._pdf_text("b é.html") in data             # the whole name, for the viewer
+    assert b"/Subtype /text#2Fhtml" in data and b"/Subtype /text#2Fplain" in data
+
+
+@pytest.mark.parametrize("names", ["", "/Names 5 0 R"])
+def test_files_join_any_catalog(tmp_path, names):
+    """A catalog with no names, or Qt's names object, takes the attachments."""
+    objs = [f"<< /Type /Catalog /Pages 2 0 R {names} >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>", "<< >>", "<< >>"]
+    out = b"%PDF-1.4\n"
+    offsets = []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode()
+    xref = len(out)
+    out += b"xref\n0 6\n0000000000 65535 f \n" + b"".join(
+        f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    path = tmp_path / "p.pdf"
+    path.write_bytes(out)
+    pdf.attach_files(path, [("v.html", b"<p>3D</p>", "views")])
+    data = path.read_bytes()
+    assert data.startswith(out) and f"/Prev {xref}".encode() in data
+    assert _attached(data) == {"v.html": b"<p>3D</p>"}
+    with pytest.raises(ValueError, match="page mode"):
+        pdf.attach_files(path, [("w.html", b"", "")])
 
 
 def test_the_box_stays_when_the_field_cannot_be_added(tmp_path, monkeypatch):

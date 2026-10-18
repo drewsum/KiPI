@@ -9,8 +9,9 @@ One ``.html`` file with:
 Plotly's JavaScript is embedded once, so the report works offline and can be shared
 as a single file. Images are rendered with matplotlib's Agg backend (thread safe).
 
-A ``.pdf`` path gets the same report printed (#119): the tables and maps, without the 3D
-view, the notes box or anything else that needs a browser.
+A ``.pdf`` path gets the same report printed (#119): the tables and maps, with the notes
+box as a form field. The 3D views need a browser, so they go in a web page of their own,
+attached to the PDF (#133): '<report>_3d.html', listed in the PDF viewer's attachments.
 """
 
 from __future__ import annotations
@@ -32,6 +33,9 @@ from kipi.core.naming import timestamp
 from kipi.dc.pi.tree import fmt_drop
 
 TRIANGLE_BUDGET = 60_000      # per group's 3D view
+VIEW_NOTE = ("Drag to rotate, scroll to zoom, double-click to reset; hover for values. The 3D "
+             "mesh is simplified for the report, and its color scale spans the 1st–99th "
+             "percentile of voltages (the maps are scaled per layer).")
 Z_EXAGGERATION = 5.0
 
 
@@ -377,21 +381,44 @@ def maps_html(images: List[str], pdf: bool) -> str:
         for r in rows) + "</table>"
 
 
-def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool) -> Path:
-    """Write the report's body as a page that works offline, or print it to a PDF."""
+def page(title: str, body: str, css: str, script: str = "") -> str:
+    """A web page that works offline: Plotly's JavaScript in it."""
+    import plotly.offline
+    js = plotly.offline.get_plotlyjs()
+    extra = f"<script type='text/javascript'>{script}</script>" if script else ""
+    return (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            f"<title>{_e(title)}</title><style data-kipi>{css}</style>"
+            f"<script type='text/javascript'>{js}</script>{extra}</head><body>"
+            + body + "</body></html>")
+
+
+def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool,
+           attachments=()) -> Path:
+    """Write the report's body as a page that works offline, or print it to a PDF with
+    ``attachments`` ((file name, content, description) each) in it."""
     body = "".join(parts)
     if pdf:
         from kipi.core.pdf import write_pdf
         return write_pdf(f"<html><head><meta charset='utf-8'><title>{_e(title)}</title>"
-                         f"</head><body>{body}</body></html>", path, title)
-    import plotly.offline
-    js = plotly.offline.get_plotlyjs()
-    path.write_text(f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-                    f"<title>{_e(title)}</title><style data-kipi>{css}</style>"
-                    f"<script type='text/javascript'>{js}</script>"
-                    f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
-                    + body + "</body></html>", encoding="utf-8")
+                         f"</head><body>{body}</body></html>", path, title,
+                         attachments=attachments)
+    path.write_text(page(title, body, css, SORT_JS), encoding="utf-8")
     return path
+
+
+def views_name(path: Path) -> str:
+    """The file name of a PDF report's attached 3D views (#133)."""
+    return f"{Path(path).stem}_3d.html"
+
+
+def views_page(title: str, meta: str, views: List[tuple]) -> bytes:
+    """The 3D views of a PDF report, as a page of their own: ``views`` are (group name,
+    Plotly HTML) pairs."""
+    body = [f"<h1>{_e(title)}</h1><div class='meta'>{meta}</div>",
+            f"<p class='note'>{_e(VIEW_NOTE)}</p>"]
+    for name, view in views:
+        body.append(f"<h2>{_e(name)}</h2>{view}")
+    return page(title, "".join(body), CSS).encode("utf-8")
 
 
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,
@@ -407,6 +434,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
 
     path = Path(path)
     pdf = path.suffix.lower() == ".pdf"
+    views: List[tuple] = []                     # a PDF's 3D views, attached (#133)
     outline = [p.outline for p in snap.outline] if snap.outline else None
     names = {c.id: c.name for c in snap.stackup.copper}
     parts: List[str] = []
@@ -414,8 +442,9 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     th = getattr(tree, "thermal", None)
 
     # ---------------- summary
-    parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{_e(snap.board_name)} "
-                 f"· {now} · KiPI {__version__} · solved in {tree.solve_s:.1f} s</div>")
+    meta = (f"{_e(snap.board_name)} · {now} · KiPI {__version__} · solved in "
+            f"{tree.solve_s:.1f} s")
+    parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{meta}</div>")
     nav = ["<a href='#loads'>Loads</a>", "<a href='#vrms'>VRMs</a>",
            "<a href='#pins'>Pins</a>", "<a href='#losses'>Losses</a>",
            "<a href='#vias'>Vias</a>"]
@@ -437,6 +466,12 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  + ". Via plating, first matching rule (drill = hole in the laminate, plated "
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
+    if pdf and tree.groups:
+        parts.append(f"<p class='note'>The interactive 3D view of each net group is in "
+                     f"<b>{_e(views_name(path))}</b>, a web page attached to this PDF: open "
+                     "it from your PDF viewer's attachments panel (the paperclip) and it "
+                     "opens in your web browser. Where a viewer cannot open attachments, save "
+                     "it from there, or with a tool that extracts PDF attachments.</p>")
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -589,12 +624,13 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         role = (f"driven by {_e(g.driver)}" if g.kind == "rail"
                 else f"ground, referenced at {_e(g.driver)}")
         parts.append(f"<p>{role}; nets: {_e(', '.join(g.nets))}.</p>")
-        if not pdf:
+        if pdf:
+            views.append((name, _plotly_3d(scene, snap, f"plot{gi}")))
+            parts.append(f"<p class='note'>Interactive 3D view: in the attached "
+                         f"{_e(views_name(path))}.</p>")
+        else:
             parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
-            parts.append("<p class='note'>Drag to rotate, scroll to zoom, double-click to "
-                         "reset; hover for values. The 3D mesh is simplified for the report, "
-                         "and its color scale spans the 1st–99th percentile of voltages (the "
-                         "maps below are scaled per layer).</p>")
+            parts.append(f"<p class='note'>{_e(VIEW_NOTE)}</p>")
         rows = []
         tri_layer = g.result.mesh.tri_layer
         for lid, lr in scene.layers.items():
@@ -634,6 +670,10 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      + "</ul>")
 
     parts.append(notes_section(pdf))             # last, after every result
-    finish(path, f"KiPI report — {snap.board_name}", parts, CSS, pdf)
+    title = f"KiPI report — {snap.board_name}"
+    attachments = [(views_name(path), views_page(f"KiPI 3D views — {snap.board_name}",
+                                                 f"{meta} · from {_e(path.name)}", views),
+                    "Interactive 3D views of the report's net groups")] if views else []
+    finish(path, title, parts, CSS, pdf, attachments)
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")
     return path
