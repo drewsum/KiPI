@@ -68,6 +68,19 @@ def test_mode_does_not_change_while_a_task_runs(window, monkeypatch):
     assert window.setup_stack.currentWidget() is window.solve_panel
 
 
+def test_mode_buttons_are_greyed_out_while_a_task_runs(app, window):
+    import threading
+    release = threading.Event()
+    task = window._run(lambda progress: release.wait(10), lambda _r: None, "Test task")
+    try:
+        assert not _mode(window, "ac").isEnabled() and not _mode(window, "dc").isEnabled()
+    finally:
+        release.set()
+        task.wait(5000)
+        app.processEvents()
+    assert _mode(window, "ac").isEnabled() and _mode(window, "dc").isEnabled()
+
+
 def _plot_tab_shown(w) -> bool:
     i = w.views.indexOf(w.plot)
     return w.views.isTabVisible(i) if hasattr(w.views, "isTabVisible") else w.views.isTabEnabled(i)

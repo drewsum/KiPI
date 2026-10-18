@@ -252,6 +252,12 @@ class MainWindow(QMainWindow):
             self.mode_buttons.addButton(rb)
             tb.addWidget(rb)
 
+    def _set_mode_enabled(self, on: bool):
+        """The DC / AC switch is greyed out while a task runs: the mode cannot change
+        until it finishes or is cancelled."""
+        for rb in self.mode_buttons.buttons():
+            rb.setEnabled(on)
+
     def set_mode(self, mode: str):
         """Switch the analysis mode: the setup dock shows that mode's panel. The DC setup
         and results are kept while in AC mode, and come back with DC."""
@@ -652,6 +658,7 @@ class MainWindow(QMainWindow):
         self._task = task
         self.btn_cancel.setEnabled(True)
         self.act_reload.setEnabled(False)
+        self._set_mode_enabled(False)          # offered only when it can be taken
         from kipi.gui import app as kipi_app
         kipi_app.watchdog_start()
         log.info("Task started: %s", name)
@@ -674,6 +681,7 @@ class MainWindow(QMainWindow):
         pending_ac, self._pending_ac = getattr(self, "_pending_ac", None), None
         self.btn_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
+        self._set_mode_enabled(True)
         self.progress_bar.setRange(0, 1000)
         self.progress_bar.setValue(1000)
         self.lbl_stage.setText("Idle")
