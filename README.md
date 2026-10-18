@@ -10,8 +10,8 @@
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#requirements)
 [![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab.svg?logo=python&logoColor=white)](#requirements)
 
-**New to power integrity? Read [How KiPI works](https://drewsum.github.io/KiPI/how-it-works.html)**
-([source](docs/how-it-works.html)): what PI analysis is, why it matters, and how KiPI's mesh
+**New to power integrity? Read the [Solver Guide](https://drewsum.github.io/KiPI/solver-guide.html)**
+([source](docs/solver-guide.html)): what PI analysis is, why it matters, and how KiPI's mesh
 and its DC, thermal and AC solvers work.
 
 KiPI is a power integrity analyzer that runs as a KiCad 9 and 10 IPC plugin. It has two
@@ -29,7 +29,7 @@ analysis modes:
 
 New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
 **F1**) walks through every button, the workflows and what the results mean. Every
-control in KiPI has a tooltip. The **[Solver Guide](docs/how-it-works.html)** goes into detail on the engineering analysis this tool computes and how it does it.
+control in KiPI has a tooltip.
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 

@@ -15,7 +15,7 @@ _DOCS = Path(__file__).resolve().parents[2] / "docs"
 # GitHub Pages serves docs/ from main, so this is the rendered page, not its source.
 ONLINE = "https://drewsum.github.io/KiPI/help.html"
 # What PI analysis is and how KiPI's solvers work (#92).
-HOW_IT_WORKS_ONLINE = "https://drewsum.github.io/KiPI/how-it-works.html"
+SOLVER_GUIDE_ONLINE = "https://drewsum.github.io/KiPI/solver-guide.html"
 
 
 def help_path() -> Optional[Path]:
@@ -24,13 +24,13 @@ def help_path() -> Optional[Path]:
     return p if p.is_file() else None
 
 
-def how_it_works_url() -> str:
-    """The "How KiPI works" page: the copy installed with KiPI, else the online one."""
-    p = _DOCS / "how-it-works.html"
+def solver_guide_url() -> str:
+    """The Solver Guide: the copy installed with KiPI, else the online one."""
+    p = _DOCS / "solver-guide.html"
     if p.is_file():
         from qtpy.QtCore import QUrl
         return QUrl.fromLocalFile(str(p)).toString()
-    return HOW_IT_WORKS_ONLINE
+    return SOLVER_GUIDE_ONLINE
 
 
 def open_help(parent: Optional[QWidget] = None) -> bool:

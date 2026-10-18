@@ -69,7 +69,7 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
     starts KiPI again afterwards.
   - `python -m kipi` in a Python without KiPI's packages says which are missing and to use
     the launcher, instead of a traceback.
-- **How KiPI works** (#92, `docs/how-it-works.html`, served by GitHub Pages): a page
+- **Solver Guide** (#92, `docs/solver-guide.html`, served by GitHub Pages): a page
   for newcomers on what power integrity analysis is and why it matters. It covers what
   each analysis simulates, how the triangle mesh and the DC, electro-thermal and AC solvers
   work, and what DC tolerance analysis and PDN impedance mean. It also explains how heat

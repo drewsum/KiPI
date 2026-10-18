@@ -198,9 +198,9 @@ def test_check_for_updates_shows_the_answer(app, monkeypatch):
     assert "https://example.org/r" in d.update_label.text() and d.btn_update.isEnabled()
 
 
-def test_dialog_links_how_kipi_works(app):
+def test_dialog_links_the_solver_guide(app):
     from qtpy.QtWidgets import QLabel
     d = about.AboutDialog()
     text = " ".join(lb.text() for lb in d.findChildren(QLabel))
-    assert "How KiPI works" in text and "how-it-works.html" in text
+    assert "Solver Guide" in text and "solver-guide.html" in text
     d.close()

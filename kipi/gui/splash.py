@@ -137,6 +137,7 @@ class Splash(QWidget):
             return None
         movie.setScaledSize(QSize(LOGO_SIZE, LOGO_SIZE))
         label.setMovie(movie)
+        movie.setSpeed(200)
         movie.start()
         return movie
 
