@@ -115,11 +115,31 @@ def is_panel(job: Job, step: str) -> bool:
     return "STEP-REPEAT" in (job.read(f"steps/{step}/stephdr") or "").upper()
 
 
+def panel_placements(job: Job) -> Dict[str, int]:
+    """How many times the job's panels place each step: its stephdr's STEP-REPEAT
+    blocks, one ``NAME=`` each (SMPC5's panel: PCB1 three times, PCB2 once)."""
+    counts: Dict[str, int] = {}
+    for s in job.list("steps"):
+        hdr = job.read(f"steps/{s}/stephdr") or ""
+        if "STEP-REPEAT" not in hdr.upper():
+            continue
+        for line in hdr.splitlines():
+            key, _, val = line.strip().partition("=")
+            if key.upper() == "NAME" and val.strip():
+                name = val.strip().lower()
+                counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def board_steps(job: Job) -> List[str]:
-    """The steps that are boards: not panels, and with a netlist where any has one."""
+    """The steps that are boards, best first: not panels, and with a netlist where any has
+    one. The step a panel places most comes first (the board the panel is made of); a
+    step whose name says panel (Valor's "pcb+panel": the panel flattened into one step,
+    with no step-and-repeat to show it) comes after the plain board steps."""
     steps = [s for s in job.list("steps") if not is_panel(job, s)]
-    with_eda = [s for s in steps if job.exists(f"steps/{s}/eda/data")]
-    return with_eda or steps
+    with_eda = [s for s in steps if job.exists(f"steps/{s}/eda/data")] or steps
+    placed = panel_placements(job)
+    return sorted(with_eda, key=lambda s: ("panel" in s, -placed.get(s, 0)))
 
 
 def pick_step(job: Job, progress: ProgressReporter, wanted: Optional[str] = None,
@@ -142,8 +162,11 @@ def pick_step(job: Job, progress: ProgressReporter, wanted: Optional[str] = None
         progress.info(f"The job has steps {', '.join(steps)}; reading {step}")
     others = [s for s in boards if s != step]
     if others and assumed is not None:
-        assumed.append(f"Board: the job holds {len(boards)} boards ({', '.join(boards)}); "
-                       f"{step} is read. Open another by its step name")
+        placed = panel_placements(job)
+        layout = ", ".join(f"{s} x{n}" for s, n in placed.items())
+        assumed.append(f"Board: the job holds {len(boards)} board steps ({', '.join(boards)})"
+                       + (f"; its panel places {layout}" if layout else "")
+                       + f"; {step} is read. Open another by its step name")
     return step
 
 
