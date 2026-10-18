@@ -66,3 +66,29 @@ def test_unused_via_pads_are_removed_where_nothing_connects():
 def test_keep_end_layers_keeps_the_outer_pads():
     n, v = _trim_one(keep_ends=True)
     assert n == 1 and set(v.pad_mm) == {F_CU, IN2, B_CU}
+
+
+def _pair(gap_mm: float, keep_ends: bool):
+    """Two through vias of one net, 0.6 mm pads and 0.3 mm drills, both set to remove
+    unused layers, with nothing else on the board."""
+    from kipi.core.model.board import Via
+    a, b = (Via(id=i, net="N", position=(x, 0.0), drill_mm=0.3, diameter_mm=0.6,
+                layers=list(SPAN), pad_mm=dict.fromkeys(SPAN, 0.6))
+            for i, x in (("a", 0.0), ("b", gap_mm)))
+    trim_unused_via_pads([(a, keep_ends), (b, keep_ends)], [], [], [], (F_CU, B_CU), [a, b])
+    return a
+
+
+def test_vias_whose_kept_outer_pads_overlap_keep_every_pad():
+    # KiCad connects the two vias through their outer pads, and keeps a via's pad on
+    # every layer a connected via spans.
+    assert set(_pair(0.5, keep_ends=True).pad_mm) == set(SPAN)
+
+
+def test_vias_whose_kept_outer_pads_only_touch_are_not_connected():
+    assert set(_pair(0.6, keep_ends=True).pad_mm) == {F_CU, B_CU}
+
+
+def test_removable_pads_do_not_connect_vias_only_their_drills_do():
+    assert set(_pair(0.5, keep_ends=False).pad_mm) == set()
+    assert set(_pair(0.2, keep_ends=False).pad_mm) == set(SPAN)
