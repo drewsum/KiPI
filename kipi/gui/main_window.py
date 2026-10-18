@@ -570,6 +570,9 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(20000)
         self.log_view.setStyleSheet("font-family: Consolas, 'Courier New', monospace;")
+        # A few lines always show: on a short screen the dock otherwise shrinks to its
+        # progress bar and what an import or solve said cannot be seen.
+        self.log_view.setMinimumHeight(self.log_view.fontMetrics().lineSpacing() * 4 + 8)
         lay.addLayout(row)
         lay.addWidget(self.log_view)
         dock = QDockWidget("Log", self)
@@ -1225,11 +1228,17 @@ class MainWindow(QMainWindow):
         except (PdnImportError, ValueError, KeyError, TypeError, OSError) as e:
             QMessageBox.critical(self, "KiPI", f"Could not import {name}:\n\n{e}")
             return
-        self.log(f"Imported {name}: {len(setup.vrms)} VRM(s), {len(setup.loads)} load(s), "
-                 f"{len(setup.links)} DC connection(s)"
-                 + (f"; {len(notes)} note(s) on what did not map cleanly:" if notes else ""))
+        from kipi.dc.pi.importers.import_summary import counts, group_notes, setup_changes
+        notes = group_notes(notes)
+        summary = f"Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
+        self.log(f"== {summary}")
         for note in notes:
             self.log(f"  {note}", logging.WARNING)
+        if notes:
+            summary += f". {len(notes)} note(s) in the Log"
+        self.statusBar().showMessage(summary)
+        self.log_dock.show()
+        self.log_dock.raise_()
         used = setup.pin_nets()
         self._set_checked(lambda it: it.checkState() == Qt.Checked
                           or it.data(Qt.UserRole) in used)
