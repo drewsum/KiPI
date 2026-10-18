@@ -264,6 +264,12 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   sequence on phase 1's own sheet. A step the earlier phases set is kept too (`Q2`, `Q4` →
   `Q6`).
 
+### Fixed
+- The DC HTML report's 3D view no longer draws triangles across holes and off the board,
+  which on a large board stretched the axes far past it (#102). The mesh is thinned by
+  dropping interior vertices only, so the copper keeps its outline, holes and solved
+  voltages; thinning also runs about ten times faster.
+
 ### Internal
 - Board sources are kept apart from the rest of KiPI. `kipi/sources/` holds where boards
   come from: `kicad_ipc/` (the running KiCad, moved from `kipi/core/kicad_io/`), the

@@ -135,6 +135,28 @@ def _thermal_map(th, outline) -> str:
     return _png(fig)
 
 
+def _decimate(sheet, keep: float):
+    """Thin a flat copper sheet to about ``keep`` of its triangles for the 3D view.
+
+    Only interior vertices are removed (VTK's DecimatePro, topology and boundary kept), so
+    every vertex left is an original one: the copper keeps its outline, holes and solved
+    voltages. Quadric decimation, used before, is singular on a flat sheet and moved
+    vertices off the copper, drawing triangles across holes and off the board (#102).
+    Boundary vertices stay, so a sheet with much outline keeps more than ``keep``. On any
+    VTK failure the sheet is drawn whole."""
+    from vtkmodules.vtkCommonCore import vtkObject
+    was = vtkObject.GetGlobalWarningDisplay()
+    vtkObject.GlobalWarningDisplayOff()
+    try:
+        out = sheet.decimate_pro(1.0 - keep, preserve_topology=True,
+                                 boundary_vertex_deletion=False)
+    except Exception:
+        return sheet
+    finally:
+        vtkObject.SetGlobalWarningDisplay(was)
+    return out if out.n_cells and "V" in out.point_data else sheet
+
+
 def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
     """Interactive 3D view of one group: copper colored by voltage, plus vias."""
     import plotly.graph_objects as go
@@ -159,17 +181,7 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
         sheet = pv.PolyData(pts, faces)
         sheet.point_data["V"] = np.nan_to_num(lr.node_v, nan=vmin)
         if keep < 0.98 and sheet.n_cells > 200:
-            # Quadric decimation of a flat sheet warns "Unable to factor linear system" at
-            # nearly every vertex (coplanar quadrics are singular; the result is fine), so
-            # silence VTK warnings for this call only.
-            from vtkmodules.vtkCommonCore import vtkObject
-            was = vtkObject.GetGlobalWarningDisplay()
-            vtkObject.GlobalWarningDisplayOff()
-            try:
-                sheet = sheet.decimate(1.0 - keep, enable_all_attribute_error=True,
-                                       volume_preservation=False)
-            finally:
-                vtkObject.SetGlobalWarningDisplay(was)
+            sheet = _decimate(sheet, keep)
         tri = sheet.faces.reshape(-1, 4)[:, 1:]
         p = np.asarray(sheet.points)
         traces.append(go.Mesh3d(

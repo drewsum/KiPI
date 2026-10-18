@@ -37,3 +37,31 @@ def test_report_contents(tmp_path, thermal):
     assert ("Copper temperature by layer" in text) == thermal
     import re
     assert not re.search(r"<script[^>]+src=", text)        # plotly.js embedded: works offline
+
+
+def test_report_mesh_keeps_copper(tmp_path):
+    """The 3D view's thinned mesh uses only original vertices, so it keeps the copper's
+    outline and holes and draws nothing off it (#102)."""
+    import numpy as np
+    import pyvista as pv
+    from shapely.geometry import Point, Polygon
+
+    from kipi.core.mesh.mesher import mesh_polygon
+    from kipi.dc.report.html import _decimate
+
+    poly = Polygon([(0, 0), (40, 0), (40, 25), (25, 25), (25, 35), (0, 35)])
+    for k in range(20):
+        poly = poly.difference(Point(3 + 1.7 * k, 5 + 1.3 * k).buffer(0.6, 6))
+    pts, tris = mesh_polygon(poly, [], 0.05, 28)
+    pts3 = np.column_stack([pts, np.zeros(len(pts))])
+    sheet = pv.PolyData(pts3, np.column_stack([np.full(len(tris), 3), tris]).ravel())
+    sheet.point_data["V"] = pts[:, 0]
+    out = _decimate(sheet, 0.1)
+    assert out.n_cells < sheet.n_cells / 3
+    p = np.asarray(out.points)
+    idx = {tuple(q) for q in np.round(pts3, 9)}
+    assert all(tuple(q) in idx for q in np.round(p, 9))         # no vertex moved
+    assert np.allclose(out.point_data["V"], p[:, 0])            # voltages stay with them
+    t = out.faces.reshape(-1, 4)[:, 1:]
+    area = 0.5 * np.abs(np.cross(p[t[:, 1]] - p[t[:, 0]], p[t[:, 2]] - p[t[:, 0]])[:, 2]).sum()
+    assert area == pytest.approx(poly.area, rel=1e-6)           # nothing across holes
