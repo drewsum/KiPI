@@ -17,8 +17,8 @@ from qtpy.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QSizePolicy, QSlider,
-    QSplitter, QStackedWidget, QTabWidget, QTextBrowser, QToolBar, QToolButton, QVBoxLayout,
-    QWidget,
+    QScrollArea, QSplitter, QStackedWidget, QTabWidget, QTextBrowser, QToolBar, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from kipi import __version__
@@ -47,6 +47,43 @@ MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"))
 VIA_PICK_PX = 10      # a click this close to a via barrel on screen selects it
 
 
+#: The size the window opens at when the screen has room for it.
+PREFERRED_SIZE = (1500, 950)
+
+
+def _scrolling(widget: QWidget) -> QScrollArea:
+    """``widget`` in a scroll area: a dock that is shorter than its contents scrolls
+    instead of making the whole window taller than the screen."""
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QScrollArea.NoFrame)
+    area.setWidget(widget)
+    return area
+
+
+def fit_to_screen(window: QMainWindow) -> None:
+    """Keep the window, frame and title bar included, inside its screen's work area (the
+    area the taskbar leaves): no larger than it, and moved onto it. A 2560 x 1600 laptop at
+    175 % has 1463 x 874 logical pixels above the taskbar, less than the preferred size."""
+    screen = window.screen() if hasattr(window, "screen") else None
+    if screen is None:
+        from qtpy.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen()
+    if screen is None:
+        return
+    area = screen.availableGeometry()
+    frame = window.frameGeometry()
+    extra_w = frame.width() - window.width()
+    extra_h = frame.height() - window.height()
+    w = min(window.width(), area.width() - extra_w)
+    h = min(window.height(), area.height() - extra_h)
+    window.resize(max(w, 1), max(h, 1))
+    frame = window.frameGeometry()
+    x = min(max(frame.x(), area.left()), area.right() - frame.width() + 1)
+    y = min(max(frame.y(), area.top()), area.bottom() - frame.height() + 1)
+    window.move(max(x, area.left()), max(y, area.top()))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, source: Optional[BoardSource] = None, tool: Optional[InstalledTool] = None,
                  snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None):
@@ -57,7 +94,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.host = host or current_host()
         self._set_title("Power Integrity")
-        self.resize(1500, 950)
+        self.resize(*PREFERRED_SIZE)
+        self._fitted = False
         self._source = source
         self._tool = tool or InstalledTool()
         self.snapshot: Optional[BoardSnapshot] = None
@@ -461,7 +499,7 @@ class MainWindow(QMainWindow):
         dock = QDockWidget("Board", self)
         dock.setObjectName("board_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        dock.setWidget(panel)
+        dock.setWidget(_scrolling(panel))
         dock.setMinimumWidth(300)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
 
@@ -504,7 +542,7 @@ class MainWindow(QMainWindow):
         dock = QDockWidget(MODES[0][2], self)
         dock.setObjectName("solve_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        dock.setWidget(self.setup_stack)
+        dock.setWidget(_scrolling(self.setup_stack))
         self.solve_dock = dock
         dock.setMinimumWidth(420)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
@@ -543,6 +581,12 @@ class MainWindow(QMainWindow):
         self.resizeDocks([dock], [200], Qt.Vertical)
 
     # ============================================================ logging
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._fitted:
+            self._fitted = True
+            fit_to_screen(self)
+
     def log(self, text: str, level: int = logging.INFO):
         color = {logging.WARNING: "#e0b050", logging.ERROR: "#ff6060"}.get(level)
         if text.startswith("== "):
@@ -1162,8 +1206,10 @@ class MainWindow(QMainWindow):
             return
         current = self.solve_panel.setup
         if (current.vrms or current.loads or current.links) and QMessageBox.question(
-                self, "KiPI", "Replace the VRMs, loads and DC connections with the ones in "
-                              "the file? Settings, thermal and the AC setup are kept."
+                self, "KiPI", f"This board already has a power tree: {len(current.vrms)} "
+                              f"VRM(s), {len(current.loads)} load(s) and {len(current.links)} "
+                              "DC connection(s). Replace it with the one in the file?\n\n"
+                              "Mesh, via plating, thermal and AC settings stay as they are."
         ) != QMessageBox.Yes:
             return
         start = str(self._setup_path.parent) if self._setup_path else ""
