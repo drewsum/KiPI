@@ -31,8 +31,8 @@ from kipi.core.model.parts import (
     is_class2, parse_capacitance, parse_dielectric, parse_voltage_rating,
 )
 from kipi.dc.gui.pi_panel import (
-    ItemList, LinkEditor, PIPanel, VrmEditor, _Editor, _spin, _unique, make_searchable,
-    new_link, new_vrm, parts_on_net, tip,
+    ItemList, LinkEditor, PartSelection, PIPanel, VrmEditor, _Editor, _spin, _unique,
+    make_searchable, new_link, new_vrm, parts_on_net, tip,
 )
 from kipi.dc.pi.autofill import guess_ground_pins
 from kipi.dc.pi.model import Load, PinRef, PISetup
@@ -533,12 +533,15 @@ class ProbeEditor(_Editor):
 # Panel
 # ---------------------------------------------------------------------------
 
-class ACPanel(QWidget):
+class ACPanel(QWidget, PartSelection):
     solve_requested = Signal(object, str, str)     # PISetup, VRM name, ground net
     save_requested = Signal()
     result_selected = Signal(object)               # ACResult shown in the plot; None clears it
     setup_changed = Signal()                       # any edit to the setup
     results_saved = Signal(str)                    # path of a saved results file
+    # The VRM, series link or probe selected in the setup: kind ("vrm", "link", "probe"),
+    # name, and whether the user picked it; ("", "", False) for none (#96).
+    part_selected = Signal(str, str, bool)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -602,6 +605,7 @@ class ACPanel(QWidget):
             self.tabs.setTabToolTip(i, text)
         for il in self._lists():
             il.changed.connect(self._on_changed)
+        self._watch_part_lists()
         lay.addWidget(self.tabs, 3)
 
         self.lbl_errors = QLabel(self)
@@ -683,6 +687,9 @@ class ACPanel(QWidget):
 
     def _lists(self):
         return (self.vrm_list, self.link_list, self.cap_list, self.probe_list)
+
+    def _part_lists(self):
+        return {"vrm": self.vrm_list, "link": self.link_list, "probe": self.probe_list}
 
     # ------------------------------------------------------------------ tabs
     def _sweep_tab(self) -> QWidget:

@@ -272,3 +272,60 @@ def test_clicking_a_name_in_3d_selects_the_part(app, no_3d, monkeypatch):
     assert w.solve_panel.load_list.current().name == "U2"
     assert picked == []                                       # not a copper pick
     w.close()
+
+
+def _ac_window(monkeypatch):
+    from kipi.ac.model import Probe
+    from kipi.gui.main_window import MainWindow
+    w = MainWindow()
+    w.snapshot = board()
+    setup = two_phase()
+    setup.probes.append(Probe("U2 core", PinRef("U2", "VOUT", ["1"]),
+                              PinRef("U2", "GND", ["2"])))
+    w.solve_panel.setup = w.ac_panel.setup = setup         # the panels share one setup
+    monkeypatch.setattr(w, "_checked_set", lambda: frozenset({"VOUT"}))
+    w.solve_panel.load_list.reload()
+    w.set_mode("ac")
+    for il in w.ac_panel._lists():
+        il.reload()
+    return w
+
+
+def test_picking_a_probe_in_the_ac_setup_marks_it_and_goes_there(app, no_3d, monkeypatch):
+    w = _ac_window(monkeypatch)
+    marked, focused = [], []
+    monkeypatch.setattr(w.viewer, "set_pi_selected", marked.append)
+    monkeypatch.setattr(w.viewer, "focus_on", focused.append)
+    lst = w.ac_panel.probe_list
+    w.ac_panel.tabs.setCurrentWidget(lst)
+    assert marked[-1] == ("probe", "U2 core") and not focused  # shown, not flown to
+    assert not w.chk_pi.isChecked()
+    lst.lst.itemClicked.emit(lst.lst.item(0))                  # the user clicks it
+    assert w.chk_pi.isChecked() and len(focused) == 1
+    np.testing.assert_allclose(focused[0][:, :2].mean(axis=0), [5.5, 0.5])
+    w.ac_panel.tabs.setCurrentWidget(w.ac_panel.cap_list)      # capacitors: none
+    assert marked[-1] is None
+    w.ac_panel.tabs.setCurrentWidget(w.ac_panel.vrm_list)
+    assert marked[-1] == ("vrm", "J1")
+    # The DC panel's lists say nothing while AC mode shows, and the mode switch brings
+    # back its own selection.
+    w.solve_panel.tabs.setCurrentWidget(w.solve_panel.load_list)
+    assert marked[-1] == ("vrm", "J1")
+    w.set_mode("dc")
+    assert marked[-1][0] == "load"
+    w.set_mode("ac")
+    assert marked[-1] == ("vrm", "J1")
+    w.close()
+
+
+def test_clicking_a_marker_in_ac_mode_selects_it_in_the_ac_setup(app, no_3d, monkeypatch):
+    from kipi.ac.viz.markers import ac_markers
+    w = _ac_window(monkeypatch)
+    probe = next(m for m in ac_markers(w.snapshot, w.ac_panel.setup, {"VOUT"})
+                 if m.kind == "probe")
+    monkeypatch.setattr(w.viewer, "pi_marker_at", lambda xy: probe)
+    w._on_click(None, (10, 10))
+    assert w.ac_panel.tabs.currentWidget() is w.ac_panel.probe_list
+    assert w.ac_panel.probe_list.current().name == "U2 core"
+    assert w.solve_panel.tabs.currentWidget() is not w.solve_panel.load_list
+    w.close()

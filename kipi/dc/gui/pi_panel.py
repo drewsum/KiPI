@@ -1124,7 +1124,38 @@ def _unique(base: str, taken: List[str]) -> str:
 # Panel
 # ---------------------------------------------------------------------------
 
-class PIPanel(QWidget):
+class PartSelection:
+    """The setup part selected in a panel's lists, for the 3D view's PI Models markers
+    (#96). The panel has ``tabs``, a ``part_selected`` signal and ``_part_lists()``: the
+    marker kind of each tab that lists parts, and its :class:`ItemList`."""
+
+    def _watch_part_lists(self):
+        for il in self._part_lists().values():
+            il.selected.connect(lambda _obj, user, il=il: self._part_selection(user)
+                                if self.tabs.currentWidget() is il else None)
+        self.tabs.currentChanged.connect(lambda _: self._part_selection(False))
+
+    def _part_selection(self, by_user: bool):
+        """Say which part the shown list has selected; none on the other tabs."""
+        kind = next((k for k, il in self._part_lists().items()
+                     if il is self.tabs.currentWidget()), "")
+        obj = self._part_lists()[kind].current() if kind else None
+        self.part_selected.emit(kind if obj is not None else "",
+                                obj.name if obj is not None else "", by_user)
+
+    def select_part(self, kind: str, name: str) -> bool:
+        """Show the part ``name`` of marker kind ``kind`` in its list and editor (#96);
+        False if this panel lists no such part."""
+        il = self._part_lists().get(kind)
+        if il is None or name not in [x.name for x in il.items()]:
+            return False
+        self.tabs.setCurrentWidget(il)
+        il.select_name(name)
+        self._part_selection(False)
+        return True
+
+
+class PIPanel(QWidget, PartSelection):
     solve_requested = Signal(object)      # PISetup
     field_changed = Signal(str)
     scale_changed = Signal(object)         # (min, max) of the color scale, or None: auto
@@ -1183,9 +1214,7 @@ class PIPanel(QWidget):
             self.tabs.setTabToolTip(i, text)
         for il in (self.vrm_list, self.load_list, self.link_list):
             il.changed.connect(self._on_changed)
-            il.selected.connect(lambda _obj, user, il=il: self._part_selection(user)
-                                if self.tabs.currentWidget() is il else None)
-        self.tabs.currentChanged.connect(lambda _: self._part_selection(False))
+        self._watch_part_lists()
         lay.addWidget(self.tabs, 3)
 
         self.lbl_errors = QLabel(self)
@@ -1802,24 +1831,6 @@ class PIPanel(QWidget):
 
     def _part_lists(self):
         return {"vrm": self.vrm_list, "load": self.load_list, "link": self.link_list}
-
-    def _part_selection(self, by_user: bool):
-        """Say which part the shown list has selected; none on the other tabs."""
-        kind = next((k for k, il in self._part_lists().items()
-                     if il is self.tabs.currentWidget()), "")
-        obj = self._part_lists()[kind].current() if kind else None
-        self.part_selected.emit(kind if obj is not None else "",
-                                obj.name if obj is not None else "", by_user)
-
-    def select_part(self, kind: str, name: str) -> bool:
-        """Show the VRM, load or series link ``name`` in its list and editor (#96)."""
-        il = self._part_lists().get(kind)
-        if il is None or name not in [x.name for x in il.items()]:
-            return False
-        self.tabs.setCurrentWidget(il)
-        il.select_name(name)
-        self._part_selection(False)
-        return True
 
     def _on_changed(self):
         self._fill_groups()

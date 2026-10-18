@@ -251,8 +251,8 @@ Below that:
 * **PI Models** Marks the parts of the current analysis: a dot on each of their pads on the nets shown, with the
   part's name. In DC mode its VRMs, loads, series links and capacitors with a model; in AC mode its VRMs, series
   links, probes and capacitors, the probes in place of the loads, which no impedance sweep uses. It starts unticked;
-  over results the marks are hidden. In DC mode, clicking a VRM, load or series link in the setup lists marks it in
-  amber and brings the view to it; clicking a part's name (or dot) in 3D selects it in the setup.
+  over results the marks are hidden. Clicking a VRM, load, series link or probe in the setup lists marks it in
+  amber and brings the view to it; clicking a part's name (or dot) in 3D selects it in the current mode's setup.
 * **3D Models** shows the KiCad 3D models of every part on the board. When viewing results they start hidden; tick
   **3D Models** to show them on results. The geometry and result views each remember their own setting.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or
