@@ -252,9 +252,10 @@ Below that:
   part's name. In DC mode its VRMs, loads, series links and capacitors with a model; in AC mode its VRMs, series
   links, probes and capacitors, the probes in place of the loads, which no impedance sweep uses. It starts unticked;
   over results the marks are hidden. Clicking a VRM, load, series link or probe in the setup lists marks it in
-  amber and brings the view to it; clicking a part's name (or dot) in 3D selects it in the current mode's setup.
-  A newly selected part blinks red and amber for a few seconds, to be found at a glance. Untick **Snap to selected**
-  to keep the view where it is when a part is picked in the setup; the choice is remembered.
+  amber; clicking a part's name (or dot) in 3D selects it in the current mode's setup. A newly selected part blinks
+  red and amber for a few seconds, to be found at a glance. Selecting a part never ticks PI Models for you.
+  **Snap to selected**, available while PI Models is ticked, brings the view to a part picked in the setup; untick
+  it to keep the view where it is. The choice is remembered.
 * **3D Models** shows the KiCad 3D models of every part on the board. When viewing results they start hidden; tick
   **3D Models** to show them on results. The geometry and result views each remember their own setting.
 * **Info** shows whatever you last clicked in 3D. **Select in KiCad** selects that pad or

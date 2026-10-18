@@ -286,9 +286,13 @@ def test_picking_a_part_in_the_setup_marks_it_and_goes_there(app, no_3d, monkeyp
     lst = w.solve_panel.load_list
     w.solve_panel.tabs.setCurrentWidget(lst)
     assert marked[-1] == ("load", "U2") and not focused       # shown, not flown to
-    assert not w.chk_pi.isChecked()
+    assert not w.chk_pi.isChecked() and not w.chk_snap.isEnabled()
     lst.lst.itemClicked.emit(lst.lst.item(0))                 # the user clicks it
-    assert w.chk_pi.isChecked() and len(focused) == 1
+    assert not w.chk_pi.isChecked() and not focused           # PI Models stays off
+    w.chk_pi.setChecked(True)
+    assert w.chk_snap.isEnabled()
+    lst.lst.itemClicked.emit(lst.lst.item(0))
+    assert len(focused) == 1
     np.testing.assert_allclose(focused[0][:, :2].mean(axis=0), [5.5, 0.5])
     w.chk_snap.setChecked(False)                              # marked, but the view stays
     lst.lst.itemClicked.emit(lst.lst.item(0))
@@ -345,7 +349,12 @@ def test_picking_a_probe_in_the_ac_setup_marks_it_and_goes_there(app, no_3d, mon
     assert marked[-1] == ("probe", "U2 core") and not focused  # shown, not flown to
     assert not w.chk_pi.isChecked()
     lst.lst.itemClicked.emit(lst.lst.item(0))                  # the user clicks it
-    assert w.chk_pi.isChecked() and len(focused) == 1
+    assert not w.chk_pi.isChecked() and not focused            # PI Models stays off
+    w.chk_snap.blockSignals(True)                  # not saved to the user's settings
+    w.chk_snap.setChecked(True)
+    w.chk_pi.setChecked(True)
+    lst.lst.itemClicked.emit(lst.lst.item(0))
+    assert len(focused) == 1
     np.testing.assert_allclose(focused[0][:, :2].mean(axis=0), [5.5, 0.5])
     w.ac_panel.tabs.setCurrentWidget(w.ac_panel.cap_list)      # capacitors: none
     assert marked[-1] is None

@@ -420,13 +420,16 @@ class MainWindow(QMainWindow):
         self.chk_snap = QCheckBox("Snap to selected", g_view)
         self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link or probe "
                                  "when it is clicked in the setup's lists. Untick it to keep "
-                                 "the view where it is; the part is still marked in amber.")
+                                 "the view where it is; the part is still marked in amber. "
+                                 "Available while PI Models is ticked.")
         # QSettings may hand a bool back as "true" / "false" (an INI file, the registry).
         snap = QSettings("KiPI", "KiPI").value("view/snap_to_selected", True)
         self.chk_snap.setChecked(str(snap).lower() not in ("false", "0"))
         self.chk_snap.toggled.connect(
             lambda v: QSettings("KiPI", "KiPI").setValue("view/snap_to_selected", v))
         feats.addWidget(self.chk_snap)          # a row of its own: the dock is narrow
+        self.chk_snap.setEnabled(self.chk_pi.isChecked())   # it snaps to the markers
+        self.chk_pi.toggled.connect(self.chk_snap.setEnabled)
         self.chk_models.toggled.connect(lambda _: self._model_timer.start())
         # The copper and result views each keep their own Models setting.
         self.viewer.result_shown.connect(
@@ -1027,20 +1030,17 @@ class MainWindow(QMainWindow):
 
     def _pi_part_selected(self, kind: str, name: str, by_user: bool):
         """Mark the part selected in the current mode's setup lists in the 3D view: a VRM,
-        load or series link in DC mode, a VRM, series link or probe in AC mode. One the user
-        picked also shows the PI Models markers and brings the view to it (#96)."""
+        load or series link in DC mode, a VRM, series link or probe in AC mode. With PI Models
+        shown and Snap to selected ticked, one the user picked brings the view to it (#96)."""
         self.viewer.set_pi_selected((kind, name) if kind else None)
-        if not by_user or not kind:
+        if not (by_user and kind and self.chk_pi.isChecked() and self.chk_snap.isChecked()):
             return
-        if not self.chk_pi.isChecked():
-            self.chk_pi.setChecked(True)
         m = next((m for m in self.viewer.pi_markers if (m.kind, m.item) == (kind, name)),
                  None)
         if m is None:
             self.statusBar().showMessage(f"{name} has no pads on the nets shown", 5000)
             return
-        if self.chk_snap.isChecked():
-            self.viewer.focus_on(np.vstack([m.power, m.ground]))
+        self.viewer.focus_on(np.vstack([m.power, m.ground]))
 
     # ============================================================ part models
     def _wanted_models(self) -> List[str]:

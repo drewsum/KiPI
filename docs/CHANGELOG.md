@@ -13,7 +13,8 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   for a few seconds before it stays amber, so it is easy to find among the PI Models marks.
   A new **Snap to selected** tick in the View box chooses whether picking a part in the
   setup's lists brings the 3D view to it (ticked, as before) or leaves the view where it
-  is. It applies to DC and AC mode and is remembered between sessions.
+  is. It is available only while **PI Models** is ticked, applies to DC and AC mode and is
+  remembered between sessions.
 - **PI Models** marks AC mode's parts too, having marked only DC mode's: the setup's VRMs,
   series links, probes (violet) and capacitors with a model, on their pads on the nets
   shown. The probes take the DC loads' place, the loads having no part in an impedance
@@ -211,6 +212,8 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   put into the board by source (copper, vias, DC connections, VRM conversion, loads).
 
 ### Changed
+- Selecting a part in the setup no longer ticks **PI Models** in the 3D view; the marks
+  stay as you set them.
 - Setups and results saved with the single *Barrel plating* value load it as the plating of
   every default via rule, so they solve as before. New setups use the IPC-6012 defaults
   (20 µm for through vias, was 25 µm), which raises barrel resistance by about a quarter.
