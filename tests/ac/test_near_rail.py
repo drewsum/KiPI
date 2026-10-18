@@ -1,5 +1,7 @@
 """The AC mesh is graded only at plated holes near the rail (#123)."""
 
+import os
+
 import numpy as np
 import pytest
 
@@ -63,3 +65,23 @@ def test_grading_only_near_the_rail_leaves_the_impedance_alone():
     assert out[True].stats.n_nodes < 0.6 * out[False].stats.n_nodes
     a, b = out[False].probes[0].z, out[True].probes[0].z
     assert np.max(np.abs(b - a) / np.abs(a)) < 1e-4            # 2e-6 when written
+
+
+def test_the_checkbox_is_ticked_by_default_and_for_older_setups():
+    pytest.importorskip("qtpy")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from qtpy.QtWidgets import QApplication
+    from kipi.ac.gui.panel import ACPanel
+    from kipi.dc.pi.model import PISetup
+    QApplication.instance() or QApplication([])
+    snap = _board()
+    older = PISetup.from_dict({"ac": {"max_edge_mm": 1.0}})     # saved before #123
+    assert older.ac.grade_near_rail_only
+    p = ACPanel()
+    assert p.chk_near.isChecked()                               # a new panel
+    p.set_board(snap, older, "board")
+    assert p.chk_near.isChecked()
+    p.chk_near.setChecked(False)                                # unticking is kept
+    assert not p.setup.ac.grade_near_rail_only
+    assert not PISetup.from_dict(p.setup.to_dict()).ac.grade_near_rail_only
+    p.close()
