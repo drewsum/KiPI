@@ -723,6 +723,7 @@ class LoadEditor(_Editor):
         self.ground = self._picker(optional=True)
         # Tolerance, in % from the rail's nominal voltage or in volts.
         self.tol = RangeRow(self._rail_nominal)
+        self.heat = _optional_spin(0, 1000, 3, " W", 0.01)
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -732,6 +733,7 @@ class LoadEditor(_Editor):
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
+        f.addRow("Heat", self.heat)
         for w, text in (
                 (self.name, "A name for this load, used in the results tables"),
                 (self.supply, "The pins the load draws its current from"),
@@ -752,13 +754,17 @@ class LoadEditor(_Editor):
                                "most it may be boosted above the VRM set voltage (e.g. +5 %)"),
                 (self.tol.unit, "%: the tolerance in % from the rail's nominal voltage, the "
                                 "set voltage of the VRM driving it.\nV: in volts. Switching "
-                                "converts the values when that VRM is known.")):
+                                "converts the values when that VRM is known."),
+                (self.heat, "Optional: the heat the part puts into the board, when load "
+                            "power is included (Thermal tab). Not set: the power it draws, pin "
+                            "current × pin voltage. Set it for a part that passes most of its "
+                            "power on (load switch, LED or motor driver).")):
             tip(f, w, text)
         self.groups.setToolTip("Pin groups: an optional name, the pin numbers (e.g. 15,28) "
                                "and the current into those pins. Click a column header to "
                                "sort by it.")
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
-        self._watch(self.name, self.current, self.mode)
+        self._watch(self.name, self.current, self.mode, self.heat)
         self.tol.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
@@ -845,6 +851,7 @@ class LoadEditor(_Editor):
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
         self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct)
+        _set_optional(self.heat, l.dissipation_w)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
@@ -882,6 +889,7 @@ class LoadEditor(_Editor):
                 self._show(self.ground, gnd)
         l.tol_min, l.tol_max = self.tol.values()
         l.tol_pct = self.tol.pct()
+        l.dissipation_w = _get_optional(self.heat)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 
@@ -1596,18 +1604,21 @@ class PIPanel(QWidget, PartSelection):
         s = self.setup.settings
         self.spin_edge = _spin(0.05, 5.0, s.max_edge_mm, 2, " mm", 0.05)
         self.spin_grading = _spin(0.0, 2.0, s.grading, 2, "", 0.05)
-        self.spin_plating = _spin(1.0, 100.0, s.plating_mm * 1000, 1, " µm", 1.0)
+        from kipi.dc.gui.via_rules_editor import ViaRulesEditor
+        self.via_rules = ViaRulesEditor(w)
+        self.via_rules.set_rules(s.via_rules)
         f.addRow("Max edge", self.spin_edge)
         f.addRow("Via grading", self.spin_grading)
-        f.addRow("Barrel plating", self.spin_plating)
+        f.addRow(QLabel("<b>Via plating</b>"))
+        f.addRow(self.via_rules)
         tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
                                "accurate and slower.")
         tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
                                   "edge per mm of distance). Lower keeps the mesh fine further "
                                   "out from vias; 0 turns grading off.")
-        tip(f, self.spin_plating, "Copper thickness of via and plated-hole barrel walls")
-        for sp in (self.spin_edge, self.spin_grading, self.spin_plating):
+        for sp in (self.spin_edge, self.spin_grading):
             sp.valueChanged.connect(self._settings_changed)
+        self.via_rules.changed.connect(self._settings_changed)
         return w
 
     def _thermal_tab(self) -> QWidget:
@@ -1765,7 +1776,7 @@ class PIPanel(QWidget, PartSelection):
         s = self.setup.settings
         s.max_edge_mm = self.spin_edge.value()
         s.grading = self.spin_grading.value()
-        s.plating_mm = self.spin_plating.value() / 1000
+        s.via_rules = self.via_rules.rules()
         self._on_changed()
 
     # ------------------------------------------------------------------ data
@@ -1777,11 +1788,13 @@ class PIPanel(QWidget, PartSelection):
         self._scale_key = None
         self._enable_scale(False)
         for sp, v in ((self.spin_edge, setup.settings.max_edge_mm),
-                      (self.spin_grading, setup.settings.grading),
-                      (self.spin_plating, setup.settings.plating_mm * 1000)):
+                      (self.spin_grading, setup.settings.grading)):
             sp.blockSignals(True)
             sp.setValue(v)
             sp.blockSignals(False)
+        self.via_rules.blockSignals(True)
+        self.via_rules.set_rules(setup.settings.via_rules)
+        self.via_rules.blockSignals(False)
         self.clear_results()
         self.spin_via_limit.blockSignals(True)
         self.spin_via_limit.setValue((setup.via_current_limit_a or 0.0) * 1e3)
@@ -1972,6 +1985,9 @@ class PIPanel(QWidget, PartSelection):
                             f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
                             f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s "
                             "(details in the Thermal tab)")
+            if getattr(th, "heat_by_kind", None):
+                notes.insert(1, "&nbsp;&nbsp;heat by source: "
+                                + html.escape(th.heat_breakdown()))
         for g in tree.groups.values():
             role = f"driven by {g.driver}" if g.kind == "rail" else f"ground, referenced at {g.driver}"
             notes.append(f"&nbsp;&nbsp;<b>{html.escape(g.name)}</b> ({role}): "

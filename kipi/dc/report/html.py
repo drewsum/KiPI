@@ -319,15 +319,15 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     parts.append("<nav>" + " ".join(nav) + "</nav>")
     s = setup.settings
     parts.append(f"<p class='note'>Mesh: max edge {s.max_edge_mm:g} mm, via grading "
-                 f"{s.grading:g}, barrel plating {s.plating_mm * 1000:g} µm, copper "
-                 f"resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
+                 f"{s.grading:g}, copper resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
                  f"(TCR {s.tcr_per_c:g}/°C)"
                  + ("; layer overrides: " + ", ".join(
                      f"{_e(n)} {_e(s.conductor_by_layer.get(n, ''))} {r * 1e-3:.4g} Ω·m "
                      f"(TCR {s.tcr_for(n):g}/°C)".replace("  ", " ")
                      for n, r in sorted(s.rho_by_layer.items()))
                     if s.rho_by_layer else "")
-                 + ".</p>")
+                 + ". Via plating, first matching rule (drill = hole in the laminate, plated "
+                 f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
 
     # ---------------- tables
@@ -434,6 +434,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      + f"; peak <b>{tmax:.1f} °C</b> at "
                      f"({x:.1f}, {y:.1f}) mm. Ambient {th.settings.ambient_c:g} °C, airflow "
                      f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
+        if getattr(th, "heat_by_kind", None):
+            parts.append(f"<p>Heat by source: {_e(th.heat_breakdown())}.</p>")
         heat_rows = ([[_e(k), "load", _num(v)] for k, v in loads_w.items()] if with_loads
                      else [])
         heat_rows += [[_e(s.name), "DC connection", _num(s.power)]
@@ -444,8 +446,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                 ["Part", "Kind", "Power (W)"], heat_rows))
             parts.append("<p class='note'>Heat put into the board at each part's pins. A DC "
                          "connection dissipates I²R. "
-                         + ("A load dissipates the sum over its supply and ground pins of pin "
-                            "current × pin voltage." if with_loads else
+                         + ("A load dissipates its stated Heat, else the sum over its supply "
+                            "and ground pins of pin current × pin voltage." if with_loads else
                             "Load power is not included (Thermal settings tab).") + "</p>")
         temps = layer_temps(tree, snap, setup.thermal)
         if temps:

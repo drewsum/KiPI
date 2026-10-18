@@ -417,8 +417,9 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                  f"holes, grading {s.grading:g}"],
         ["Dielectric", f"loss tangent {s.loss_tangent:g}; εr top to bottom: "
                        f"{dielectric_summary(snap.stackup, s.default_er)}"],
-        ["Copper", f"resistivity {setup.settings.rho_ohm_mm * 1e-3:.4g} Ω·m, barrel plating "
-                   f"{setup.settings.plating_mm * 1000:g} µm"],
+        ["Copper", f"resistivity {setup.settings.rho_ohm_mm * 1e-3:.4g} Ω·m"],
+        ["Via plating", _e("; ".join(r.label() for r in setup.settings.via_rules))
+         + " (first matching rule)"],
         ["Temperature", _temperature_text(s, st)],
     ]))
     times = ", ".join(f"{k} {v:.1f} s" for k, v in st.times.items())

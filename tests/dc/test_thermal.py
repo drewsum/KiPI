@@ -106,6 +106,40 @@ def test_first_iteration_solves_copper_at_ambient():
     assert ratio == pytest.approx(1 + TCR * 65.0, rel=1e-3)
 
 
+def test_loads_heat_the_board_with_the_power_they_take():
+    snap = board()
+    s = setup("ldo")
+    res = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
+                                                   load_power=True))
+    ld = by_name(res.loads, "U2")
+    th = res.thermal
+    assert th.heat_by_kind["loads"] == pytest.approx(ld.v_effective * ld.current, rel=1e-9)
+    assert sum(th.heat_by_kind.values()) == pytest.approx(th.heat_w, rel=1e-9)
+    # The LDO's own loss is its input power minus its output power.
+    u1 = by_name(res.vrms, "U1")
+    assert th.heat_by_kind["VRM conversion"] == pytest.approx(u1.p_loss, rel=1e-9)
+
+
+def test_stated_dissipation_replaces_supply_power():
+    snap = board()
+    s = setup("ldo")
+    s.loads[0].dissipation_w = 0.25          # a part passing most of its power on
+    res = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
+                                                   load_power=True))
+    assert res.thermal.heat_by_kind["loads"] == pytest.approx(0.25)
+
+
+def test_load_heat_raises_the_board_temperature():
+    snap = board()
+    s = setup("ldo")
+    hot = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
+                                                   load_power=True))
+    s.loads[0].dissipation_w = 0.0
+    cool = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
+                                                   load_power=True))
+    assert hot.thermal.t_max > cool.thermal.t_max + 1.0
+
+
 @pytest.mark.parametrize("name,k,assumed", [
     ("FR4", 0.8, False), ("FR4 core", 0.8, False), ("FR408-HR", 0.8, False), ("370HR", 0.8, False),
     ("2116 RC54%", 0.6, False), ("3313 RC57%", 0.6, False), ("Prepreg", 0.6, False),

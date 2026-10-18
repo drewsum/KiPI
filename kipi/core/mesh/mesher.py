@@ -45,6 +45,8 @@ class Barrel:
     position: Tuple[float, float]
     drill_mm: float
     ring_nodes: Dict[int, np.ndarray] = field(default_factory=dict)   # layer -> node ids
+    hole_type: str = "through"           # via type, or "pth" for a component hole
+    filled: Optional[bool] = None        # KiCad's drill filling; None when not stated
 
     @property
     def layers(self) -> List[int]:
@@ -408,7 +410,8 @@ def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = ()
     for v in vias:
         if v.drill_mm <= 0:
             continue
-        bar = Barrel(owner_id=v.id, kind="via", position=v.position, drill_mm=v.drill_mm)
+        bar = Barrel(owner_id=v.id, kind="via", position=v.position, drill_mm=v.drill_mm,
+                     hole_type=v.via_type, filled=v.filled)
         hole = Point(v.position).buffer(v.drill_mm / 2, quad_segs=circle_quad_segs)
         for lid in v.layers:
             if lid in layer_ranges:
@@ -437,7 +440,8 @@ def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = ()
         if p.pad_type != "pth" or p.drill_mm[0] <= 0:
             continue
         bar = Barrel(owner_id=p.id, kind="pth", position=p.position,
-                     drill_mm=min(p.drill_mm[0], p.drill_mm[1] or p.drill_mm[0]))
+                     drill_mm=min(p.drill_mm[0], p.drill_mm[1] or p.drill_mm[0]),
+                     hole_type="pth", filled=False)
         for lid in [c.id for c in st.copper if c.id in p.shapes and c.id in layer_ranges]:
             # The net's holes on this layer; keep only the part belonging to this pad.
             mine = pad_hole(lid, p.position)
@@ -485,7 +489,8 @@ def combine_meshes(meshes: Sequence[NetMesh], name: str, layer_order: Sequence[i
         tl.append(m.tri_layer)
         for b in m.barrels:
             barrels.append(Barrel(b.owner_id, b.kind, b.position, b.drill_mm,
-                                  {l: n + off for l, n in b.ring_nodes.items()}))
+                                  {l: n + off for l, n in b.ring_nodes.items()},
+                                  b.hole_type, b.filled))
         for pid, per_layer in m.pad_nodes.items():
             pads[pid] = {l: n + off for l, n in per_layer.items()}
         off += m.n_nodes

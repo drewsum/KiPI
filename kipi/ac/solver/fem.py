@@ -39,7 +39,6 @@ field solve independent of the part values.
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -60,6 +59,7 @@ from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.solver import direct
 from kipi.dc.solver.fem import _merge_groups, triangle_geometry
 from kipi.dc.solver.setup import REF_TEMP_C
+from kipi.dc.solver.via_barrel import barrel_copper_area, rule_for
 
 TIE_ADMITTANCE_S = 1e-9     # weak tie for copper reached only through parts
 SHIELDED_FACE_HEIGHT = 1000  # x board thickness: the inductance height of a shielded face
@@ -253,12 +253,14 @@ class ACSystem:
 
         # Barrels: resistors between ring unknowns of consecutive layers (as in DC).
         order = {cu.id: i for i, cu in enumerate(st.copper)}
-        tp = self.dc.plating_mm
         bar_a, bar_b, bar_g = [], [], []
         for bar in mesh.barrels:
             layers = sorted(bar.ring_nodes, key=order.get)
-            d = bar.drill_mm
-            a_barrel = math.pi * (d * tp - tp * tp) if d > 2 * tp else math.pi * d * d / 4
+            rule = rule_for(self.dc.via_rules, bar.hole_type, bar.drill_mm)
+            if rule is None:
+                raise ACError(f"No via rule covers a {bar.hole_type} hole of {bar.drill_mm:g} "
+                              "mm drill; add one in the DC Mesh tab under Via plating")
+            a_barrel = barrel_copper_area(rule, bar.drill_mm, bar.filled, self.dc.rho_ohm_mm)
             for la, lb in zip(layers[:-1], layers[1:]):
                 dz = abs(st.layer(la).z_mid_mm - st.layer(lb).z_mid_mm)
                 ua = merged_of[2 * bar.ring_nodes[la][0]]

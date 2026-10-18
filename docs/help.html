@@ -821,6 +821,9 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     VRM set voltage (e.g. min -3 %, max +5 %) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
     may be left "not set". PASS if every supply pin is within it. Switching the unit
     converts the values when a VRM drives the load's rail.</td></tr>
+  <tr><td>Heat</td><td class="wrap">Optional, W: the heat the part puts into the board in the
+    electro-thermal solve, when load power is included. Not set: the power it draws. Set it
+    for a part that passes most of its power on, such as a load switch.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
 </div>
@@ -871,9 +874,12 @@ many groups will be solved, e.g. <b>Solve 3 of 5 net groups</b>.</p>
     slower. Raise it for quick looks at big boards.</td></tr>
   <tr><td>Via grading</td><td class="wrap">How fast elements grow away from plated holes, where
     current crowds. Lower keeps the mesh fine further out; 0 turns grading off.</td></tr>
-  <tr><td>Barrel plating</td><td class="wrap">Via and PTH wall thickness, µm.</td></tr>
+  <tr><td>Via plating</td><td class="wrap">A table of rules, first match wins: hole type,
+    drill range, plating (µm, growing inward from the drill) and what a filled hole is
+    filled with. A via the KiCad board marks as filled carries its core too when the fill
+    conducts. Defaults: IPC-6012 Class 2 minimum averages.</td></tr>
 </table>
-<p>The defaults suit most boards.</p>
+<p>The defaults suit most boards; set the via plating your fabricator states.</p>
 </div>
 </details>
 
@@ -1333,7 +1339,7 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
     Stackup); a dielectric made of several sublayers gets their series combination. The log
     and the HTML report list the εr used for each dielectric.</td></tr>
 </table>
-<p>Copper resistivity and barrel plating come from the DC setup's Copper and Mesh tabs.</p>
+<p>Copper resistivity and the via plating rules come from the DC setup's Copper and Mesh tabs.</p>
 </div>
 </details>
 

@@ -1,0 +1,61 @@
+"""Via fill and per-layer via pads, read from a ``.kicad_pcb`` file (#89)."""
+
+import pytest
+from shapely.geometry import box
+
+from kipi.core.model.board import Pad, Track
+from kipi.core.model.layers import B_CU, F_CU, inner_cu
+from kipi.sources.kicad_pcb.reader import _via_filled, _via_pads, trim_unused_via_pads
+from kipi.sources.kicad_pcb.sexpr import parse
+from kipi.core.geometry.copper import shapely_to_polys
+
+IN1, IN2 = inner_cu(1), inner_cu(2)
+SPAN = [F_CU, IN1, IN2, B_CU]
+
+
+def via(extra: str = ""):
+    return parse(f'(via (at 0 0) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") {extra} '
+                 '(net "N") (uuid "v1"))')
+
+
+@pytest.mark.parametrize("text,expect", [("(filling yes)", True), ("(filling no)", False),
+                                         ("", None)])
+def test_via_filling(text, expect):
+    assert _via_filled(via(text)) is expect
+
+
+def test_normal_padstack_is_one_pad_on_every_layer():
+    assert _via_pads(via(), SPAN, 0.6) == dict.fromkeys(SPAN, 0.6)
+
+
+def test_front_inner_back_padstack():
+    node = via('(padstack (mode front_inner_back) (layer "Inner" (size 0.45)) '
+               '(layer "B.Cu" (size 0.5)))')
+    assert _via_pads(node, SPAN, 0.6) == {F_CU: 0.6, IN1: 0.45, IN2: 0.45, B_CU: 0.5}
+
+
+def test_custom_padstack_takes_each_layers_own_pad():
+    node = via('(padstack (mode custom) (layer "In2.Cu" (size 0.4)) (layer "B.Cu" (size 0.55)))')
+    assert _via_pads(node, SPAN, 0.6) == {F_CU: 0.6, IN1: 0.6, IN2: 0.4, B_CU: 0.55}
+
+
+def _trim_one(keep_ends: bool):
+    from kipi.core.model.board import Via
+    v = Via("v1", "N", (0.0, 0.0), 0.3, 0.6, SPAN, pad_mm=dict.fromkeys(SPAN, 0.6))
+    tracks = [Track(net="N", layer=F_CU, width_mm=0.2, start=(0.0, 0.0), end=(5.0, 0.0))]
+    pads = [Pad(id="p", net="N", footprint="U1", number="1", position=(0.0, 0.0),
+                pad_type="smd", drill_mm=(0.0, 0.0),
+                shapes={IN2: shapely_to_polys(box(-0.5, -0.5, 0.5, 0.5))})]
+    n = trim_unused_via_pads([(v, keep_ends)], tracks, pads, [], (F_CU, B_CU))
+    return n, v
+
+
+def test_unused_via_pads_are_removed_where_nothing_connects():
+    n, v = _trim_one(keep_ends=False)
+    assert n == 2 and set(v.pad_mm) == {F_CU, IN2}       # the track and the pad
+    assert v.pad_diameter(IN1) == 0.0 and v.pad_diameter(F_CU) == 0.6
+
+
+def test_keep_end_layers_keeps_the_outer_pads():
+    n, v = _trim_one(keep_ends=True)
+    assert n == 1 and set(v.pad_mm) == {F_CU, IN2, B_CU}

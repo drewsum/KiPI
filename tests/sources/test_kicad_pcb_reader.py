@@ -82,6 +82,14 @@ def test_tracks_match_kicad(boards):
 
 def test_vias_match_kicad(boards):
     _, snap, ref = boards
+    # The references predate via fill and per-layer pads (#89): where one has neither,
+    # those are checked against the file instead (every pad the via's size, fill as saved).
+    for v in snap.vias:
+        r = next(x for x in ref.vias if x.id == v.id)
+        if not r.pad_mm:
+            assert v.pad_mm == dict.fromkeys(v.layers, v.diameter_mm)
+            assert v.filled is False                    # the fixtures save "(filling no)"
+            r.pad_mm, r.filled = v.pad_mm, v.filled
     assert {v.id: v for v in snap.vias} == {v.id: v for v in ref.vias}
     assert {v.via_type for v in snap.vias} == {"through", "blind", "micro"}
 

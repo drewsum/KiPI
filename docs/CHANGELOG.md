@@ -174,8 +174,31 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   Calculator has a **Subtract VRM DC accuracy** button under the AC voltage tolerance,
   which takes the larger side of the accuracy of the VRM driving the probe's rail off
   the tolerance (a menu when several VRMs drive it).
+- **Via plating rules** (#89, from PR #42 by @Tomachie). The Mesh tab's single *Barrel
+  plating* value becomes a table of rules, first match wins: hole type (through, blind,
+  buried, microvia, component hole or any), a drill-size range, the plating, and what a
+  filled hole of that rule is filled with (copper, conductive or non-conductive epoxy). The
+  defaults are IPC-6012 Class 2 minimum average plating (through and blind 20 µm, buried
+  13 µm, microvia 12 µm). The DC and AC solves, the Notes tab and both HTML reports use them.
+- **Filled vias** (#89). A via the KiCad board marks as filled carries its core too when its
+  rule's fill conducts: copper makes the whole hole copper, conductive epoxy adds its core at
+  the resistivity entered. A via whose fill is left to the design rules is solved unfilled,
+  and the Notes tab counts them. Read in plugin mode and from `.kicad_pcb` files; other
+  formats do not say, so their vias are solved unfilled.
+- **Via pads per layer** (#89). Each via's pad is read per layer from its padstack (normal,
+  front / inner / back, or custom), and a pad removed from an unused layer is not counted as
+  copper. In a `.kicad_pcb` file a via set to remove unused layers loses its pad on each
+  layer where no track, pad or zone of its net meets it, keeping the outer ones if it keeps
+  end layers.
+- Loads have an optional **Heat** (W) for the electro-thermal solve: with load power
+  included, it replaces the power the load draws, for a part that passes most of its power
+  on (a load switch, LED or motor driver). The Notes tab and the HTML report list the heat
+  put into the board by source (copper, vias, DC connections, VRM conversion, loads).
 
 ### Changed
+- Setups and results saved with the single *Barrel plating* value load it as the plating of
+  every default via rule, so they solve as before. New setups use the IPC-6012 defaults
+  (20 µm for through vias, was 25 µm), which raises barrel resistance by about a quarter.
 - The Target Impedance/Frequency Calculator copies the tolerance and load step from the
   DC load on the probe's pins, with no menu. A **DC load** dropdown picks among the loads on
   the probe's part when none sits on its exact supply and ground pins.

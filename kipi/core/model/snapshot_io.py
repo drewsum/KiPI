@@ -39,6 +39,8 @@ def to_dict(snap: BoardSnapshot) -> Dict[str, Any]:
     # JSON object keys must be strings; layer-keyed dicts are converted back on load.
     for pad in d["pads"]:
         pad["shapes"] = {str(k): v for k, v in pad["shapes"].items()}
+    for via in d["vias"]:
+        via["pad_mm"] = {str(k): v for k, v in via["pad_mm"].items()}
     for zone in d["zones"]:
         zone["filled"] = {str(k): v for k, v in zone["filled"].items()}
     d["format_version"] = FORMAT_VERSION
@@ -74,7 +76,9 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
                       mid=tuple(t["mid"]) if t.get("mid") else None) for t in d["tracks"]],
         vias=[Via(id=v["id"], net=v["net"], position=tuple(v["position"]),
                   drill_mm=v["drill_mm"], diameter_mm=v["diameter_mm"],
-                  layers=list(v["layers"]), via_type=v.get("via_type", "through"))
+                  layers=list(v["layers"]), via_type=v.get("via_type", "through"),
+                  filled=v.get("filled"),
+                  pad_mm={int(k): float(x) for k, x in v.get("pad_mm", {}).items()})
               for v in d["vias"]],
         pads=[Pad(id=p["id"], net=p["net"], footprint=p["footprint"], number=p["number"],
                   position=tuple(p["position"]), pad_type=p["pad_type"],

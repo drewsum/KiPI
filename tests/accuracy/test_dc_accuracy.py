@@ -15,6 +15,7 @@ import pytest
 from validation_boards import boards, open_board
 from kipi.dc.pi.tree import solve_tree
 from kipi.dc.solver.setup import RHO_CU_OHM_MM as RHO
+from kipi.dc.solver.via_barrel import rule_for
 
 CORNER_SQUARES = 0.5587       # a square right-angle bend, by conformal mapping
 
@@ -123,7 +124,8 @@ def test_layer_change_through_a_row_of_vias():
     g = boards.LayerChange
     rs_top = RHO / _thickness(snap, "F.Cu")
     rs_bot = RHO / _thickness(snap, "In2.Cu")
-    tp = setup.settings.plating_mm
+    v0 = snap.vias[0]
+    tp = rule_for(setup.settings.via_rules, v0.via_type, v0.drill_mm).plating_mm
     # Strips: from each pad's edge to the via row's centre line.
     r_strips = rs_top * (g.X_VIA - g.P) / g.W + rs_bot * (g.L - g.P - g.X_VIA) / g.W
     # Barrels in parallel, from F.Cu to In2.Cu (copper centre to copper centre).

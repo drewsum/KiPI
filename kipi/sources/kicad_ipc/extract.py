@@ -14,8 +14,9 @@ from kipi.core.geometry.arcs import arc_points
 from kipi.core.geometry.shapes import board_outline
 from kipi.sources.kicad_ipc.convert import mm, poly, pt
 from kipi.sources.kicad_ipc.copper_shapes import copper_shape_zones
+from kipi.sources.kicad_ipc.vias import read_vias
 from kipi.core.model.board import (
-    BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Via, Zone,
+    BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Zone,
 )
 from kipi.core.model.stackup import build_stackup, combined_epsilon_r
 from kipi.core.progress import NULL, ProgressReporter
@@ -191,8 +192,9 @@ def extract_stackup(board, progress: ProgressReporter = NULL,
 # Items
 # ---------------------------------------------------------------------------
 
-_VIA_TYPES = {1: "through", 2: "blind_buried", 3: "micro", 4: "blind", 5: "buried"}
-_PAD_TYPES = {1: "pth", 2: "smd", 3: "edge", 4: "npth"}
+def _pad_type_names() -> Dict[int, str]:
+    from kipy.proto.board import board_types_pb2 as b
+    return {b.PT_PTH: "pth", b.PT_SMD: "smd", b.PT_EDGE_CONNECTOR: "edge", b.PT_NPTH: "npth"}
 
 
 def _netclass_map(board, nets) -> Dict[str, str]:
@@ -277,15 +279,6 @@ def _pad_angle(pad) -> Optional[float]:
         return float(pad.padstack.angle.degrees)
     except Exception:  # noqa: BLE001 - older API: slots fall back to the pad's shape
         return None
-
-
-def _via_layers(via, stackup: Stackup) -> List[int]:
-    drill = via.padstack.drill
-    a, b = drill.start_layer, drill.end_layer
-    span = stackup.layers_between(a, b)
-    if span:
-        return span
-    return [c.id for c in stackup.copper]
 
 
 def _outline(board_shapes, progress) -> List[Poly]:
@@ -416,17 +409,7 @@ def extract_board(board, refill_zones: bool = False,
     progress.check_cancel()
 
     with progress.timed("Reading vias"):
-        vias = []
-        for v in board.get_vias():
-            try:
-                dia = mm(v.diameter)
-            except ValueError:
-                dia = mm(v.drill_diameter) * 2
-            vias.append(Via(id=v.id.value, net=v.net.name, position=pt(v.position),
-                            drill_mm=mm(v.drill_diameter), diameter_mm=dia,
-                            layers=_via_layers(v, stackup),
-                            via_type=_VIA_TYPES.get(v.type, "through")))
-        progress.info(f"{len(vias)} vias")
+        vias = read_vias(board, stackup, progress)
     progress.check_cancel()
 
     with progress.timed("Reading footprints and pads"):
@@ -451,12 +434,13 @@ def extract_board(board, refill_zones: bool = False,
         progress.info("Querying pad copper shapes per layer...")
         shapes = _pad_shapes(board, kpads, cu_ids, progress, assumed)
         pads: List[Pad] = []
+        pad_types = _pad_type_names()
         for p in kpads:
             d = p.padstack.drill.diameter
             pads.append(Pad(
                 id=p.id.value, net=p.net.name, footprint=pad_ref.get(p.id.value, ""),
                 number=p.number, position=pt(p.position),
-                pad_type=_PAD_TYPES.get(p.pad_type, "unknown"),
+                pad_type=pad_types.get(p.pad_type, "unknown"),
                 drill_mm=(mm(d.x), mm(d.y)),
                 shapes=shapes.get(p.id.value, {}),
                 angle_deg=_pad_angle(p)))

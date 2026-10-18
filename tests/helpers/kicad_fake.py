@@ -132,6 +132,7 @@ class FakeBoardData:
         cl.layer = L.BL_F_Cu
         _v(cl.size, 0.6, 0.6)
         self.vias.append(_pack(v))
+        self.pad_present["via-1"] = COPPER       # a normal padstack: a pad on every layer
 
         fp = bt.FootprintInstance()
         fp.id.value = "fp-u1"

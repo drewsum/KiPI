@@ -113,6 +113,15 @@ class Via:
     diameter_mm: float
     layers: List[int]       # copper layers spanned, top to bottom
     via_type: str = "through"
+    filled: Optional[bool] = None    # KiCad's drill filling; None when it does not say
+    # Pad diameter per copper layer. A spanned layer missing here has no pad (unused
+    # pads removed); empty (older snapshots) means diameter_mm on every spanned layer.
+    pad_mm: Dict[int, float] = field(default_factory=dict)
+
+    def pad_diameter(self, layer: int) -> float:
+        if not self.pad_mm:
+            return self.diameter_mm if layer in self.layers else 0.0
+        return self.pad_mm.get(layer, 0.0)
 
 
 @dataclass

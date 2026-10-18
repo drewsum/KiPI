@@ -83,3 +83,15 @@ def test_classify():
                                         ("POWER_BUTTON", 1.0)])
 def test_guess_voltage(name, volts):
     assert guess_voltage(name) == pytest.approx(volts)
+
+
+def test_old_setup_plating_becomes_every_rules_plating(tmp_path):
+    import json
+    from kipi.dc.pi.model import PISetup
+    p = tmp_path / "old.kipi-setup.json"
+    p.write_text(json.dumps({"format_version": 1, "vrms": [], "loads": [], "links": [],
+                             "settings": {"plating_mm": 0.03}}), encoding="utf-8")
+    s = PISetup.load(p)
+    assert s.settings.via_rules and all(r.plating_mm == 0.03 for r in s.settings.via_rules)
+    back = PISetup.load(s.save(p))
+    assert [r.kind for r in back.settings.via_rules] == [r.kind for r in s.settings.via_rules]

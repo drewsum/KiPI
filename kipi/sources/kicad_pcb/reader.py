@@ -32,7 +32,7 @@ from kipi.sources.kicad_pcb.items import (
     uuid,
 )
 from kipi.sources.kicad_pcb.sexpr import (
-    Node, SexprError, atoms, child, children, number, parse, value, xy,
+    Node, SexprError, atoms, child, children, flag, number, parse, value, xy,
 )
 
 #: The oldest file format read: KiCad 7.0's. Older files store arcs and footprints in
@@ -209,18 +209,91 @@ def _via_type(node: Node) -> str:
     return "through"
 
 
-def read_vias(root: Node, stackup: Stackup, nets: Nets) -> List[Via]:
+def _via_filled(node: Node) -> Optional[bool]:
+    """``(filling yes|no)`` (KiCad 9+); None when the file leaves it to the design rules."""
+    v = value(node, "filling", None)
+    return None if v is None else v not in ("no", "false")
+
+
+def _via_pads(node: Node, span: List[int], size: float) -> Dict[int, float]:
+    """The via's pad diameter on each spanned layer, from its padstack (KiCad 9+): one
+    size on every layer, front / inner / back, or each layer its own."""
+    stack = child(node, "padstack")
+    mode = value(stack, "mode", "normal") if stack is not None else "normal"
+    sized = {}
+    if stack is not None:
+        for layer in children(stack, "layer"):
+            if len(layer) > 1:
+                sized[layer[1]] = number(layer, "size", size)
+    out = {}
+    for lid in span:
+        name = canonical_name(lid)
+        if mode == "custom":
+            out[lid] = sized.get(name, size)
+        elif mode == "front_inner_back" and lid != F_CU:
+            out[lid] = sized.get("B.Cu", size) if lid == B_CU else sized.get("Inner", size)
+        else:
+            out[lid] = size
+    return out
+
+
+def read_vias(root: Node, stackup: Stackup, nets: Nets) -> Tuple[List[Via], List[Via]]:
+    """The vias, and those set to remove their pads on unconnected layers."""
     all_cu = [c.id for c in stackup.copper]
-    vias = []
+    vias, trim = [], []
     for node in children(root, "via"):
         layers = [id_from_name(n) for n in atoms(child(node, "layers") or ["layers"])]
         layers = [lid for lid in layers if lid is not None]
         span = stackup.layers_between(layers[0], layers[-1]) if len(layers) >= 2 else []
+        span = span or list(all_cu)
         drill = number(node, "drill")
-        vias.append(Via(id=uuid(node), net=nets.of(node), position=xy(child(node, "at")),
-                        drill_mm=drill, diameter_mm=number(node, "size", drill * 2),
-                        layers=span or list(all_cu), via_type=_via_type(node)))
-    return vias
+        size = number(node, "size", drill * 2)
+        pads = _via_pads(node, span, size)
+        via = Via(id=uuid(node), net=nets.of(node), position=xy(child(node, "at")),
+                  drill_mm=drill, diameter_mm=max(pads.values(), default=size), layers=span,
+                  via_type=_via_type(node), filled=_via_filled(node), pad_mm=pads)
+        vias.append(via)
+        if flag(node, "remove_unused_layers"):
+            trim.append((via, flag(node, "keep_end_layers")))
+    return vias, trim
+
+
+def trim_unused_via_pads(trim, tracks: List[Track], pads: List[Pad], zones: List[Zone],
+                         outer: Tuple[int, int]) -> int:
+    """Drop the pad of a "remove unused layers" via on each layer where nothing of its net
+    meets it (no track end in it, no pad or zone fill of the net touching it); the barrel
+    still runs through. Returns how many via pads were dropped."""
+    if not trim:
+        return 0
+    from shapely.geometry import Point as SPoint
+    from kipi.core.geometry.copper import poly_to_shapely
+    ends = defaultdict(list)          # (net, layer) -> track end points and widths
+    for t in tracks:
+        ends[(t.net, t.layer)] += [(t.start, t.width_mm), (t.end, t.width_mm)]
+    copper = defaultdict(list)        # (net, layer) -> pad copper and zone fills
+    for p in pads:
+        for lid, polys in p.shapes.items():
+            copper[(p.net, lid)] += [g for g in map(poly_to_shapely, polys) if g is not None]
+    for z in zones:
+        for lid, polys in z.filled.items():
+            copper[(z.net, lid)] += [g for g in map(poly_to_shapely, polys) if g is not None]
+    dropped = 0
+    for via, keep_ends in trim:
+        for lid, d in list(via.pad_mm.items()):
+            if (keep_ends and lid in outer) or not via.net:
+                continue
+            key = (via.net, lid)
+            disc = SPoint(via.position).buffer(d / 2.0)
+            x, y = via.position
+            connected = (any((e[0] - x) ** 2 + (e[1] - y) ** 2 <= (d / 2.0 + w / 2.0) ** 2
+                             for e, w in ends.get(key, ()))
+                         or any(g.intersects(disc) for g in copper.get(key, ())))
+            if not connected:
+                del via.pad_mm[lid]
+                dropped += 1
+        if not via.pad_mm:
+            via.diameter_mm = 0.0
+    return dropped
 
 
 def _is_rule_area(zone: Node) -> bool:
@@ -461,8 +534,8 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
     progress.check_cancel()
 
     with progress.timed("Reading vias"):
-        vias = read_vias(root, stackup, nets)
-        progress.info(f"{len(vias)} vias")
+        vias, via_trim = read_vias(root, stackup, nets)
+        progress.info(f"{len(vias)} vias ({sum(1 for v in vias if v.filled)} filled)")
     progress.check_cancel()
 
     with progress.timed("Reading footprints and pads"):
@@ -481,6 +554,12 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
         with progress.timed("Removing unused pad layers"):
             n = trim_unused_layers(trim, tracks, vias, zones, (F_CU, B_CU))
             progress.info(f"{n} unconnected pad layers removed ({len(trim)} pads set to "
+                          "remove unused layers)")
+
+    if via_trim:
+        with progress.timed("Removing unused via pads"):
+            n = trim_unused_via_pads(via_trim, tracks, pads, zones, (F_CU, B_CU))
+            progress.info(f"{n} unconnected via pads removed ({len(via_trim)} vias set to "
                           "remove unused layers)")
 
     with progress.timed("Reading board outline"):

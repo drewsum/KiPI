@@ -217,3 +217,19 @@ def test_ldo_dropout_is_judged_on_the_worst_phase():
     assert f"leaves {head2:.4f} V" in by_name(res.vrms, "U1").regulation
     s.vrms[1].dropout_v = head2 * 0.99
     assert by_name(solve_tree(board(), s).vrms, "U1").regulation == ""
+
+
+def test_heat_by_source_with_phases():
+    from kipi.dc.thermal.cosim import heat_sources
+    snap, s = board(), two_phase("smps", eff=0.85)
+    s.thermal.load_power = True
+    tree = solve_tree(snap, s)
+    u1, ld = by_name(tree.vrms, "U1"), by_name(tree.loads, "U2")
+    xy, w, by_kind = heat_sources(tree, snap, s)
+    assert by_kind["VRM conversion"] == pytest.approx(u1.p_loss, rel=1e-9)
+    assert by_kind["loads"] == pytest.approx(ld.v_effective * ld.current, rel=1e-9)
+    # Each phase's loss sits at its own output pad.
+    for p, (x0, x1) in zip(u1.phases, [(0, 1), (19, 20)]):
+        at = (xy[:, 0] > x0) & (xy[:, 0] < x1) & (xy[:, 1] > 0) & (xy[:, 1] < 1)
+        assert w[at].sum() >= p.p_loss * (1 - 1e-9)
+    assert sum(by_kind.values()) == pytest.approx(w.sum(), rel=1e-9)

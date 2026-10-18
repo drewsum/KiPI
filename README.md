@@ -332,6 +332,9 @@ To try it without a design of your own, open the example board in
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
 * **Ground pins** (optional) include the ground return. KiPI superimposes all VRM and load return currents to form a comprehensive GND plane current model.
+* **Heat** (optional, W) is what the part puts into the board in the electro-thermal solve,
+  when load power is included. Not set, it is the power the load draws (pin current × pin
+  voltage); set it for a part that passes most of its power on, such as a load switch.
 * **Tolerance** is the PASS/FAIL limit: a min and a max, each optional, in % from the VRM
   set point (e.g. -3 % / +5 %) or in volts (e.g. 3.135 to 3.465 V). A load passes when every
   pin is within it, none below it (a **drop**) or above it (a **boost**). Boosts
@@ -367,11 +370,26 @@ ignored. The Notes tab lists these substitutions.
 ![The Solve tab: tick the net groups to solve](docs/images/dc_solve_tab.png)
 
 **Mesh tab**: **Max edge** is the largest FEA mesh triangle edge in mm; smaller is more accurate and
-slower. **Via grading** controls how fast the mesh refines towards plated holes, and
-**Barrel plating** sets the via wall thickness. The defaults suit most boards.
+slower. **Via grading** controls how fast the mesh refines towards plated holes.
+
+**Via plating** is a table of rules, first match wins: hole type (through, blind, buried,
+microvia, component hole, or any), a drill-size range, the plating thickness, and what a
+FILLED hole of that rule is filled with. The drill is the hole made in the laminate;
+plating grows inward from it, so a barrel is a copper tube of the drill's outside diameter.
+A via the KiCad board marks as filled carries its core too when the fill conducts: copper
+fill makes the whole hole copper, conductive epoxy adds its core at the resistivity you
+enter, and non-conductive epoxy adds nothing. A via whose fill is left to the design rules
+(or a board format that does not say) is solved unfilled, and the Notes tab counts them.
+The defaults are IPC-6012 Class 2 minimum average plating (through and blind 20 µm, buried
+13 µm, microvia 12 µm); set what your fabricator states. Each via's pad is read per layer
+from its padstack, so a pad removed from an unused inner layer is not counted as copper.
 
 **Thermal tab** (off by default): tick **Electro-thermal co-simulation** to make losses heat
-the board and the warmer copper become more resistive. Set:
+the board and the warmer copper become more resistive. The heat is the copper and via
+losses, the DC connections, each VRM's conversion loss, and each load: by default all the
+power it takes from its supply pins (V x I), spread over the pads of its footprint. A load's
+**Heat** field replaces that for a part that passes power on (a load switch, an LED or
+motor driver). The Notes tab and the report list the heat by source. Set:
 
 ![Thermal settings](docs/images/setup_thermal.png)
 

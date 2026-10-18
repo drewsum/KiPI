@@ -22,6 +22,10 @@ vrms:
   dropout_v: 0.0
   vin_min: null
   vin_max: null
+  vin_pct: false
+  acc_min: null
+  acc_max: null
+  acc_pct: true
   load_line_mohm: 0.0
   bandwidth_khz: null
 loads: []
@@ -33,7 +37,49 @@ settings:
   circle_quad_segs: 4
   min_edge_mm: 0.02
   grading: 0.2
-  plating_mm: 0.025
+  via_rules:
+  - kind: micro
+    plating_mm: 0.012
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: buried
+    plating_mm: 0.013
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: blind
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: blind_buried
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: through
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: pth
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: any
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
   rho_ohm_mm: 1.724e-05
   tcr_per_c: 0.00393
   rho_by_layer: {}
@@ -85,4 +131,10 @@ ac:
   rail: VRM1
   ground: GND
   html_report: false
+  dc_bias: true
+  mfg_tolerance: false
+  aging: false
+  aging_hours: 87600.0
+  temperature: none
+  temperature_c: 25.0
 format_version: 1
