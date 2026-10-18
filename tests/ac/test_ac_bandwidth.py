@@ -1,8 +1,6 @@
 """Targets apply only above the VRM's control loop bandwidth (the AC solve gives the
-open-loop PDN impedance), with a fallback when that leaves nothing to judge; and the
-calculator's pointer to the target impedance paper."""
+open-loop PDN impedance), with a fallback when that leaves nothing to judge."""
 
-import os
 
 import numpy as np
 import pytest
@@ -82,16 +80,3 @@ def test_report_shows_the_bandwidth(tmp_path):
     assert "VRM bandwidth 500 kHz" in text and "open-loop PDN impedance" in text
     assert "from 500 kHz to 50 MHz" in text
 
-
-def test_calculator_links_the_target_impedance_paper():
-    pytest.importorskip("qtpy")
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from qtpy.QtWidgets import QApplication
-    from kipi.ac.gui.target_calc import PAPER_URL, TargetCalculator
-    QApplication.instance() or QApplication([])
-    d = TargetCalculator()
-    text = d.lbl_paper.text()
-    assert "For more information on the target impedance approach" in text
-    assert f'href="{PAPER_URL}"' in text and "Capacitor Selection" in text
-    assert d.lbl_paper.openExternalLinks()
-    d.close()

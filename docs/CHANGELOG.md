@@ -142,7 +142,8 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
 
 ### Changed
 - The Target Impedance/Frequency Calculator's slew rate starts at 10 A/µs instead of
-  empty.
+  empty, and the calculator no longer cites the target impedance paper (the help still
+  does).
 - `python -m kipi` with no arguments starts standalone instead of connecting to the running
   KiCad. Use `KIPI_HOST=plugin python -m kipi` for the old behavior; `--dump` still
   extracts from the running KiCad.
