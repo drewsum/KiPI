@@ -212,6 +212,9 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   put into the board by source (copper, vias, DC connections, VRM conversion, loads).
 
 ### Changed
+- Stackup window: **Lock to imported values** now also locks each copper layer's conductor
+  and its resistivity in the table, which could be changed while locked. Locking keeps the
+  conductor chosen rather than resetting it; the board's Resistivity and TCR stay editable.
 - Selecting a part in the setup no longer ticks **PI Models** in the 3D view; the marks
   stay as you set them.
 - Setups and results saved with the single *Barrel plating* value load it as the plating of

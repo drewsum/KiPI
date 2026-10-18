@@ -144,9 +144,9 @@ def test_resistivity_and_tcr_edit_the_setup(app, unit_setting):
     win._rho_spins[0].setValue(0.0)                      # "default" again
     assert setup.settings.rho_by_layer == {}
     assert len(changed) == 4
-    # Locked: the resistivity still edits, it is not part of KiCad's stackup.
+    # Locked: the board's resistivity still edits; a layer's own is locked with the rest.
     assert win.chk_lock.isChecked() and win.spin_rho.isEnabled()
-    assert not win._rho_spins[0].isReadOnly()
+    assert win._rho_spins[0].isReadOnly()
 
 
 def test_toolbar_opens_the_window_and_the_copper_tab_is_gone(app, no_3d):
@@ -262,7 +262,11 @@ def test_choosing_a_conductor_sets_rho_tcr_and_k(app, unit_setting):
     win.set_board(st, setup=setup)
     name = st.copper[0].name
     box = win._cond_boxes[name]
-    assert box.isEnabled() and win.chk_lock.isChecked()   # not part of the lock
+    assert win.chk_lock.isChecked() and not box.isEnabled()          # locked
+    assert all(sp.isReadOnly() for sp in win._rho_spins)
+    assert win.spin_rho.isEnabled() and win.spin_tcr.isEnabled()      # the board's: never
+    win.chk_lock.setChecked(False)
+    assert box.isEnabled() and not any(sp.isReadOnly() for sp in win._rho_spins)
     assert box.currentData() == ""
     row = _copper_rows(win)[0]
     assert win.table.item(row, C_K).text() == "390"
@@ -281,6 +285,12 @@ def test_choosing_a_conductor_sets_rho_tcr_and_k(app, unit_setting):
     box.setCurrentIndex(box.findData(""))                 # the board's copper again
     assert not (s.conductor_by_layer or s.rho_by_layer or s.tcr_by_layer)
     assert len(changed) == 4
+    box.setCurrentIndex(box.findData("Silver"))
+    win.chk_lock.setChecked(True)                         # locking keeps the conductor
+    assert not box.isEnabled() and box.currentData() == "Silver"
+    assert s.conductor_by_layer == {name: "Silver"}
+    win.chk_lock.setChecked(False)
+    box.setCurrentIndex(box.findData(""))
 
     # Saved and read back; a hand-typed resistivity shows as custom.
     box.setCurrentIndex(box.findData("Gold"))

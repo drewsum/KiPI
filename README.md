@@ -275,7 +275,7 @@ default; untick **Lock to imported values** to try other thicknesses, materials 
 can be typed over). Every DC
 and AC analysis uses the edited stackup, and the setup keeps it. A copper layer's conductor
 (copper foils, silver, gold, aluminum, nickel or tin) sets its resistivity, TCR and thermal
-conductivity, and can be changed while the stackup is locked. This can be used to explore how material and thickness properties impact power distribution performance. KiCad's API cannot change a
+conductivity, and like the thicknesses is changed with the lock unticked; locking again keeps it as set. This can be used to explore how material and thickness properties impact power distribution performance. KiCad's API cannot change a
 board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup yourself.
 
 Toolbar buttons set **Top / Bottom / Iso** views and save a **Screenshot…**. Drag to rotate,

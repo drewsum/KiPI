@@ -1,13 +1,15 @@
 """The Stackup window: the board's layers with their thicknesses, materials, εr and
 resistivity, for every analysis (#61).
 
-Locked (the default), the thicknesses, materials and εr are the ones read from KiCad.
+Locked (the default), the thicknesses, materials and εr are the ones read from KiCad, and
+the copper layers' conductors and resistivities cannot be changed.
 Unlocked, each can be changed to compare stackups (choosing a dielectric's material sets its
 typical εr and in-plane thermal conductivity, and both can then be typed over); every
 analysis then uses the edited stackup. KiCad's
-API cannot change a board's stackup yet, so edits stay in KiPI. A copper layer's conductor,
-the copper resistivity and the TCR are setup settings and can always be changed: choosing a
-conductor sets the layer's resistivity, TCR and thermal conductivity.
+API cannot change a board's stackup yet, so edits stay in KiPI. A copper layer's conductor
+and resistivity are setup settings, changed while unlocked: choosing a conductor sets the
+layer's resistivity, TCR and thermal conductivity. Locking keeps them as set. The board's
+copper resistivity and TCR can always be changed.
 """
 
 from __future__ import annotations
@@ -94,7 +96,8 @@ class StackupWindow(QDialog):
         self.chk_lock = QCheckBox("Lock to imported values", self)
         self.chk_lock.setChecked(True)
         self.chk_lock.setToolTip("Use the thicknesses, materials, εr and the materials' "
-                                 "thermal conductivity read from KiCad. "
+                                 "thermal conductivity read from KiCad, and keep each copper "
+                                 "layer's conductor and resistivity as they are. "
                                  "Untick to try others; every analysis uses them, and the "
                                  "setup file keeps them.")
         self.chk_lock.toggled.connect(self._lock_toggled)
@@ -139,8 +142,8 @@ class StackupWindow(QDialog):
             sp.valueChanged.connect(self._copper_changed)
         note = QLabel("These apply to every copper layer left at the board's copper, and "
                       "to via plating. A layer's conductor, or a resistivity typed in the "
-                      "table, overrides them. Conductors, resistivity and TCR are setup "
-                      "settings, not locked.", g_cu)
+                      "table, overrides them; those are changed while unlocked. These two "
+                      "are not locked.", g_cu)
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
         f.addRow(note)
@@ -307,8 +310,8 @@ class StackupWindow(QDialog):
         for c in conductors():
             box.addItem(c.name, c.name)
         box.setToolTip(f"What {layer} is made of. Choosing a conductor sets the layer's "
-                       "resistivity, TCR and thermal conductivity. Not part of KiCad's "
-                       "stackup, so the lock does not apply.")
+                       "resistivity, TCR and thermal conductivity. Untick Lock to imported "
+                       "values to change it.")
         settings = self._setup.settings if self._setup is not None else None
         chosen = settings.conductor_by_layer.get(layer, "") if settings else ""
         if find(chosen) is None:
@@ -403,6 +406,15 @@ class StackupWindow(QDialog):
                                   else UnitSpinBox.NoButtons)
         for box in self._mat_boxes:
             box.setEnabled(unlocked)
+        # A layer's conductor and resistivity are setup settings, but locked with the rest:
+        # locking keeps them as set rather than resetting them.
+        has_setup = self._setup is not None
+        for box in self._cond_boxes.values():
+            box.setEnabled(unlocked and has_setup)
+        for spin in self._rho_spins:
+            spin.setReadOnly(not (unlocked and has_setup))
+            spin.setButtonSymbols(UnitSpinBox.UpDownArrows if unlocked and has_setup
+                                  else UnitSpinBox.NoButtons)
         self.btn_reset.setEnabled(unlocked)
         for w in (self.spin_rho, self.spin_tcr):
             w.setEnabled(self._setup is not None)

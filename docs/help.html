@@ -468,15 +468,15 @@ draws it. The window can stay open beside the main window.</p>
     resistivity, its TCR for the electro-thermal solve, and its thermal conductivity
     <b>k</b> for heat spreading. A resistivity typed in the table afterwards wins; setting it
     back to <code>default</code> returns the layer to the board's copper. A layer given a
-    resistivity by hand in an earlier version shows as <i>Custom resistivity</i>. Copper
-    layer conductors are setup settings, so they can be changed while the stackup is
-    locked.</td></tr>
+    resistivity by hand in an earlier version shows as <i>Custom resistivity</i>. Like the
+    thicknesses, a layer's conductor is changed only with <b>Lock to imported values</b>
+    unticked; ticking it again keeps the conductor chosen.</td></tr>
   <tr><td><b>εr</b></td><td class="wrap">Each dielectric's constant, for the AC solve.
     <code>default</code> means the stackup gives none (or the material is a metal), and the AC
     setup's <b>Default εr</b> applies.</td></tr>
   <tr><td><b>Resistivity at 20 °C</b> (table)</td><td class="wrap">A copper layer's own
-    resistivity, set by its conductor or typed in; <code>default</code> uses the
-    <b>Resistivity</b> below.</td></tr>
+    resistivity, set by its conductor or typed in while unlocked; <code>default</code> uses
+    the <b>Resistivity</b> below.</td></tr>
   <tr><td><b>Resistivity</b>, <b>TCR</b></td><td class="wrap">Resistivity at 20 °C (annealed
     copper, 1.724 µΩ·cm, by default) of every layer left at the board's copper and of via
     plating, and its temperature coefficient (0.00393 /°C for copper), used by the
