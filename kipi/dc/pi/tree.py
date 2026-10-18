@@ -595,7 +595,7 @@ class _TreeSolver:
         if l.name in self.disconnected:
             nan = math.nan
             return LoadReport(l.name, self.label_of(g), 0.0, nominal, nan, nan,
-                              nan if l.ground else None, nan, nan, l.tolerance_pct, None, nan,
+                              nan if l.ground else None, nan, nan, l.tolerance_label(), None, nan,
                               [], None, None, status=DISCONNECTED)
         sv = _connected(_pad_voltages(sol, self._supply_pads(l)))
         gv = None
@@ -612,13 +612,17 @@ class _TreeSolver:
         rep = LoadReport(l.name, self.label_of(g), self.load_amps[l.name], nominal,
                          float(sv.mean()), float(sv.min()),
                          None if gv is None else g_mean, eff, nominal - eff,
-                         l.tolerance_pct, None, worst, self._pin_group_rows(l, sol), low, high)
+                         l.tolerance_label(), None, worst, self._pin_group_rows(l, sol), low,
+                         high)
+        rep.limit_low, rep.limit_high = l.limits(nominal)
         if not self.tree_converged or g in self.not_converged:
             rep.status = NOT_CONVERGED
         elif g in out_of_reg:
             rep.status, rep.passed = OUT_OF_REGULATION, False
-        elif l.tolerance_pct is not None and nominal:
-            rep.passed = abs(rep.drop_worst_pct) <= l.tolerance_pct
+        elif rep.limit_low is not None or rep.limit_high is not None:
+            # Every pin within the tolerance: the lowest and the highest one.
+            rep.passed = ((rep.limit_low is None or low >= rep.limit_low)
+                          and (rep.limit_high is None or high <= rep.limit_high))
         return rep
 
     def _pin_group_rows(self, l: Load, sol) -> List[tuple]:

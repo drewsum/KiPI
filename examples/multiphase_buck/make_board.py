@@ -193,7 +193,7 @@ def make_setup() -> PISetup:
              input=phases[0].input, ground=phases[0].ground,
              sense=PinRef("U10", "VCORE", ["C3"]), ground_sense=gnd("U10", ["C4"]),
              phases=phases[1:], bandwidth_khz=100.0)
-    load = Load("U10", PinRef("U10", "VCORE"), 40.0, ground=gnd("U10"), tolerance_pct=3.0)
+    load = Load("U10", PinRef("U10", "VCORE"), 40.0, ground=gnd("U10"), tol_min=-3.0, tol_max=3.0)
     setup = PISetup([j1, u1], [load], [], SolveSettings(), nets=["VIN", "VCORE", "GND"])
     setup.caps = [CapModel("1u", 1e-6, 0.3e-9, 10e-3, [f"C{k}" for k in range(1, 9)]),
                   CapModel("100u", 100e-6, 0.8e-9, 3e-3, [f"C{k}" for k in range(10, 14)]),

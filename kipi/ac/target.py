@@ -17,7 +17,8 @@ Below the converter's control loop bandwidth the loop holds the rail, so a targe
 applies above the VRM's bandwidth (:func:`judged_from`).
 
 The calculator's AC tolerance can be copied from a DC load's tolerance
-(:func:`load_tolerances`): +/- that percentage of the voltage of the VRM feeding the load.
+(:func:`load_tolerances`): +/- its tighter side, from the voltage of the VRM feeding the
+load.
 Its load step can be copied from a DC load's current (:func:`load_currents`).
 """
 
@@ -30,7 +31,7 @@ from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
 import numpy as np
 
 if TYPE_CHECKING:
-    from kipi.dc.pi.model import PinRef, PISetup
+    from kipi.dc.pi.model import Load, PinRef, PISetup
 
 
 @dataclass
@@ -125,15 +126,25 @@ def _hz(f: float) -> str:
 @dataclass
 class LoadTolerance:
     name: str             # the DC load's name
-    pct: float            # its tolerance, +/- % of nominal
+    tolerance: str        # as set: "±5 %", "-3 / +5 %", "3.1 to 3.5 V"
     nominal_v: float      # the set point of the VRM feeding it
+    v_ac_v: float         # the tighter side of the tolerance, volts from nominal
 
-    @property
-    def v_ac_v(self) -> float:
-        return abs(self.nominal_v) * self.pct / 100.0
+    @classmethod
+    def of(cls, load: "Load", nominal_v: float) -> Optional["LoadTolerance"]:
+        """The AC tolerance a DC load's tolerance allows: +/- its tighter side. None if
+        it has none, or nominal lies outside it."""
+        lo, hi = load.limits(nominal_v)
+        sides = [d for d in (None if lo is None else nominal_v - lo,
+                             None if hi is None else hi - nominal_v) if d is not None]
+        if not sides or min(sides) <= 0:
+            return None
+        return cls(load.name, load.tolerance_label(), nominal_v, min(sides))
 
     def label(self) -> str:
-        return f"{self.name}: ±{self.pct:g} % of {self.nominal_v:g} V"
+        if self.tolerance.endswith("%"):
+            return f"{self.name}: {self.tolerance} of {self.nominal_v:g} V"
+        return f"{self.name}: {self.tolerance} (±{self.v_ac_v * 1e3:.4g} mV)"
 
 
 @dataclass
@@ -163,12 +174,13 @@ def load_tolerances(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[L
     part first."""
     out = []
     for load, group in _rail_loads(setup, rail):
-        if not load.tolerance_pct:
+        if not load.has_tolerance():
             continue
         vrm = next((v for v in setup.vrms
                     if v.voltage and any(ph.output.net in group for ph in v.all_phases())), None)
-        if vrm:
-            out.append(LoadTolerance(load.name, load.tolerance_pct, vrm.voltage))
+        t = vrm and LoadTolerance.of(load, vrm.voltage)
+        if t:
+            out.append(t)
     return out
 
 

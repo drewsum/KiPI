@@ -153,7 +153,8 @@ def source(name, ref, net, pins, volts=1.0, ground=None):
 
 
 def load(name, net, pins, amps=1.0, ground=None, tol=None):
-    return Load(name, PinRef(name, net, pins), amps, ground=ground, tolerance_pct=tol)
+    return Load(name, PinRef(name, net, pins), amps, ground=ground,
+                tol_min=None if tol is None else -tol, tol_max=tol)
 
 
 # ---------------------------------------------------------------- DC boards

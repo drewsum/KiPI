@@ -53,7 +53,7 @@ def setup(kind="ldo", eff=0.9, iq=0.0, sense=False, ground=False, gsense=False):
               ground=PinRef("U1", "GND", ["3"]) if ground else None,
               ground_sense=PinRef("U2", "GND", ["2"]) if gsense else None)
     load = Load("U2", PinRef("U2", "+3V3", ["1"]), 1.0,
-                ground=PinRef("U2", "GND", ["2"]) if ground else None, tolerance_pct=1.0)
+                ground=PinRef("U2", "GND", ["2"]) if ground else None, tol_min=-1.0, tol_max=1.0)
     return PISetup([src, reg], [load], [], SolveSettings(max_edge_mm=0.3))
 
 

@@ -330,8 +330,9 @@ To try it without a design of your own, open the example board in
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
 * **Ground pins** (optional) include the ground return. KiPI superimposes all VRM and load return currents to form a comprehensive GND plane current model.
-* **Tolerance** (± %) is the PASS/FAIL limit. Each load is judged by its worst pin: the one
-  furthest from the VRM set point, below it (a **drop**) or above it (a **boost**). Boosts
+* **Tolerance** is the PASS/FAIL limit: a min and a max, each optional, in % from the VRM
+  set point (e.g. -3 % / +5 %) or in volts (e.g. 3.135 to 3.465 V). A load passes when every
+  pin is within it, none below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point
   further down the copper, so pins nearer the VRM sit above the set point. A load on a net
   group whose solve did not converge shows **NOT CONVERGED** instead of a result.

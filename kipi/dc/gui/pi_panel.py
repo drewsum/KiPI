@@ -37,7 +37,7 @@ from kipi.dc.pi.autofill import (
 )
 from kipi.dc.pi.model import (
     DEFAULT_VIA_CURRENT_LIMIT_A, DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup,
-    group_name, input_nominal, net_groups, validate,
+    group_name, net_groups, pct_to_volts, rail_nominal, validate, volts_to_pct,
 )
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
 from kipi.gui.unit_spin import UnitSpinBox
@@ -69,6 +69,74 @@ def _optional_spin(lo, hi, decimals, suffix, step) -> QDoubleSpinBox:
 
 def _optional_volts() -> QDoubleSpinBox:
     return _optional_spin(-1000, 1000, 3, " V", 0.1)
+
+
+class RangeRow(QWidget):
+    """Optional min and max on one row, in volts or in % from a nominal voltage that
+    ``nominal()`` gives (None if unknown). Switching the unit converts the values, or
+    clears them without a nominal voltage."""
+    changed = Signal()
+
+    def __init__(self, nominal: Callable[[], Optional[float]], parent=None):
+        super().__init__(parent)
+        self._nominal = nominal
+        self._quiet = False
+        self.min = _optional_volts()
+        self.max = _optional_volts()
+        self.unit = QComboBox()
+        self.unit.addItem("V", "V")
+        self.unit.addItem("%", "%")
+        h = QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(QLabel("min"))
+        h.addWidget(self.min, 1)
+        h.addWidget(QLabel("max"))
+        h.addWidget(self.max, 1)
+        h.addWidget(self.unit)
+        for s in (self.min, self.max):
+            s.valueChanged.connect(self._changed)
+        self.unit.currentIndexChanged.connect(self._unit_changed)
+
+    def fields(self):
+        return self.min, self.max, self.unit
+
+    def pct(self) -> bool:
+        return self.unit.currentData() == "%"
+
+    def values(self):
+        return _get_optional(self.min), _get_optional(self.max)
+
+    def set_values(self, lo: Optional[float], hi: Optional[float], pct: bool):
+        quiet, self._quiet = self._quiet, True
+        try:
+            self.unit.setCurrentIndex(1 if pct else 0)
+            step = 1.0 if pct else 0.1
+            for s in (self.min, self.max):
+                s.setSingleStep(step)
+                s.setRange(-1000 - step, 1000)          # one step below: "not set"
+                s.setSuffix(" %" if pct else " V")
+                s.setShownDecimals(2 if pct else 3)
+            _set_optional(self.min, lo)
+            _set_optional(self.max, hi)
+        finally:
+            self._quiet = quiet
+
+    def _unit_changed(self, *_):
+        if self._quiet:
+            return
+        pct = self.pct()
+        lo, hi = self.values()                  # still in the old unit's ranges
+        nom = self._nominal()
+        if nom is None:
+            lo = hi = None
+        else:
+            lo, hi = (volts_to_pct if pct else pct_to_volts)(nom, lo, hi)
+        self.set_values(lo, hi, pct)
+        self.changed.emit()
+
+    def _changed(self, *_):
+        if not self._quiet:
+            self.changed.emit()
 
 
 def _get_optional(s: QDoubleSpinBox) -> Optional[float]:
@@ -360,20 +428,8 @@ class VrmEditor(_Editor):
         self.load_line = _spin(0, 1e6, 0, 3, " mΩ", 0.1)
         self.load_line.setSpecialValueText("none")
         self.dropout = _spin(0, 100, 0, 3, " V", 0.05)
-        # Input range on one row, in volts or in % from the input rail's nominal voltage.
-        self.vin_min = _optional_volts()
-        self.vin_max = _optional_volts()
-        self.vin_unit = QComboBox()
-        self.vin_unit.addItem("V", "V")
-        self.vin_unit.addItem("%", "%")
-        self.vin_row = QWidget()
-        h = QHBoxLayout(self.vin_row)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.addWidget(QLabel("min"))
-        h.addWidget(self.vin_min, 1)
-        h.addWidget(QLabel("max"))
-        h.addWidget(self.vin_max, 1)
-        h.addWidget(self.vin_unit)
+        # Input range, in volts or in % from the input rail's nominal voltage.
+        self.vin_row = RangeRow(self._input_nominal)
         self.input = self._picker(optional=True)
         self.sense = self._picker(optional=True)
         self.ground = self._picker(optional=True)
@@ -426,14 +482,14 @@ class VrmEditor(_Editor):
                                "REGULATION."),
                 (self.vin_row, "Optional input range it regulates over. A solved input "
                                "outside it marks its loads VRM OUT OF REGULATION."),
-                (self.vin_min, "Optional lowest input voltage it regulates at. A lower solved "
-                               "input marks its loads VRM OUT OF REGULATION."),
-                (self.vin_max, "Optional highest input voltage it regulates at. A higher "
-                               "solved input marks its loads VRM OUT OF REGULATION."),
-                (self.vin_unit, "V: the input range in volts.\n%: in % from the input "
-                                "rail's nominal voltage, the set voltage of the VRM "
-                                "driving it (e.g. min -10 %, max +10 %). Switching converts "
-                                "the values when that VRM is known."),
+                (self.vin_row.min, "Optional lowest input voltage it regulates at. A lower "
+                                   "solved input marks its loads VRM OUT OF REGULATION."),
+                (self.vin_row.max, "Optional highest input voltage it regulates at. A higher "
+                                   "solved input marks its loads VRM OUT OF REGULATION."),
+                (self.vin_row.unit, "V: the input range in volts.\n%: in % from the input "
+                                    "rail's nominal voltage, the set voltage of the VRM "
+                                    "driving it (e.g. min -10 %, max +10 %). Switching "
+                                    "converts the values when that VRM is known."),
                 (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
                                  "AC solve leaves the VRM out of circuit (the open-loop PDN "
                                  "impedance); below this frequency the loop holds the rail, "
@@ -461,9 +517,9 @@ class VrmEditor(_Editor):
                                     "0 V (needs ground pins)")):
             tip(f, w, text)
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
-                    self.load_line, self.dropout, self.vin_min, self.vin_max, self.bandwidth)
+                    self.load_line, self.dropout, self.bandwidth)
+        self.vin_row.changed.connect(self._store)
         self.kind.currentIndexChanged.connect(self._kind_rows)
-        self.vin_unit.currentIndexChanged.connect(self._vin_unit_changed)
         self.n_phases.valueChanged.connect(self._phase_count_changed)
         self.cmb_phase.currentIndexChanged.connect(self._phase_selected)
         self.output.cmb_net.currentIndexChanged.connect(
@@ -479,47 +535,14 @@ class VrmEditor(_Editor):
         dc = self.mode == "dc"
         _gray((self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                self.input,
-               self.sense, self.ground_sense, self.dropout, self.vin_min,
-               self.vin_max, self.vin_unit), dc, "Used by the DC analysis only")
+               self.sense, self.ground_sense, self.dropout, *self.vin_row.fields()),
+              dc, "Used by the DC analysis only")
         _gray((self.bandwidth,), not dc, "Used by the AC analysis only")
-
-    def _set_vin_unit(self, pct: bool):
-        """Show the input range fields in % or in volts (the values are set after)."""
-        step = 1.0 if pct else 0.1
-        for s in (self.vin_min, self.vin_max):
-            s.setSingleStep(step)
-            s.setRange(-1000 - step, 1000)          # one step below: "not set"
-            s.setSuffix(" %" if pct else " V")
-            s.setShownDecimals(2 if pct else 3)
 
     def _input_nominal(self) -> Optional[float]:
         inp = self.input.value()
-        return input_nominal(self.panel.setup, inp.net if inp else None,
-                             self.obj.name if self.obj else "")
-
-    def _vin_unit_changed(self, *_):
-        pct = self.vin_unit.currentData() == "%"
-        values = [_get_optional(self.vin_min), _get_optional(self.vin_max)]
-        if not self._loading:
-            # Convert the range to the new unit; without a nominal input voltage it
-            # can't be, and is cleared.
-            nom = self._input_nominal()
-            if nom is None:
-                values = [None, None]
-            else:
-                values = [None if x is None else
-                          ((x / nom - 1) * 100 if pct else nom * (1 + x / 100))
-                          for x in values]
-                if nom < 0:                     # the low end of a negative rail swaps
-                    values.reverse()
-        loading, self._loading = self._loading, True
-        try:
-            self._set_vin_unit(pct)
-            _set_optional(self.vin_min, values[0])
-            _set_optional(self.vin_max, values[1])
-        finally:
-            self._loading = loading
-        self._store()
+        return rail_nominal(self.panel.setup, inp.net if inp else None,
+                            self.obj.name if self.obj else "")
 
     def _guess_voltage(self, net):
         """Picking the output net sets the voltage its name gives (3V3, +1.8V, V1P2...)."""
@@ -578,10 +601,7 @@ class VrmEditor(_Editor):
         self._phase_rows()
         self._show_phase(v)
         self.dropout.setValue(v.dropout_v)
-        self.vin_unit.setCurrentIndex(1 if v.vin_pct else 0)
-        self._set_vin_unit(v.vin_pct)
-        _set_optional(self.vin_min, v.vin_min)
-        _set_optional(self.vin_max, v.vin_max)
+        self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct)
         self.sense.set_value(v.sense)
         self.ground_sense.set_value(v.ground_sense)
         self._kind_rows()
@@ -601,9 +621,8 @@ class VrmEditor(_Editor):
         v.current_limit_a = self.i_limit.value() or None
         v.load_line_mohm = self.load_line.value()
         v.dropout_v = self.dropout.value()
-        v.vin_min = _get_optional(self.vin_min)
-        v.vin_max = _get_optional(self.vin_max)
-        v.vin_pct = self.vin_unit.currentData() == "%"
+        v.vin_min, v.vin_max = self.vin_row.values()
+        v.vin_pct = self.vin_row.pct()
         v.bandwidth_khz = self.bandwidth.value() or None
         v.sense = self.sense.value()
         v.ground_sense = self.ground_sense.value()
@@ -681,9 +700,8 @@ class LoadEditor(_Editor):
         gb.addWidget(self.btn_each)
         self.lbl_total = QLabel()
         self.ground = self._picker(optional=True)
-        self.tol = _spin(0, 100, 0, 2, " %", 0.5)
-        self.tol.setPrefix("± ")
-        self.tol.setSpecialValueText("no limit")
+        # Tolerance, in % from the rail's nominal voltage or in volts.
+        self.tol = RangeRow(self._rail_nominal)
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -705,14 +723,22 @@ class LoadEditor(_Editor):
                 (self.ground, "Optional: the load's ground pins, to include the ground "
                               "return in the solve. Picking the supply pins fills in the same "
                               "part's ground pins."),
-                (self.tol, "PASS if every supply pin is within ± this % of the VRM set "
-                           "voltage: no pin drops below it or is boosted above it by more")):
+                (self.tol, "Optional: PASS if every supply pin is within this range, so no "
+                           "pin drops below the min or is boosted above the max"),
+                (self.tol.min, "The lowest voltage a supply pin may have, or in %, the most "
+                               "it may drop below the VRM set voltage (e.g. -5 %)"),
+                (self.tol.max, "The highest voltage a supply pin may have, or in %, the "
+                               "most it may be boosted above the VRM set voltage (e.g. +5 %)"),
+                (self.tol.unit, "%: the tolerance in % from the rail's nominal voltage, the "
+                                "set voltage of the VRM driving it.\nV: in volts. Switching "
+                                "converts the values when that VRM is known.")):
             tip(f, w, text)
         self.groups.setToolTip("Pin groups: an optional name, the pin numbers (e.g. 15,28) "
                                "and the current into those pins. Click a column header to "
                                "sort by it.")
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
-        self._watch(self.name, self.current, self.tol, self.mode)
+        self._watch(self.name, self.current, self.mode)
+        self.tol.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
 
@@ -797,9 +823,13 @@ class LoadEditor(_Editor):
             self._add_group_row(g.name, ",".join(g.pins), g.current)
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
-        self.tol.setValue(l.tolerance_pct or 0.0)
+        self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
+
+    def _rail_nominal(self) -> Optional[float]:
+        sup = self.supply.value()
+        return rail_nominal(self.panel.setup, sup.net if sup else None)
 
     def _save(self, l: Load):
         old = l.supply
@@ -829,7 +859,8 @@ class LoadEditor(_Editor):
             if gnd is not None:
                 l.ground = gnd
                 self._show(self.ground, gnd)
-        l.tolerance_pct = self.tol.value() or None
+        l.tol_min, l.tol_max = self.tol.values()
+        l.tol_pct = self.tol.pct()
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 
@@ -1199,7 +1230,7 @@ class PIPanel(QWidget):
         self.res_tabs = QTabWidget(g_res)
         self.tbl_loads = self._table(["Load", "Group", "I (A)", "V eff (V)",
                                       "Drop / boost (mV)", "Worst pin (mV)", "Worst %",
-                                      "Tolerance %", ""], sortable=True)
+                                      "Tolerance", ""], sortable=True)
         self.tbl_loads.setToolTip("Drop: below the VRM set point. Boost: above it, e.g. near "
                                   "a remote-sensed VRM's output pins. The worst pin is the one "
                                   "furthest from the set point either way.")
@@ -1864,7 +1895,7 @@ class PIPanel(QWidget):
                            (fmt_drop(l.drop_worst, unit=""), l.drop_worst * 1e3),
                            ("" if math.isnan(l.drop_worst_pct)
                             else f"{abs(l.drop_worst_pct):.3f}", l.drop_worst_pct),
-                           "" if l.tolerance_pct is None else f"±{l.tolerance_pct:g}", status])
+                           l.tolerance, status])
             color = (("#ffb040" if l.status else None) if l.passed is None
                      else ("#60d060" if l.passed else "#ff6060"))
             if color:

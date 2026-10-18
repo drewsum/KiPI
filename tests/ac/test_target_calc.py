@@ -83,10 +83,10 @@ def _setup():
     s.vrms.append(Vrm("VR1", PinRef("U9", "+1V0_VRM"), 1.0))
     s.vrms.append(Vrm("VR2", PinRef("U8", "+3V3"), 3.3))
     s.links.append(DcLink("FB1", PinRef("FB1", "+1V0_VRM"), PinRef("FB1", "+1V0"), 0.0))
-    s.loads += [Load("FPGA core", PinRef("U2", "+1V0"), 5.0, tolerance_pct=3),
-                Load("SoC", PinRef("U1", "+1V0"), 2.0, tolerance_pct=5),
+    s.loads += [Load("FPGA core", PinRef("U2", "+1V0"), 5.0, tol_min=-3, tol_max=3),
+                Load("SoC", PinRef("U1", "+1V0"), 2.0, tol_min=-5, tol_max=5),
                 Load("No tolerance", PinRef("U3", "+1V0"), 1.0),
-                Load("IO", PinRef("U1", "+3V3"), 1.0, tolerance_pct=10)]
+                Load("IO", PinRef("U1", "+3V3"), 1.0, tol_min=-10, tol_max=10)]
     return s
 
 
@@ -101,16 +101,32 @@ def test_load_tolerances_on_the_probes_rail_own_part_first():
     assert load_tolerances(_setup(), PinRef("U5", "+5V")) == []
 
 
+def test_an_uneven_tolerance_gives_its_tighter_side():
+    from kipi.ac.target import load_tolerances
+    from kipi.dc.pi.model import PinRef
+    s = _setup()
+    soc = s.loads[1]
+    soc.tol_min, soc.tol_max = -2.0, 5.0                     # -2 % of 1 V is tighter
+    t = load_tolerances(s, PinRef("U1", "+1V0"))[0]
+    assert t.v_ac_v == pytest.approx(0.02) and t.label() == "SoC: -2 / +5 % of 1 V"
+    soc.tol_min, soc.tol_max, soc.tol_pct = 0.97, 1.01, False  # volts: +10 mV is tighter
+    t = load_tolerances(s, PinRef("U1", "+1V0"))[0]
+    assert t.v_ac_v == pytest.approx(0.01) and t.label() == "SoC: 0.97 to 1.01 V (±10 mV)"
+    soc.tol_min, soc.tol_max = 1.05, None                     # 1 V is outside it: nothing
+    assert [t.name for t in load_tolerances(s, PinRef("U1", "+1V0"))] == ["FPGA core"]
+
+
 def test_dialog_copies_a_load_tolerance(app, monkeypatch):
     from kipi.ac.gui.target_calc import TargetCalculator
     from kipi.ac.target import LoadTolerance
     monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
     assert not TargetCalculator().btn_copy.isEnabled()        # no loads to copy from
-    d = TargetCalculator(loads=[LoadTolerance("SoC", 5, 1.2)])
+    d = TargetCalculator(loads=[LoadTolerance("SoC", "±5 %", 1.2, 0.06)])
     assert d.btn_copy.isEnabled() and d.btn_copy.menu() is None
     d.btn_copy.click()
     assert d.v_ac.value() == pytest.approx(60)                # ±5 % of 1.2 V
-    two = TargetCalculator(loads=[LoadTolerance("A", 5, 1.0), LoadTolerance("B", 2, 3.3)])
+    two = TargetCalculator(loads=[LoadTolerance("A", "±5 %", 1.0, 0.05),
+                                  LoadTolerance("B", "±2 %", 3.3, 0.066)])
     actions = two.btn_copy.menu().actions()
     assert [a.text() for a in actions] == ["A: ±5 % of 1 V", "B: ±2 % of 3.3 V"]
     actions[1].trigger()

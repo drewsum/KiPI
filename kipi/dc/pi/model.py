@@ -79,7 +79,7 @@ class Vrm:
     vin_min: Optional[float] = None      # input range it regulates over (LDO / switcher)
     vin_max: Optional[float] = None
     # The input range in % from the input rail's nominal voltage (that of the VRM feeding
-    # it, see input_nominal), e.g. -10 / +10, instead of in volts.
+    # it, see rail_nominal), e.g. -10 / +10, instead of in volts.
     vin_pct: bool = False
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
@@ -112,13 +112,64 @@ class Load:
     supply: PinRef
     current: float
     ground: Optional[PinRef] = None
-    tolerance_pct: Optional[float] = None   # pass if every pin is within +/- this % of nominal
+    # PASS if every pin is within this range, either end None for no limit: in % from
+    # nominal, the set point of the VRM driving the rail (e.g. -5 / +5), or, with tol_pct
+    # False, in volts.
+    tol_min: Optional[float] = None
+    tol_max: Optional[float] = None
+    tol_pct: bool = True
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
+
+    def has_tolerance(self) -> bool:
+        return self.tol_min is not None or self.tol_max is not None
+
+    def limits(self, nominal: float) -> Tuple[Optional[float], Optional[float]]:
+        """The tolerance as (lowest, highest) volts on a rail at ``nominal``, either None."""
+        if not self.tol_pct:
+            return self.tol_min, self.tol_max
+        if not nominal:
+            return None, None
+        return pct_to_volts(nominal, self.tol_min, self.tol_max)
+
+    def tolerance_label(self) -> str:
+        return tolerance_label(self.tol_min, self.tol_max, self.tol_pct)
+
+    def __setstate__(self, state):
+        # Setups pickled in results files before asymmetric tolerances: +/- one %.
+        t = state.pop("tolerance_pct", None)
+        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True, **state}
+        self.__dict__.update(state)
+
+
+def pct_to_volts(nominal: float, lo: Optional[float], hi: Optional[float]):
+    """A (min, max) range in % from ``nominal`` as volts, either None. -10 % of a negative
+    rail is its higher end."""
+    lo, hi = (None if p is None else nominal * (1 + p / 100) for p in (lo, hi))
+    return (hi, lo) if nominal < 0 else (lo, hi)
+
+
+def volts_to_pct(nominal: float, lo: Optional[float], hi: Optional[float]):
+    """The inverse of :func:`pct_to_volts`."""
+    lo, hi = (None if x is None else (x / nominal - 1) * 100 for x in (lo, hi))
+    return (hi, lo) if nominal < 0 else (lo, hi)
+
+
+def tolerance_label(lo: Optional[float], hi: Optional[float], pct: bool) -> str:
+    """A range for tables: "±5 %", "-3 / +5 %", "3.135 to 3.465 V", "min 3.2 V"..."""
+    if lo is None and hi is None:
+        return ""
+    if pct:
+        if lo is not None and hi is not None:
+            return f"±{hi:g} %" if lo == -hi else f"{lo:+g} / {hi:+g} %"
+        return f"min {lo:+g} %" if hi is None else f"max {hi:+g} %"
+    if lo is not None and hi is not None:
+        return f"{lo:g} to {hi:g} V"
+    return f"min {lo:g} V" if hi is None else f"max {hi:g} V"
 
 
 @dataclass
@@ -208,7 +259,7 @@ class PISetup:
                       bandwidth_khz=v.get("bandwidth_khz"))
                   for v in d.get("vrms", [])],
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
-                        ground=pin(l.get("ground")), tolerance_pct=l.get("tolerance_pct"),
+                        ground=pin(l.get("ground")), **_load_tolerance(l),
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
                                 for g in l.get("groups", [])])
                    for l in d.get("loads", [])],
@@ -299,6 +350,15 @@ def find_setup(board_file_or_name: str, project_dir: str) -> Optional[Path]:
 # Groups of nets joined by series links
 # ---------------------------------------------------------------------------
 
+def _load_tolerance(d: dict) -> dict:
+    """A load's tolerance fields from a setup file; older files have +/- one %."""
+    if "tol_min" in d or "tol_max" in d:
+        return {"tol_min": d.get("tol_min"), "tol_max": d.get("tol_max"),
+                "tol_pct": d.get("tol_pct", True)}
+    t = d.get("tolerance_pct")
+    return {} if t is None else {"tol_min": -t, "tol_max": t}
+
+
 def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
     """Map every net mentioned in the setup to its group (nets joined by series links)."""
     parent: Dict[str, str] = {}
@@ -329,14 +389,14 @@ def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
     return {n: frozenset(groups[find(n)]) for n in nets}
 
 
-def input_nominal(setup: PISetup, input_net: Optional[str], skip: str = "",
-                  groups=None) -> Optional[float]:
-    """The nominal voltage of the rail ``input_net`` is on: the set voltage of a VRM
-    (other than ``skip``) driving it. None if no VRM does."""
-    if not input_net:
+def rail_nominal(setup: PISetup, net: Optional[str], skip: str = "",
+                 groups=None) -> Optional[float]:
+    """The nominal voltage of the rail ``net`` is on: the set voltage of a VRM (other than
+    ``skip``) driving it. None if no VRM does."""
+    if not net:
         return None
-    groups = groups or net_groups(setup, [input_net])
-    group = groups.get(input_net, frozenset([input_net]))
+    groups = groups or net_groups(setup, [net])
+    group = groups.get(net, frozenset([net]))
     return next((u.voltage for u in setup.vrms if u.name != skip and u.voltage
                  and any(ph.output.net in group for ph in u.all_phases())), None)
 
@@ -346,11 +406,10 @@ def vin_range(setup: PISetup, v: Vrm, groups=None) -> Tuple[Optional[float], Opt
     is taken from its input rail's nominal voltage; (None, None) without one."""
     if not v.vin_pct:
         return v.vin_min, v.vin_max
-    nom = input_nominal(setup, v.input.net if v.input else None, v.name, groups)
+    nom = rail_nominal(setup, v.input.net if v.input else None, v.name, groups)
     if nom is None:
         return None, None
-    lo, hi = (None if p is None else nom * (1 + p / 100) for p in (v.vin_min, v.vin_max))
-    return (hi, lo) if nom < 0 else (lo, hi)     # -10 % of a negative rail is the higher end
+    return pct_to_volts(nom, v.vin_min, v.vin_max)
 
 
 def group_name(group) -> str:
@@ -423,8 +482,8 @@ def validate(setup: PISetup) -> List[str]:
         if v.vin_min is not None and v.vin_max is not None and v.vin_min > v.vin_max:
             errors.append(f"VRM {v.name}: input range minimum is above its maximum")
         if (v.vin_pct and v.kind != "source" and (v.vin_min, v.vin_max) != (None, None)
-                and input_nominal(setup, v.input.net if v.input else None, v.name,
-                                  groups) is None):
+                and rail_nominal(setup, v.input.net if v.input else None, v.name,
+                                 groups) is None):
             errors.append(f"VRM {v.name}: an input range in % needs a VRM driving its input "
                           "rail, whose voltage it is a % of; give the range in volts instead")
         if v.sense and groups[v.sense.net] != groups[v.output.net]:
@@ -448,8 +507,8 @@ def validate(setup: PISetup) -> List[str]:
 
     rail_groups = set(by_group)
     for l in setup.loads:
-        if l.tolerance_pct is not None and l.tolerance_pct < 0:
-            errors.append(f"Load {l.name}: max drop cannot be negative")
+        if l.tol_min is not None and l.tol_max is not None and l.tol_min > l.tol_max:
+            errors.append(f"Load {l.name}: tolerance minimum is above its maximum")
         if l.groups:
             seen_pins: Dict[str, int] = {}
             for gi, g in enumerate(l.groups):

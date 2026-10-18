@@ -174,7 +174,7 @@ def board_two_pin():
 def test_per_pin_group_currents():
     from kipi.dc.pi.model import PinGroup
     s = setup("ldo")
-    s.loads[0] = Load("U2", PinRef("U2", "+3V3", []), 0.0, tolerance_pct=0.05,
+    s.loads[0] = Load("U2", PinRef("U2", "+3V3", []), 0.0, tol_min=-0.05, tol_max=0.05,
                       groups=[PinGroup(["3"], 0.3, "mid"), PinGroup(["1"], 0.7, "end")])
     res = solve_tree(board_two_pin(), s)
     ld = by_name(res.loads, "U2")
@@ -209,7 +209,7 @@ def test_pins_before_the_sense_point_are_boosted():
     pct = 100 * boost / 3.3
     for tol, ok in ((0.9 * pct, False), (1.1 * pct, True)):
         res = _sensed_at_end(Load("END", PinRef("U2", "+3V3", ["1"]), 1.0),
-                                Load("MID", PinRef("U2", "+3V3", ["3"]), 0.2, tolerance_pct=tol))
+                                Load("MID", PinRef("U2", "+3V3", ["3"]), 0.2, tol_min=-tol, tol_max=tol))
         mid = by_name(res.loads, "MID")
         assert by_name(res.loads, "END").v_supply == pytest.approx(3.3, abs=1e-9)
         assert mid.v_supply == pytest.approx(3.3 + boost, rel=1e-9)
@@ -222,7 +222,7 @@ def test_pins_before_the_sense_point_are_boosted():
 
 def test_worst_pin_is_furthest_from_nominal_either_way():
     # One load on both pins, sensed at the end pin: the end sits at 3.3 V, the mid pin above.
-    res = _sensed_at_end(Load("U2", PinRef("U2", "+3V3", ["1", "3"]), 1.0, tolerance_pct=1.0))
+    res = _sensed_at_end(Load("U2", PinRef("U2", "+3V3", ["1", "3"]), 1.0, tol_min=-1.0, tol_max=1.0))
     ld = by_name(res.loads, "U2")
     assert ld.v_low == pytest.approx(3.3, abs=1e-9)
     assert ld.v_high == pytest.approx(3.3 + 0.5 * R(4), rel=1e-9)
@@ -258,7 +258,7 @@ def test_negative_rail_is_judged_on_its_magnitude():
     s.vrms = [Vrm("U1", PinRef("U1", "+3V3", ["2"]), -3.3, "source")]
     s.loads[0].current = -1.0
     for tol, verdict in ((0.1, False), (0.2, True)):
-        s.loads[0].tolerance_pct = tol
+        s.loads[0].tol_min, s.loads[0].tol_max = -tol, tol
         ld = by_name(solve_tree(board(), s).loads, "U2")
         assert abs(ld.nominal - ld.v_worst) == pytest.approx(R(8), rel=1e-6)
         assert ld.passed is verdict
@@ -286,7 +286,7 @@ def test_load_above_nominal_fails_its_limit():
     # Remote sense at U2 lifts U1's output by the strip drop; a load on U1's output pad
     # sits above nominal by 1 A x R(8) (0.12 %), outside a 0.05 % limit.
     s = setup("ldo", sense=True)
-    s.loads.append(Load("U1out", PinRef("U1", "+3V3", ["2"]), 0.0, tolerance_pct=0.05))
+    s.loads.append(Load("U1out", PinRef("U1", "+3V3", ["2"]), 0.0, tol_min=-0.05, tol_max=0.05))
     ld = by_name(solve_tree(board(), s).loads, "U1out")
     assert ld.drop_worst_pct == pytest.approx(-100 * R(8) / 3.3, rel=1e-6)
     assert ld.passed is False
@@ -326,6 +326,60 @@ def test_input_range_in_percent_is_of_the_input_rails_vrm():
     assert PISetup.from_dict(s.to_dict()).vrms[1].vin_pct is True
 
 
+def test_load_tolerance_min_and_max_apart_in_percent_or_volts():
+    from kipi.dc.pi.model import tolerance_label
+    s = setup("ldo")                           # U2 sees a little under 3.3 V
+    u2 = s.loads[0]
+    v = by_name(solve_tree(board(), s).loads, "U2").v_low
+    assert 3.2 < v < 3.3
+    pct = (v / 3.3 - 1) * 100
+    for lo, hi, unit, passed in ((pct - 0.01, 0.0, True, True),       # just inside
+                                 (pct + 0.01, 10.0, True, False),     # min just above it
+                                 (None, 0.0, True, True), (None, -50.0, True, False),
+                                 (v - 1e-4, None, False, True), (v + 1e-4, 5.0, False, False),
+                                 (None, 3.0, False, False)):
+        u2.tol_min, u2.tol_max, u2.tol_pct = lo, hi, unit
+        ld = by_name(solve_tree(board(), s).loads, "U2")
+        assert ld.passed is passed, (lo, hi, unit)
+        assert ld.tolerance == u2.tolerance_label()
+    assert (ld.limit_low, ld.limit_high) == (None, 3.0)
+    u2.tol_min = u2.tol_max = None
+    assert by_name(solve_tree(board(), s).loads, "U2").passed is None    # not judged
+    assert [tolerance_label(*a) for a in ((-5, 5, True), (-3, 5, True), (None, 5, True),
+                                          (3.1, 3.5, False), (3.1, None, False),
+                                          (None, None, True))] == [
+        "±5 %", "-3 / +5 %", "max +5 %", "3.1 to 3.5 V", "min 3.1 V", ""]
+    u2.tol_min, u2.tol_max = 1.0, -1.0
+    assert any("tolerance minimum is above its maximum" in e for e in validate(s))
+
+
+def test_old_symmetric_tolerances_still_load():
+    import pickle
+    from kipi.dc.pi.results import LoadReport
+    d = setup("ldo").to_dict()
+    for ld in d["loads"]:
+        for k in ("tol_min", "tol_max", "tol_pct"):
+            del ld[k]
+        ld["tolerance_pct"] = 2.0
+    u2 = PISetup.from_dict(d).loads[0]
+    assert (u2.tol_min, u2.tol_max, u2.tol_pct) == (-2.0, 2.0, True)
+    old = Load("U2", PinRef("U2", "+3V3", ["1"]), 1.0)          # pickled before: one %
+    state = {k: v for k, v in old.__dict__.items() if not k.startswith("tol_")}
+    state["tolerance_pct"] = 1.5
+    old.__setstate__(state)
+    assert (old.tol_min, old.tol_max, old.tol_pct) == (-1.5, 1.5, True)
+    rep = by_name(solve_tree(board(), setup("ldo")).loads, "U2")
+    state = dict(rep.__dict__)
+    for k in ("tolerance", "limit_low", "limit_high"):
+        del state[k]
+    state["tolerance_pct"] = 1.0
+    rep2 = LoadReport.__new__(LoadReport)
+    rep2.__setstate__(state)
+    assert rep2.tolerance == "±1 %"
+    assert (rep2.limit_low, rep2.limit_high) == pytest.approx((3.267, 3.333))
+    assert pickle.loads(pickle.dumps(rep)).tolerance == rep.tolerance
+
+
 def test_input_range_in_percent_needs_a_vrm_on_the_input_rail():
     s = setup("smps", eff=0.9)
     s.vrms[1].vin_pct, s.vrms[1].vin_max = True, 10.0
@@ -338,7 +392,7 @@ def test_unconverged_group_leaves_its_loads_unjudged(monkeypatch):
     import kipi.dc.pi.tree as tree
     monkeypatch.setattr(tree, "MAX_TREE_ITERATIONS", 1)
     s = setup("smps", eff=0.9)
-    s.loads.append(Load("U1in", PinRef("U1", "VIN", ["1"]), 0.0, tolerance_pct=50.0))
+    s.loads.append(Load("U1in", PinRef("U1", "VIN", ["1"]), 0.0, tol_min=-50.0, tol_max=50.0))
     res = solve_tree(board(), s)
     ld = by_name(res.loads, "U1in")
     assert ld.passed is None and ld.verdict == NOT_CONVERGED

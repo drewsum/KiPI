@@ -32,7 +32,7 @@ def _notes(tree, load):
 def test_a_disconnected_load_is_left_out_and_marked():
     base = solve_tree(island_board(), setup())
     s = setup()
-    s.loads.append(Load("U3", PinRef("U3", "+3V3", ["1"]), 2.0, tolerance_pct=1.0))
+    s.loads.append(Load("U3", PinRef("U3", "+3V3", ["1"]), 2.0, tol_min=-1.0, tol_max=1.0))
     tree = solve_tree(island_board(), s)
     u3 = by_name(tree.loads, "U3")
     assert u3.status == DISCONNECTED and u3.verdict == DISCONNECTED and u3.passed is None
@@ -95,7 +95,7 @@ def test_reports_show_a_disconnected_load(tmp_path):
     from kipi.dc.pi.results import fmt_drop
     snap = island_board()
     s = setup()
-    s.loads.append(Load("U3", PinRef("U3", "+3V3", ["1"]), 2.0, tolerance_pct=1.0))
+    s.loads.append(Load("U3", PinRef("U3", "+3V3", ["1"]), 2.0, tol_min=-1.0, tol_max=1.0))
     tree = solve_tree(snap, s)
     export_csv(tree, snap, tmp_path)
     with open(tmp_path / "kipi_loads.csv", encoding="utf-8") as fh:
@@ -117,7 +117,7 @@ def qapp():
 def test_results_table_shows_a_disconnected_load(qapp):
     from kipi.dc.gui.pi_panel import PIPanel
     s = setup()
-    s.loads.append(Load("U3", PinRef("U3", "+3V3", ["1"]), 2.0, tolerance_pct=1.0))
+    s.loads.append(Load("U3", PinRef("U3", "+3V3", ["1"]), 2.0, tol_min=-1.0, tol_max=1.0))
     snap = island_board()
     tree = solve_tree(snap, s)
     panel = PIPanel()

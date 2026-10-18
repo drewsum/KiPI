@@ -152,8 +152,8 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
     for l in setup.loads:
         bid = f"load:{l.name}"
         lines = [si(l.current, "A")]
-        if l.tolerance_pct:
-            lines.append(f"± {l.tolerance_pct:g} %")
+        if l.has_tolerance():
+            lines.append(l.tolerance_label())
         if l.groups:
             lines.append(f"{len(l.groups)} pin groups")
         d.blocks[bid] = Block(bid, "load", l.name, lines, amps=l.current,

@@ -146,6 +146,13 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   probe's rail, the probe's own part first, with a menu when there are several.
 
 ### Changed
+- A load's **tolerance has a separate min and max**, on one row like the VRM input range,
+  each in % from the VRM set point (e.g. -3 % / +5 %) or in volts (e.g. 3.135 to 3.465 V),
+  and either one optional. A load passes when every pin is within it. The results table,
+  the report and the power tree show the tolerance as set; the loads CSV has `tolerance`,
+  `tolerance_min_V` and `tolerance_max_V` in place of `tolerance_pct`. Copying a tolerance
+  into the target calculator takes its tighter side. Setups and results from earlier
+  versions keep their ± % tolerances.
 - A VRM's **input min and max share one row**, "Input range", and can be given in V or in
   % from the input rail's nominal voltage, the set voltage of the VRM driving it (e.g.
   -10 % / +10 %). Switching the unit converts the values when that VRM is known, and

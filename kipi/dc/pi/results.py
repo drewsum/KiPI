@@ -55,7 +55,7 @@ class LoadReport:
     v_ground: Optional[float]  # mean over the ground pins (None if not modeled)
     v_effective: float        # supply - ground
     drop: float               # nominal - effective, volts (negative: a boost)
-    tolerance_pct: Optional[float]       # +/- % of nominal
+    tolerance: str                       # as set, for tables: "±5 %", "3.1 to 3.5 V"
     passed: Optional[bool]               # judged on the worst pin
     v_worst: float = 0.0                 # whichever of v_low / v_high is further from nominal
     # (name, A, V mean, V min, V max) per pin group
@@ -63,11 +63,19 @@ class LoadReport:
     v_low: Optional[float] = None        # lowest supply pin minus highest ground pin
     v_high: Optional[float] = None       # highest supply pin minus lowest ground pin
     status: str = ""                     # why the load was not judged, or was failed outright
+    limit_low: Optional[float] = None    # the tolerance in volts, either end None if not set
+    limit_high: Optional[float] = None
 
     def __setstate__(self, state):
         # Results files saved before boosts were reported: only the lowest pin is known,
-        # and pin groups have no highest pin.
-        state = {"v_low": state.get("v_worst"), "v_high": None, "status": "", **state}
+        # and pin groups have no highest pin. Before asymmetric tolerances: +/- one %.
+        t = state.pop("tolerance_pct", None)
+        if t is not None and "tolerance" not in state:
+            nom = state.get("nominal", 0.0)
+            state.update(tolerance=f"±{t:g} %", limit_low=nom - abs(nom) * t / 100,
+                         limit_high=nom + abs(nom) * t / 100)
+        state = {"v_low": state.get("v_worst"), "v_high": None, "status": "",
+                 "tolerance": "", "limit_low": None, "limit_high": None, **state}
         state["pin_groups"] = [tuple(g) + (None,) * (5 - len(g))
                                for g in state.get("pin_groups", [])]
         self.__dict__.update(state)

@@ -806,8 +806,10 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     values are allowed for parts that source current.</td></tr>
   <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return. Filled in
     with the supply part's ground pins.</td></tr>
-  <tr><td>Tolerance</td><td class="wrap">±% of the VRM set voltage. PASS if every supply pin is
-    within it.</td></tr>
+  <tr><td>Tolerance</td><td class="wrap">Optional min and max on one row, in <b>%</b> from the
+    VRM set voltage (e.g. min -3 %, max +5 %) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
+    may be left "not set". PASS if every supply pin is within it. Switching the unit
+    converts the values when a VRM drives the load's rail.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
 </div>
@@ -996,8 +998,7 @@ scale, a minimum of zero or below falls back to four decades below the maximum.<
 <h4>Load verdicts</h4>
 <table>
   <tr><th>Verdict</th><th>Meaning</th></tr>
-  <tr><td class="pass">PASS</td><td class="wrap">Every supply pin within ± tolerance of the set
-    point.</td></tr>
+  <tr><td class="pass">PASS</td><td class="wrap">Every supply pin within the tolerance.</td></tr>
   <tr><td class="fail">FAIL</td><td class="wrap">At least one pin outside the tolerance.</td></tr>
   <tr><td class="fail">VRM OUT OF REGULATION</td><td class="wrap">A VRM feeding it, directly or
     upstream, is outside its input range or below its dropout.</td></tr>
@@ -1214,7 +1215,8 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
   <li><b>AC voltage tolerance</b>: how far the supply may move during a load transient, e.g.
     the AC part of a ±3 % spec on a 0.9 V rail: 27 mV.</li>
   <li><b>Copy tolerance from DC load</b> fills the AC voltage tolerance from a DC load's
-    tolerance: ± that percentage of the voltage of the VRM feeding it. It offers the loads on
+    tolerance: ± its tighter side, from the voltage of the VRM feeding it (2 % for
+    -2 % / +5 %). It offers the loads on
     the probe's rail (including nets joined by series links), the probe's own part first, and
     shows a menu when there are several. A DC tolerance is the whole budget, and the DC drop
     uses up part of it, so lower the value if the AC part is smaller.</li>
