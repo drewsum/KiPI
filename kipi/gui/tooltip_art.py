@@ -133,6 +133,20 @@ def image(name: str, highlight: Iterable[str] = (),
     return out
 
 
+_TEXT_END = "</td></tr><tr><td style=\"padding-top: 6px;\">"
+
+
+def add_text(tip: str, extra: str) -> str:
+    """Tooltip ``tip`` with the paragraph ``extra`` added to its text: above the drawing
+    when it has one."""
+    if not tip:
+        return extra
+    if _TEXT_END not in tip:
+        return f"{tip}\n\n{extra}"
+    body = html.escape(extra, quote=False).replace("\n", "<br>")
+    return tip.replace(_TEXT_END, f"<br><br>{body}{_TEXT_END}", 1)
+
+
 def art_tip(text: str, name: str, *highlight: str) -> str:
     """Tooltip ``text`` with the drawing ``name`` under it, the parts named in
     ``highlight`` picked out; ``text`` alone when the drawing cannot be shown."""
@@ -142,5 +156,5 @@ def art_tip(text: str, name: str, *highlight: str) -> str:
     path, w, h = shown
     body = html.escape(text, quote=False).replace("\n", "<br>")
     return (f'<table cellspacing="0" cellpadding="0" width="{max(w, 280)}"><tr><td>{body}'
-            f'</td></tr><tr><td style="padding-top: 6px;"><img src="{path.as_uri()}" '
+            f'{_TEXT_END}<img src="{path.as_uri()}" '
             f'width="{w}" height="{h}"></td></tr></table>')

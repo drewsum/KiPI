@@ -8,8 +8,8 @@
     <rect x="104" y="51" width="10" height="10" fill="{inp}"/>
     <text x="22" y="48" fill="{inp}">input pins</text>
     <text x="22" y="74" fill="{muted}" font-size="10">upstream rail</text>
-    <!-- output: e.g. a switcher inductor, onto the rail -->
-    <path d="M194,56 H210 a5.5,6 0 0 1 11,0 a5.5,6 0 0 1 11,0 a5.5,6 0 0 1 11,0 H280" stroke="{out}" stroke-width="2" fill="none"/>
+    <!-- output: onto the rail it drives -->
+    <path d="M194,56 H280" stroke="{out}" stroke-width="2" fill="none"/>
     <rect x="186" y="51" width="10" height="10" fill="{out}"/>
     <path d="M280,40 V72" stroke="{fg}" stroke-width="4"/>
     <text x="276" y="30" fill="{out}" text-anchor="end">output pins</text>

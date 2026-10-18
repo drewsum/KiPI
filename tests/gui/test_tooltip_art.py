@@ -93,3 +93,37 @@ def test_every_drawing_shows_in_a_tooltip(app, no_3d):
     w.close()
     for name in ta.names():
         assert f"/{name}-" in tips, name
+
+
+def test_add_text_goes_above_the_drawing(app):
+    assert ta.add_text("", "Why") == "Why"
+    assert ta.add_text("Plain", "Why") == "Plain\n\nWhy"
+    tip = ta.add_text(ta.art_tip("Load line", "load_line", "ll"), "Used by <DC>")
+    assert tip.index("Used by &lt;DC&gt;") < tip.index("<img")
+
+
+def test_pin_pickers_show_their_drawing_once_under_all_their_text(app, no_3d):
+    """Each box of a pin picker shows the row's text, the box's own line and any
+    'used by' note above one drawing, in the DC and AC VRM editors alike (#116)."""
+    pytest.importorskip("pyvistaqt")
+    from kipi.dc.gui.pi_panel import LinkEditor, VrmEditor
+    from kipi.gui.main_window import MainWindow
+    w = MainWindow()
+    vrms = w.findChildren(VrmEditor)
+    links = w.findChildren(LinkEditor)
+    assert {e.mode for e in vrms} == {"dc", "ac"} and links
+    for e in vrms:
+        e._kind_rows()                       # as on showing a VRM: grays the other analysis
+        for picker, part in ((e.output, "out"), (e.input, "inp"), (e.ground, "gnd")):
+            for box in (picker, picker.cmb_net, picker.cmb_part, picker.txt_pins):
+                t = box.toolTip()
+                assert t.count("<img") == 1 and "/vrm_pins-" in t, (e.mode, part)
+            t = picker.txt_pins.toolTip()
+            assert t.index("Pins: pin numbers") < t.index("<img")
+            assert "&lt;table" not in t
+        note = e.input.cmb_net.toolTip()
+        if e.mode == "ac":
+            assert note.index("Used by the DC analysis only") < note.index("<img")
+    for e in links:
+        assert "/series_link-" in e.a.cmb_part.toolTip()
+    w.close()

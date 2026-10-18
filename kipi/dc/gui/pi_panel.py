@@ -41,7 +41,7 @@ from kipi.dc.pi.model import (
 )
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
-from kipi.gui.tooltip_art import art_tip
+from kipi.gui.tooltip_art import add_text, art_tip
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS, scale_decimals
@@ -149,12 +149,18 @@ def _set_optional(s: QDoubleSpinBox, value: Optional[float]):
     s.setValue(s.minimum() if value is None else value)
 
 
-def tip(form: QFormLayout, field: QWidget, text: str):
-    """Give a form row's field and its label the tooltip ``text``."""
-    field.setToolTip(text)
+def tip(form: QFormLayout, field: QWidget, text: str, art: Optional[tuple] = None):
+    """Give a form row's field and its label the tooltip ``text``, with the drawing
+    ``art`` (a name and the parts to pick out, #116) under it if given."""
+    shown = art_tip(text, *art) if art else text
+    if isinstance(field, PinPicker):
+        field.art = art or ()               # it adds its boxes' lines above the drawing
+        field.setToolTip(text)
+    else:
+        field.setToolTip(shown)
     label = form.labelForField(field)
     if label is not None:
-        label.setToolTip(text)
+        label.setToolTip(shown)
 
 
 def make_searchable(combo: QComboBox):
@@ -238,6 +244,7 @@ class PinPicker(QWidget):
         self.cmb_part.currentIndexChanged.connect(self._part_changed)
         self.txt_pins.editingFinished.connect(self.changed.emit)
         self._loading = False
+        self.art: tuple = ()                # a drawing under the tooltip (#116), see tip()
         self.setToolTip("")
 
     # What each of the three boxes picks, added under the row's own tooltip.
@@ -247,10 +254,13 @@ class PinPicker(QWidget):
                   "the net.")
 
     def setToolTip(self, text: str):
-        """The row's tooltip, shown on each box with a line on what that box picks."""
-        super().setToolTip(text)
+        """The row's tooltip, shown on each box with a line on what that box picks, and
+        the drawing ``art`` under it if set."""
+        drawn = text.startswith("<table")      # already has it (_gray adds a line to it)
+        shown = art_tip(text, *self.art) if self.art and text and not drawn else text
+        super().setToolTip(shown)
         for w, line in zip((self.cmb_net, self.cmb_part, self.txt_pins), self._PART_TIPS):
-            w.setToolTip(f"{text}\n\n{line}" if text else line)
+            w.setToolTip(add_text(shown, line))
 
     def net(self) -> str:
         """The selected net (not the half-typed search text)."""
@@ -406,7 +416,7 @@ def _gray(widgets, on: bool, why: str, editable: bool = False):
         if tip is None:
             tip = w.toolTip()
             w.setProperty("kipi_tip", tip)
-        w.setToolTip(tip if on else (f"{tip}\n\n{why}" if tip else why))
+        w.setToolTip(tip if on else add_text(tip, why))
 
 
 class VrmEditor(_Editor):
@@ -545,7 +555,7 @@ class VrmEditor(_Editor):
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
                                     "set voltage is held relative to these pins instead of "
                                     "0 V (needs ground pins)")):
-            tip(f, w, art_tip(text, *art[w]) if w in art else text)
+            tip(f, w, text, art.get(w))
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.bandwidth)
         self.vin_row.changed.connect(self._store)
@@ -779,7 +789,7 @@ class LoadEditor(_Editor):
                             "power is included (Thermal tab). Not set: the power it draws, pin "
                             "current × pin voltage. Set it for a part that passes most of its "
                             "power on (load switch, LED or motor driver).")):
-            tip(f, w, art_tip(text, *art[w]) if w in art else text)
+            tip(f, w, text, art.get(w))
         self.groups.setToolTip(art_tip(
             "Pin groups: an optional name, the pin numbers (e.g. 15,28) and the current into "
             "those pins. Click a column header to sort by it.", "current_split", "groups"))
@@ -941,7 +951,7 @@ class LinkEditor(_Editor):
                 (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
                          "read from the part's value when both sides are on it."),
                 (self.esl, "Series inductance (ESL) of the part")):
-            tip(f, w, art_tip(text, *art[w]) if w in art else text)
+            tip(f, w, text, art.get(w))
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
                       "load switch…). The nets it joins are simulated together.")
         hint.setWordWrap(True)

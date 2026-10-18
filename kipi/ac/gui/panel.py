@@ -134,7 +134,7 @@ class CapEditor(_Editor):
                 (self.esl, "Equivalent series inductance of the part itself (from its "
                            "datasheet); the board's mounting inductance is simulated"),
                 (self.esr, "Equivalent series resistance of one part, from its datasheet")):
-            tip(f, w, art_tip(text, *art[w]) if w in art else text)
+            tip(f, w, text, art.get(w))
         self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept,
                     self.mfg_tol)
         self.rated.valueChanged.connect(lambda v: self.kept.setEnabled(v > 0))
@@ -430,7 +430,7 @@ class ProbeEditor(_Editor):
                               "frequency"),
                 (self.target_f, "Frequency up to which the target impedance applies "
                                 "(none: the whole sweep)")):
-            tip(f, w, art_tip(text, *art[w]) if w in art else text)
+            tip(f, w, text, art.get(w))
         self._watch(self.name, self.target, self.target_f, self.target_kind)
         self.target_kind.currentIndexChanged.connect(self._target_rows)
         self._target_rows()
