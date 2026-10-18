@@ -73,7 +73,7 @@ def create(platform: Optional[str] = None, root: Path = KIPI_ROOT) -> Path:
         if out.returncode != 0 or not path.is_file():
             raise ShortcutError((out.stderr or out.stdout).strip()[-300:] or "PowerShell failed")
         try:
-            from kipi.gui.identity import set_shortcut_app_id    # standard library only
+            from kipi.launcher.appid import set_shortcut_app_id
             set_shortcut_app_id(path)
         except Exception:  # noqa: BLE001 - the shortcut works without; a pin gets its own button
             pass

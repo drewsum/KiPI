@@ -10,6 +10,7 @@ pytest.importorskip("qtpy")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from kipi.gui import identity  # noqa: E402
+from kipi.launcher import appid  # noqa: E402
 
 
 def test_app_is_named_kipi_with_its_icon():
@@ -52,9 +53,9 @@ def test_windows_taskbar_button_is_kipi():
     w.show()
     identity.tag_window(w)
     h = int(w.winId())
-    assert identity.read_windows_property(h, identity._PKEY_ID) == identity.APP_ID
-    assert identity.read_windows_property(h, identity._PKEY_RELAUNCH_DISPLAY_NAME) == "KiPI"
-    assert identity.read_windows_property(h, identity._PKEY_PREVENT_PINNING) is False
-    assert "kipi_launcher.pyw" in identity.read_windows_property(
-        h, identity._PKEY_RELAUNCH_COMMAND)
+    assert appid.read_windows_property(h, appid.PKEY_ID) == identity.APP_ID
+    assert appid.read_windows_property(h, appid.PKEY_RELAUNCH_DISPLAY_NAME) == "KiPI"
+    assert appid.read_windows_property(h, appid.PKEY_PREVENT_PINNING) is False
+    assert "kipi_launcher.pyw" in appid.read_windows_property(
+        h, appid.PKEY_RELAUNCH_COMMAND)
     w.close()

@@ -436,8 +436,8 @@ def test_a_windows_start_menu_shortcut(tmp_path, monkeypatch):
     path = shortcut.create("win32")
     assert path == tmp_path / "Microsoft/Windows/Start Menu/Programs/KiPI.lnk"
     assert path.is_file() and path.stat().st_size > 0
-    from kipi.gui import identity            # pinned, it shares the window's taskbar button
-    assert identity.read_file_property(path, identity._PKEY_ID) == identity.APP_ID
+    from kipi.launcher import appid          # pinned, it shares the window's taskbar button
+    assert appid.read_file_property(path, appid.PKEY_ID) == appid.APP_ID
 
 
 def test_kipi_learns_which_python_ran_the_launcher(tmp_path, monkeypatch):
