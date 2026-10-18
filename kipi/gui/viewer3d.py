@@ -12,7 +12,7 @@ from vtkmodules.vtkCommonCore import vtkPoints, vtkStringArray
 from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
 from vtkmodules.vtkRenderingCore import vtkActor, vtkActor2D, vtkCellPicker, vtkPolyDataMapper
 from vtkmodules.vtkRenderingLabel import vtkLabeledDataMapper
-from qtpy.QtCore import Signal
+from qtpy.QtCore import QTimer, Signal
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
 from kipi.core.viz.batch import Chunk, MeshBatcher
@@ -44,6 +44,10 @@ _PI_LABEL_LIFT_MM = 1.0
 # The part selected in the setup (#96): larger dots and its name, in amber.
 _PI_SELECTED_COLORS = ((1.0, 0.8, 0.1), (0.75, 0.42, 0.0))
 _PI_SELECTED_PX = 22
+# Newly selected, it blinks between amber and red for a moment, to be found at a glance.
+_PI_BLINK_COLORS = ((1.0, 0.12, 0.12), (0.70, 0.0, 0.0))
+_PI_BLINK_MS = 250
+_PI_BLINKS = 6
 # A click this near a marker's name (half its height; the width follows the name) or one
 # of its dots, in pixels, picks the marker.
 _PI_LABEL_HALF_H_PX = 9
@@ -285,6 +289,10 @@ class Viewer3D(QWidget):
         self._pi_markers: list = []
         self._pi_actors: Dict[str, object] = {}      # name -> actor
         self._pi_selected: Optional[Tuple[str, str]] = None   # (kind, item) in the setup
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(_PI_BLINK_MS)
+        self._blink_timer.timeout.connect(self._blink_step)
+        self._blink_left = 0                # color changes still to show
         self._models: Dict[str, Tuple[pv.PolyData, str]] = {}   # ref -> (mesh, side)
         self._model_actors: Dict[str, vtkActor] = {}             # side -> actor
         self._board_top = 0.0
@@ -502,6 +510,31 @@ class Viewer3D(QWidget):
         self._pi_selected = key
         self._draw_pi_markers()
         self._apply_visibility()
+        self._start_blink()
+
+    def _start_blink(self):
+        """Blink the selected part's dots and name between amber and red a few times."""
+        self._blink_timer.stop()
+        self._blink_left = 2 * _PI_BLINKS if self._selected_marker() is not None else 0
+        if self._blink_left:
+            self._blink_timer.start()
+
+    def _blink_step(self):
+        self._blink_left -= 1
+        if self._blink_left <= 0:
+            self._blink_timer.stop()
+        self._paint_selected(_PI_BLINK_COLORS if self._blink_left % 2 else _PI_SELECTED_COLORS)
+        if self._show_pi and self._result is None:
+            self.plotter.render()
+
+    def _paint_selected(self, colors):
+        """Color the selected part's dots and name: ``(dot color, label color)``."""
+        dots = self._pi_actors.get("pi_selected_dots")
+        if dots is not None:
+            dots.GetProperty().SetColor(*colors[0])
+        label = self._pi_actors.get("pi_selected_label")
+        if label is not None:
+            label.GetMapper().GetLabelTextProperty().SetBackgroundColor(*colors[1])
 
     def pi_marker_at(self, screen_xy):
         """The PI Models marker whose name, or else one of whose dots, is at ``screen_xy``

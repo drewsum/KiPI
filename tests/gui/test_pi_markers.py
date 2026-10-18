@@ -74,16 +74,28 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from kipi.gui.viewer3d import Viewer3D  # noqa: E402
 
 
+class _Timer:
+    """Stands in for the blink QTimer: the test steps it by hand."""
+    active = False
+
+    def start(self):
+        self.active = True
+
+    def stop(self):
+        self.active = False
+
+
 def _view():
     v = NS(plotter=pv.Plotter(off_screen=True), _models={}, _model_actors={}, _board_top=0.0,
            _model_board=0.0, _zscale=1.0, _show_models=True, _show_models_result=False,
            _show_board=True, _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
-           _pi_selected=None,
+           _pi_selected=None, _blink_left=0, _blink_timer=_Timer(),
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
     for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
                  "set_feature_visible", "_place_models", "_selected_marker", "set_pi_selected",
-                 "pi_marker_at", "_to_screen", "focus_on"):
+                 "pi_marker_at", "_to_screen", "focus_on", "_start_blink", "_blink_step",
+                 "_paint_selected"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
     return v
 
@@ -157,8 +169,35 @@ def test_the_part_selected_in_the_setup_is_marked():
     assert not dots.GetVisibility()
     v.set_pi_selected(("load", "nothing such"))
     assert "pi_selected_dots" not in v._pi_actors
+    assert not v._blink_timer.active                      # nothing selected to blink
     v.set_pi_selected(None)
     assert "pi_selected_label" not in v._pi_actors
+
+
+def test_the_selected_part_blinks_then_stays_amber():
+    from kipi.gui.viewer3d import _PI_BLINK_COLORS, _PI_BLINKS, _PI_SELECTED_COLORS
+    v = _view()
+    v.set_pi_markers(pi_markers(board(), two_phase(ground=True), {"VOUT", "GND"}))
+    v.set_pi_selected(("vrm", "U1"))
+    assert v._blink_timer.active
+
+    def colors():
+        dots = v._pi_actors["pi_selected_dots"].GetProperty().GetColor()
+        label = (v._pi_actors["pi_selected_label"].GetMapper().GetLabelTextProperty()
+                 .GetBackgroundColor())
+        return tuple(round(c, 6) for c in (*dots, *label))
+
+    blink = tuple(round(c, 6) for c in (*_PI_BLINK_COLORS[0], *_PI_BLINK_COLORS[1]))
+    amber = tuple(round(c, 6) for c in (*_PI_SELECTED_COLORS[0], *_PI_SELECTED_COLORS[1]))
+
+    seen = []
+    for _ in range(2 * _PI_BLINKS):
+        v._blink_step()
+        seen.append(colors())
+    assert seen == [blink, amber] * _PI_BLINKS            # ends amber
+    assert not v._blink_timer.active
+    v.set_pi_selected(("load", "U2"))                     # another part blinks afresh
+    assert v._blink_timer.active and v._blink_left == 2 * _PI_BLINKS
 
 
 def _looking_down(v):
@@ -242,6 +281,8 @@ def test_picking_a_part_in_the_setup_marks_it_and_goes_there(app, no_3d, monkeyp
     marked, focused = [], []
     monkeypatch.setattr(w.viewer, "set_pi_selected", marked.append)
     monkeypatch.setattr(w.viewer, "focus_on", focused.append)
+    w.chk_snap.blockSignals(True)                 # not saved to the user's settings
+    w.chk_snap.setChecked(True)
     lst = w.solve_panel.load_list
     w.solve_panel.tabs.setCurrentWidget(lst)
     assert marked[-1] == ("load", "U2") and not focused       # shown, not flown to
@@ -249,6 +290,9 @@ def test_picking_a_part_in_the_setup_marks_it_and_goes_there(app, no_3d, monkeyp
     lst.lst.itemClicked.emit(lst.lst.item(0))                 # the user clicks it
     assert w.chk_pi.isChecked() and len(focused) == 1
     np.testing.assert_allclose(focused[0][:, :2].mean(axis=0), [5.5, 0.5])
+    w.chk_snap.setChecked(False)                              # marked, but the view stays
+    lst.lst.itemClicked.emit(lst.lst.item(0))
+    assert marked[-1] == ("load", "U2") and len(focused) == 1
     w.solve_panel.tabs.setCurrentIndex(3)                     # the Solve tab: none
     assert marked[-1] is None
     w.close()

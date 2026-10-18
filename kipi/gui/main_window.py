@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from qtpy.QtCore import QFileSystemWatcher, Qt, QTimer
+from qtpy.QtCore import QFileSystemWatcher, QSettings, Qt, QTimer
 from qtpy.QtGui import QAction, QColor, QIcon, QPixmap, QTextCursor
 from qtpy.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout,
@@ -417,6 +417,16 @@ class MainWindow(QMainWindow):
                 self.chk_pi = cb
         self.chk_models = cb
         self.chk_models.setVisible(self._tool.offers_part_models)
+        self.chk_snap = QCheckBox("Snap to selected", g_view)
+        self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link or probe "
+                                 "when it is clicked in the setup's lists. Untick it to keep "
+                                 "the view where it is; the part is still marked in amber.")
+        # QSettings may hand a bool back as "true" / "false" (an INI file, the registry).
+        snap = QSettings("KiPI", "KiPI").value("view/snap_to_selected", True)
+        self.chk_snap.setChecked(str(snap).lower() not in ("false", "0"))
+        self.chk_snap.toggled.connect(
+            lambda v: QSettings("KiPI", "KiPI").setValue("view/snap_to_selected", v))
+        feats.addWidget(self.chk_snap)          # a row of its own: the dock is narrow
         self.chk_models.toggled.connect(lambda _: self._model_timer.start())
         # The copper and result views each keep their own Models setting.
         self.viewer.result_shown.connect(
@@ -1029,7 +1039,8 @@ class MainWindow(QMainWindow):
         if m is None:
             self.statusBar().showMessage(f"{name} has no pads on the nets shown", 5000)
             return
-        self.viewer.focus_on(np.vstack([m.power, m.ground]))
+        if self.chk_snap.isChecked():
+            self.viewer.focus_on(np.vstack([m.power, m.ground]))
 
     # ============================================================ part models
     def _wanted_models(self) -> List[str]:
