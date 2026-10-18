@@ -72,3 +72,15 @@ def test_the_launchers_menu_entry_is_not_overwritten(tmp_path, monkeypatch):
     path.unlink()
     identity._write_desktop_file()
     assert "NoDisplay=true" in path.read_text()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process name")
+def test_linux_process_is_named_kipi():
+    identity._set_linux_process_name()
+    assert Path("/proc/self/comm").read_text().strip() == "KiPI"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS LaunchServices")
+def test_macos_display_name_does_not_fail():
+    identity.make_app([])
+    identity._set_macos_process_name()        # private API: it must at least not raise

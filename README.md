@@ -183,6 +183,12 @@ open (plugin or standalone), or its Start menu shortcut, and choose *Pin to task
 pinned button starts standalone KiPI through the launcher, as KiCad is needed to start the
 plugin.
 
+KiPI shows as **KiPI**, with its icon, in Windows Task Manager, macOS Activity Monitor and
+Linux System Monitor / top, rather than as Python. On Windows it runs on `KiPI.exe`, a copy
+of its environment's Python that it makes in the environment's `Scripts` folder the first
+time (with the Python DLLs it needs beside it); if that copy cannot start, KiPI runs on
+`pythonw.exe` as before.
+
 ### Optional: faster solves on large boards (Windows and Linux, x86-64)
 
 KiPI solves each rail with SciPy's single-threaded sparse solver, or with AMG when a rail

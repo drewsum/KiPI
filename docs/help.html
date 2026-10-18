@@ -343,6 +343,12 @@ float them in their own windows.</p>
     standalone KiPI through the launcher, even when it was pinned from the plugin, since
     only KiCad can start the plugin; a running KiPI of either kind shows on that
     button.</li>
+  <li><b>Task Manager</b>: KiPI shows as <i>KiPI</i> with its icon, not as Python, in Windows
+    Task Manager, macOS Activity Monitor and Linux System Monitor or <code>top</code>. On
+    Windows it runs on <code>KiPI.exe</code>, a copy of its environment's Python that it makes
+    in the environment's <code>Scripts</code> folder the first time, with the Python DLLs it
+    needs beside it. Should that copy not start, KiPI runs on <code>pythonw.exe</code> as
+    before and does not try it again until Python or KiPI changes.</li>
   <li>While KiPI starts it shows a <b>welcome screen</b> with the logo, its version, whether
     it runs as the plugin or standalone, and the versions of Python and its main packages.
     It closes on its own after one play of the animation, or when you click it.</li>

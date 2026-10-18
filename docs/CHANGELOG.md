@@ -19,6 +19,14 @@ milestones rather than versions that were ever set.
   and ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
   edge, via grading and min edge. The drawings live in one folder, `kipi/gui/graphics/`,
   as SVG templates; where Qt cannot render them, the tooltip is its text alone.
+- **KiPI in Task Manager** (#124). KiPI shows as *KiPI* with its icon, not as *Python*, in
+  Windows Task Manager, macOS Activity Monitor and Linux System Monitor / top / ps. Task
+  Manager names an app by the program that owns its window, so on Windows KiPI (plugin or
+  standalone) starts again at once on `KiPI.exe`: a copy of its venv's base Python with
+  KiPI's icon and version information, made in the venv's `Scripts` folder with the Python
+  DLLs beside it, and remade when Python or KiPI changes. A copy that does not start is
+  remembered, and KiPI runs on `pythonw.exe` as before. On Linux the process is renamed
+  (`prctl`); on macOS LaunchServices is given KiPI's name.
 - **Ranges in volts from nominal** (#131). A load's tolerance and a VRM's input range and
   DC accuracy take a third unit, **±V**, beside V and %: volts below and above the nominal
   voltage (e.g. min -0.1 V, max +0.15 V), shown as "±0.1 V" or "-0.1 / +0.15 V". Switching

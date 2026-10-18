@@ -122,4 +122,8 @@ def _run_live(instance) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Windows, started windowed (the launcher): on to KiPI.exe, so Task Manager shows KiPI
+    # rather than Python (#124).
+    from kipi.launcher.named_exe import relaunch
+    code = relaunch(["-m", "kipi", *sys.argv[1:]])
+    sys.exit(main() if code is None else code)
