@@ -116,12 +116,12 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
 - The VRM, load or series link selected in the setup is marked in amber in the 3D view.
   Clicking it in its list ticks **PI Models** and brings the view to it, and clicking a
   part's name (or dot) in 3D selects it in the setup (#96).
-- Capacitor **DC bias** (#74). A capacitor model with a **Voltage rating** is derated by
-  DC bias (not one with a C0G dielectric): with its rating and the capacitance it **Keeps at rating** (40 % by default), each of
-  its parts is derated by the DC voltage across it, from the last DC solve or else the
-  rail's VRM set point. **Capacitor DC bias** in the Sweep tab turns it off for every model.
-  **Models from values** reads the rating from values like `10uF 6.3V X5R` and ticks the
-  estimate for class II dielectrics. The Results notes say where the voltages came from, and
+- Capacitor **DC bias** (#74). A capacitor model with a **Voltage rating** (and not a C0G
+  dielectric) is derated by DC bias: with the capacitance it **Keeps at rating** (40 % by
+  default), each of its parts is derated by the DC voltage across it, from the last DC
+  solve or else the rail's VRM set point. **Capacitor DC bias** in the Sweep tab turns it
+  off for every model. **Models from values** reads the rating from values like
+  `10uF 6.3V X5R` for class II dielectrics. The Results notes say where the voltages came from, and
   the HTML report lists each model's capacitance at its bias.
 - Capacitor **aging** (#109). A capacitor model has a **Dielectric**, which fills in its
   typical **Aging** rate (% per decade of hours; editable). With **Capacitor aging** ticked
