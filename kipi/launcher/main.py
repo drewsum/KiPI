@@ -160,8 +160,9 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
             ui.error("KiPI is still open. Close it, then change the setup again.")
             return 1
     previous = load(env)
-    want_pardiso = previous.pardiso if previous else False
     pardiso_ok, pardiso_why = system.pardiso_supported()
+    # Ticked by default wherever it can be had (#129); after that, whatever was chosen.
+    want_pardiso = previous.pardiso if previous else pardiso_ok
     reason = needs_setup(env, deps.requirements_hash(req))
     fresh, ask = False, True
     try:

@@ -31,6 +31,10 @@ def main() -> int:
     try:
         # The welcome screen first, so the click in KiCad is answered at once (#55).
         _app, splash = kipi_app.start_splash()
+        # Before anything loads MKL: PARDISO is not in requirements.txt, so KiPI offers
+        # it here, with an opt-out, rather than KiCad installing it unasked (#129).
+        from kipi.gui import pardiso_setup
+        pardiso_setup.startup(splash)
         kipi_app.set_status(splash, "Connecting to KiCad…")
         try:
             kicad, board = connect(progress=ProgressReporter())

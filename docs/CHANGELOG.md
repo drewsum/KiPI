@@ -4,7 +4,24 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.8.0 (in development): plugin and standalone modes
+## 0.9.0 (in development)
+
+### Changed
+- **PARDISO is installed by default** where Intel MKL exists (Windows and Linux on x86-64),
+  with an opt-out (#129).
+  - Plugin: KiCad installs `requirements.txt` on every reload without asking, so PARDISO
+    stays out of it. The first time KiPI opens it shows what PARDISO would add (each
+    package and its size), ticked, and installs it with the plugin environment's pip
+    (wheels only, as KiCad does) behind a progress dialog that can be canceled. Unticking
+    is remembered outside the environment. *About → Manage dependencies…* now appears in
+    the plugin too, to add or remove it; a removal waits for the next start, before MKL is
+    loaded, and KiPI stops using it meanwhile. After *Recreate Plugin Environment* KiPI asks
+    again unless it was turned down. A failed or canceled install leaves KiPI on SciPy's
+    solver and is not asked again on every start.
+  - Standalone: the launcher's first setup has PARDISO ticked; later setups keep what was
+    chosen.
+
+## 0.8.0: plugin and standalone modes
 
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
 

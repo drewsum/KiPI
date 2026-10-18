@@ -515,10 +515,11 @@ solves them:</p>
 </ul>
 <p>The drawbacks: Intel MKL is about 600 MB installed, it exists only for x86-64 Windows and
 Linux (not macOS or ARM), and small boards, which solve in a second either way, gain little.
-That is why it is not installed by default. KiPI falls back to SuperLU on its own if PARDISO
+KiPI offers it, ticked, the first time it starts (or sets up, standalone) on a computer
+that can have it, and it can be turned down there or removed later under
+<i>About → Manage dependencies…</i>. KiPI falls back to SuperLU on its own if PARDISO
 is missing, cannot load, or returns an inaccurate result, and the results are the same either
-way. Because PARDISO utilizes all cores, the machine running the simulation will really stretch its legs. Expect high CPU utilization and higher junction temperatures, at the gain of simulation speed. <i>About → Copy version info</i> says which solver is in use. See the README for how to
-add it. </p>
+way. Because PARDISO utilizes all cores, the machine running the simulation will really stretch its legs. Expect high CPU utilization and higher junction temperatures, at the gain of simulation speed. <i>About → Copy version info</i> says which solver is in use. </p>
 
 <h2 id="uses">What PI simulation finds</h2>
 <p>Design problems KiPI typically exposes, and where to look for each:</p>

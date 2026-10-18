@@ -184,8 +184,8 @@ package is installed, KiPI uses Intel MKL's multithreaded PARDISO solver instead
 rails of up to 1M unknowns. On a 645k-unknown rail one solve drops from about 8 s to 1.2 s,
 and a four-iteration electro-thermal run from about 90 s to 34 s. Small boards gain little.
 
-It is not installed by default because of its size, and because there are no MKL packages for
-macOS or ARM:
+KiPI installs it by default where it can, with an opt-out because of its size. There are no
+MKL packages for macOS or ARM:
 
 | | Without PARDISO | With PARDISO |
 |---|---|---|
@@ -193,20 +193,20 @@ macOS or ARM:
 | Plugin environment on disk (Windows) | about 860 MB | about 1.5 GB |
 
 Almost all of that is MKL itself (565 MB installed) and Intel's OpenMP runtime (61 MB).
-Standalone, tick it in the launcher's setup (or `python kipi_launcher.py --add-pardiso`).
-To add it to the plugin, install it into KiPI's plugin environment and restart the PCB
-editor:
+Standalone, it is ticked in the launcher's first setup; untick it there to opt out, or
+change it later with `python kipi_launcher.py --add-pardiso` / `--remove-pardiso`.
 
-```powershell
-# Windows (KiCad 10; use 9.0 for KiCad 9)
-& "$env:LOCALAPPDATA\KiCad\10.0\python-environments\com.github.drewsum.kipi\Scripts\pip" install pypardiso
-```
+As a plugin, KiCad installs `requirements.txt` by itself on every plugin reload, with no
+way to ask first, so PARDISO is not in it. Instead, the first time KiPI opens it lists the
+packages PARDISO would add, with their sizes, and installs them with the plugin
+environment's pip unless you untick it. KiCad never uninstalls packages, so it stays
+through reloads. An opt-out is remembered; *About → Manage dependencies…* adds or removes
+it later (a removal finishes the next time KiPI starts). After *Recreate Plugin
+Environment* KiPI asks again, unless you turned it down.
 
-On Linux the environment is usually under `~/.cache/kicad/10.0/python-environments/`. Use its
-`bin/pip` the same way. *About → Copy version info* shows which solver KiPI is using. If
-PARDISO cannot load or fails on a system, KiPI falls back to SciPy and says so in the log.
-To compare the two, set `KIPI_DIRECT_SOLVER=superlu`. *Recreate Plugin Environment*
-removes `pypardiso`, so install it again afterwards.
+*About → Copy version info* shows which solver KiPI is using. If PARDISO cannot be
+installed, cannot load or fails on a system, KiPI falls back to SciPy and says so in the
+log. To compare the two, set `KIPI_DIRECT_SOLVER=superlu`.
 
 ## Using KiPI
 
