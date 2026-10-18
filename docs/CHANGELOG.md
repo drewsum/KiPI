@@ -14,7 +14,7 @@ milestones rather than versions that were ever set.
   rating) and aging; the VRM types, load line, dropout and input range, DC accuracy,
   control loop bandwidth, phases and remote sense; the VRM's output, input and ground pins;
   a range's V or % unit against the nominal voltage (load tolerance, VRM input range and
-  DC accuracy); a load's current split (equal or per pin group); a series link's DCR and
+  DC accuracy); a load's current split (equal or per pin group); a series link's side A and B pins, DCR and
   ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
   edge, via grading and min edge. The drawings live in one folder,
   `kipi/gui/graphics/`, as SVG templates; where Qt cannot render them, the tooltip is its

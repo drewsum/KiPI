@@ -931,7 +931,8 @@ class LinkEditor(_Editor):
         f.addRow("Resistance (DCR)", self.r)
         f.addRow("ESL", self.esl)
         # Drawings under the tooltips (#116): the part as a DCR and an ESL in series.
-        art = {self.r: ("series_link", "r"), self.esl: ("series_link", "l")}
+        art = {self.a: ("series_link", "a"), self.b: ("series_link", "b"),
+               self.r: ("series_link", "r"), self.esl: ("series_link", "l")}
         for w, text in (
                 (self.name, "A name for this part, used in the results tables"),
                 (self.a, "The part's pins on one net"),
