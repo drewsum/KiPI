@@ -4,6 +4,7 @@ Windows has none) or there is no display (Linux CI)."""
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -165,12 +166,14 @@ def test_cancel_stops_the_install(ui, later):
 def test_the_window_is_kipi_with_its_icon(ui, monkeypatch):
     """#127: the KiPI icon and window class, not Python's; on Windows, pinning its taskbar
     button pins the launcher."""
-    from kipi.launcher import appid
+    from kipi.launcher import appid, ui_tk
     assert ui.root.winfo_class().lower() == "kipi"           # matches kipi.desktop
     assert ui._icons and max(i.width() for i in ui._icons) == 256
     tagged = []
     monkeypatch.setattr(appid, "tag_window", lambda *a: tagged.append(a))
-    monkeypatch.setattr(sys, "platform", "win32")
+    # Windows only as the window code sees it: faking sys.platform for the whole process
+    # while Tk draws a real Cocoa window crashed Python on the macOS runner.
+    monkeypatch.setattr(ui_tk, "sys", SimpleNamespace(platform="win32"))
     ui.status("Checking which packages KiPI needs...")
     ui.status("Still checking...")
     assert len(tagged) == 1                                 # once, when it first shows
