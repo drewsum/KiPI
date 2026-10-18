@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import html
 import logging
 import math
@@ -525,6 +526,7 @@ class MainWindow(QMainWindow):
         self._scenes = {}
         self._shown_group = ""
         self._setup_path = None
+        self._saved = None              # the setup as its file has it
         self.ac_panel = ACPanel(self)
         self.ac_panel.save_requested.connect(self._save_setup)
         self.ac_panel.solve_requested.connect(self.run_ac_solve)
@@ -773,6 +775,8 @@ class MainWindow(QMainWindow):
 
     def open_path(self, path):
         """Read the board file ``path``; it becomes the source once it has been read."""
+        if not self._keep_or_drop_changes():
+            return
         try:
             source = registry.open_board(path)
         except ValueError as e:
@@ -791,13 +795,15 @@ class MainWindow(QMainWindow):
     def reload_board(self):
         """Read the board from the source again (Load from KiCad)."""
         source = self._source
-        if source is None:
+        if source is None or not self._keep_or_drop_changes():
             return
         refill = source.caps.refill_zones and self.chk_refill.isChecked()
         self._run(lambda progress: source.load(progress, refill_zones=refill),
                   self._set_snapshot, "Loading board")
 
     def open_snapshot(self):
+        if not self._keep_or_drop_changes():
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Open board snapshot", "",
                                               "KiPI snapshot (*.json *.json.gz)")
         if not path:
@@ -855,6 +861,10 @@ class MainWindow(QMainWindow):
         self._apply_setup_stackup(setup)
         self._populate_layers()
         self._populate_nets(keep if keep is not None else setup.nets, setup)
+        # The setup as loaded, with the nets ticked by default on a new board: what Save
+        # would write now, so only later edits count as not saved.
+        setup.nets = self._checked_nets()
+        self._saved = copy.deepcopy(setup)
         self._show_board_summary()
         from kipi.core.viz.meshes import board_body
         self.viewer.set_board(*board_body(snap))
@@ -1195,6 +1205,7 @@ class MainWindow(QMainWindow):
                 self.log(f"Could not read {found}: {e}", logging.WARNING)
                 label = f"Could not read {found.name}; starting empty"
         self._setup_path = path
+        self._saved = copy.deepcopy(setup)
         self.solve_panel.set_board(snap, setup, label)
         self.ac_panel.set_board(snap, setup, label)
         self._refresh_power_tree()
@@ -1241,10 +1252,12 @@ class MainWindow(QMainWindow):
         self.solve_panel.set_board(self.snapshot, setup, label)
         self.ac_panel.set_board(self.snapshot, setup, label)
         self._refresh_power_tree()
-        self._save_setup()
-        # Last in the Log, under the notes and the save, so it is the line in view.
+        self.solve_panel.lbl_file.setText(f"{label} - not saved")
+        self.ac_panel.set_label(f"{label} - not saved")
+        # Last in the Log, under the notes, so it is the line in view.
         self.log(f"== Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
-                 + (f"; {len(notes)} note(s) above" if notes else ""))
+                 + (f"; {len(notes)} note(s) above" if notes else "")
+                 + ". Not saved: Save keeps it, the setup file is as it was")
         self.log_dock.show()
         self.log_dock.raise_()
 
@@ -1255,6 +1268,7 @@ class MainWindow(QMainWindow):
             self.solve_panel.setup.nets = self._checked_nets()
         try:
             self._setup_path = self.solve_panel.setup.save(self._setup_path)
+            self._saved = copy.deepcopy(self.solve_panel.setup)
             self.solve_panel.lbl_file.setText(f"Setup: {self._setup_path}")
             self.ac_panel.set_label(f"Setup: {self._setup_path}")
             self.log(f"Saved PI setup to {self._setup_path}")
@@ -1279,8 +1293,6 @@ class MainWindow(QMainWindow):
             self.solve_panel.set_busy(True, queued=True)
             self.log("Solve queued until the current task finishes")
             return
-        self._save_setup()
-        import copy
         frozen = copy.deepcopy(setup)     # edits during the solve don't affect it
         report_path = None
         if frozen.html_report and self._setup_path is not None:
@@ -1351,8 +1363,6 @@ class MainWindow(QMainWindow):
             self.ac_panel.set_busy(True, queued=True)
             self.log("AC solve queued until the current task finishes")
             return
-        self._save_setup()
-        import copy
         frozen = copy.deepcopy(setup)
         dc_result = self._tree       # the last DC solve gives the capacitors' DC bias (#74)
         report_path = None
@@ -1876,8 +1886,37 @@ class MainWindow(QMainWindow):
         except Exception as e:  # noqa: BLE001
             self.log(f"Could not select in {source.name}: {e}", logging.WARNING)
 
+    def _unsaved(self) -> bool:
+        if self.snapshot is None or self._saved is None:
+            return False
+        now = self.solve_panel.setup
+        now.nets = self._checked_nets()
+        saved = self._saved
+        # An AC rail or ground left empty follows the VRM's; the AC panel filling it in
+        # once the nets are known is not an edit.
+        if not saved.ac.rail or not saved.ac.ground:
+            saved = copy.deepcopy(saved)
+            saved.ac.rail = saved.ac.rail or now.ac.rail
+            saved.ac.ground = saved.ac.ground or now.ac.ground
+        return now != saved
+
+    def _keep_or_drop_changes(self) -> bool:
+        """The setup file is written only by Save. Before the setup is left (closing, or
+        reading a board again), ask about changes not saved; False means stay."""
+        if not self._unsaved():
+            return True
+        answer = QMessageBox.question(
+            self, "KiPI", "The PI setup has changes that are not saved. Save them?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+        if answer == QMessageBox.Save:
+            self._save_setup()
+        return answer != QMessageBox.Cancel
+
     # ============================================================ close
     def closeEvent(self, event):
+        if not self._keep_or_drop_changes():
+            event.ignore()
+            return
         self._model_timer.stop()            # start no kicad-cli for a closed window
         self._changed_timer.stop()
         self._models_pending = False
