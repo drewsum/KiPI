@@ -9,3 +9,4 @@ dist/
 !examples/**/*.kipi.json.gz
 !tests/data/**/*.kipi.json.gz
 uv.lock
+.vscode/
