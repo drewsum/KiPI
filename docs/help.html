@@ -1485,6 +1485,12 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
   <tr><td>Via grading</td><td class="wrap">Element growth per mm away from plated holes.</td></tr>
   <tr><td>Min edge (at holes)</td><td class="wrap">Element size at plated holes. The mesh here
     decides the via and mounting inductance.</td></tr>
+  <tr><td>Grade only near the rail</td><td class="wrap">On by default. The mesh is refined only
+    at plated holes within five board thicknesses (at least 5 mm) of the rail's copper or a
+    part on it. Far ground vias carry almost none of the rail's current, but grading them can
+    be most of the mesh on a board stitched with many. All the copper is kept either way, so
+    the low-frequency return still takes every path it has. On an 8-layer board it halved the
+    solve and changed the impedance by under 0.002 %.</td></tr>
 </table>
 <p>The via plating rules come from the DC setup's Mesh tab; copper resistivity and the
 dielectric <b>Loss tangent</b> and <b>Default εr</b> from the
@@ -1942,7 +1948,8 @@ README) for a direct solve of up to 1M unknowns.</p></div>
 <details>
 <summary>Solves are slow</summary>
 <div class="body"><p>Raise <b>Max edge</b>, analyze fewer nets at once, and untick unneeded groups
-in the Solve tab. In AC, lower <b>Field solves per decade</b> or raise <b>Min edge</b>. Large planes
+in the Solve tab. In AC, lower <b>Field solves per decade</b>, raise <b>Min edge</b>, or check
+that <b>Grade only near the rail</b> is ticked. Large planes
 are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
 x86-64).</p></div>
 </details>

@@ -112,6 +112,15 @@ milestones rather than versions that were ever set.
   Importing a STEP file of the whole board is not done yet.
 
 ### Changed
+- **Faster AC solves on boards with many ground vias** (#123). The AC mesh is refined
+  toward plated holes, where via inductance is decided, and on a board stitched with
+  hundreds of ground vias that refinement was most of the mesh. It now happens only at
+  holes within five board thicknesses (at least 5 mm) of the rail's copper or its parts
+  (**Grade only near the rail** in the AC Mesh tab, on by default). Every piece of copper is
+  still meshed. On an 8-layer board, a 12 V rail went from 1.06M to 0.64M nodes and from
+  452 s to 237 s, with every probe's impedance within 0.002 %. Leaving the far ground out
+  altogether was tried and dropped. It saves more time but moves the impedance by 2–6 %,
+  because the low-frequency return takes shortcuts through ground nowhere near the rail.
 - **The 3D view in DC reports is lit evenly** (#122): Plotly shaded each flat facet of the
   copper, and the long thin triangles left by thinning the mesh came out in a patchwork of
   dark ones. The color is now the voltage alone.

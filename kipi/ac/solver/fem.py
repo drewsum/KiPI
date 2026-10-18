@@ -49,6 +49,7 @@ import shapely
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
+from kipi.ac.solver.near_rail import near_rail
 from kipi.ac.solver.physics import (
     EPS0_F_PER_MM, MU0_H_PER_MM, slab_difference, slab_impedance,
 )
@@ -156,6 +157,11 @@ class ACSystem:
         stray = [pid for pid in terminal_ids if pad_net.get(pid) not in nets]
         if stray:
             raise ACError(f"Pads are not on the rail or its ground: {stray}")
+        # Via grading only near the rail: far stitching vias carry almost none of its
+        # current, and grading them is most of a large board's mesh (#123).
+        graded = None
+        if ac_settings.grade_near_rail_only:
+            graded = near_rail(snap, self.rail_nets, terminal_ids, dc_settings.circle_quad_segs)
         meshes: List[NetMesh] = []
         kinds = []
         with progress.timed("Meshing rail and ground"):
@@ -169,7 +175,7 @@ class ACSystem:
                     simplify_mm=dc_settings.simplify_mm,
                     circle_quad_segs=dc_settings.circle_quad_segs,
                     min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
-                    progress=progress))
+                    progress=progress, graded=graded))
                 kinds.append(1 if net == gnd_net else 0)
         mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in st.copper])
         self.mesh = mesh

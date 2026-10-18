@@ -510,7 +510,9 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         ["Field solves", f"{len(ff)} ({s.field_points_per_decade or 'every point'} per decade; "
                          "the copper's response is interpolated in between)"],
         ["Mesh", f"max edge {s.max_edge_mm:g} mm, min edge {s.min_edge_mm:g} mm at plated "
-                 f"holes, grading {s.grading:g}"],
+                 f"holes, grading {s.grading:g}"
+                 + (", only at holes near the rail" if getattr(s, "grade_near_rail_only", False)
+                    else "")],
         ["Dielectric", f"loss tangent {s.loss_tangent:g}; εr top to bottom: "
                        f"{dielectric_summary(snap.stackup, s.default_er)}"],
         ["Copper", f"resistivity {setup.settings.rho_ohm_mm * 1e-3:.4g} Ω·m"],

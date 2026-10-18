@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import shapely
@@ -335,7 +335,11 @@ def _hole_features(snap: BoardSnapshot, net: str, layer: int) -> np.ndarray:
 def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = (),
              max_edge_mm: float = 0.5, min_angle_deg: float = 28.0, simplify_mm: float = 0.003,
              circle_quad_segs: int = 2, min_edge_mm: float = 0.02, grading: float = 0.2,
-             progress: ProgressReporter = NULL) -> NetMesh:
+             progress: ProgressReporter = NULL,
+             graded: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> NetMesh:
+    """The net's copper meshed per layer, joined through its plated holes. The mesh is
+    refined toward the holes; ``graded``, if given, picks which (a test of their xy, the
+    AC solve's holes near the rail, #123)."""
     st = snap.stackup
     _, vias, pads, _ = snap.items_on_net(net)
     pad_by_id = {p.id: p for p in pads}
@@ -347,6 +351,7 @@ def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = ()
 
     all_pts, all_tris, node_layer, tri_layer = [], [], [], []
     skipped_rings = 0
+    n_holes_all = n_graded = 0
     layer_ranges: Dict[int, Tuple[int, int]] = {}
     n_nodes = 0
     t0 = time.perf_counter()
@@ -362,7 +367,12 @@ def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = ()
             # Big planes take seconds each; say so before starting, not only after.
             progress.info(f"  {cu.name}: meshing {geom.area:.0f} mm² of copper...")
         constraints = [g.boundary for g in (_pad_geom(p, cu.id) for p in terminals) if g is not None]
-        size_fn = graded_size(_hole_features(snap, net, cu.id), min_edge_mm, max_edge_mm, grading)
+        features = _hole_features(snap, net, cu.id)
+        n_holes_all += len(features)
+        if graded is not None and len(features):
+            features = features[graded(features[:, :2])]
+        n_graded += len(features)
+        size_fn = graded_size(features, min_edge_mm, max_edge_mm, grading)
         start = n_nodes
         n_layer_tris = 0
         ring_centers = _via_ring_centers(vias, pads, cu.id, set(terminal_pad_ids))
@@ -469,6 +479,9 @@ def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = ()
             raise MeshError(f"Pad {p.label} on net {net} has no meshed copper")
         mesh.pad_nodes[p.id] = per_layer
 
+    if graded is not None and n_graded < n_holes_all:
+        progress.info(f"Mesh graded at {n_graded} of {n_holes_all} plated hole rings, those "
+                      "near the rail (the others carry almost none of its current)")
     if skipped_rings:
         progress.info(f"Skipped {skipped_rings} isolated via/PTH ring(s): with nothing else "
                       "attached they cannot carry current")

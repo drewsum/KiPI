@@ -848,6 +848,15 @@ class ACPanel(QWidget, PartSelection):
                                           "(mm of edge per mm of distance)", "mesh", "grading"))
         tip(f, self.spin_min_edge, art_tip("Mesh edge length at plated holes, where via "
                                            "inductance is decided", "mesh", "min"))
+        self.chk_near = QCheckBox("Grade only near the rail")
+        self.chk_near.setChecked(s.grade_near_rail_only)
+        f.addRow(self.chk_near)
+        tip(f, self.chk_near, art_tip(
+            "Refine the mesh only at plated holes near the rail's copper and parts (five "
+            "board thicknesses, at least 5 mm). Far ground vias carry almost none of its "
+            "current: a board stitched with many of them solves much faster, with the same "
+            "result. All the copper is kept either way.", "near_rail", "near"))
+        self.chk_near.toggled.connect(self._ac_settings_changed)
         note = QLabel("The mesh decides the plane spreading and via inductance: elements grow "
                       "from 'min edge' at plated holes by 'via grading' per mm, up to 'max "
                       "edge'. Copper resistivity and barrel plating come from the DC setup; the "
@@ -868,6 +877,7 @@ class ACPanel(QWidget, PartSelection):
         s.max_edge_mm = self.spin_edge.value()
         s.grading = self.spin_grading.value()
         s.min_edge_mm = self.spin_min_edge.value()
+        s.grade_near_rail_only = self.chk_near.isChecked()
         s.dc_bias = self.chk_bias.isChecked()
         s.mfg_tolerance = self.chk_mfg.isChecked()
         s.aging = self.chk_aging.isChecked()
@@ -890,7 +900,8 @@ class ACPanel(QWidget, PartSelection):
             wdg.blockSignals(False)
         self.report_option.set_value(s.html_report, s.report_format)
         for chk, on in ((self.chk_bias, s.dc_bias),
-                        (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging)):
+                        (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging),
+                        (self.chk_near, s.grade_near_rail_only)):
             chk.blockSignals(True)
             chk.setChecked(on)
             chk.blockSignals(False)

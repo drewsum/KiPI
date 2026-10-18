@@ -158,6 +158,9 @@ class ACSettings:
     max_edge_mm: float = 1.0
     grading: float = 0.3
     min_edge_mm: float = 0.03
+    # Grade the mesh only at plated holes near the rail (#123, kipi.ac.solver.near_rail);
+    # off: at every hole of the rail and its ground.
+    grade_near_rail_only: bool = True
     # Dielectric
     loss_tangent: float = 0.02
     default_er: float = 4.3               # where the stackup has no dielectric constant
