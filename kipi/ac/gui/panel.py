@@ -386,8 +386,9 @@ class ProbeEditor(_Editor):
         self.points.setColumnWidth(2, 28)
         self.points.verticalHeader().setVisible(False)
         self.points.setMinimumHeight(130)
-        self.points.setToolTip("Corner points of the custom target mask: a frequency and the "
-                               "target |Z| there. Click a column header to sort by it.")
+        self.points.setToolTip(art_tip(
+            "Corner points of the custom target mask: a frequency and the target |Z| there. "
+            "Click a column header to sort by it.", "target_types", "custom"))
         make_sortable(self.points, self._sort_points, columns=(0, 1))
         self.btn_point = QPushButton("Add point")
         self.btn_point.setToolTip("Add a point a decade above the last one")
@@ -413,6 +414,9 @@ class ProbeEditor(_Editor):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
+        # Drawings under the tooltips (#116): the flat and custom targets on the |Z| plot.
+        art = {self.target_kind: ("target_types", "flat", "custom"),
+               self.target: ("target_types", "flat"), self.target_f: ("target_types", "tf")}
         for w, text in (
                 (self.name, "A name for this probe, shown in the plot legend and the table"),
                 (self.rail, "The device's supply pins: where the impedance is looked into"),
@@ -425,7 +429,7 @@ class ProbeEditor(_Editor):
                               "frequency"),
                 (self.target_f, "Frequency up to which the target impedance applies "
                                 "(none: the whole sweep)")):
-            tip(f, w, text)
+            tip(f, w, art_tip(text, *art[w]) if w in art else text)
         self._watch(self.name, self.target, self.target_f, self.target_kind)
         self.target_kind.currentIndexChanged.connect(self._target_rows)
         self._target_rows()
@@ -831,12 +835,12 @@ class ACPanel(QWidget, PartSelection):
         f.addRow("Min edge (at holes)", self.spin_min_edge)
         f.addRow("Loss tangent", self.spin_tand)
         f.addRow("Default εr", self.spin_er)
-        tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
-                               "accurate and slower.")
-        tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
-                                  "edge per mm of distance)")
-        tip(f, self.spin_min_edge, "Mesh edge length at plated holes, where via inductance "
-                                   "is decided")
+        tip(f, self.spin_edge, art_tip("Largest triangle edge of the copper mesh. Smaller is "
+                                       "more accurate and slower.", "mesh", "max"))
+        tip(f, self.spin_grading, art_tip("How fast mesh elements grow away from plated holes "
+                                          "(mm of edge per mm of distance)", "mesh", "grading"))
+        tip(f, self.spin_min_edge, art_tip("Mesh edge length at plated holes, where via "
+                                           "inductance is decided", "mesh", "min"))
         tip(f, self.spin_tand, "Dielectric loss tangent (FR4 is about 0.02)")
         tip(f, self.spin_er, "Dielectric constant used where the board stackup gives none")
         note = QLabel("The mesh decides the plane spreading and via inductance: elements grow "

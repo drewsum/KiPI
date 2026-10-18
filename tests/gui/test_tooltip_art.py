@@ -30,7 +30,8 @@ def fresh(monkeypatch, tmp_path):
 def test_the_graphics_folder_holds_the_drawings():
     assert ta.GRAPHICS.is_dir()
     assert {"cap_model", "dc_bias", "aging", "vrm_types", "load_line", "dropout", "accuracy",
-            "bandwidth", "phases", "remote_sense"} <= set(ta.names())
+            "bandwidth", "phases", "remote_sense", "target_types", "series_link", "mesh",
+            "current_split", "tolerance", "vrm_pins"} <= set(ta.names())
 
 
 @pytest.mark.parametrize("name", ta.names())

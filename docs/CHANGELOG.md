@@ -12,7 +12,11 @@ milestones rather than versions that were ever set.
   shade darker), with the field's part picked out: the capacitor model (C, ESL and ESR in
   series and the impedance curve each sets), the DC bias curve (voltage rating, kept at
   rating) and aging; the VRM types, load line, dropout and input range, DC accuracy,
-  control loop bandwidth, phases and remote sense. The drawings live in one folder,
+  control loop bandwidth, phases and remote sense; the VRM's output, input and ground pins;
+  a range's V or % unit against the nominal voltage (load tolerance, VRM input range and
+  DC accuracy); a load's current split (equal or per pin group); a series link's DCR and
+  ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
+  edge, via grading and min edge. The drawings live in one folder,
   `kipi/gui/graphics/`, as SVG templates; where Qt cannot render them, the tooltip is its
   text alone.
 - **Stackup cross-section** (#104). Beside the Stackup window's table, the layers are drawn

@@ -472,7 +472,11 @@ class VrmEditor(_Editor):
                self.acc_row: ("accuracy", "min", "max"), self.acc_row.min: ("accuracy", "min"),
                self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
                self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
-               self.ground_sense: ("remote_sense", "gsense")}
+               self.ground_sense: ("remote_sense", "gsense"),
+               self.vin_row.unit: ("tolerance", "volts", "pct"),
+               self.acc_row.unit: ("tolerance", "volts", "pct"),
+               self.output: ("vrm_pins", "out"), self.input: ("vrm_pins", "inp"),
+               self.ground: ("vrm_pins", "gnd")}
         for w, text in (
                 (self.name, "A name for this regulator, used in the results tables"),
                 (self.kind, "Source: an ideal supply with no input (a connector, a bench "
@@ -745,6 +749,11 @@ class LoadEditor(_Editor):
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
         f.addRow("Heat", self.heat)
+        # Drawings under the tooltips (#116), the field's part picked out.
+        art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
+               self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
+               self.tol.max: ("tolerance", "max"),
+               self.tol.unit: ("tolerance", "volts", "pct")}
         for w, text in (
                 (self.name, "A name for this load, used in the results tables"),
                 (self.supply, "The pins the load draws its current from"),
@@ -770,10 +779,10 @@ class LoadEditor(_Editor):
                             "power is included (Thermal tab). Not set: the power it draws, pin "
                             "current × pin voltage. Set it for a part that passes most of its "
                             "power on (load switch, LED or motor driver).")):
-            tip(f, w, text)
-        self.groups.setToolTip("Pin groups: an optional name, the pin numbers (e.g. 15,28) "
-                               "and the current into those pins. Click a column header to "
-                               "sort by it.")
+            tip(f, w, art_tip(text, *art[w]) if w in art else text)
+        self.groups.setToolTip(art_tip(
+            "Pin groups: an optional name, the pin numbers (e.g. 15,28) and the current into "
+            "those pins. Click a column header to sort by it.", "current_split", "groups"))
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
         self._watch(self.name, self.current, self.mode, self.heat)
         self.tol.changed.connect(self._store)
@@ -921,6 +930,8 @@ class LinkEditor(_Editor):
         f.addRow("Side B pins", self.b)
         f.addRow("Resistance (DCR)", self.r)
         f.addRow("ESL", self.esl)
+        # Drawings under the tooltips (#116): the part as a DCR and an ESL in series.
+        art = {self.r: ("series_link", "r"), self.esl: ("series_link", "l")}
         for w, text in (
                 (self.name, "A name for this part, used in the results tables"),
                 (self.a, "The part's pins on one net"),
@@ -929,7 +940,7 @@ class LinkEditor(_Editor):
                 (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
                          "read from the part's value when both sides are on it."),
                 (self.esl, "Series inductance (ESL) of the part")):
-            tip(f, w, text)
+            tip(f, w, art_tip(text, *art[w]) if w in art else text)
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
                       "load switch…). The nets it joins are simulated together.")
         hint.setWordWrap(True)
@@ -1631,11 +1642,12 @@ class PIPanel(QWidget, PartSelection):
         f.addRow("Via grading", self.spin_grading)
         f.addRow(QLabel("<b>Via plating</b>"))
         f.addRow(self.via_rules)
-        tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
-                               "accurate and slower.")
-        tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
-                                  "edge per mm of distance). Lower keeps the mesh fine further "
-                                  "out from vias; 0 turns grading off.")
+        tip(f, self.spin_edge, art_tip("Largest triangle edge of the copper mesh. Smaller is "
+                                       "more accurate and slower.", "mesh", "max"))
+        tip(f, self.spin_grading, art_tip("How fast mesh elements grow away from plated holes "
+                                          "(mm of edge per mm of distance). Lower keeps the "
+                                          "mesh fine further out from vias; 0 turns grading "
+                                          "off.", "mesh", "grading"))
         for sp in (self.spin_edge, self.spin_grading):
             sp.valueChanged.connect(self._settings_changed)
         self.via_rules.changed.connect(self._settings_changed)
