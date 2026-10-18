@@ -18,7 +18,7 @@ from kipi.dc.pi.load_model import (
     SUFFIX, LoadModel, ModelError, best_supply, model_of, model_refs, new_items,
 )
 
-FILTER = "KiPI load models (*.yml *.yaml *.json);;All files (*)"
+FILTER = "KiPI load models (*.yml *.yaml)"
 _DIR_KEY = "load_model/dir"
 SKIP = "(leave as is)"
 

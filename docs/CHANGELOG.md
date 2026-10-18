@@ -19,15 +19,15 @@ milestones rather than versions that were ever set.
   and ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
   edge, via grading and min edge. The drawings live in one folder, `kipi/gui/graphics/`,
   as SVG templates; where Qt cannot render them, the tooltip is its text alone.
-- **Load models** (#17). A part's supplies in a YAML file of their own (JSON without
-  PyYAML): for each supply its pins and ground pins, current or pin groups, tolerance (V, ±V
-  or %) and heat, and for AC its target (flat or custom points) or the load step, slew rate
-  and AC tolerance a target is worked out from. A **Model ▾** button under the DC Loads and
-  AC Probes lists exports a part's model (every load and probe on one reference designator,
-  one supply each, so parts with several supplies keep them all), applies a model to any
-  number of loads or probes at once (each from the supply chosen beside it; matches by pins
-  or name come ticked), and adds a model's loads or probes on every part ticked that has
-  its pins.
+- **Load models** (#17). A part's supplies in a YAML file of their own (`.yml` or `.yaml`,
+  nothing else): for each supply its pins and ground pins, current or pin groups,
+  tolerance (V, ±V or %) and heat, and for AC its target (flat or custom points) or the
+  load step, slew rate and AC tolerance a target is worked out from. A **Model ▾** button
+  under the DC Loads and AC Probes lists exports a part's model (every load and probe on
+  one reference designator, one supply each, so parts with several supplies keep them
+  all), applies a model to any number of loads or probes at once (each from the supply
+  chosen beside it; matches by pins or name come ticked), and adds a model's loads or
+  probes on every part ticked that has its pins.
 - **KiPI in Task Manager** (#124). KiPI shows as *KiPI* with its icon, not as *Python*, in
   Windows Task Manager, macOS Activity Monitor and Linux System Monitor / top / ps. Task
   Manager names an app by the program that owns its window, so on Windows KiPI (plugin or

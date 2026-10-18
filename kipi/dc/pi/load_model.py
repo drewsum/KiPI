@@ -1,7 +1,7 @@
 """Load models (#17): what a part draws from each of its supplies, in a file of its own, to
 use for every copy of the part and on other boards.
 
-A model file is YAML (JSON where PyYAML is missing) and names one part:
+A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
 
 .. code-block:: yaml
 
@@ -28,7 +28,6 @@ all. Pins make a model usable to add the loads and probes for another copy of th
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -123,37 +122,38 @@ class LoadModel:
                                                      enumerate(supplies)])
 
     def save(self, path) -> Path:
-        """Write the model, as YAML unless ``path`` is .json or PyYAML is missing."""
-        from kipi.core import yaml_io
+        """Write the model as YAML, to ``path`` with ``.yml`` added unless it ends in
+        ``.yml`` or ``.yaml``; the path written."""
         path = Path(path)
-        if is_yaml(path) and yaml_io.available():
-            path.write_text(yaml_io.dumps(self.to_dict()), encoding="utf-8")
-        else:
-            path = path if path.suffix.lower() == ".json" else path.with_suffix(".json")
-            path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        if not is_yaml(path):
+            path = path.with_name(path.name + ".yml")
+        path.write_text(_yaml().dumps(self.to_dict()), encoding="utf-8")
         return path
 
     @staticmethod
     def load(path) -> "LoadModel":
-        from kipi.core import yaml_io
         path = Path(path)
+        if not is_yaml(path):
+            raise ModelError(f"{path.name}: load models are YAML files (.yml or .yaml)")
+        yaml_io = _yaml()
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as e:
             raise ModelError(f"cannot read {path.name}: {e}") from e
         try:
-            if is_yaml(path):
-                if not yaml_io.available():
-                    raise ModelError("reading YAML needs PyYAML, which is not installed")
-                data = yaml_io.loads(text)
-            else:
-                data = json.loads(text)
-        except ModelError:
-            raise
-        except Exception as e:  # noqa: BLE001 - YAML and JSON raise their own kinds
-            raise ModelError(f"{path.name} is not valid {'YAML' if is_yaml(path) else 'JSON'}"
-                             f": {e}") from e
+            data = yaml_io.loads(text)
+        except Exception as e:  # noqa: BLE001 - PyYAML's errors have no one base class here
+            raise ModelError(f"{path.name} is not valid YAML: {e}") from e
         return LoadModel.from_dict(data)
+
+
+def _yaml():
+    """KiPI's YAML module; PyYAML is a requirement, so missing means a broken install."""
+    from kipi.core import yaml_io
+    if not yaml_io.available():
+        raise ModelError("load models need PyYAML, one of KiPI's requirements, which is not "
+                         "installed: reinstall KiPI's packages")
+    return yaml_io
 
 
 def _num(d: dict, key: str, where: str) -> Optional[float]:

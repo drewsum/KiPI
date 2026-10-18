@@ -59,7 +59,18 @@ def test_a_model_file_reads_and_writes_back(tmp_path):
     assert (core.step_a, core.slew_a_per_us, core.heat_w) == (0.6, 5.0, 0.9)
     again = LoadModel.load(m.save(tmp_path / "again.yml"))
     assert again == m
-    assert LoadModel.load(m.save(tmp_path / "again.json")) == m
+    assert m.save(tmp_path / "again.json") == tmp_path / "again.json.yml"   # YAML only
+
+
+def test_only_yaml_files_are_load_models(tmp_path, monkeypatch):
+    path = tmp_path / "model.json"
+    path.write_text('{"kipi_load_model": 1, "supplies": []}', encoding="utf-8")
+    with pytest.raises(ModelError, match="YAML files"):
+        LoadModel.load(path)
+    from kipi.core import yaml_io
+    monkeypatch.setattr(yaml_io, "yaml", None)
+    with pytest.raises(ModelError, match="need PyYAML"):
+        LoadModel().save(tmp_path / "x.yml")
 
 
 @pytest.mark.parametrize("text, why", [
