@@ -217,6 +217,86 @@ def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
     assert d.v_ac.value() == 0                                 # never below zero
 
 
+# --- Subtract the solved DC drop at the load's pins ----------------------------------------
+
+def _tree(*loads):
+    """A power-tree result holding ``(name, nominal, v_effective)`` load reports."""
+    from kipi.dc.pi.results import LoadReport, TreeResult
+    return TreeResult(loads=[
+        LoadReport(name=n, group="+1V0", current=1.0, nominal=nom, v_supply=v, v_supply_min=v,
+                   v_ground=0.0, v_effective=v, drop=nom - v, tolerance="", passed=True)
+        for n, nom, v in loads])
+
+
+def test_load_drop_is_the_solved_effective_voltage_against_nominal():
+    from kipi.ac.target import load_drop
+    d = load_drop(_tree(("SoC", 1.0, 0.973)), "SoC")
+    assert (d.v, d.kind) == (pytest.approx(0.027), "drop")
+    assert d.nominal == 1.0 and d.v_effective == pytest.approx(0.973)
+    assert d.label() == "SoC: 0.973 V of 1 V (27 mV drop)"
+    boost = load_drop(_tree(("SoC", 1.0, 1.004)), "SoC")       # a remote-sensed VRM
+    assert (boost.v, boost.kind) == (pytest.approx(0.004), "boost")
+    assert load_drop(_tree(("SoC", 1.0, 0.97)), "IO") is None  # not in that solve
+    assert load_drop(_tree(("SoC", 1.0, float("nan"))), "SoC") is None   # disconnected (#88)
+    assert load_drop(_tree(("SoC", 0.0, 0.0)), "SoC") is None   # no VRM drives it
+    assert load_drop(None, "SoC") is None                       # no solve yet
+
+
+def test_probe_loads_carry_their_drop_once_solved():
+    from kipi.ac.target import probe_loads
+    from kipi.dc.pi.model import PinRef
+    s, rail = _setup(), PinRef("U1", "+1V0")
+    assert probe_loads(s, rail)[0].drop is None                 # no DC result
+    ls = probe_loads(s, rail, None, _tree(("SoC", 1.0, 0.95)))
+    assert ls[0].drop.v == pytest.approx(0.05) and ls[1].drop is None
+
+
+def test_dialog_subtracts_the_dc_drop(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import LoadDrop, ProbeLoad
+    monkeypatch.setattr(TargetCalculator, "last", (50.0, 0.0, 0.0))
+    unsolved = TargetCalculator(loads=[ProbeLoad("SoC", None, 2.0)])
+    assert not unsolved.btn_drop.isEnabled()
+    assert "solve the power tree" in unsolved.btn_drop.toolTip()
+    assert not TargetCalculator().btn_drop.isEnabled()           # no load at all
+    d = TargetCalculator(loads=[ProbeLoad("SoC", None, 2.0,
+                                          drop=LoadDrop("SoC", 1.0, 0.988, 0.012, "drop"))])
+    assert d.btn_drop.isEnabled() and "12 mV drop at SoC's pins" in d.btn_drop.toolTip()
+    d.btn_drop.click()
+    assert d.v_ac.value() == pytest.approx(38)                   # 50 mV - 12 mV
+    for _ in range(4):
+        d.btn_drop.click()
+    assert d.v_ac.value() == 0                                   # never below zero
+    # Solved, but sitting exactly at the set voltage: nothing to take off
+    flat = TargetCalculator(loads=[ProbeLoad("SoC", None, 2.0,
+                                             drop=LoadDrop("SoC", 1.0, 1.0, 0.0, "drop"))])
+    assert not flat.btn_drop.isEnabled()
+    assert "sits at its VRM's set voltage" in flat.btn_drop.toolTip()
+
+
+def test_the_calculator_gets_the_panels_dc_result(app, monkeypatch):
+    from kipi.ac.gui import target_calc
+    from kipi.ac.gui.panel import ACPanel
+    from kipi.ac.model import Probe
+    from kipi.dc.pi.model import PinRef
+    panel = ACPanel()
+    panel.setup = _setup()
+    panel.setup.probes.append(Probe("U1", PinRef("U1", "+1V0", ["1"]), PinRef("U1", "GND")))
+    panel.setEnabled(True)
+    panel.probe_list.reload()
+    panel.probe_list.lst.setCurrentRow(0)
+    seen = []
+    monkeypatch.setattr(target_calc.TargetCalculator, "exec",
+                        lambda dlg: seen.append([p.drop for p in dlg.loads]) or 0)
+    panel.probe_list.editor.btn_calc.click()
+    assert seen[-1] == [None, None]                   # no DC solve yet
+    panel.set_dc_result(_tree(("SoC", 1.0, 0.94)))
+    panel.probe_list.editor.btn_calc.click()
+    assert seen[-1][0].v == pytest.approx(0.06) and seen[-1][1] is None
+    panel.set_board(panel.snapshot, panel.setup, "")   # a new board forgets it
+    assert panel.dc_result is None
+
+
 def test_probe_editor_offers_the_parts_loads(app, monkeypatch):
     from kipi.ac.gui import target_calc
     from kipi.ac.gui.panel import ACPanel

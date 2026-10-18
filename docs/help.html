@@ -1228,6 +1228,14 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
     tolerance: ± its tighter side, from the voltage of the VRM feeding it (2 % for
     -2 % / +5 %). A DC tolerance is the whole budget, and the DC drop
     uses up part of it, so lower the value if the AC part is smaller.</li>
+  <li><b>Subtract DC drop at the load</b> takes the DC drop the copper causes at the
+    selected load's own pins off the AC voltage tolerance, so what is left is the budget for
+    the transient. It reads the last DC solve: its effective voltage there (supply pins minus
+    ground pins) against the set voltage of the VRM driving it, so <b>solve the power tree on
+    the DC tab first</b> &mdash; without a result for that load the button stays disabled and
+    says so. A load above its set voltage (a remote-sensed VRM raises pins near it) has its
+    boost subtracted just the same, since it eats the same symmetric window. Each click
+    subtracts again.</li>
   <li><b>Subtract VRM DC accuracy</b> takes the DC accuracy of the LDO or switcher driving
     the probe's rail off the AC voltage tolerance: the larger side of it (20 mV for
     -1 % / +2 % of 1 V), as the output may already sit that far from its set voltage. It

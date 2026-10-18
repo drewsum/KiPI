@@ -9,6 +9,11 @@ milestones rather than versions that were ever set.
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
 
 ### Added
+- Target calculator: **Subtract DC drop at the load** takes the DC drop at the selected
+  load's pins off the AC voltage tolerance, from the last power-tree solve: its effective
+  voltage (supply minus ground pins) against the set voltage of the VRM driving it. It needs
+  a DC solve, and stays disabled, with the reason in its tooltip, until that load has a
+  result. A boost (a load above the set voltage) is subtracted the same way.
 - AC Probes tab: **From DC load**, next to Add, Duplicate and Remove, adds a probe on the
   same supply and ground nets, parts and pins as the DC load picked from its dropdown. A
   load without ground pins gets its part's pins on its ground net.

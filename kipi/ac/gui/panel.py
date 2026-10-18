@@ -467,7 +467,8 @@ class ProbeEditor(_Editor):
         rail = self.rail.value() or self.obj.rail
         ground = self.ground.value() or self.obj.ground
         dlg = TargetCalculator(self, self.name.text().strip(),
-                               probe_loads(self.panel.setup, rail, ground),
+                               probe_loads(self.panel.setup, rail, ground,
+                                           self.panel.dc_result),
                                vrm_accuracies(self.panel.setup, rail))
         if dlg.exec() and dlg.target() is not None:
             self.apply_target(dlg.target())
@@ -535,6 +536,8 @@ class ACPanel(QWidget):
         self._nets: List[str] = []
         self.result = None
         self._results: Dict[str, object] = {}     # the last ACResult of each rail (VRM name)
+        # The last DC solve, for the target calculator's DC drop (None until one is run).
+        self.dc_result = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
 
@@ -859,9 +862,14 @@ class ACPanel(QWidget):
     def nets(self) -> List[str]:
         return list(self._nets)
 
+    def set_dc_result(self, tree):
+        """The power-tree result the target calculator reads its DC drops from, or None."""
+        self.dc_result = tree
+
     def set_board(self, snap: BoardSnapshot, setup: PISetup, file_label: str):
         self.snapshot = snap
         self.setup = setup
+        self.dc_result = None
         self.lbl_file.setText(file_label)
         self._load_ac_settings()
         self.clear_results()

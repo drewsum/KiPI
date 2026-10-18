@@ -18,8 +18,10 @@ applies above the VRM's bandwidth (:func:`judged_from`).
 
 The calculator's AC tolerance and load step can be copied from the DC load on the probe's
 pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from the voltage of the
-VRM feeding it, and its current. The DC accuracy of the VRM driving the rail can be taken
-off the tolerance (:func:`vrm_accuracies`): the larger side of it.
+VRM feeding it, and its current. Two things that eat into that tolerance before any load
+step can be taken off it: the DC accuracy of the VRM driving the rail
+(:func:`vrm_accuracies`), the larger side of it, and the DC drop the copper itself causes
+at the load's pins (:func:`load_drop`), which needs a DC solve.
 """
 
 from __future__ import annotations
@@ -158,11 +160,25 @@ class VrmAccuracy:
 
 
 @dataclass
+class LoadDrop:
+    name: str             # the DC load's name
+    nominal: float        # the set voltage of the VRM that drove it in the solve
+    v_effective: float    # its solved effective voltage: supply pins minus ground pins
+    v: float              # how far that sits from nominal, volts (never negative)
+    kind: str             # "drop" (below the set voltage) or "boost" (above it)
+
+    def label(self) -> str:
+        return (f"{self.name}: {self.v_effective:.4g} V of {self.nominal:g} V "
+                f"({self.v * 1e3:.4g} mV {self.kind})")
+
+
+@dataclass
 class ProbeLoad:
     name: str                           # the DC load's name
     tolerance: Optional[LoadTolerance]  # the AC tolerance it allows, if it has one
     current_a: float                    # its total current, 0 for none
     exact: bool = False                 # its pins are the probe's pins
+    drop: Optional[LoadDrop] = None     # its DC drop, once the power tree is solved
 
     def label(self) -> str:
         return self.name
@@ -172,12 +188,27 @@ def _same_pins(a: Optional["PinRef"], b: Optional["PinRef"]) -> bool:
     return bool(a and b) and (a.ref, a.net, sorted(a.pins)) == (b.ref, b.net, sorted(b.pins))
 
 
+def load_drop(dc_result, name: str) -> Optional[LoadDrop]:
+    """How far a DC load's solved effective voltage sits from the set voltage of the VRM
+    feeding it, out of the power-tree result ``dc_result``. None without a solve, or when
+    that solve has no voltage for the load: it was not in the setup then, it has no copper
+    path to its VRM (#88), or no VRM drives it."""
+    from kipi.dc.pi.results import drop_or_boost
+    for r in getattr(dc_result, "loads", None) or []:
+        if r.name != name or not r.nominal or not math.isfinite(r.v_effective):
+            continue
+        v, kind = drop_or_boost(r.nominal - r.v_effective)
+        return LoadDrop(name, r.nominal, r.v_effective, v, kind) if kind else None
+    return None
+
+
 def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
-                ground: Optional["PinRef"] = None) -> List[ProbeLoad]:
+                ground: Optional["PinRef"] = None, dc_result=None) -> List[ProbeLoad]:
     """The DC loads on the probe's part: their supply pins on the footprint of the probe's
     supply pins ``rail``, and their ground pins, where both have them, on the footprint of
     its ``ground``. A load whose supply and ground pins are the probe's own comes first,
-    ``exact``; a load without ground pins matches on its supply pins alone."""
+    ``exact``; a load without ground pins matches on its supply pins alone. With the result
+    of a power-tree solve, each load also carries its DC drop (:func:`load_drop`)."""
     from kipi.dc.pi.model import net_groups
     if rail is None:
         return []
@@ -194,7 +225,8 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
             tol = vrm and LoadTolerance.of(load, vrm.voltage)
         exact = _same_pins(load.supply, rail) and (load.ground is None
                                                    or _same_pins(load.ground, ground))
-        out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact))
+        out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact,
+                             load_drop(dc_result, load.name)))
     out.sort(key=lambda p: not p.exact)
     return out
 

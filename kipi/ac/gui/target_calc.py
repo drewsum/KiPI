@@ -63,6 +63,10 @@ class TargetCalculator(QDialog):
         self.load.currentIndexChanged.connect(self._load_changed)
         self.btn_copy = QPushButton("Copy tolerance from DC load")
         self.btn_copy.clicked.connect(lambda: self.copy_tolerance(self.selected_load()))
+        # Take the DC drop at the load's own pins, out of the last DC solve, off the
+        # tolerance: the copper has used up that much of it before any load step.
+        self.btn_drop = QPushButton("Subtract DC drop at the load")
+        self.btn_drop.clicked.connect(lambda: self.subtract_drop(self.selected_load()))
         # Take the DC accuracy of the rail's VRM off the AC tolerance.
         self.accuracies = list(accuracies or [])
         self.btn_accuracy = _copy_button(
@@ -83,6 +87,7 @@ class TargetCalculator(QDialog):
         form.addRow("DC load", self.load)
         form.addRow("AC voltage tolerance", self.v_ac)
         form.addRow("", self.btn_copy)
+        form.addRow("", self.btn_drop)
         form.addRow("", self.btn_accuracy)
         form.addRow("Load step (ΔI)", self.i_step)
         form.addRow("", self.btn_current)
@@ -123,6 +128,21 @@ class TargetCalculator(QDialog):
         else:
             tip = "No DC load on this probe's part"
         self.btn_copy.setToolTip(tip)
+        drop = load.drop if load else None
+        self.btn_drop.setEnabled(bool(drop and drop.v > 0))
+        if drop and drop.v > 0:
+            tip = (f"Take the {drop.v * 1e3:.4g} mV {drop.kind} at {drop.name}'s pins off the "
+                   f"AC voltage tolerance: its effective voltage in the last DC solve, "
+                   f"{drop.v_effective:.4g} V, against the {drop.nominal:g} V its VRM is set "
+                   "to. Each click subtracts it again.")
+        elif drop:
+            tip = f"{drop.name} sits at its VRM's set voltage in the last DC solve"
+        elif load:
+            tip = (f"No DC result for {load.name}: solve the power tree on the DC tab, then "
+                   "open the calculator again")
+        else:
+            tip = "No DC load on this probe's part"
+        self.btn_drop.setToolTip(tip)
         self.btn_current.setEnabled(bool(load and load.current_a))
         if load and load.current_a:
             tip = (f"Fill in the load step from {load.name}'s current, {load.current_a:g} A: "
@@ -135,6 +155,10 @@ class TargetCalculator(QDialog):
     def copy_tolerance(self, load: Optional[ProbeLoad]):
         if load and load.tolerance:
             self.v_ac.setValue(load.tolerance.v_ac_v * 1e3)
+
+    def subtract_drop(self, load: Optional[ProbeLoad]):
+        if load and load.drop:
+            self.v_ac.setValue(max(0.0, self.v_ac.value() - load.drop.v * 1e3))
 
     def subtract_accuracy(self, a: VrmAccuracy):
         self.v_ac.setValue(max(0.0, self.v_ac.value() - a.v * 1e3))

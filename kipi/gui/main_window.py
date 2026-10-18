@@ -780,8 +780,7 @@ class MainWindow(QMainWindow):
         self._set_title(snap.board_name)
         self._load_layer_colors(snap)
         self._result = None
-        self._tree = None
-        self._scenes = {}
+        self._set_tree(None, {})
         self._pending_stackup = None
         setup = self._load_setup(snap)
         self._imported_stackup = snap.stackup
@@ -1138,6 +1137,12 @@ class MainWindow(QMainWindow):
             self.log(f"Could not save the setup: {e}", logging.WARNING)
 
     # ------------------------------------------------------------ solve
+    def _set_tree(self, tree, scenes):
+        """The DC result every other part of the window reads: the capacitors' DC bias in
+        an AC solve (#74) and the DC drop in the AC target calculator."""
+        self._tree, self._scenes = tree, scenes
+        self.ac_panel.set_dc_result(tree)
+
     def run_solve(self, setup):
         snap = self.snapshot
         if snap is None:
@@ -1188,7 +1193,7 @@ class MainWindow(QMainWindow):
             if tree is None:
                 self.solve_panel.show_error(scenes)
                 return
-            self._tree, self._scenes = tree, scenes
+            self._set_tree(tree, scenes)
             self.solve_panel.set_report(getattr(tree, "report_path", None))
             self._open_new_report(getattr(tree, "report_path", None))
             first = tree.loads[0].group if tree.loads else next(iter(tree.groups))
@@ -1338,7 +1343,7 @@ class MainWindow(QMainWindow):
                  f"{st.board_thickness_mm:.3f} mm board"
                  + ("; solve again for results with it" if self._tree is not None else ""))
         if self._tree is not None:
-            self._tree, self._scenes = None, {}
+            self._set_tree(None, {})
             self.solve_panel.clear_results()
         self._populate_layers()
         self._show_board_summary()
@@ -1433,7 +1438,7 @@ class MainWindow(QMainWindow):
             if self.snapshot is not None and data["board"] != self.snapshot.board_name:
                 self.log(f"Results are for {data['board']}, not {self.snapshot.board_name}",
                          logging.WARNING)
-            self._tree, self._scenes = data["tree"], data["scenes"]
+            self._set_tree(data["tree"], data["scenes"])
             first = (self._tree.loads[0].group if self._tree.loads
                      else next(iter(self._tree.groups)))
             self.solve_panel.show_results(self._tree, first)
