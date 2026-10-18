@@ -9,6 +9,11 @@ milestones rather than versions that were ever set.
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
 
 ### Added
+- Capacitor models have an optional **Manufacturing tolerance** (% of nominal), and the
+  Sweep tab a **Capacitor manufacturing tolerance** tick that solves every model which has
+  one at the low end of it: the tolerance is subtracted, so a ±10 % model keeps 90 % of its
+  capacitance, the worst case for a PDN. It multiplies with the DC bias estimate, aging and
+  temperature, and the Results notes and HTML report say which models were derated.
 - Target calculator: **Subtract DC drop at the load** takes the DC drop at the selected
   load's pins off the AC voltage tolerance, from the last power-tree solve: its effective
   voltage (supply minus ground pins) against the set voltage of the VRM driving it. It needs

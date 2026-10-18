@@ -89,6 +89,9 @@ class CapEditor(_Editor):
         self.aging = _spin(0, 50, 0, 2, " %/decade", 0.5)
         f.addRow("Dielectric", self.dielectric)
         f.addRow("Aging", self.aging)
+        self.mfg_tol = _spin(0, 100, 0, 1, " %", 1)
+        self.mfg_tol.setSpecialValueText("not set")
+        f.addRow("Manufacturing tolerance", self.mfg_tol)
         for w, text in (
                 (self.name, "A name for this model, e.g. the part number or value"),
                 (self.cap, "Capacitance of one part, at no DC bias. For a ceramic (X5R, "
@@ -114,11 +117,17 @@ class CapEditor(_Editor):
                 (self.aging, "Capacitance lost per decade of hours (e.g. from 1000 to 10000 "
                              "hours). Picking a dielectric fills in its typical rate; the "
                              "datasheet's is better."),
+                (self.mfg_tol, "The part's capacitance tolerance, from its datasheet or "
+                                "value code (K is ±10 %, M ±20 %, J ±5 %). Optional. With "
+                                "Capacitor manufacturing tolerance ticked in the Sweep tab, "
+                                "the model is solved at the low end of it, the worst case for "
+                                "a PDN: a ±10 % part keeps 90 % of its capacitance."),
                 (self.esl, "Equivalent series inductance of the part itself (from its "
                            "datasheet); the board's mounting inductance is simulated"),
                 (self.esr, "Equivalent series resistance of one part, from its datasheet")):
             tip(f, w, text)
-        self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept)
+        self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept,
+                    self.mfg_tol)
         self.rated.valueChanged.connect(lambda v: self.kept.setEnabled(v > 0))
         self.dielectric.currentIndexChanged.connect(self._dielectric_changed)
         self._watch(self.aging)
@@ -195,6 +204,7 @@ class CapEditor(_Editor):
         self.dielectric.setCurrentIndex(i)
         self.aging.setValue(m.aging_pct_per_decade)
         self.aging.setEnabled(bool(m.dielectric))
+        self.mfg_tol.setValue(m.mfg_tolerance_pct or 0.0)
         self.fill_table()
 
     def _save(self, m: CapModel):
@@ -206,6 +216,7 @@ class CapEditor(_Editor):
         m.kept_at_rated_pct = self.kept.value()
         m.dielectric = self.dielectric.currentData() or ""
         m.aging_pct_per_decade = self.aging.value()
+        m.mfg_tolerance_pct = self.mfg_tol.value() or None
 
     # ------------------------------------------------------------ parts
     def fill_table(self):
@@ -708,6 +719,14 @@ class ACPanel(QWidget):
                               "or else the rail's VRM set point). Untick to solve with every "
                               "model's capacitance as entered.")
         self.chk_bias.toggled.connect(self._ac_settings_changed)
+        self.chk_mfg = QCheckBox("Capacitor manufacturing tolerance")
+        self.chk_mfg.setChecked(s.mfg_tolerance)
+        f.addRow(self.chk_mfg)
+        tip(f, self.chk_mfg, "Solve the capacitor models that have a Manufacturing tolerance "
+                             "at the low end of it, the worst case for a PDN: a model with a "
+                             "±10 % tolerance keeps 90 % of its capacitance. Models without "
+                             "one are unchanged.")
+        self.chk_mfg.toggled.connect(self._ac_settings_changed)
         self.cmb_temp = QComboBox()
         for text, key in (("Not modeled", "none"), ("Fixed", "fixed"),
                           ("From DC thermal co-simulation", "thermal")):
@@ -827,6 +846,7 @@ class ACPanel(QWidget):
         s.loss_tangent = self.spin_tand.value()
         s.default_er = self.spin_er.value()
         s.dc_bias = self.chk_bias.isChecked()
+        s.mfg_tolerance = self.chk_mfg.isChecked()
         s.aging = self.chk_aging.isChecked()
         s.aging_hours = self.spin_hours.value()
         s.temperature = self.cmb_temp.currentData() or "none"
@@ -847,7 +867,7 @@ class ACPanel(QWidget):
             wdg.setValue(v)
             wdg.blockSignals(False)
         for chk, on in ((self.chk_report, s.html_report), (self.chk_bias, s.dc_bias),
-                        (self.chk_aging, s.aging)):
+                        (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging)):
             chk.blockSignals(True)
             chk.setChecked(on)
             chk.blockSignals(False)
@@ -1077,6 +1097,7 @@ class ACPanel(QWidget):
                 if m.capacitance_f and m.esl_h and m.esr_ohm else "values needed")
         bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias else ""
         bias += f", {m.dielectric}" if m.dielectric else ""
+        bias += f", ±{m.mfg_tolerance_pct:g} %" if m.mfg_tolerance_pct else ""
         return (f"{m.name}: {vals}{bias} "
                 f"({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})")
 

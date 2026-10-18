@@ -1146,6 +1146,11 @@ are required.</p>
   <tr><td>Aging</td><td class="wrap">Capacitance lost per decade of hours operated, in % (X7R
     about 2, X5R about 3, Y5V about 7; C0G does not age). Enter the datasheet's rate if it
     gives one. Used when <b>Capacitor aging</b> is ticked in the Sweep tab.</td></tr>
+  <tr><td>Manufacturing tolerance</td><td class="wrap">Optional: the part's capacitance
+    tolerance, in % of nominal, from its datasheet or its value code (J is ±5 %, K ±10 %,
+    M ±20 %). Used when <b>Capacitor manufacturing tolerance</b> is ticked in the Sweep tab,
+    which solves the model at the low end of it. Leave it <b>not set</b> for a part whose
+    entered capacitance is already the figure you want simulated.</td></tr>
   <tr><td>Kept at rating</td><td class="wrap">How much of its capacitance the part keeps at its
     rated voltage, from the datasheet's DC bias curve (40 % by default; often 30 to 50 %, and
     less for smaller cases). Between 0 V and beyond the rating, the capacitance follows
@@ -1274,6 +1279,12 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
   <tr><td>Capacitor DC bias</td><td class="wrap">Ticked (the default), the capacitor models
     with a <b>Voltage rating</b> are derated by the DC voltage across each part. Untick it to
     solve with every model's capacitance as entered.</td></tr>
+  <tr><td>Capacitor manufacturing tolerance</td><td class="wrap">Ticked, every capacitor
+    model with a <b>Manufacturing tolerance</b> is solved at the low end of it: the tolerance
+    is subtracted, so a ±10 % model keeps 90 % of its capacitance and a ±20 % model 80 %.
+    That is the worst case for a PDN, where too little capacitance raises the impedance.
+    Models without a tolerance are unchanged. This multiplies with the DC bias estimate,
+    aging and temperature. Off by default.</td></tr>
   <tr><td>Temperature</td><td class="wrap"><i>Not modeled</i> (the default): copper at 20 °C
     and capacitors at their rated values. <i>Fixed</i>: the whole board at <b>Board
     temperature</b>. <i>From DC thermal co-simulation</i>: each copper triangle and capacitor

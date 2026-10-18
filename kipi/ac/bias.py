@@ -5,7 +5,9 @@ DC bias are derated part by part, at the voltage the last DC solve found across 
 part's pads; without one (or for a part off the DC solve's copper), at the rail's VRM set
 point.
 
-Models with a dielectric are also aged (#109), when the sweep settings say for how long.
+Models with a dielectric are also aged (#109), when the sweep settings say for how long,
+and models with a manufacturing tolerance are taken to the low end of it when the sweep
+settings model that.
 """
 
 from __future__ import annotations
@@ -135,9 +137,10 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
                    ) -> Tuple[Dict[str, Tuple[Optional[float], float]], List[str]]:
     """Derate the capacitor ports, in place, for DC bias (models that estimate it, at the
     voltage across each part: ``volts``, else the VRM's set point), aging (#109, models
-    with a dielectric, when the sweep settings age them) and temperature (#77, models with
-    a dielectric, at ``temps``: °C by reference, described by ``temp_text``). Each derated
-    part gets its own copy of its model.
+    with a dielectric, when the sweep settings age them), temperature (#77, models with
+    a dielectric, at ``temps``: °C by reference, described by ``temp_text``) and
+    manufacturing tolerance (models that have one, when the sweep settings model it). Each
+    derated part gets its own copy of its model.
 
     Returns {reference: (DC volts or None, farads)} for the parts derated, and notes for
     the log.
@@ -146,7 +149,8 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
     hours = s.aging_hours if s.aging else None
     temps = temps or {}
     out: Dict[str, Tuple[Optional[float], float]] = {}
-    n_bias = from_dc = n_aged = n_temp = 0
+    n_bias = from_dc = n_aged = n_temp = n_tol = 0
+    tols: List[float] = []
     kept: List[float] = []
     for port in ports:
         m = port.element
@@ -156,7 +160,8 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
         aged = m.aged(hours) < 1.0
         t = temps.get(port.name)
         warmed = t is not None and m.at_temperature(t) != 1.0
-        if not (biased or aged or warmed):
+        toleranced = m.within_tolerance(s.mfg_tolerance) < 1.0
+        if not (biased or aged or warmed or toleranced):
             continue
         v = None
         if biased:
@@ -166,7 +171,10 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
             v = abs(vrm.voltage) if v is None else v
         n_aged += aged
         n_temp += warmed
-        c = m.capacitance_at(v or 0.0, hours, t)
+        n_tol += toleranced
+        if toleranced:
+            tols.append(m.mfg_tolerance_pct)
+        c = m.capacitance_at(v or 0.0, hours, t, s.mfg_tolerance)
         port.element = replace(m, capacitance_f=c)
         out[port.name] = (v, c)
         kept.append(c / m.capacitance_f if m.capacitance_f else 1.0)
@@ -185,6 +193,10 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
             what.append(f"{n_bias} for DC bias at {where}")
         if n_aged:
             what.append(f"{n_aged} aged {hours:g} hours")
+        if n_tol:
+            span = (f"{min(tols):g}" if max(tols) - min(tols) < 1e-9
+                    else f"{min(tols):g} to {max(tols):g}")
+            what.append(f"{n_tol} at the low end of their {span} % manufacturing tolerance")
         if n_temp:
             ts = [temps[r] for r in out if r in temps]
             span = (f"{min(ts):.3g} °C" if max(ts) - min(ts) < 0.05

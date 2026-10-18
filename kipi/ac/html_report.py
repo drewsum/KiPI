@@ -389,7 +389,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         parts.append(f"<p class='note'>{_e(result.bias_note)}. DC bias follows a typical "
                      "class II ceramic's curve through each model's capacitance kept at its "
                      "voltage rating; aging takes each model's rate per decade of hours past "
-                     "1000 hours.</p>")
+                     "1000 hours; a manufacturing tolerance is applied at its low end.</p>")
     total_c = sum(m.capacitance_f * n for m, n in models)
     total_c -= sum(model_of[r].capacitance_f - c for r, (_v, c) in bias.items()
                    if r in model_of)

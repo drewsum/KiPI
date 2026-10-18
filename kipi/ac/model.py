@@ -63,6 +63,10 @@ class CapModel:
     # Aging (#109): the dielectric ("" when not set: not aged) and its aging rate.
     dielectric: str = ""
     aging_pct_per_decade: float = 0.0
+    # Manufacturing tolerance: the part's capacitance tolerance, % of nominal (None when
+    # not set). Worst case for a PDN is the low end, so the sweep settings apply it
+    # subtractively: the model keeps 1 - tolerance of its capacitance.
+    mfg_tolerance_pct: Optional[float] = None
 
     @property
     def dc_bias(self) -> bool:
@@ -70,17 +74,28 @@ class CapModel:
         return bool(self.rated_v and self.rated_v > 0) and self.dielectric != "C0G"
 
     def capacitance_at(self, volts: float, hours: Optional[float] = None,
-                       temp_c: Optional[float] = None) -> float:
+                       temp_c: Optional[float] = None,
+                       mfg_tolerance: bool = False) -> float:
         """One part's capacitance with ``volts`` DC across it after ``hours`` of operation
         (None: not aged) at ``temp_c`` (None: 25 °C): derated when the model estimates DC
-        bias (has a rating), and aged and moved with temperature when it has a
-        dielectric; else its capacitance as entered."""
-        c = self.capacitance_f * self.aged(hours) * self.at_temperature(temp_c)
+        bias (has a rating), aged and moved with temperature when it has a dielectric, and
+        at the low end of its manufacturing tolerance with ``mfg_tolerance``; else its
+        capacitance as entered."""
+        c = (self.capacitance_f * self.within_tolerance(mfg_tolerance) * self.aged(hours)
+             * self.at_temperature(temp_c))
         if not (self.dc_bias and volts):
             return c
         kept = min(max(self.kept_at_rated_pct, 1.0), 100.0) / 100.0
         k = 1.0 / kept - 1.0
         return c / (1.0 + k * (abs(volts) / self.rated_v) ** BIAS_EXP)
+
+    def within_tolerance(self, on: bool = True) -> float:
+        """The share of its nominal capacitance a part at the low end of its manufacturing
+        tolerance has: 1.0 without a tolerance, or when ``on`` is false."""
+        tol = self.mfg_tolerance_pct
+        if not (on and tol and tol > 0):
+            return 1.0
+        return max(1.0 - min(tol, 100.0) / 100.0, 0.0)
 
     def at_temperature(self, temp_c: Optional[float]) -> float:
         """The share of its 25 °C capacitance the part has at ``temp_c``."""
@@ -151,6 +166,8 @@ class ACSettings:
     html_report: bool = False             # write an HTML report after each rail's solve
     # Derate the capacitor models that estimate DC bias (#74); off: every model as entered.
     dc_bias: bool = True
+    # Take the capacitor models that have a manufacturing tolerance to the low end of it.
+    mfg_tolerance: bool = False
     # Age the capacitor models that have a dielectric (#109) by this many hours.
     aging: bool = False
     aging_hours: float = DEFAULT_AGING_HOURS

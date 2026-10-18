@@ -515,6 +515,8 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   capacitance lost per decade of hours (enter the datasheet's rate if it gives one), and
   gives its capacitance a typical temperature curve.
   **Models from values** reads the dielectric from the value too.
+  **Manufacturing tolerance** is optional: the part's capacitance tolerance in %, from its
+  datasheet or value code (J ±5 %, K ±10 %, M ±20 %), applied by the sweep setting below.
 * **Probes tab**: Defines where to plot the PDN impedance, usually a device's supply and ground
   pins. **From DC load** adds a probe on the same pins as a DC load you pick from its dropdown. Each probe has a target impedance and frequency range: **flat** (an impedance up to a frequency) or **custom**, a
   piecewise-linear mask through frequency/impedance points on the log-log plot.
@@ -532,7 +534,10 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   Technology"](https://doi.org/10.1109/6040.784476), IEEE Trans. Adv. Packaging, 1999.
 * **Sweep tab**: start and stop frequency, points per decade, and how many copper field
   solves per decade (the copper's response is interpolated between them). **Capacitor DC
-  bias** turns the DC bias estimate on or off for every model at once. **Capacitor aging**
+  bias** turns the DC bias estimate on or off for every model at once. **Capacitor
+  manufacturing tolerance** solves every model that has a **Manufacturing tolerance** at the
+  low end of it (subtracting it: a ±10 % model keeps 90 %), the worst case for a PDN.
+  **Capacitor aging**
   ages every model with a dielectric by the **Hours operated** (ten years by default; type
   them, or drag the slider that shows while aging is ticked), on top
   of its DC bias: each loses its aging rate per decade of hours past 1000 hours.
