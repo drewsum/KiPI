@@ -770,11 +770,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
   <tr><td>DC accuracy</td><td class="wrap">LDO and switcher only; used by the AC
-    <a href="#ac-calc">target calculator</a>, grayed out in DC. The output's DC error from
+    <a href="#ac-calc">target calculator</a>. The output's DC error from
     the datasheet (reference and feedback tolerance, line and load regulation): min and max
     on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %) or in <b>V</b>, the lowest
     and highest output voltage.</td></tr>
-  <tr><td>Control loop bandwidth</td><td class="wrap">AC only; grayed out in DC. The AC solve
+  <tr><td>Control loop bandwidth</td><td class="wrap">AC only. The AC solve
     leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
     frequency the converter's loop holds the rail. Probe targets are drawn and judged only
     above it (see <a href="#ac-bandwidth">Targets and the VRM bandwidth</a>);
@@ -1098,8 +1098,8 @@ same setup file as DC.</p>
 <details open id="ac-vrms">
 <summary>VRMs and Series links tabs <span class="hint">shared with DC</span></summary>
 <div class="body">
-<p>The same VRMs and series links as the DC setup; edits in one mode show in the other. Fields
-that only DC uses are grayed out (their tooltip says so). In AC:</p>
+<p>The same VRMs and series links as the DC setup; edits in one mode show in the other. Every
+VRM field can be edited in either mode; the tooltip of a field only DC uses says so. In AC:</p>
 <ul>
   <li>A VRM's output net (and ground pins) define a rail and its default ground for the
     <b>Rail</b> picker.</li>

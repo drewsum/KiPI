@@ -151,6 +151,9 @@ First milestone of running KiPI on its own, outside KiCad (#45). The plugin work
   the tolerance (a menu when several VRMs drive it).
 
 ### Changed
+- Every VRM field can be edited from both the DC and the AC setup. Fields only one
+  analysis uses (control loop bandwidth and DC accuracy in DC; efficiency, input range and
+  the like in AC) are no longer grayed out; their tooltip says which analysis uses them.
 - A capacitor model no longer has an **Estimate DC bias** box: a **Voltage rating** turns
   the DC bias estimate on. **Models from values** keeps the rating only for class II
   ceramics (X5R, X7R…), and a C0G model is never derated.

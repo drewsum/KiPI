@@ -174,7 +174,8 @@ def test_editor_vrm_dc_accuracy_is_min_and_max_in_percent_or_volts():
     v = s.vrms[1]
     assert ed.form.labelForField(ed.acc_row).text() == "DC accuracy"
     assert ed.form.isRowVisible(ed.acc_row) and ed.acc_row.pct()
-    assert not ed.acc_row.min.isEnabled()                          # AC only: grayed in DC
+    assert ed.acc_row.min.isEnabled() and ed.bandwidth.isEnabled()  # AC only, still editable
+    assert "Used by the AC analysis only" in ed.acc_row.min.toolTip()
     ed.acc_row.min.setValue(-1.0)
     ed.acc_row.max.setValue(2.0)
     assert (v.acc_min, v.acc_max, v.acc_pct) == (-1.0, 2.0, True)

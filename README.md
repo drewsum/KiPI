@@ -495,7 +495,7 @@ can run code; KiPI asks before it opens one, and saving it again writes the new 
 ### 6. AC: PDN impedance
 
 Switch **Mode** to **AC**. The setup panel becomes the **AC setup**, which shares the VRMs and
-series links with DC mode (fields only DC mode uses are grayed out) and adds:
+series links with DC mode (every VRM field can be edited in either mode) and adds:
 
 * **Capacitors tab**: RLC models (capacitance, ESL, ESR) for the decoupling capacitors, each
   shared by a group of identical parts. **Models from values** makes one model per capacitor

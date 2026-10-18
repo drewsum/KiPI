@@ -1,7 +1,7 @@
 """The AC setup panel, shown in place of the DC power-tree panel in AC mode.
 
 It edits the same :class:`~kipi.dc.pi.model.PISetup` as the DC panel. The VRMs and series
-links are shared (with the fields only DC uses grayed out); capacitor models, probes and
+links are shared (every VRM field editable in both); capacitor models, probes and
 the sweep belong to the AC analysis. A solve covers one rail (picked by its VRM) against
 one ground net.
 """

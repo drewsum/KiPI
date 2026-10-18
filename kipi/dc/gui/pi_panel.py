@@ -395,10 +395,11 @@ class _Editor(QWidget):
         self.changed.emit()
 
 
-def _gray(widgets, on: bool, why: str):
-    """Enable ``widgets`` or gray them out, saying why in their tooltip."""
+def _gray(widgets, on: bool, why: str, editable: bool = False):
+    """Enable ``widgets`` or gray them out, saying why in their tooltip. ``editable``: they
+    stay editable, and only the tooltip says the analysis doesn't use them."""
     for w in widgets:
-        w.setEnabled(on)
+        w.setEnabled(on or editable)
         tip = w.property("kipi_tip")
         if tip is None:
             tip = w.toolTip()
@@ -407,8 +408,8 @@ def _gray(widgets, on: bool, why: str):
 
 
 class VrmEditor(_Editor):
-    """``mode`` "dc" or "ac": the analysis this editor is shown in. Every field is shown;
-    the ones the other analysis uses are grayed out."""
+    """``mode`` "dc" or "ac": the analysis this editor is shown in. Every field is shown
+    and editable; the tooltips of the ones only the other analysis uses say so."""
 
     def __init__(self, panel, parent=None, mode: str = "dc"):
         super().__init__(panel, parent)
@@ -552,8 +553,9 @@ class VrmEditor(_Editor):
         _gray((self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                self.input,
                self.sense, self.ground_sense, self.dropout, *self.vin_row.fields()),
-              dc, "Used by the DC analysis only")
-        _gray((self.bandwidth, *self.acc_row.fields()), not dc, "Used by the AC analysis only")
+              dc, "Used by the DC analysis only", editable=True)
+        _gray((self.bandwidth, *self.acc_row.fields()), not dc, "Used by the AC analysis only",
+              editable=True)
 
     def _input_nominal(self) -> Optional[float]:
         inp = self.input.value()
