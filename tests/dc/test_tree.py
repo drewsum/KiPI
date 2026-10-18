@@ -398,3 +398,41 @@ def test_unconverged_group_leaves_its_loads_unjudged(monkeypatch):
     assert ld.passed is None and ld.verdict == NOT_CONVERGED
     assert res.groups["VIN"].converged is False
     assert by_name(res.loads, "U2").passed is True     # its own rail converged
+
+
+def test_ranges_in_volts_from_nominal():
+    """A third unit beside V and % (#131): volts below and above nominal."""
+    from kipi.dc.pi.model import DELTA_VOLTS, PERCENT, VOLTS, range_volts, tolerance_label, volts_in
+    assert range_volts(3.3, -0.1, 0.2, DELTA_VOLTS) == pytest.approx((3.2, 3.5))
+    assert range_volts(-5.0, -0.1, 0.2, DELTA_VOLTS) == pytest.approx((-5.1, -4.8))
+    assert range_volts(None, -0.1, 0.2, DELTA_VOLTS) == (None, None)
+    assert range_volts(None, 3.0, None, VOLTS) == (3.0, None)
+    for unit in (VOLTS, DELTA_VOLTS, PERCENT):
+        lo, hi = range_volts(3.3, -1.0, None, unit)
+        assert volts_in(3.3, lo, hi, unit) == (pytest.approx(-1.0), None)
+    assert [tolerance_label(*a) for a in ((-0.1, 0.1, False, True), (-0.05, 0.1, False, True),
+                                          (None, 0.1, False, True))] == [
+        "±0.1 V", "-0.05 / +0.1 V", "max +0.1 V"]
+
+    s = setup("ldo")
+    u2 = s.loads[0]
+    v = by_name(solve_tree(board(), s).loads, "U2").v_low
+    for lo, passed in ((v - 3.3 - 1e-4, True), (v - 3.3 + 1e-4, False)):
+        u2.tol_min, u2.tol_max, u2.tol_pct, u2.tol_dv = lo, 0.1, False, True
+        ld = by_name(solve_tree(board(), s).loads, "U2")
+        assert ld.passed is passed
+        assert ld.limit_high == pytest.approx(3.4)
+    loaded = PISetup.from_dict(s.to_dict()).loads[0]
+    assert (loaded.tol_pct, loaded.tol_dv) == (False, True)
+
+    s = setup("smps", eff=0.9)
+    u1 = s.vrms[1]
+    u1.vin_dv, u1.vin_min, u1.vin_max = True, -1.0, 0.5                # of J1's 12 V
+    assert vin_range(s, u1) == pytest.approx((11.0, 12.5))
+    u1.acc_pct, u1.acc_dv, u1.acc_min, u1.acc_max = False, True, -0.02, 0.05
+    assert u1.accuracy_v() == pytest.approx(0.05)
+    assert u1.accuracy_label() == "-0.02 / +0.05 V"
+    back = PISetup.from_dict(s.to_dict()).vrms[1]
+    assert (back.vin_dv, back.acc_dv) == (True, True)
+    del s.vrms[0]
+    assert any("in volts from nominal needs a VRM" in e for e in validate(s))

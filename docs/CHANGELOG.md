@@ -13,12 +13,16 @@ milestones rather than versions that were ever set.
   series and the impedance curve each sets), the DC bias curve (voltage rating, kept at
   rating), aging and the dielectric (its code decoded, and typical temperature curves);
   the VRM types, load line, dropout and input range, DC accuracy, control loop bandwidth,
-  phases and remote sense; the VRM's output, input and ground pins; a range's V or % unit
-  against the nominal voltage (load tolerance, VRM input range and DC accuracy); a load's
-  current split (equal or per pin group); a series link's side A and B pins, DCR and ESL;
-  a probe's target (flat up to a frequency, or custom points); and the mesh's max edge,
-  via grading and min edge. The drawings live in one folder, `kipi/gui/graphics/`, as SVG
-  templates; where Qt cannot render them, the tooltip is its text alone.
+  phases and remote sense; the VRM's output, input and ground pins; a range's V, ±V or %
+  unit against the nominal voltage (load tolerance, VRM input range and DC accuracy); a
+  load's current split (equal or per pin group); a series link's side A and B pins, DCR
+  and ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
+  edge, via grading and min edge. The drawings live in one folder, `kipi/gui/graphics/`,
+  as SVG templates; where Qt cannot render them, the tooltip is its text alone.
+- **Ranges in volts from nominal** (#131). A load's tolerance and a VRM's input range and
+  DC accuracy take a third unit, **±V**, beside V and %: volts below and above the nominal
+  voltage (e.g. min -0.1 V, max +0.15 V), shown as "±0.1 V" or "-0.1 / +0.15 V". Switching
+  between the three converts the values; the tolerance drawing shows all three.
 - **Stackup cross-section** (#104). Beside the Stackup window's table, the layers are drawn
   to scale, top to bottom: copper in its layer colour, dielectrics in a colour for their
   material, each labelled with its thickness in the window's unit. The drawing follows

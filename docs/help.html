@@ -841,17 +841,18 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Dropout</td><td class="wrap">LDO only: the least input-to-output difference at which it
     still regulates.</td></tr>
   <tr><td>Input range</td><td class="wrap">Optional input range, min and max on one row, in
-    <b>V</b> or in <b>%</b> from the input rail's nominal voltage (the set voltage of the VRM
-    driving it; e.g. min -10 %, max +10 %). Switching the unit converts the values when that
-    VRM is known. A range in % with no VRM driving the input is a setup error. A VRM whose
+    <b>V</b>, in <b>±V</b> from the input rail's nominal voltage (the set voltage of the VRM
+    driving it; e.g. min -0.5 V, max +0.5 V) or in <b>%</b> from it (e.g. min -10 %, max
+    +10 %). Switching the unit converts the values when that VRM is known. A range in ±V or
+    % with no VRM driving the input is a setup error. A VRM whose
     solved input is outside its range (or an LDO below its dropout) cannot hold its output, and every load it
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
   <tr><td>DC accuracy</td><td class="wrap">LDO and switcher only; used by the AC
     <a href="#ac-calc">target calculator</a>. The output's DC error from
     the datasheet (reference and feedback tolerance, line and load regulation): min and max
-    on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %) or in <b>V</b>, the lowest
-    and highest output voltage.</td></tr>
+    on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %), in <b>±V</b> from it (e.g.
+    -0.01 V, +0.01 V) or in <b>V</b>, the lowest and highest output voltage.</td></tr>
   <tr><td>Control loop bandwidth</td><td class="wrap">AC only. The AC solve
     leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
     frequency the converter's loop holds the rail. Probe targets are drawn and judged only
@@ -890,7 +891,8 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return. Filled in
     with the supply part's ground pins.</td></tr>
   <tr><td>Tolerance</td><td class="wrap">Optional min and max on one row, in <b>%</b> from the
-    VRM set voltage (e.g. min -3 %, max +5 %) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
+    VRM set voltage (e.g. min -3 %, max +5 %), in <b>±V</b> from it (e.g. min -0.1 V, max
+    +0.15 V) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
     may be left "not set". PASS if every supply pin is within it. Switching the unit
     converts the values when a VRM drives the load's rail.</td></tr>
   <tr><td>Heat</td><td class="wrap">Optional, W: the heat the part puts into the board in the

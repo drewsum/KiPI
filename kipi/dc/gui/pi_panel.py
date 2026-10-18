@@ -36,8 +36,9 @@ from kipi.dc.pi.autofill import (
     next_phase_refs, other_net, setup_grounds,
 )
 from kipi.dc.pi.model import (
-    DEFAULT_VIA_CURRENT_LIMIT_A, DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup,
-    group_name, net_groups, pct_to_volts, rail_nominal, validate, volts_to_pct,
+    DEFAULT_VIA_CURRENT_LIMIT_A, DELTA_VOLTS, PERCENT, VOLTS, DcLink, Load, PinRef, PISetup,
+    Vrm, VrmPhase, active_setup, group_name, net_groups, range_unit, range_volts, rail_nominal,
+    validate, volts_in,
 )
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
@@ -74,9 +75,9 @@ def _optional_volts() -> QDoubleSpinBox:
 
 
 class RangeRow(QWidget):
-    """Optional min and max on one row, in volts or in % from a nominal voltage that
-    ``nominal()`` gives (None if unknown). Switching the unit converts the values, or
-    clears them without a nominal voltage."""
+    """Optional min and max on one row: in volts, or in volts or % from a nominal voltage
+    that ``nominal()`` gives (None if unknown, #131). Switching the unit converts the
+    values, or clears them where that needs the nominal voltage and it is unknown."""
     changed = Signal()
 
     def __init__(self, nominal: Callable[[], Optional[float]], parent=None):
@@ -86,8 +87,10 @@ class RangeRow(QWidget):
         self.min = _optional_volts()
         self.max = _optional_volts()
         self.unit = QComboBox()
-        self.unit.addItem("V", "V")
-        self.unit.addItem("%", "%")
+        self.unit.addItem("V", VOLTS)
+        self.unit.addItem("±V", DELTA_VOLTS)
+        self.unit.addItem("%", PERCENT)
+        self._unit = VOLTS                      # the unit the values are in
         h = QHBoxLayout(self)
         h.setContentsMargins(0, 0, 0, 0)
         h.addWidget(QLabel("min"))
@@ -103,16 +106,22 @@ class RangeRow(QWidget):
         return self.min, self.max, self.unit
 
     def pct(self) -> bool:
-        return self.unit.currentData() == "%"
+        return self.unit.currentData() == PERCENT
+
+    def dv(self) -> bool:
+        """Whether the values are volts from nominal."""
+        return self.unit.currentData() == DELTA_VOLTS
 
     def values(self):
         return _get_optional(self.min), _get_optional(self.max)
 
-    def set_values(self, lo: Optional[float], hi: Optional[float], pct: bool):
+    def set_values(self, lo: Optional[float], hi: Optional[float], pct: bool,
+                   dv: bool = False):
         quiet, self._quiet = self._quiet, True
         try:
-            self.unit.setCurrentIndex(1 if pct else 0)
-            step = 1.0 if pct else 0.1
+            self._unit = range_unit(pct, dv)
+            self.unit.setCurrentIndex(self.unit.findData(self._unit))
+            step = {PERCENT: 1.0, DELTA_VOLTS: 0.01}.get(self._unit, 0.1)
             for s in (self.min, self.max):
                 s.setSingleStep(step)
                 s.setRange(-1000 - step, 1000)          # one step below: "not set"
@@ -126,14 +135,11 @@ class RangeRow(QWidget):
     def _unit_changed(self, *_):
         if self._quiet:
             return
-        pct = self.pct()
-        lo, hi = self.values()                  # still in the old unit's ranges
+        unit = self.unit.currentData()
         nom = self._nominal()
-        if nom is None:
-            lo = hi = None
-        else:
-            lo, hi = (volts_to_pct if pct else pct_to_volts)(nom, lo, hi)
-        self.set_values(lo, hi, pct)
+        lo, hi = range_volts(nom, *self.values(), self._unit)      # from the old unit
+        lo, hi = volts_in(nom, lo, hi, unit)
+        self.set_values(lo, hi, unit == PERCENT, unit == DELTA_VOLTS)
         self.changed.emit()
 
     def _changed(self, *_):
@@ -483,8 +489,8 @@ class VrmEditor(_Editor):
                self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
                self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
                self.ground_sense: ("remote_sense", "gsense"),
-               self.vin_row.unit: ("tolerance", "volts", "pct"),
-               self.acc_row.unit: ("tolerance", "volts", "pct"),
+               self.vin_row.unit: ("tolerance", "volts", "dv", "pct"),
+               self.acc_row.unit: ("tolerance", "volts", "dv", "pct"),
                self.output: ("vrm_pins", "out"), self.input: ("vrm_pins", "inp"),
                self.ground: ("vrm_pins", "gnd")}
         for w, text in (
@@ -515,20 +521,24 @@ class VrmEditor(_Editor):
                                    "solved input marks its loads VRM OUT OF REGULATION."),
                 (self.vin_row.max, "Optional highest input voltage it regulates at. A higher "
                                    "solved input marks its loads VRM OUT OF REGULATION."),
-                (self.vin_row.unit, "V: the input range in volts.\n%: in % from the input "
-                                    "rail's nominal voltage, the set voltage of the VRM "
-                                    "driving it (e.g. min -10 %, max +10 %). Switching "
-                                    "converts the values when that VRM is known."),
+                (self.vin_row.unit, "V: the input range in volts.\n±V: in volts below and "
+                                    "above the input rail's nominal voltage, the set voltage "
+                                    "of the VRM driving it (e.g. min -0.5 V, max +0.5 V).\n"
+                                    "%: in % from that nominal voltage (e.g. min -10 %, max "
+                                    "+10 %).\nSwitching converts the values when that VRM "
+                                    "is known."),
                 (self.acc_row, "Optional DC accuracy of the set voltage, from the "
                                "datasheet (reference and feedback tolerance, line and load "
                                "regulation). The target calculator can take it off the AC "
                                "voltage tolerance."),
                 (self.acc_row.min, "How far below the set voltage the output may sit, e.g. "
-                                   "-1 %, or in V, the lowest output voltage"),
+                                   "-1 % or -0.01 V (±V), or in V, the lowest output voltage"),
                 (self.acc_row.max, "How far above the set voltage the output may sit, e.g. "
-                                   "+1 %, or in V, the highest output voltage"),
-                (self.acc_row.unit, "%: the accuracy in % of the set voltage.\nV: the lowest "
-                                    "and highest output voltage. Switching converts the "
+                                   "+1 % or +0.01 V (±V), or in V, the highest output "
+                                   "voltage"),
+                (self.acc_row.unit, "%: the accuracy in % of the set voltage.\n±V: in volts "
+                                    "below and above the set voltage.\nV: the lowest and "
+                                    "highest output voltage.\nSwitching converts the "
                                     "values."),
                 (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
                                  "AC solve leaves the VRM out of circuit (the open-loop PDN "
@@ -644,8 +654,8 @@ class VrmEditor(_Editor):
         self._phase_rows()
         self._show_phase(v)
         self.dropout.setValue(v.dropout_v)
-        self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct)
-        self.acc_row.set_values(v.acc_min, v.acc_max, v.acc_pct)
+        self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct, v.vin_dv)
+        self.acc_row.set_values(v.acc_min, v.acc_max, v.acc_pct, v.acc_dv)
         self.sense.set_value(v.sense)
         self.ground_sense.set_value(v.ground_sense)
         self._kind_rows()
@@ -666,9 +676,9 @@ class VrmEditor(_Editor):
         v.load_line_mohm = self.load_line.value()
         v.dropout_v = self.dropout.value()
         v.vin_min, v.vin_max = self.vin_row.values()
-        v.vin_pct = self.vin_row.pct()
+        v.vin_pct, v.vin_dv = self.vin_row.pct(), self.vin_row.dv()
         v.acc_min, v.acc_max = self.acc_row.values()
-        v.acc_pct = self.acc_row.pct()
+        v.acc_pct, v.acc_dv = self.acc_row.pct(), self.acc_row.dv()
         v.bandwidth_khz = self.bandwidth.value() or None
         v.sense = self.sense.value()
         v.ground_sense = self.ground_sense.value()
@@ -763,7 +773,7 @@ class LoadEditor(_Editor):
         art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
                self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
                self.tol.max: ("tolerance", "max"),
-               self.tol.unit: ("tolerance", "volts", "pct")}
+               self.tol.unit: ("tolerance", "volts", "dv", "pct")}
         for w, text in (
                 (self.name, "A name for this load, used in the results tables"),
                 (self.supply, "The pins the load draws its current from"),
@@ -778,13 +788,16 @@ class LoadEditor(_Editor):
                               "part's ground pins."),
                 (self.tol, "Optional: PASS if every supply pin is within this range, so no "
                            "pin drops below the min or is boosted above the max"),
-                (self.tol.min, "The lowest voltage a supply pin may have, or in %, the most "
-                               "it may drop below the VRM set voltage (e.g. -5 %)"),
-                (self.tol.max, "The highest voltage a supply pin may have, or in %, the "
-                               "most it may be boosted above the VRM set voltage (e.g. +5 %)"),
-                (self.tol.unit, "%: the tolerance in % from the rail's nominal voltage, the "
-                                "set voltage of the VRM driving it.\nV: in volts. Switching "
-                                "converts the values when that VRM is known."),
+                (self.tol.min, "The lowest voltage a supply pin may have, or in ±V or %, "
+                               "the most it may drop below the VRM set voltage (e.g. "
+                               "-0.15 V or -5 %)"),
+                (self.tol.max, "The highest voltage a supply pin may have, or in ±V or %, "
+                               "the most it may be boosted above the VRM set voltage (e.g. "
+                               "+0.15 V or +5 %)"),
+                (self.tol.unit, "V: the lowest and highest voltage, in volts.\n±V: in volts "
+                                "below and above the rail's nominal voltage, the set voltage "
+                                "of the VRM driving it.\n%: in % from that nominal voltage."
+                                "\nSwitching converts the values when that VRM is known."),
                 (self.heat, "Optional: the heat the part puts into the board, when load "
                             "power is included (Thermal tab). Not set: the power it draws, pin "
                             "current × pin voltage. Set it for a part that passes most of its "
@@ -880,7 +893,7 @@ class LoadEditor(_Editor):
             self._add_group_row(g.name, ",".join(g.pins), g.current)
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
-        self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct)
+        self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct, l.tol_dv)
         _set_optional(self.heat, l.dissipation_w)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
@@ -918,7 +931,7 @@ class LoadEditor(_Editor):
                 l.ground = gnd
                 self._show(self.ground, gnd)
         l.tol_min, l.tol_max = self.tol.values()
-        l.tol_pct = self.tol.pct()
+        l.tol_pct, l.tol_dv = self.tol.pct(), self.tol.dv()
         l.dissipation_w = _get_optional(self.heat)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 

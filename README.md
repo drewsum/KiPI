@@ -335,8 +335,8 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Output current limit | Optional: the VRM PASSes if its total output current (all phases) is at most this. Leave at **no limit** to skip the check. |
 | Load line | Optional, in mΩ: the VRM regulates to its set voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the set voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
-| Input range | Optional input range it regulates over: min and max, in V or in % from the input rail's nominal voltage (the set voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its set voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
-| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % of the set voltage or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
+| Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the set voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its set voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
+| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the set voltage, or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
 | Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
 | Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its set voltage relative to these pins instead of 0 V (needs ground pins) |
@@ -370,7 +370,8 @@ To try it without a design of your own, open the example board in
   when load power is included. Not set, it is the power the load draws (pin current × pin
   voltage); set it for a part that passes most of its power on, such as a load switch.
 * **Tolerance** is the PASS/FAIL limit: a min and a max, each optional, in % from the VRM
-  set point (e.g. -3 % / +5 %) or in volts (e.g. 3.135 to 3.465 V). A load passes when every
+  set point (e.g. -3 % / +5 %), in volts from it (±V, e.g. -0.1 / +0.15 V) or in volts (e.g.
+  3.135 to 3.465 V). A load passes when every
   pin is within it, none below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point
   further down the copper, so pins nearer the VRM sit above the set point. A load on a net

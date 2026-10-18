@@ -81,14 +81,18 @@ class Vrm:
     vin_min: Optional[float] = None      # input range it regulates over (LDO / switcher)
     vin_max: Optional[float] = None
     # The input range in % from the input rail's nominal voltage (that of the VRM feeding
-    # it, see rail_nominal), e.g. -10 / +10, instead of in volts.
+    # it, see rail_nominal), e.g. -10 / +10, or with vin_dv, in volts from it (e.g. -0.5 /
+    # +0.5), instead of in volts (#131).
     vin_pct: bool = False
+    vin_dv: bool = False
     # DC accuracy of the set voltage (LDO / switcher), either end None: in % of it (e.g.
-    # -1 / +1), or with acc_pct False, the output's lowest and highest volts. The target
-    # calculator takes its larger side off the AC tolerance.
+    # -1 / +1), with acc_dv in volts from it (e.g. -0.01 / +0.01), or with neither, the
+    # output's lowest and highest volts. The target calculator takes its larger side off
+    # the AC tolerance.
     acc_min: Optional[float] = None
     acc_max: Optional[float] = None
     acc_pct: bool = True
+    acc_dv: bool = False
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
     load_line_mohm: float = 0.0
@@ -109,12 +113,12 @@ class Vrm:
         return self.acc_min is not None or self.acc_max is not None
 
     def accuracy_label(self) -> str:
-        return tolerance_label(self.acc_min, self.acc_max, self.acc_pct)
+        return tolerance_label(self.acc_min, self.acc_max, self.acc_pct, self.acc_dv)
 
     def accuracy_v(self) -> Optional[float]:
         """The larger side of the DC accuracy, volts from the set voltage; None if not set."""
-        lo, hi = ((self.acc_min, self.acc_max) if not self.acc_pct else
-                  pct_to_volts(self.voltage, self.acc_min, self.acc_max))
+        lo, hi = range_volts(self.voltage, self.acc_min, self.acc_max,
+                             range_unit(self.acc_pct, self.acc_dv))
         sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
         return max(sides) if sides else None
 
@@ -134,11 +138,12 @@ class Load:
     current: float
     ground: Optional[PinRef] = None
     # PASS if every pin is within this range, either end None for no limit: in % from
-    # nominal, the set point of the VRM driving the rail (e.g. -5 / +5), or, with tol_pct
-    # False, in volts.
+    # nominal, the set point of the VRM driving the rail (e.g. -5 / +5), with tol_dv in
+    # volts from nominal (e.g. -0.15 / +0.15, #131), or with neither, in volts.
     tol_min: Optional[float] = None
     tol_max: Optional[float] = None
     tol_pct: bool = True
+    tol_dv: bool = False
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
@@ -155,14 +160,13 @@ class Load:
 
     def limits(self, nominal: float) -> Tuple[Optional[float], Optional[float]]:
         """The tolerance as (lowest, highest) volts on a rail at ``nominal``, either None."""
-        if not self.tol_pct:
-            return self.tol_min, self.tol_max
-        if not nominal:
+        unit = range_unit(self.tol_pct, self.tol_dv)
+        if unit != VOLTS and not nominal:
             return None, None
-        return pct_to_volts(nominal, self.tol_min, self.tol_max)
+        return range_volts(nominal, self.tol_min, self.tol_max, unit)
 
     def tolerance_label(self) -> str:
-        return tolerance_label(self.tol_min, self.tol_max, self.tol_pct)
+        return tolerance_label(self.tol_min, self.tol_max, self.tol_pct, self.tol_dv)
 
     def __setstate__(self, state):
         # Setups pickled in results files before asymmetric tolerances: +/- one %.
@@ -184,14 +188,51 @@ def volts_to_pct(nominal: float, lo: Optional[float], hi: Optional[float]):
     return (hi, lo) if nominal < 0 else (lo, hi)
 
 
-def tolerance_label(lo: Optional[float], hi: Optional[float], pct: bool) -> str:
-    """A range for tables: "±5 %", "-3 / +5 %", "3.135 to 3.465 V", "min 3.2 V"..."""
+# A range's units (#131): volts, volts from nominal, or % from nominal.
+VOLTS, DELTA_VOLTS, PERCENT = "V", "±V", "%"
+
+
+def range_unit(pct: bool, dv: bool = False) -> str:
+    """The unit of a range saved as its ``*_pct`` and ``*_dv`` flags."""
+    return PERCENT if pct else DELTA_VOLTS if dv else VOLTS
+
+
+def range_volts(nominal: Optional[float], lo: Optional[float], hi: Optional[float],
+                unit: str):
+    """A (min, max) range in ``unit`` as volts, either None (both None when it is
+    relative and ``nominal`` is None). Volts from nominal add to it, so min is the lower
+    end on a negative rail too."""
+    if unit == VOLTS:
+        return lo, hi
+    if nominal is None:
+        return None, None
+    if unit == PERCENT:
+        return pct_to_volts(nominal, lo, hi)
+    return tuple(None if x is None else nominal + x for x in (lo, hi))
+
+
+def volts_in(nominal: Optional[float], lo: Optional[float], hi: Optional[float], unit: str):
+    """The inverse of :func:`range_volts`."""
+    if unit == VOLTS:
+        return lo, hi
+    if nominal is None:
+        return None, None
+    if unit == PERCENT:
+        return volts_to_pct(nominal, lo, hi)
+    return tuple(None if x is None else x - nominal for x in (lo, hi))
+
+
+def tolerance_label(lo: Optional[float], hi: Optional[float], pct: bool,
+                    dv: bool = False) -> str:
+    """A range for tables: "±5 %", "-3 / +5 %", "±0.1 V", "3.135 to 3.465 V",
+    "min 3.2 V"..."""
     if lo is None and hi is None:
         return ""
-    if pct:
+    if pct or dv:
+        u = "%" if pct else "V"
         if lo is not None and hi is not None:
-            return f"±{hi:g} %" if lo == -hi else f"{lo:+g} / {hi:+g} %"
-        return f"min {lo:+g} %" if hi is None else f"max {hi:+g} %"
+            return f"±{hi:g} {u}" if lo == -hi else f"{lo:+g} / {hi:+g} {u}"
+        return f"min {lo:+g} {u}" if hi is None else f"max {hi:+g} {u}"
     if lo is not None and hi is not None:
         return f"{lo:g} to {hi:g} V"
     return f"min {lo:g} V" if hi is None else f"max {hi:g} V"
@@ -281,8 +322,9 @@ class PISetup:
                       current_limit_a=v.get("current_limit_a"),
                       dropout_v=v.get("dropout_v", 0.0), vin_min=v.get("vin_min"),
                       vin_max=v.get("vin_max"), vin_pct=v.get("vin_pct", False),
+                      vin_dv=v.get("vin_dv", False),
                       acc_min=v.get("acc_min"), acc_max=v.get("acc_max"),
-                      acc_pct=v.get("acc_pct", True),
+                      acc_pct=v.get("acc_pct", True), acc_dv=v.get("acc_dv", False),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
                       bandwidth_khz=v.get("bandwidth_khz"))
                   for v in d.get("vrms", [])],
@@ -394,7 +436,7 @@ def _load_tolerance(d: dict) -> dict:
     """A load's tolerance fields from a setup file; older files have +/- one %."""
     if "tol_min" in d or "tol_max" in d:
         return {"tol_min": d.get("tol_min"), "tol_max": d.get("tol_max"),
-                "tol_pct": d.get("tol_pct", True)}
+                "tol_pct": d.get("tol_pct", True), "tol_dv": d.get("tol_dv", False)}
     t = d.get("tolerance_pct")
     return {} if t is None else {"tol_min": -t, "tol_max": t}
 
@@ -444,12 +486,11 @@ def rail_nominal(setup: PISetup, net: Optional[str], skip: str = "",
 def vin_range(setup: PISetup, v: Vrm, groups=None) -> Tuple[Optional[float], Optional[float]]:
     """The VRM's input range in volts, (min, max), either None when not set. A range in %
     is taken from its input rail's nominal voltage; (None, None) without one."""
-    if not v.vin_pct:
+    unit = range_unit(v.vin_pct, v.vin_dv)
+    if unit == VOLTS:
         return v.vin_min, v.vin_max
     nom = rail_nominal(setup, v.input.net if v.input else None, v.name, groups)
-    if nom is None:
-        return None, None
-    return pct_to_volts(nom, v.vin_min, v.vin_max)
+    return range_volts(nom, v.vin_min, v.vin_max, unit)
 
 
 def group_name(group) -> str:
@@ -525,11 +566,14 @@ def validate(setup: PISetup) -> List[str]:
             errors.append(f"VRM {v.name}: input range minimum is above its maximum")
         if v.acc_min is not None and v.acc_max is not None and v.acc_min > v.acc_max:
             errors.append(f"VRM {v.name}: DC accuracy minimum is above its maximum")
-        if (v.vin_pct and v.kind != "source" and (v.vin_min, v.vin_max) != (None, None)
+        if ((v.vin_pct or v.vin_dv) and v.kind != "source"
+                and (v.vin_min, v.vin_max) != (None, None)
                 and rail_nominal(setup, v.input.net if v.input else None, v.name,
                                  groups) is None):
-            errors.append(f"VRM {v.name}: an input range in % needs a VRM driving its input "
-                          "rail, whose voltage it is a % of; give the range in volts instead")
+            how = "in %" if v.vin_pct else "in volts from nominal"
+            errors.append(f"VRM {v.name}: an input range {how} needs a VRM driving its "
+                          "input rail, whose voltage it is taken from; give the range in "
+                          "volts instead")
         if v.sense and groups[v.sense.net] != groups[v.output.net]:
             errors.append(f"VRM {v.name}: sense pins must be on the output net (or nets "
                           "DC-connected to it)")

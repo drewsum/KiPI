@@ -150,7 +150,7 @@ class LoadTolerance:
         input rail at ``nominal_v``: +/- its tighter side. None as for :meth:`of`."""
         from kipi.dc.pi.model import tolerance_label
         v_ac = _tighter_side(nominal_v, lo, hi)
-        label = tolerance_label(vrm.vin_min, vrm.vin_max, vrm.vin_pct)
+        label = tolerance_label(vrm.vin_min, vrm.vin_max, vrm.vin_pct, vrm.vin_dv)
         return cls(name, label, nominal_v, v_ac) if v_ac else None
 
     def label(self) -> str:
