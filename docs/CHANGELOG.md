@@ -4,7 +4,272 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.8.0 (in development): plugin and standalone modes
+## 0.9.0 (in development)
+
+### Added
+- **Victim markers in the 3D view** (#69). In Coupled Noise mode, PI Models marks each
+  victim's driver and receiver pins in orange, named "<victim> driver" and
+  "<victim> receiver" (the guessed ones where they are not set), beside AC mode's VRMs
+  and capacitors (not its probes). Selecting a victim in the Victims tab highlights both ends;
+  clicking either marker selects the victim.
+- **Coupled Noise mode, part 5: scanning, reports and a validation board** (#69).
+  **Victims** below the Solve button picks which victims a solve covers: all, one by
+  name, or none (the waveforms only). **Scan nearby nets** looks for victims too: every
+  signal net near the aggressor gets a quick estimate of its noise, and the worst are
+  solved in full with default terminations (Settings: scan radius, how many, driver and
+  logic level), marked "(scan)" in the results. **Report** writes an HTML or PDF report
+  of each solve: victims against their margins, the aggressor's parasitics and
+  waveforms, each victim's noise by mechanism, the scan and the notes. A new validation
+  board, `examples/validation/coupled_noise`, has a victim beside the switch node, one
+  beside the hot loop and one behind the ground plane; the tests check each is coupled the
+  way its route says, their ranking, and that a scan finds them. Shared-ground coupling
+  now takes only the copper's resistance between a victim's grounds: its inductive part
+  is the victim's own loop picking up the field, which the inductive coupling counts.
+- **Coupled Noise mode, part 4: the board model and shared-ground coupling** (#69). The
+  converter's input and output rails and their ground are solved with AC mode's field
+  model, with the switching currents as sources: they now divide among every capacitor
+  on the rails through the copper's own impedance (capacitors without a model are taken
+  at their board value), the rails' ripple is read at the switching device's pins, and
+  the ground difference between each victim's driver and receiver gives a third coupling
+  mechanism, **common** (shared-ground) noise. New settings turn the board model off for
+  a quick solve and set its field solves per decade. AC's sweep gains the transfer
+  impedance between ports with the parts on, and how a source current divides among the
+  parts.
+- **Coupled Noise mode, part 3: inductive coupling** (#69). Each input and output
+  capacitor's current loop (through the switching device, or through the inductor) now
+  induces a voltage along each victim's traces: the partial mutual inductance from every
+  loop segment to every victim segment, with the plane under the loops mirroring their
+  field as its eddy currents build up with frequency, and shielding victims on its far
+  side. The EMF drives the victim's line in series, so an open receiver sees nearly all
+  of it. Each victim's noise is now split into capacitive and inductive parts and their
+  total: the results table names the dominant one, the plot shows each, and the log gives
+  the victim's mutual inductance to each loop. A ground return with no ground copper on
+  the loop's own layer now runs through the plane under it, as it does at high frequency,
+  which also gives a truer hot-loop inductance.
+- **Coupled Noise mode, part 2: capacitive coupling onto victims** (#69). A **Victims**
+  tab names the signal nets to check, each with its driver and receiver pins (guessed as
+  the net's two farthest pads), a type that fills in their terminations (CMOS push-pull,
+  open drain, series or parallel terminated, a differential leg, a high-impedance analog
+  input; every value editable) and its logic level, whose JESD8 levels give its noise
+  margin (or enter one). A solve cuts each victim's traces into short segments and solves
+  a 2D cross-section of the board's copper across each one: its capacitance, inductance
+  and mutual capacitance to every switch node, from the stackup's dielectrics and solder
+  mask with the planes as references (within 2 % of the microstrip and stripline
+  formulas). The segments make a network of transmission lines between the driver and
+  receiver, driven by the switch nodes' charge at every harmonic. A results table gives
+  each victim's peak noise at its receiver against its margin, PASS or FAIL; selecting one
+  plots its noise, at the receiver and driver, in time or as a spectrum. The Solver Guide
+  explains the models.
+- **Coupled Noise mode, part 1: the aggressor's waveforms** (#69). A third analysis
+  mode (**Noise** in the toolbar, Ctrl+3) takes a buck or boost switcher as a noise
+  source. Its **Aggressors** tab names a switching VRM, which gives the input and output
+  voltages and so the topology (input above output: a buck; below: a boost), and the
+  output current from the DC setup's loads (either can be entered instead). It adds the
+  switching frequency and switch-node rise and fall times, and per phase the inductor
+  (its value read from the board), switch node, the switching device's high- and
+  low-side pins (separate parts for a discrete design), the input and output capacitors
+  and, optionally, the device's Coss, on-resistances and package inductance; **Fill from
+  VRM** finds them on the board. Its **Capacitors** tab is AC mode's capacitor models.
+  A solve builds every waveform as an exact Fourier series: each phase's switch node,
+  inductor current and pulsed current, interleaved 360°/N, each capacitor's ripple
+  current (shared by their impedances) and the input and output ripple voltage. From the
+  board it computes each phase's **hot-loop inductance** (partial inductances of the path
+  from each capacitor through the device, over its ground plane by images) and the
+  **switch node's capacitance** to ground (Coss plus its copper to the neighbouring
+  planes), and from them the **ringing** on the switch node's edges. They are shown in
+  the results and on a new **Waveforms** tab beside the 3D view, in time or as spectra,
+  and save to `.kipi-noise-results`. Coupling onto signal nets comes next. The Solver
+  Guide's further reading now lists the literature the mode is built on.
+- **Solder mask and silkscreen** (#82). The stackup now has the solder mask and
+  silkscreen over each outer copper layer, read from KiCad (its stackup's mask thickness
+  and color), a KiCad board file or an ODB++ job (its mask and silkscreen layers). KiCad
+  gives a silkscreen no thickness, so it is taken as 15 µm; a board with no stackup of its
+  own gets KiCad's default, a 10 µm mask and a silkscreen on both sides. The Stackup window
+  lists them above and below the copper, and their thicknesses can be changed while
+  unlocked; they sit outside the board and do not change its thickness. In the
+  electro-thermal solve, heat leaving the top and bottom copper for the air crosses them
+  (a mask at 0.25 W/m·K over the whole face, a silkscreen at 0.2 where it prints). At
+  their usual thickness they hold heat in only slightly: a 25 µm mask adds 0.1 K mm²/W
+  against 100 for still air. What each silkscreen prints is read from the board: its
+  drawings and text on F.SilkS and B.SilkS, off the pads and the board's edge. The
+  running KiCad draws the text in its own font; from a board file KiPI draws it in a
+  similar one, in the same place and turned upright as KiCad turns it; ODB++ gives it as
+  strokes. The 3D view draws them, the mask in its color and open over the pads, the
+  silkscreen as printed, under **Mask** and **Silkscreen** in Display, both off to start
+  with. Snapshots and setups keep them; older snapshots have none.
+- **Drawings in tooltips** (#116). Tooltips on fields that are easier to see than to read
+  show a small drawing under their text, coloured to match the window (on a background a
+  shade darker), with the field's part picked out: the capacitor model (C, ESL and ESR in
+  series and the impedance curve each sets), the DC bias curve (voltage rating, kept at
+  rating), aging and the dielectric (its code decoded, and typical temperature curves);
+  the VRM types, load line, dropout and input range, DC accuracy, control loop bandwidth,
+  phases and remote sense; the VRM's output, input and ground pins; a range's V, ±V or %
+  unit against the nominal voltage (load tolerance, VRM input range and DC accuracy); a
+  load's current split (equal or per pin group); a series link's side A and B pins, DCR
+  and ESL; a probe's target (flat up to a frequency, or custom points); and the mesh's max
+  edge, via grading and min edge. The drawings live in one folder, `kipi/gui/graphics/`,
+  as SVG templates; where Qt cannot render them, the tooltip is its text alone.
+- **3D views in DC PDF reports** (#133). A PDF can't show the interactive 3D views, so
+  they go inside it as an attached web page of their own, `<report>_3d.html` (Plotly and
+  the views only, about 1–2 MB compressed). A bold **3D Results View** link at the top of
+  the report and under each net group opens it in the web browser: the link itself in
+  Acrobat, Foxit and PDF-XChange (through Acrobat's JavaScript), and a paperclip beside it
+  in Firefox and Okular. It is also in the viewer's attachments panel (Acrobat opens the
+  PDF on that panel). The static views stay as they are. Like the notes field, it is added
+  to Qt's file as an incremental update; should that fail, the page is saved beside the
+  PDF instead and the links open it there. A PDF's own 3D (U3D or PRC) was ruled out: only Acrobat
+  shows it, with 3D off by default.
+- **Load models** (#17). A part's supplies in a YAML file of their own (`.yml` or `.yaml`,
+  nothing else): for each supply its pins and ground pins, current or pin groups,
+  tolerance (V, ±V or %) and heat, and for AC its target (flat or custom points) or the
+  load step, slew rate and AC tolerance a target is worked out from. A **Model ▾** button
+  under the DC Loads and AC Probes lists exports a part's model (every load and probe on
+  one reference designator, one supply each, so parts with several supplies keep them
+  all), applies a model to any number of loads or probes at once (each from the supply
+  chosen beside it; matches by pins or name come ticked), and adds a model's loads or
+  probes on every part ticked that has its pins.
+- **KiPI in Task Manager** (#124). KiPI shows as *KiPI* with its icon, not as *Python*, in
+  Windows Task Manager, macOS Activity Monitor and Linux System Monitor / top / ps. Task
+  Manager names an app by the program that owns its window, so on Windows KiPI (plugin or
+  standalone) starts again at once on `KiPI.exe`: a copy of its venv's base Python with
+  KiPI's icon and version information, made in the venv's `Scripts` folder with the Python
+  DLLs beside it, and remade when Python or KiPI changes. A copy that does not start is
+  remembered, and KiPI runs on `pythonw.exe` as before. On Linux the process is renamed
+  (`prctl`); on macOS LaunchServices is given KiPI's name.
+- **Ranges in volts from nominal** (#131). A load's tolerance and a VRM's input range and
+  DC accuracy take a third unit, **±V**, beside V and %: volts below and above the nominal
+  voltage (e.g. min -0.1 V, max +0.15 V), shown as "±0.1 V" or "-0.1 / +0.15 V". Switching
+  between the three converts the values; the tolerance drawing shows all three.
+- **Stackup cross-section** (#104). Beside the Stackup window's table, the layers are drawn
+  to scale, top to bottom: copper in its layer colour, dielectrics in a colour for their
+  material, each labelled with its thickness in the window's unit. The drawing follows
+  thicknesses as they are typed. Layers too thin to see are drawn 3 px tall (the label
+  gives the real thickness), and clicking a layer goes to its thickness in the table.
+- **Signs of life while KiPI works** (#111). The status bar shows a turning spinner with
+  the operation's name and the time it has taken while any task runs, part 3D models
+  loading included. Each new stage moves the progress bar until it reports how far it is,
+  instead of leaving the last stage's full bar still. The window shows the wait cursor
+  while it draws a task's results, saves a snapshot or applies a stackup change, and the
+  CSV and VTK exports now run in the background, with the spinner and progress bar.
+- **Keyboard shortcuts** (#105). In the 3D view, Home snaps to the iso view and Z /
+  Shift+Z to the top / bottom view. Anywhere in the window: Ctrl+O open, F5 reload,
+  Ctrl+S save snapshot, F12 screenshot, Ctrl+Shift+O open results, Ctrl+L stackup,
+  Ctrl+T power tree, Ctrl+1 / Ctrl+2 DC / AC mode, Ctrl+Enter solve, Esc cancel the
+  running operation (only while one runs) and F1 help. Each tooltip names its key, and the
+  user guide lists them all.
+- **User notes in the HTML reports** (#128). The DC and AC reports have an editable User
+  notes box at the end, after every result. A report opened from disk cannot save
+  itself, so the notes are kept in the browser as they are typed (per file, restored when it is opened again),
+  and *Save a copy with notes* downloads the report with them written in, plots and all, to
+  keep or share. The box is left out of a printout while it is empty.
+- **The standalone launcher has the KiPI icon** instead of Python's (#127). A `.py` file
+  cannot carry an icon of its own, so:
+  - Windows: the launcher keeps a `KiPI.lnk` shortcut with the KiPI icon in the KiPI
+    folder (made on the first start, and again only if the folder or Python moves), and
+    the folder itself shows the KiPI icon (`desktop.ini` now points at the icon relative
+    to the folder, and the launcher sets the attributes Explorer needs, which git and
+    unzipping drop). The setup window has the KiPI icon and shares KiPI's taskbar button;
+    pinning it pins the launcher.
+  - macOS: `--create-shortcut` now makes `~/Applications/KiPI.app`, with the KiPI icon,
+    that runs the launcher, instead of saying it is not supported.
+  - Linux: the setup window and the `--create-shortcut` menu entry match, so the panel
+    shows the KiPI icon; KiPI no longer replaces that menu entry with its hidden one.
+- **PDF reports** (#119). The DC and AC panels' *HTML report* tick is now *Report*, with a
+  choice of HTML or PDF beside it (saved with the setup; older setups keep HTML). The PDF
+  has the same tables and maps, printed by Qt (already one of KiPI's packages), with
+  images of the AC impedance plot and board map. It leaves out the sortable columns, and
+  the DC 3D views go in it as an attachment (#133, below). Its User notes box is a fillable form field: type in
+  it in any PDF viewer that fills forms (Acrobat, web browsers, Preview)
+  and save the PDF to keep the notes; printed, it is a box to write in. Qt cannot make
+  form fields, so KiPI adds the field to Qt's file as an incremental update, and should
+  that fail the box stays without it. A heading that would end a page starts the next
+  one instead, with the table or text it heads. It opens in the PDF viewer. Where a
+  PDF cannot be made, KiPI writes the HTML report instead and the log says why. The
+  *Report* button is now *Open report*.
+- **Guess models** (#130), beside *3D Models*: for a board with no KiCad board file to
+  read models from (an ODB++ job, a snapshot opened away from its board), or parts whose
+  models KiCad cannot find, it picks models from the library KiCad installs by each part's
+  footprint name. It looks for the whole name, a name the part's ends with (ODB++ from
+  KiCad names parts `Capacitor_SMD_C_0402_1005Metric`), the name it starts with (a
+  `_HandSolder` variant), a chip resistor, capacitor or inductor's size code
+  (`CAPC1005X55N`, `C0402`, `R0805`), and last the closest name. KiPI writes a board of just
+  those parts, each turned and on its side as on the board, and kicad-cli places the models
+  as it does for a KiCad board. It is a guess, so it runs only when clicked: a model not
+  found by the whole name is left out if it is far larger or smaller than the part's pads,
+  and the log names each one kept. Opening or reloading a board drops them. Standalone
+  KiPI now shows part 3D models too when KiCad is installed. Footprints now record their
+  rotation (ODB++ and KiCad boards, and snapshots); older snapshots take it from the pads.
+  Importing a STEP file of the whole board is not done yet.
+
+### Changed
+- **Mask and Silkscreen start off over results** (#144). Like 3D Models, the copper and
+  result views each remember their own Mask and Silkscreen settings, so ticking them to
+  look at the board no longer hides the result's colors when a solve is shown. Over
+  results they start off; the checkboxes follow the view shown.
+- **Each copper layer has its own temperature** (#34). The electro-thermal solve took the
+  board as one temperature through its thickness; now every copper layer is solved as its
+  own sheet. Heat goes onto the layer it is made on (copper loss on its own layer, a via's
+  loss on the layers it spans, a part's heat on the layers of its pads), crosses the
+  laminate at each dielectric's through-plane conductivity (FR4 core 0.3 W/m·K, against
+  0.8 in the plane), and goes down plated holes on any net, so thermal vias count. Only the
+  top and bottom layers lose heat to the air. The copper resistivity in the DC and AC
+  solves, the Temperature field of the 3D view, the Thermal tab's hottest copper per layer
+  and its limits, and the capacitor temperatures of the AC solve all read each layer's
+  own temperature. The report draws one temperature map per copper layer, on one color
+  scale, and lists the through-plane conductivities. Heat concentrated on one side, as
+  under a regulator, now runs hotter on that side than before and cooler on the others;
+  heat spread over the board changes little. Results saved before open as one sheet, as
+  they were solved.
+- **Faster AC solves on boards with many ground vias** (#123). The AC mesh is refined
+  toward plated holes, where via inductance is decided, and on a board stitched with
+  hundreds of ground vias that refinement was most of the mesh. It now happens only at
+  holes within five board thicknesses (at least 5 mm) of the rail's copper or its parts
+  (**Grade only near the rail** in the AC Mesh tab, on by default). Every piece of copper is
+  still meshed. On an 8-layer board, a 12 V rail went from 1.06M to 0.64M nodes and from
+  452 s to 237 s, with every probe's impedance within 0.002 %. Leaving the far ground out
+  altogether was tried and dropped. It saves more time but moves the impedance by 2–6 %,
+  because the low-frequency return takes shortcuts through ground nowhere near the rail.
+- **Loads no longer have a Heat field** (#121). With Include load power dissipation ticked,
+  a load heats the board with the power it draws, pin current × pin voltage, as before.
+  Setups and load models saved with a Heat still open; the value is ignored.
+- **The 3D view in DC reports is lit evenly** (#122): Plotly shaded each flat facet of the
+  copper, and the long thin triangles left by thinning the mesh came out in a patchwork of
+  dark ones. The color is now the voltage alone.
+- **DC accuracy and Control loop bandwidth tooltips** use the terms datasheets do (#135): DC
+  error or DC tolerance, from the reference accuracy, feedback resistor tolerances and
+  leakage into the FB pin; loop gain crossover, gain crossover or control loop crossover
+  frequency, set by the total output capacitance and the loop tuning.
+- **Snap to selected works for capacitor models.** Picking a model in AC mode's
+  Capacitors tab marks every part it names in amber and, with Snap to selected ticked,
+  brings the view to them; clicking a capacitor in 3D selects its model.
+- **Capacitors are marked in AC mode only.** PI Models no longer marks the modelled
+  capacitors in DC mode, whose solve has no use for them.
+- **Loss tangent and Default εr moved to the Stackup window** (#134), from the AC setup's
+  Mesh tab, beside the copper Resistivity and TCR. Like those they are setup settings, so
+  they can be changed while the stackup is locked; setups keep them as before.
+- **PARDISO is installed by default** where Intel MKL exists (Windows and Linux on x86-64),
+  with an opt-out (#129).
+  - Plugin: KiCad installs `requirements.txt` on every reload without asking, so PARDISO
+    stays out of it. The first time KiPI opens it shows what PARDISO would add (each
+    package and its size), ticked, and installs it with the plugin environment's pip
+    (wheels only, as KiCad does) behind a progress dialog that can be canceled. Unticking
+    is remembered outside the environment. *About → Manage dependencies…* now appears in
+    the plugin too, to add or remove it; a removal waits for the next start, before MKL is
+    loaded, and KiPI stops using it meanwhile. After *Recreate Plugin Environment* KiPI asks
+    again unless it was turned down. A failed or canceled install leaves KiPI on SciPy's
+    solver and is not asked again on every start.
+  - Standalone: the launcher's first setup has PARDISO ticked; later setups keep what was
+    chosen.
+
+### Fixed
+- **Report voltage maps of rails that barely sag** read plainly (#145). A low-current rail
+  whose copper spans only µV labelled its colorbar against an offset ("1e−5+3.2999"),
+  ticks 8 to 10 standing for 3.29998 to 3.30000 V. Such maps are now drawn as the drop from
+  the set point in V, mV or µV ("Drop from 3.3 V (µV)"; ground groups as the offset from
+  0 V), with the absolute range in the map's title. Maps whose colorbar already read
+  plainly are unchanged.
+
+## 0.8.0: plugin and standalone modes
 
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
 

@@ -20,7 +20,7 @@ from shapely.geometry.base import BaseGeometry
 
 from kipi.core.geometry.copper import drill_holes, iter_polygons, poly_to_shapely
 from kipi.core.model.board import BoardSnapshot, CopperLayer
-from kipi.core.viz.layer_colors import DEFAULT_COPPER, layer_key
+from kipi.core.viz.layer_colors import DEFAULT_COPPER, coating_rgb, layer_key
 
 # Copper layer colors, keyed like a KiCad color theme ("f", "in1".., "b"): KiCad's default
 # theme until :func:`set_layer_colors` gives the PCB editor's.
@@ -240,6 +240,38 @@ def board_body(snap: BoardSnapshot) -> Tuple[Optional[pv.PolyData], Optional[pv.
                 pts = np.column_stack([xy[:, 0], -xy[:, 1], np.full(len(xy), z)])
                 lines.append(pv.lines_from_points(pts))
     return body, (pv.merge(lines) if lines else None)
+
+
+COATING_GAP_MM = 0.002     # coatings off the copper, so their faces do not z-fight
+
+
+def board_coatings(snap: BoardSnapshot) -> List[Tuple[str, pv.PolyData, Tuple[float, ...]]]:
+    """The solder masks and silkscreens as slabs over the board (#82): ``(kind, mesh,
+    color)`` for each. A mask is open over the pads of the copper under it; a silkscreen
+    is what it prints (see :func:`~kipi.core.geometry.silkscreen.printed_silk`)."""
+    from kipi.core.geometry.silkscreen import mask_openings, printed_silk
+    st = snap.stackup
+    if not snap.outline or not st.coatings or not st.copper:
+        return []
+    board = shapely.union_all([g for g in (poly_to_shapely(p) for p in snap.outline)
+                               if g is not None])
+    out = []
+    for side in ("top", "bottom"):
+        cu = st.copper[0] if side == "top" else st.copper[-1]
+        z = cu.z_top_mm if side == "top" else cu.z_bottom_mm
+        openings = mask_openings(snap, side)
+        z += COATING_GAP_MM if side == "top" else -COATING_GAP_MM
+        for c in st.coatings_on(side):
+            if c.kind == "mask":
+                geom = board if openings is None else board.difference(openings)
+            else:
+                geom = printed_silk(snap, side, board)
+            t = c.thickness_mm
+            m = slab(geom, z if side == "top" else z - t, t) if geom is not None else None
+            if m is not None:
+                out.append((c.kind, m, coating_rgb(c)))
+            z += t if side == "top" else -t
+    return out
 
 
 def build_net_scene(snap: BoardSnapshot, net: str, layers: Dict[int, BaseGeometry],

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC setup panel, shown in place of the DC power-tree panel in AC mode.
 
 It edits the same :class:`~kipi.dc.pi.model.PISetup` as the DC panel. The VRMs and series
@@ -24,22 +25,26 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
+from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
 from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel, Probe
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
-from kipi.core.model.parts import (
-    is_class2, parse_capacitance, parse_dielectric, parse_voltage_rating,
-)
 from kipi.dc.gui.pi_panel import (
     ItemList, LinkEditor, PartSelection, PIPanel, VrmEditor, _Editor, _spin, _unique,
     make_searchable, new_link, new_vrm, parts_on_net, tip,
 )
-from kipi.dc.pi.autofill import guess_ground_pins
+from kipi.dc.pi.autofill import guess_ground_pins, part_nets
+from kipi.dc.pi.load_model import apply_to_probe, new_items
 from kipi.ac.target import vrm_input_name, vrm_inputs
 from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm
+from kipi.gui.load_model_dialogs import (
+    ApplyDialog, PartsDialog, candidate_parts, export_model, model_button, open_model,
+)
+from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
 )
+from kipi.gui.tooltip_art import art_tip
 
 TITLE = "AC setup"
 
@@ -93,6 +98,12 @@ class CapEditor(_Editor):
         self.mfg_tol = _spin(0, 100, 0, 1, " %", 1)
         self.mfg_tol.setSpecialValueText("not set")
         f.addRow("Manufacturing tolerance", self.mfg_tol)
+        # Drawings under the tooltips (#116): the series model and its impedance curve with
+        # the field's element picked out, the DC bias curve and aging.
+        art = {self.cap: ("cap_model", "c"), self.esl: ("cap_model", "l"),
+               self.esr: ("cap_model", "r"), self.rated: ("dc_bias", "rated"),
+               self.kept: ("dc_bias", "kept"), self.aging: ("aging", "aging"),
+               self.dielectric: ("dielectric", "x7r")}
         for w, text in (
                 (self.name, "A name for this model, e.g. the part number or value"),
                 (self.cap, "Capacitance of one part, at no DC bias. For a ceramic (X5R, "
@@ -126,7 +137,7 @@ class CapEditor(_Editor):
                 (self.esl, "Equivalent series inductance of the part itself (from its "
                            "datasheet); the board's mounting inductance is simulated"),
                 (self.esr, "Equivalent series resistance of one part, from its datasheet")):
-            tip(f, w, text)
+            tip(f, w, text, art.get(w))
         self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept,
                     self.mfg_tol)
         self.rated.valueChanged.connect(lambda v: self.kept.setEnabled(v > 0))
@@ -315,13 +326,6 @@ class CapEditor(_Editor):
         self._assign(refs, True)
 
 
-def _fmt_farads(f: float) -> str:
-    for scale, unit in ((1e-3, "mF"), (1e-6, "µF"), (1e-9, "nF"), (1e-12, "pF")):
-        if f >= scale * 0.999:
-            return f"{f / scale:.4g} {unit}"
-    return f"{f:.3g} F"
-
-
 def _target_text(c) -> str:
     """A result's target for the table: its level, or a custom mask's range."""
     if c.target_points:
@@ -379,8 +383,9 @@ class ProbeEditor(_Editor):
         self.points.setColumnWidth(2, 28)
         self.points.verticalHeader().setVisible(False)
         self.points.setMinimumHeight(130)
-        self.points.setToolTip("Corner points of the custom target mask: a frequency and the "
-                               "target |Z| there. Click a column header to sort by it.")
+        self.points.setToolTip(art_tip(
+            "Corner points of the custom target mask: a frequency and the target |Z| there. "
+            "Click a column header to sort by it.", "target_types", "custom"))
         make_sortable(self.points, self._sort_points, columns=(0, 1))
         self.btn_point = QPushButton("Add point")
         self.btn_point.setToolTip("Add a point a decade above the last one")
@@ -406,6 +411,9 @@ class ProbeEditor(_Editor):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
+        # Drawings under the tooltips (#116): the flat and custom targets on the |Z| plot.
+        art = {self.target_kind: ("target_types", "flat", "custom"),
+               self.target: ("target_types", "flat"), self.target_f: ("target_types", "tf")}
         for w, text in (
                 (self.name, "A name for this probe, shown in the plot legend and the table"),
                 (self.rail, "The device's supply pins: where the impedance is looked into"),
@@ -418,7 +426,7 @@ class ProbeEditor(_Editor):
                               "frequency"),
                 (self.target_f, "Frequency up to which the target impedance applies "
                                 "(none: the whole sweep)")):
-            tip(f, w, text)
+            tip(f, w, text, art.get(w))
         self._watch(self.name, self.target, self.target_f, self.target_kind)
         self.target_kind.currentIndexChanged.connect(self._target_rows)
         self._target_rows()
@@ -539,8 +547,9 @@ class ACPanel(QWidget, PartSelection):
     result_selected = Signal(object)               # ACResult shown in the plot; None clears it
     setup_changed = Signal()                       # any edit to the setup
     results_saved = Signal(str)                    # path of a saved results file
-    # The VRM, series link or probe selected in the setup: kind ("vrm", "link", "probe"),
-    # name, and whether the user picked it; ("", "", False) for none (#96).
+    # The VRM, series link, capacitor model or probe selected in the setup: kind ("vrm",
+    # "link", "cap", "probe"), name, and whether the user picked it; ("", "", False) for
+    # none (#96).
     part_selected = Signal(str, str, bool)
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -578,6 +587,10 @@ class ACPanel(QWidget, PartSelection):
         menu.aboutToShow.connect(lambda: self._fill_load_menu(menu))
         b_load.setMenu(menu)
         self.probe_list.buttons.insertWidget(1, b_load)
+        # Load models (#17): a part's targets in a file, for many probes at once.
+        self.probe_list.buttons.addWidget(model_button(
+            self, "probe", self.apply_load_model, self.add_probes_from_model,
+            lambda: export_model(self, self.setup, self.snapshot)))
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.link_list, "Series links")
         self.tabs.addTab(self.cap_list, "Capacitors")
@@ -619,13 +632,12 @@ class ACPanel(QWidget, PartSelection):
                                   "this rail. Problems that stop the solve are listed above "
                                   "in red.")
         self.btn_solve.clicked.connect(self._solve)
-        self.chk_report = QCheckBox("HTML report", self)
-        self.chk_report.setToolTip("Also write an HTML report (interactive impedance plot, "
-                                   "board map and tables) next to the board after each "
-                                   "rail's solve")
-        self.chk_report.toggled.connect(lambda on: setattr(self.setup.ac, "html_report", on))
-        self.btn_report = QPushButton("Report", self)
-        self.btn_report.setToolTip("Open the shown rail's HTML report in your browser")
+        self.report_option = ReportOption("impedance plot, board map and tables, after "
+                                          "each rail's solve", self._report_changed, self)
+        self.chk_report = self.report_option.chk
+        self.btn_report = QPushButton("Open report", self)
+        self.btn_report.setToolTip("Open the shown rail's report in your browser or PDF "
+                                   "viewer")
         self.btn_report.setVisible(False)
         self.btn_report.clicked.connect(self._open_report)
         row.addWidget(QLabel("Rail"))
@@ -635,7 +647,7 @@ class ACPanel(QWidget, PartSelection):
         lay.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(self.btn_solve, 1)
-        row.addWidget(self.chk_report)
+        row.addWidget(self.report_option)
         row.addWidget(self.btn_report)
         lay.addLayout(row)
 
@@ -680,7 +692,8 @@ class ACPanel(QWidget, PartSelection):
         return (self.vrm_list, self.link_list, self.cap_list, self.probe_list)
 
     def _part_lists(self):
-        return {"vrm": self.vrm_list, "link": self.link_list, "probe": self.probe_list}
+        return {"vrm": self.vrm_list, "link": self.link_list, "cap": self.cap_list,
+                "probe": self.probe_list}
 
     # ------------------------------------------------------------------ tabs
     def _sweep_tab(self) -> QWidget:
@@ -806,29 +819,32 @@ class ACPanel(QWidget, PartSelection):
         self.spin_edge = _spin(0.05, 10.0, s.max_edge_mm, 2, " mm", 0.1)
         self.spin_grading = _spin(0.0, 2.0, s.grading, 2, "", 0.05)
         self.spin_min_edge = _spin(0.005, 1.0, s.min_edge_mm, 3, " mm", 0.01)
-        self.spin_tand = _spin(0.0, 0.2, s.loss_tangent, 4, "", 0.001)
-        self.spin_er = _spin(1.0, 20.0, s.default_er, 2, "", 0.1)
         f.addRow("Max edge", self.spin_edge)
         f.addRow("Via grading", self.spin_grading)
         f.addRow("Min edge (at holes)", self.spin_min_edge)
-        f.addRow("Loss tangent", self.spin_tand)
-        f.addRow("Default εr", self.spin_er)
-        tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
-                               "accurate and slower.")
-        tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
-                                  "edge per mm of distance)")
-        tip(f, self.spin_min_edge, "Mesh edge length at plated holes, where via inductance "
-                                   "is decided")
-        tip(f, self.spin_tand, "Dielectric loss tangent (FR4 is about 0.02)")
-        tip(f, self.spin_er, "Dielectric constant used where the board stackup gives none")
+        tip(f, self.spin_edge, art_tip("Largest triangle edge of the copper mesh. Smaller is "
+                                       "more accurate and slower.", "mesh", "max"))
+        tip(f, self.spin_grading, art_tip("How fast mesh elements grow away from plated holes "
+                                          "(mm of edge per mm of distance)", "mesh", "grading"))
+        tip(f, self.spin_min_edge, art_tip("Mesh edge length at plated holes, where via "
+                                           "inductance is decided", "mesh", "min"))
+        self.chk_near = QCheckBox("Grade only near the rail")
+        self.chk_near.setChecked(s.grade_near_rail_only)
+        f.addRow(self.chk_near)
+        tip(f, self.chk_near, art_tip(
+            "Refine the mesh only at plated holes near the rail's copper and parts (five "
+            "board thicknesses, at least 5 mm). Far ground vias carry almost none of its "
+            "current: a board stitched with many of them solves much faster, with the same "
+            "result. All the copper is kept either way.", "near_rail", "near"))
+        self.chk_near.toggled.connect(self._ac_settings_changed)
         note = QLabel("The mesh decides the plane spreading and via inductance: elements grow "
                       "from 'min edge' at plated holes by 'via grading' per mm, up to 'max "
-                      "edge'. Copper resistivity and barrel plating come from the DC setup.")
+                      "edge'. Copper resistivity and barrel plating come from the DC setup; the "
+                      "dielectric loss tangent and Default εr from the Stackup window.")
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
         f.addRow(note)
-        for wdg in (self.spin_edge, self.spin_grading, self.spin_min_edge, self.spin_tand,
-                    self.spin_er):
+        for wdg in (self.spin_edge, self.spin_grading, self.spin_min_edge):
             wdg.valueChanged.connect(self._ac_settings_changed)
         return w
 
@@ -841,8 +857,7 @@ class ACPanel(QWidget, PartSelection):
         s.max_edge_mm = self.spin_edge.value()
         s.grading = self.spin_grading.value()
         s.min_edge_mm = self.spin_min_edge.value()
-        s.loss_tangent = self.spin_tand.value()
-        s.default_er = self.spin_er.value()
+        s.grade_near_rail_only = self.chk_near.isChecked()
         s.dc_bias = self.chk_bias.isChecked()
         s.mfg_tolerance = self.chk_mfg.isChecked()
         s.aging = self.chk_aging.isChecked()
@@ -858,14 +873,15 @@ class ACPanel(QWidget, PartSelection):
                        (self.spin_ppd, s.points_per_decade),
                        (self.spin_fpd, s.field_points_per_decade),
                        (self.spin_edge, s.max_edge_mm), (self.spin_grading, s.grading),
-                       (self.spin_min_edge, s.min_edge_mm), (self.spin_tand, s.loss_tangent),
-                       (self.spin_er, s.default_er), (self.spin_hours, s.aging_hours),
+                       (self.spin_min_edge, s.min_edge_mm), (self.spin_hours, s.aging_hours),
                        (self.spin_temp, s.temperature_c)):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
-        for chk, on in ((self.chk_report, s.html_report), (self.chk_bias, s.dc_bias),
-                        (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging)):
+        self.report_option.set_value(s.html_report, s.report_format)
+        for chk, on in ((self.chk_bias, s.dc_bias),
+                        (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging),
+                        (self.chk_near, s.grade_near_rail_only)):
             chk.blockSignals(True)
             chk.setChecked(on)
             chk.blockSignals(False)
@@ -1011,7 +1027,7 @@ class ACPanel(QWidget, PartSelection):
         return None if net is None else new_link(self.snapshot, self.setup, self._nets, net)
 
     def _new_cap(self):
-        return CapModel(_unique("Model1", [m.name for m in self.setup.caps]))
+        return new_cap(self.setup)
 
     def _new_probe(self):
         vrm = self._vrm()
@@ -1029,6 +1045,65 @@ class ACPanel(QWidget, PartSelection):
         gref = ref if ref in gnd_parts else self._first_part(gnd)
         return Probe(_unique(ref or "PROBE1", [p.name for p in self.setup.probes]),
                      PinRef(ref, net), PinRef(gref, gnd))
+
+    def apply_load_model(self, model=None):
+        """Apply a load model file's targets (or ``model``'s) to the probes the user
+        ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        probes = self.setup.probes
+        if not probes:
+            QMessageBox.information(self, "Load model", "There are no probes to apply it to; "
+                                    "use Add probes from model file.")
+            return
+        dlg = ApplyDialog(model, [(p.name, p.rail) for p in probes], "probe", self)
+        if not dlg.exec():
+            return
+        missed = [probes[row].name for row, i in dlg.chosen()
+                  if not apply_to_probe(probes[row], model.supplies[i], self.setup)]
+        self.probe_list.reload()
+        self.probe_list.changed.emit()
+        if missed:
+            QMessageBox.information(
+                self, "Load model", "No target was set for " + ", ".join(missed) + ": their "
+                "supply in the model has no target, or a load step without an AC tolerance "
+                "and no VRM driving the rail to take one from its DC tolerance.")
+
+    def add_probes_from_model(self, model=None):
+        """Add a load model's probes on the parts the user ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        parts = candidate_parts(model, self.snapshot)
+        if not parts:
+            QMessageBox.information(self, "Load model", "No part on the board has the pins of "
+                                    "any of the model's supplies (adding probes needs its "
+                                    "pins).")
+            return
+        dlg = PartsDialog(model, parts, "probe", self)
+        if not dlg.exec():
+            return
+        added, no_ground = 0, []
+        for ref in dlg.chosen():
+            for s, rail, gnd in new_items(model, ref, part_nets(self.snapshot, ref)):
+                gnd = gnd or guess_ground_pins(self.snapshot, self.setup, self._nets, rail)
+                if gnd is None:
+                    no_ground.append(f"{ref} {s.name}")
+                    continue
+                probe = Probe(_unique(f"{ref} {s.name}", [p.name for p in self.setup.probes]),
+                              rail, gnd)
+                apply_to_probe(probe, s, self.setup)
+                self.setup.probes.append(probe)
+                added += 1
+        if added:
+            self.probe_list.reload()
+            self.probe_list.lst.setCurrentRow(self.probe_list.lst.count() - 1)
+            self.probe_list.changed.emit()
+        if no_ground:
+            QMessageBox.information(self, "Load model", "No probe for " + ", ".join(no_ground)
+                                    + ": no ground pins in the model, and none found on the "
+                                    "part.")
 
     def _fill_load_menu(self, menu: QMenu):
         menu.clear()
@@ -1071,30 +1146,9 @@ class ACPanel(QWidget, PartSelection):
     def _models_from_values(self):
         if self.snapshot is None:
             return
-        assigned = {ref for m in self.setup.caps for ref in m.refs}
-        by_value = {}
-        for c in capacitor_candidates(self.snapshot, self._nets):
-            if c.ref not in assigned:
-                by_value.setdefault(c.value or "(no value)", []).append(c.ref)
-        if not by_value:
-            QMessageBox.information(self, "KiPI", "Every capacitor between ticked nets "
-                                                  "already has a model.")
-            return
-        taken = [m.name for m in self.setup.caps]
-        for value, refs in sorted(by_value.items()):
-            name = _unique(value, taken)
-            taken.append(name)
-            farads = parse_capacitance(value) or 0.0
-            rated = parse_voltage_rating(value)
-            diel = parse_dielectric(value)
-            # A rating turns on the DC bias estimate: only for class II ceramics.
-            self.setup.caps.append(CapModel(name, farads, 0.0, 0.0, refs,
-                                            rated_v=rated if is_class2(value) else None,
-                                            dielectric=diel,
-                                            aging_pct_per_decade=AGING_PCT_PER_DECADE.get(
-                                                diel, 0.0)))
-        self.cap_list.reload()
-        self._on_changed()
+        if models_from_values(self, self.snapshot, self.setup, self._nets):
+            self.cap_list.reload()
+            self._on_changed()
 
     # ------------------------------------------------------------------ describe
     @staticmethod
@@ -1105,13 +1159,7 @@ class ACPanel(QWidget, PartSelection):
 
     @staticmethod
     def _describe_cap(m: CapModel) -> str:
-        vals = (f"{_fmt_farads(m.capacitance_f)}, {m.esl_h * 1e9:g} nH, {m.esr_ohm * 1e3:g} mΩ"
-                if m.capacitance_f and m.esl_h and m.esr_ohm else "values needed")
-        bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias else ""
-        bias += f", {m.dielectric}" if m.dielectric else ""
-        bias += f", ±{m.mfg_tolerance_pct:g} %" if m.mfg_tolerance_pct else ""
-        return (f"{m.name}: {vals}{bias} "
-                f"({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})")
+        return describe_cap(m)
 
     @staticmethod
     def _describe_probe(p: Probe) -> str:
@@ -1210,6 +1258,9 @@ class ACPanel(QWidget, PartSelection):
         self.btn_export.setEnabled(True)
         self.btn_report.setVisible(getattr(result, "report_path", None) is not None)
         self.result_selected.emit(result)
+
+    def _report_changed(self, on: bool, fmt: str):
+        self.setup.ac.html_report, self.setup.ac.report_format = on, fmt
 
     def _open_report(self):
         path = getattr(self.result, "report_path", None)

@@ -149,6 +149,30 @@ def test_resistivity_and_tcr_edit_the_setup(app, unit_setting):
     assert win._rho_spins[0].isReadOnly()
 
 
+def test_loss_tangent_and_default_er_edit_the_ac_setup(app, unit_setting):
+    """They moved here from the AC Mesh tab (#134), and like resistivity are not locked."""
+    setup = PISetup()
+    setup.ac.loss_tangent, setup.ac.default_er = 0.015, 3.9
+    win = StackupWindow()
+    changed = []
+    win.settings_changed.connect(lambda: changed.append(1))
+    win.set_board(board().stackup, setup=setup)
+    assert win.spin_tand.value() == pytest.approx(0.015)
+    assert win.spin_er.value() == pytest.approx(3.9)
+    assert win.chk_lock.isChecked() and win.spin_tand.isEnabled() and win.spin_er.isEnabled()
+    win.spin_tand.setValue(0.01)
+    win.spin_er.setValue(4.5)
+    assert (setup.ac.loss_tangent, setup.ac.default_er) == (pytest.approx(0.01), 4.5)
+    assert len(changed) == 2
+
+
+def test_ac_mesh_tab_has_no_dielectric_settings(app, no_3d):
+    from kipi.gui.main_window import MainWindow
+    w = MainWindow()
+    assert not hasattr(w.ac_panel, "spin_tand") and not hasattr(w.ac_panel, "spin_er")
+    w.close()
+
+
 def test_toolbar_opens_the_window_and_the_copper_tab_is_gone(app, no_3d):
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
@@ -360,3 +384,35 @@ def test_snapshots_leave_out_an_unset_k():
     snap.stackup.dielectrics[0].k_w_mk = 2.5
     back = snapshot_io.from_dict(snapshot_io.to_dict(snap))
     assert back.stackup.dielectrics[0].k_w_mk == 2.5
+
+
+def test_solder_masks_and_silkscreens_are_listed_and_editable(app, unit_setting):
+    """The coatings sit above and below the copper; a thickness typed while unlocked
+    changes them and not the board (#82)."""
+    from kipi.core.model.board import MASK, SILK, Coating
+    from kipi.core.model.stackup import coating_thicknesses
+    st = board().stackup
+    st.coatings = [Coating(SILK, "top", 0.015), Coating(MASK, "top", 0.01),
+                   Coating(MASK, "bottom", 0.01), Coating(SILK, "bottom", 0.015)]
+    win = StackupWindow()
+    got = []
+    win.stackup_changed.connect(got.append)
+    win.set_board(st, setup=PISetup())
+    assert len(win._thk_spins) == len(thicknesses(st)) + 4
+    names = [win.table.item(i, 0).text() for i in range(win.table.rowCount())]
+    assert names[:2] == ["Top silkscreen", "Top solder mask"]
+    assert names[-2:] == ["Bottom solder mask", "Bottom silkscreen"]
+    assert len(win.view.bands()) == len(names)
+    assert win._thk_spins[1].isReadOnly()
+    win.chk_lock.setChecked(False)
+    win.cmb_unit.setCurrentText("µm")
+    mask = win._thk_spins[1]
+    mask.lineEdit().setText("25um")
+    mask.interpretText()
+    win.flush()
+    assert len(got) == 1 and got[0].edited
+    assert coating_thicknesses(got[0]) == pytest.approx([0.015, 0.025, 0.01, 0.015])
+    assert got[0].board_thickness_mm == pytest.approx(st.board_thickness_mm)
+    assert thicknesses(got[0]) == pytest.approx(thicknesses(st))
+    win.chk_lock.setChecked(True)
+    assert got[-1] is st

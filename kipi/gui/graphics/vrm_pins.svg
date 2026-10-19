@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160" viewBox="0 0 300 160">
+  <rect x="0" y="0" width="300" height="160" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <rect x="110" y="34" width="80" height="60" rx="5" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="150" y="68" fill="{fg}" text-anchor="middle">VRM</text>
+    <!-- input: from the upstream rail -->
+    <path d="M20,56 H106" stroke="{inp}" stroke-width="2"/>
+    <rect x="104" y="51" width="10" height="10" fill="{inp}"/>
+    <text x="22" y="48" fill="{inp}">input pins</text>
+    <text x="22" y="74" fill="{muted}" font-size="10">upstream rail</text>
+    <!-- output: onto the rail it drives -->
+    <path d="M194,56 H280" stroke="{out}" stroke-width="2" fill="none"/>
+    <rect x="186" y="51" width="10" height="10" fill="{out}"/>
+    <path d="M280,40 V72" stroke="{fg}" stroke-width="4"/>
+    <text x="276" y="30" fill="{out}" text-anchor="end">output pins</text>
+    <text x="274" y="86" fill="{muted}" font-size="10" text-anchor="end">rail</text>
+    <!-- ground: the return is solved too -->
+    <rect x="145" y="90" width="10" height="10" fill="{gnd}"/>
+    <path d="M150,100 V122 M136,122 H164 M141,127 H159 M146,132 H154" stroke="{gnd}" stroke-width="2" fill="none"/>
+    <text x="170" y="118" fill="{gnd}">ground pins</text>
+    <text x="150" y="152" fill="{muted}" text-anchor="middle" font-size="10">with ground pins, drops are measured to ground</text>
+  </g>
+</svg>

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Setup fields pre-filled from the board, which the user can always change."""
 
 import os

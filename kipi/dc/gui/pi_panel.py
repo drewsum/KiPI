@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Power-integrity setup panel: VRMs, loads and series links, all user-defined.
 
 Each tab is a list of items with an editor form. Edits go straight into the
@@ -23,7 +24,7 @@ from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTabWidget,
     QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
@@ -33,13 +34,20 @@ from kipi.core.model.nets import guess_voltage, sorted_nets, voltage_from_name
 from kipi.core.model.parts import is_capacitor_ref, resistor_ohms
 from kipi.dc.pi.autofill import (
     guess_ground_pins, guess_input_pins, guess_other_side, looks_like_ground,
-    next_phase_refs, other_net, setup_grounds,
+    next_phase_refs, other_net, part_nets, setup_grounds,
 )
+from kipi.dc.pi.load_model import apply_to_load, new_items
 from kipi.dc.pi.model import (
-    DEFAULT_VIA_CURRENT_LIMIT_A, DcLink, Load, PinRef, PISetup, Vrm, VrmPhase, active_setup,
-    group_name, net_groups, pct_to_volts, rail_nominal, validate, volts_to_pct,
+    DEFAULT_VIA_CURRENT_LIMIT_A, DELTA_VOLTS, PERCENT, VOLTS, DcLink, Load, PinRef, PISetup,
+    Vrm, VrmPhase, active_setup, group_name, net_groups, range_unit, range_volts, rail_nominal,
+    validate, volts_in,
 )
+from kipi.gui.load_model_dialogs import (
+    ApplyDialog, PartsDialog, candidate_parts, export_model, model_button, open_model,
+)
+from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
+from kipi.gui.tooltip_art import add_text, art_tip
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS, scale_decimals
@@ -72,9 +80,9 @@ def _optional_volts() -> QDoubleSpinBox:
 
 
 class RangeRow(QWidget):
-    """Optional min and max on one row, in volts or in % from a nominal voltage that
-    ``nominal()`` gives (None if unknown). Switching the unit converts the values, or
-    clears them without a nominal voltage."""
+    """Optional min and max on one row: in volts, or in volts or % from a nominal voltage
+    that ``nominal()`` gives (None if unknown, #131). Switching the unit converts the
+    values, or clears them where that needs the nominal voltage and it is unknown."""
     changed = Signal()
 
     def __init__(self, nominal: Callable[[], Optional[float]], parent=None):
@@ -84,8 +92,10 @@ class RangeRow(QWidget):
         self.min = _optional_volts()
         self.max = _optional_volts()
         self.unit = QComboBox()
-        self.unit.addItem("V", "V")
-        self.unit.addItem("%", "%")
+        self.unit.addItem("V", VOLTS)
+        self.unit.addItem("±V", DELTA_VOLTS)
+        self.unit.addItem("%", PERCENT)
+        self._unit = VOLTS                      # the unit the values are in
         h = QHBoxLayout(self)
         h.setContentsMargins(0, 0, 0, 0)
         h.addWidget(QLabel("min"))
@@ -101,16 +111,22 @@ class RangeRow(QWidget):
         return self.min, self.max, self.unit
 
     def pct(self) -> bool:
-        return self.unit.currentData() == "%"
+        return self.unit.currentData() == PERCENT
+
+    def dv(self) -> bool:
+        """Whether the values are volts from nominal."""
+        return self.unit.currentData() == DELTA_VOLTS
 
     def values(self):
         return _get_optional(self.min), _get_optional(self.max)
 
-    def set_values(self, lo: Optional[float], hi: Optional[float], pct: bool):
+    def set_values(self, lo: Optional[float], hi: Optional[float], pct: bool,
+                   dv: bool = False):
         quiet, self._quiet = self._quiet, True
         try:
-            self.unit.setCurrentIndex(1 if pct else 0)
-            step = 1.0 if pct else 0.1
+            self._unit = range_unit(pct, dv)
+            self.unit.setCurrentIndex(self.unit.findData(self._unit))
+            step = {PERCENT: 1.0, DELTA_VOLTS: 0.01}.get(self._unit, 0.1)
             for s in (self.min, self.max):
                 s.setSingleStep(step)
                 s.setRange(-1000 - step, 1000)          # one step below: "not set"
@@ -124,14 +140,11 @@ class RangeRow(QWidget):
     def _unit_changed(self, *_):
         if self._quiet:
             return
-        pct = self.pct()
-        lo, hi = self.values()                  # still in the old unit's ranges
+        unit = self.unit.currentData()
         nom = self._nominal()
-        if nom is None:
-            lo = hi = None
-        else:
-            lo, hi = (volts_to_pct if pct else pct_to_volts)(nom, lo, hi)
-        self.set_values(lo, hi, pct)
+        lo, hi = range_volts(nom, *self.values(), self._unit)      # from the old unit
+        lo, hi = volts_in(nom, lo, hi, unit)
+        self.set_values(lo, hi, unit == PERCENT, unit == DELTA_VOLTS)
         self.changed.emit()
 
     def _changed(self, *_):
@@ -147,12 +160,18 @@ def _set_optional(s: QDoubleSpinBox, value: Optional[float]):
     s.setValue(s.minimum() if value is None else value)
 
 
-def tip(form: QFormLayout, field: QWidget, text: str):
-    """Give a form row's field and its label the tooltip ``text``."""
-    field.setToolTip(text)
+def tip(form: QFormLayout, field: QWidget, text: str, art: Optional[tuple] = None):
+    """Give a form row's field and its label the tooltip ``text``, with the drawing
+    ``art`` (a name and the parts to pick out, #116) under it if given."""
+    shown = art_tip(text, *art) if art else text
+    if isinstance(field, PinPicker):
+        field.art = art or ()               # it adds its boxes' lines above the drawing
+        field.setToolTip(text)
+    else:
+        field.setToolTip(shown)
     label = form.labelForField(field)
     if label is not None:
-        label.setToolTip(text)
+        label.setToolTip(shown)
 
 
 def make_searchable(combo: QComboBox):
@@ -236,6 +255,7 @@ class PinPicker(QWidget):
         self.cmb_part.currentIndexChanged.connect(self._part_changed)
         self.txt_pins.editingFinished.connect(self.changed.emit)
         self._loading = False
+        self.art: tuple = ()                # a drawing under the tooltip (#116), see tip()
         self.setToolTip("")
 
     # What each of the three boxes picks, added under the row's own tooltip.
@@ -245,10 +265,13 @@ class PinPicker(QWidget):
                   "the net.")
 
     def setToolTip(self, text: str):
-        """The row's tooltip, shown on each box with a line on what that box picks."""
-        super().setToolTip(text)
+        """The row's tooltip, shown on each box with a line on what that box picks, and
+        the drawing ``art`` under it if set."""
+        drawn = text.startswith("<table")      # already has it (_gray adds a line to it)
+        shown = art_tip(text, *self.art) if self.art and text and not drawn else text
+        super().setToolTip(shown)
         for w, line in zip((self.cmb_net, self.cmb_part, self.txt_pins), self._PART_TIPS):
-            w.setToolTip(f"{text}\n\n{line}" if text else line)
+            w.setToolTip(add_text(shown, line))
 
     def net(self) -> str:
         """The selected net (not the half-typed search text)."""
@@ -404,7 +427,7 @@ def _gray(widgets, on: bool, why: str, editable: bool = False):
         if tip is None:
             tip = w.toolTip()
             w.setProperty("kipi_tip", tip)
-        w.setToolTip(tip if on else (f"{tip}\n\n{why}" if tip else why))
+        w.setToolTip(tip if on else add_text(tip, why))
 
 
 class VrmEditor(_Editor):
@@ -462,6 +485,19 @@ class VrmEditor(_Editor):
         f.addRow("Ground pins", self.ground)
         f.addRow("Sense pins", self.sense)
         f.addRow("Ground sense pins", self.ground_sense)
+        # Drawings under the tooltips (#116), the field's part picked out.
+        art = {self.kind: ("vrm_types",), self.eff: ("vrm_types", "smps"),
+               self.iq: ("vrm_types", "ldo"), self.load_line: ("load_line", "ll"),
+               self.dropout: ("dropout", "dropout"), self.vin_row: ("dropout", "range"),
+               self.vin_row.min: ("dropout", "range"), self.vin_row.max: ("dropout", "range"),
+               self.acc_row: ("accuracy", "min", "max"), self.acc_row.min: ("accuracy", "min"),
+               self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
+               self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
+               self.ground_sense: ("remote_sense", "gsense"),
+               self.vin_row.unit: ("tolerance", "volts", "dv", "pct"),
+               self.acc_row.unit: ("tolerance", "volts", "dv", "pct"),
+               self.output: ("vrm_pins", "out"), self.input: ("vrm_pins", "inp"),
+               self.ground: ("vrm_pins", "gnd")}
         for w, text in (
                 (self.name, "A name for this regulator, used in the results tables"),
                 (self.kind, "Source: an ideal supply with no input (a connector, a bench "
@@ -490,23 +526,32 @@ class VrmEditor(_Editor):
                                    "solved input marks its loads VRM OUT OF REGULATION."),
                 (self.vin_row.max, "Optional highest input voltage it regulates at. A higher "
                                    "solved input marks its loads VRM OUT OF REGULATION."),
-                (self.vin_row.unit, "V: the input range in volts.\n%: in % from the input "
-                                    "rail's nominal voltage, the set voltage of the VRM "
-                                    "driving it (e.g. min -10 %, max +10 %). Switching "
-                                    "converts the values when that VRM is known."),
-                (self.acc_row, "Optional DC accuracy of the set voltage, from the "
-                               "datasheet (reference and feedback tolerance, line and load "
-                               "regulation). The target calculator can take it off the AC "
+                (self.vin_row.unit, "V: the input range in volts.\n±V: in volts below and "
+                                    "above the input rail's nominal voltage, the set voltage "
+                                    "of the VRM driving it (e.g. min -0.5 V, max +0.5 V).\n"
+                                    "%: in % from that nominal voltage (e.g. min -10 %, max "
+                                    "+10 %).\nSwitching converts the values when that VRM "
+                                    "is known."),
+                (self.acc_row, "Optional DC accuracy of the set voltage (also called DC "
+                               "error or DC tolerance), from the datasheet. It comes from the "
+                               "regulator's reference accuracy, the feedback resistor "
+                               "tolerances, leakage into the FB pin, and line and load "
+                               "regulation. The target calculator can take it off the AC "
                                "voltage tolerance."),
                 (self.acc_row.min, "How far below the set voltage the output may sit, e.g. "
-                                   "-1 %, or in V, the lowest output voltage"),
+                                   "-1 % or -0.01 V (±V), or in V, the lowest output voltage"),
                 (self.acc_row.max, "How far above the set voltage the output may sit, e.g. "
-                                   "+1 %, or in V, the highest output voltage"),
-                (self.acc_row.unit, "%: the accuracy in % of the set voltage.\nV: the lowest "
-                                    "and highest output voltage. Switching converts the "
+                                   "+1 % or +0.01 V (±V), or in V, the highest output "
+                                   "voltage"),
+                (self.acc_row.unit, "%: the accuracy in % of the set voltage.\n±V: in volts "
+                                    "below and above the set voltage.\nV: the lowest and "
+                                    "highest output voltage.\nSwitching converts the "
                                     "values."),
-                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis). The "
-                                 "AC solve leaves the VRM out of circuit (the open-loop PDN "
+                (self.bandwidth, "Control loop bandwidth of the converter (AC analysis), "
+                                 "also called the loop gain crossover, gain crossover or "
+                                 "control loop crossover frequency. It depends on the total "
+                                 "output capacitance and the loop tuning. The AC solve "
+                                 "leaves the VRM out of circuit (the open-loop PDN "
                                  "impedance); below this frequency the loop holds the rail, "
                                  "so probe targets are drawn and judged only above it. "
                                  "'none' judges the whole target."),
@@ -530,7 +575,7 @@ class VrmEditor(_Editor):
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
                                     "set voltage is held relative to these pins instead of "
                                     "0 V (needs ground pins)")):
-            tip(f, w, text)
+            tip(f, w, text, art.get(w))
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.bandwidth)
         self.vin_row.changed.connect(self._store)
@@ -619,8 +664,8 @@ class VrmEditor(_Editor):
         self._phase_rows()
         self._show_phase(v)
         self.dropout.setValue(v.dropout_v)
-        self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct)
-        self.acc_row.set_values(v.acc_min, v.acc_max, v.acc_pct)
+        self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct, v.vin_dv)
+        self.acc_row.set_values(v.acc_min, v.acc_max, v.acc_pct, v.acc_dv)
         self.sense.set_value(v.sense)
         self.ground_sense.set_value(v.ground_sense)
         self._kind_rows()
@@ -641,9 +686,9 @@ class VrmEditor(_Editor):
         v.load_line_mohm = self.load_line.value()
         v.dropout_v = self.dropout.value()
         v.vin_min, v.vin_max = self.vin_row.values()
-        v.vin_pct = self.vin_row.pct()
+        v.vin_pct, v.vin_dv = self.vin_row.pct(), self.vin_row.dv()
         v.acc_min, v.acc_max = self.acc_row.values()
-        v.acc_pct = self.acc_row.pct()
+        v.acc_pct, v.acc_dv = self.acc_row.pct(), self.acc_row.dv()
         v.bandwidth_khz = self.bandwidth.value() or None
         v.sense = self.sense.value()
         v.ground_sense = self.ground_sense.value()
@@ -723,7 +768,6 @@ class LoadEditor(_Editor):
         self.ground = self._picker(optional=True)
         # Tolerance, in % from the rail's nominal voltage or in volts.
         self.tol = RangeRow(self._rail_nominal)
-        self.heat = _optional_spin(0, 1000, 3, " W", 0.01)
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -733,7 +777,11 @@ class LoadEditor(_Editor):
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
-        f.addRow("Heat", self.heat)
+        # Drawings under the tooltips (#116), the field's part picked out.
+        art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
+               self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
+               self.tol.max: ("tolerance", "max"),
+               self.tol.unit: ("tolerance", "volts", "dv", "pct")}
         for w, text in (
                 (self.name, "A name for this load, used in the results tables"),
                 (self.supply, "The pins the load draws its current from"),
@@ -748,23 +796,22 @@ class LoadEditor(_Editor):
                               "part's ground pins."),
                 (self.tol, "Optional: PASS if every supply pin is within this range, so no "
                            "pin drops below the min or is boosted above the max"),
-                (self.tol.min, "The lowest voltage a supply pin may have, or in %, the most "
-                               "it may drop below the VRM set voltage (e.g. -5 %)"),
-                (self.tol.max, "The highest voltage a supply pin may have, or in %, the "
-                               "most it may be boosted above the VRM set voltage (e.g. +5 %)"),
-                (self.tol.unit, "%: the tolerance in % from the rail's nominal voltage, the "
-                                "set voltage of the VRM driving it.\nV: in volts. Switching "
-                                "converts the values when that VRM is known."),
-                (self.heat, "Optional: the heat the part puts into the board, when load "
-                            "power is included (Thermal tab). Not set: the power it draws, pin "
-                            "current × pin voltage. Set it for a part that passes most of its "
-                            "power on (load switch, LED or motor driver).")):
-            tip(f, w, text)
-        self.groups.setToolTip("Pin groups: an optional name, the pin numbers (e.g. 15,28) "
-                               "and the current into those pins. Click a column header to "
-                               "sort by it.")
+                (self.tol.min, "The lowest voltage a supply pin may have, or in ±V or %, "
+                               "the most it may drop below the VRM set voltage (e.g. "
+                               "-0.15 V or -5 %)"),
+                (self.tol.max, "The highest voltage a supply pin may have, or in ±V or %, "
+                               "the most it may be boosted above the VRM set voltage (e.g. "
+                               "+0.15 V or +5 %)"),
+                (self.tol.unit, "V: the lowest and highest voltage, in volts.\n±V: in volts "
+                                "below and above the rail's nominal voltage, the set voltage "
+                                "of the VRM driving it.\n%: in % from that nominal voltage."
+                                "\nSwitching converts the values when that VRM is known.")):
+            tip(f, w, text, art.get(w))
+        self.groups.setToolTip(art_tip(
+            "Pin groups: an optional name, the pin numbers (e.g. 15,28) and the current into "
+            "those pins. Click a column header to sort by it.", "current_split", "groups"))
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
-        self._watch(self.name, self.current, self.mode, self.heat)
+        self._watch(self.name, self.current, self.mode)
         self.tol.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
@@ -850,8 +897,7 @@ class LoadEditor(_Editor):
             self._add_group_row(g.name, ",".join(g.pins), g.current)
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
-        self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct)
-        _set_optional(self.heat, l.dissipation_w)
+        self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct, l.tol_dv)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
@@ -888,8 +934,7 @@ class LoadEditor(_Editor):
                 l.ground = gnd
                 self._show(self.ground, gnd)
         l.tol_min, l.tol_max = self.tol.values()
-        l.tol_pct = self.tol.pct()
-        l.dissipation_w = _get_optional(self.heat)
+        l.tol_pct, l.tol_dv = self.tol.pct(), self.tol.dv()
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 
@@ -910,6 +955,9 @@ class LinkEditor(_Editor):
         f.addRow("Side B pins", self.b)
         f.addRow("Resistance (DCR)", self.r)
         f.addRow("ESL", self.esl)
+        # Drawings under the tooltips (#116): the part as a DCR and an ESL in series.
+        art = {self.a: ("series_link", "a"), self.b: ("series_link", "b"),
+               self.r: ("series_link", "r"), self.esl: ("series_link", "l")}
         for w, text in (
                 (self.name, "A name for this part, used in the results tables"),
                 (self.a, "The part's pins on one net"),
@@ -918,7 +966,7 @@ class LinkEditor(_Editor):
                 (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
                          "read from the part's value when both sides are on it."),
                 (self.esl, "Series inductance (ESL) of the part")):
-            tip(f, w, text)
+            tip(f, w, text, art.get(w))
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
                       "load switch…). The nets it joins are simulated together.")
         hint.setWordWrap(True)
@@ -1192,6 +1240,10 @@ class PIPanel(QWidget, PartSelection):
                                   self._describe_load, noun="load")
         self.link_list = ItemList(lambda: self.setup.links, LinkEditor(self), self._new_link,
                                   self._describe_link, noun="series link")
+        # Load models (#17): a part's supplies in a file, for many loads at once.
+        self.load_list.buttons.addWidget(model_button(
+            self, "load", self.apply_load_model, self.add_loads_from_model,
+            lambda: export_model(self, self.setup, self.snapshot)))
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.load_list, "Loads")
         self.tabs.addTab(self.link_list, "Series links")
@@ -1223,17 +1275,16 @@ class PIPanel(QWidget, PartSelection):
         self.btn_solve.setToolTip("Save the setup, then mesh and solve every ticked net group. "
                                   "Problems that stop the solve are listed above in red.")
         self.btn_solve.clicked.connect(lambda: self.solve_requested.emit(self.setup))
-        self.chk_report = QCheckBox("HTML report", self)
-        self.chk_report.setToolTip("Also write an HTML report (interactive 3D, per-layer maps "
-                                   "and tables) next to the board")
-        self.chk_report.toggled.connect(lambda on: setattr(self.setup, "html_report", on))
-        self.btn_report = QPushButton("Report", self)
-        self.btn_report.setToolTip("Open the last HTML report in your browser")
+        self.report_option = ReportOption("3D view, per-layer maps and tables",
+                                          self._report_changed, self)
+        self.chk_report = self.report_option.chk
+        self.btn_report = QPushButton("Open report", self)
+        self.btn_report.setToolTip("Open the last report in your browser or PDF viewer")
         self.btn_report.setVisible(False)
         self.btn_report.clicked.connect(self._open_report)
         self.report_path = None
         row.addWidget(self.btn_solve, 1)
-        row.addWidget(self.chk_report)
+        row.addWidget(self.report_option)
         row.addWidget(self.btn_report)
         lay.addLayout(row)
 
@@ -1314,6 +1365,9 @@ class PIPanel(QWidget, PartSelection):
     def set_report(self, path):
         self.report_path = path
         self.btn_report.setVisible(path is not None)
+
+    def _report_changed(self, on: bool, fmt: str):
+        self.setup.html_report, self.setup.report_format = on, fmt
 
     def _open_report(self):
         if self.report_path:
@@ -1466,17 +1520,22 @@ class PIPanel(QWidget, PartSelection):
             judged = (f'<span style="color:{color}"><b>{"PASS" if verdict else "FAIL"}</b>'
                       f"</span>: {html.escape(limits_text(limits))}.")
         self.lbl_thermal.setText(
-            f"Peak board temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
-            f"({x:.1f}, {y:.1f}) mm; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
+            f"Peak copper temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
+            f"({x:.1f}, {y:.1f}) mm{self._peak_layer(th)}; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
             f"ambient {ambient:g} °C, airflow {th.settings.airflow_m_s:g} m/s.<br>{judged}")
         details = ["Iterations: " + ", ".join(
             f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history)]
         if th.dielectrics:
             details.append("Dielectrics: " + "; ".join(
                 f"{html.escape(m or '(unnamed)')} {d:.3f} mm → {html.escape(i.matched)}, "
-                f"{i.k_w_mk:g} W/m·K{' ⚠ assumed' if i.assumed else ''}"
+                f"{i.k_w_mk:g} W/m·K in-plane, {i.k_through:g} through"
+                f"{' ⚠ assumed' if i.assumed else ''}"
                 for m, d, i in th.dielectrics))
         self.lbl_thermal_details.setText("<br>".join(details))
+
+    def _peak_layer(self, th) -> str:
+        st = getattr(getattr(self, "snapshot", None), "stackup", None)
+        return th.peak_layer(st) if st is not None else ""
 
     def _temp_row_clicked(self, row, _col):
         it = self.tbl_temps.item(row, 5)
@@ -1599,11 +1658,12 @@ class PIPanel(QWidget, PartSelection):
         f.addRow("Via grading", self.spin_grading)
         f.addRow(QLabel("<b>Via plating</b>"))
         f.addRow(self.via_rules)
-        tip(f, self.spin_edge, "Largest triangle edge of the copper mesh. Smaller is more "
-                               "accurate and slower.")
-        tip(f, self.spin_grading, "How fast mesh elements grow away from plated holes (mm of "
-                                  "edge per mm of distance). Lower keeps the mesh fine further "
-                                  "out from vias; 0 turns grading off.")
+        tip(f, self.spin_edge, art_tip("Largest triangle edge of the copper mesh. Smaller is "
+                                       "more accurate and slower.", "mesh", "max"))
+        tip(f, self.spin_grading, art_tip("How fast mesh elements grow away from plated holes "
+                                          "(mm of edge per mm of distance). Lower keeps the "
+                                          "mesh fine further out from vias; 0 turns grading "
+                                          "off.", "mesh", "grading"))
         for sp in (self.spin_edge, self.spin_grading):
             sp.valueChanged.connect(self._settings_changed)
         self.via_rules.changed.connect(self._settings_changed)
@@ -1791,11 +1851,11 @@ class PIPanel(QWidget, PartSelection):
                          (self.spin_airflow, t.airflow_m_s), (self.spin_tgrid, t.grid_mm),
                          (self.spin_max_t, t.max_temp_c or 0.0),
                          (self.spin_max_rise, t.max_rise_c or 0.0),
-                         (self.chk_thermal, t.enabled), (self.chk_load_power, t.load_power),
-                         (self.chk_report, setup.html_report)):
+                         (self.chk_thermal, t.enabled), (self.chk_load_power, t.load_power)):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
             wdg.blockSignals(False)
+        self.report_option.set_value(setup.html_report, setup.report_format)
         self._thermal_changed()
         self.setEnabled(True)
         self._refresh_pickers()
@@ -1868,6 +1928,51 @@ class PIPanel(QWidget, PartSelection):
         supply = PinRef(ref, net)
         return Load(_unique(ref or "LOAD1", [x.name for x in self.setup.loads]), supply, 0.1,
                     ground=guess_ground_pins(self.snapshot, self.setup, self._nets, supply))
+
+    def apply_load_model(self, model=None):
+        """Apply a load model file (or ``model``) to the loads the user ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        loads = self.setup.loads
+        if not loads:
+            QMessageBox.information(self, "Load model", "There are no loads to apply it to; "
+                                    "use Add loads from model file.")
+            return
+        dlg = ApplyDialog(model, [(l.name, l.supply) for l in loads], "load", self)
+        if not dlg.exec():
+            return
+        for row, i in dlg.chosen():
+            apply_to_load(loads[row], model.supplies[i])
+        self.load_list.reload()
+        self.load_list.changed.emit()
+
+    def add_loads_from_model(self, model=None):
+        """Add a load model's loads on the parts the user ticks."""
+        model = model or open_model(self)
+        if model is None:
+            return
+        parts = candidate_parts(model, self.snapshot)
+        if not parts:
+            QMessageBox.information(self, "Load model", "No part on the board has the pins of "
+                                    "any of the model's supplies (adding loads needs its pins).")
+            return
+        dlg = PartsDialog(model, parts, "load", self)
+        if not dlg.exec():
+            return
+        added = 0
+        for ref in dlg.chosen():
+            for s, rail, gnd in new_items(model, ref, part_nets(self.snapshot, ref)):
+                gnd = gnd or guess_ground_pins(self.snapshot, self.setup, self._nets, rail)
+                load = Load(_unique(f"{ref} {s.name}", [x.name for x in self.setup.loads]),
+                            rail, s.current_a or 0.0, ground=gnd)
+                apply_to_load(load, s)
+                self.setup.loads.append(load)
+                added += 1
+        if added:
+            self.load_list.reload()
+            self.load_list.lst.setCurrentRow(self.load_list.lst.count() - 1)
+            self.load_list.changed.emit()
 
     def _new_link(self):
         net = self._first_net()
@@ -1969,7 +2074,8 @@ class PIPanel(QWidget, PartSelection):
             x, y, tmax = th.hottest()
             notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board"
                             f"{_load_heat(th)}, peak "
-                            f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm, ambient "
+                            f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm"
+                            f"{self._peak_layer(th)}, ambient "
                             f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s "
                             "(details in the Thermal tab)")
             if getattr(th, "heat_by_kind", None):

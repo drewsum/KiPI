@@ -4,7 +4,8 @@ does not give a complete stackup), and edited in KiPI.
 The Stackup window lets a user try other copper and dielectric thicknesses, and other
 dielectric constants (#61). Each edit makes a new :class:`Stackup` with the layers
 re-stacked from the bottom up, so every z, the board thickness and everything the solvers
-and views read follow the new thicknesses.
+and views read follow the new thicknesses. The solder masks and silkscreens outside the
+board (#82) can be made thicker or thinner too; they move nothing.
 """
 
 from __future__ import annotations
@@ -12,12 +13,16 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from kipi.core.model.board import CopperLayer, DielectricLayer, Stackup
+from kipi.core.model.board import (
+    MASK, SILK, Coating, CopperLayer, DielectricLayer, Stackup,
+)
 from kipi.core.progress import NULL, ProgressReporter
 
 DEFAULT_BOARD_THICKNESS_MM = 1.6
 DEFAULT_OUTER_CU_MM = 0.035
 DEFAULT_INNER_CU_MM = 0.0175
+DEFAULT_MASK_MM = 0.01      # KiCad's default solder mask
+DEFAULT_SILK_MM = 0.015     # a typical silkscreen ink; KiCad gives silkscreens no thickness
 
 #: Said of a board whose own stackup could not be used (BoardSnapshot.assumed).
 DEFAULT_STACKUP_NOTE = (f"Stackup: the board's own is incomplete, so a default "
@@ -59,12 +64,78 @@ def default_entries(cu_ids: Sequence[int]) -> List[LayerSpec]:
     return entries
 
 
+def default_coatings() -> List[Coating]:
+    """KiCad's default: a solder mask and a silkscreen on both sides."""
+    return sort_coatings([Coating(kind, side, DEFAULT_MASK_MM if kind == MASK
+                                  else DEFAULT_SILK_MM)
+                          for side in ("top", "bottom") for kind in (MASK, SILK)])
+
+
+def sort_coatings(coatings: Sequence[Coating]) -> List[Coating]:
+    """``coatings`` top to bottom, as :attr:`Stackup.coatings` keeps them, one of each
+    kind per side (the first given)."""
+    out: List[Coating] = []
+    for side, kinds in (("top", (SILK, MASK)), ("bottom", (MASK, SILK))):
+        for kind in kinds:
+            c = next((c for c in coatings if c.side == side and c.kind == kind), None)
+            if c is not None:
+                out.append(c)
+    return out
+
+
+# KiCad's named solder mask and silkscreen colors (its stackup editor's list).
+_KICAD_COLORS = {
+    "green": (20, 51, 36), "light green": (91, 168, 12), "saturated green": (13, 104, 11),
+    "red": (181, 19, 21), "light red": (210, 40, 14), "red/orange": (239, 53, 41),
+    "blue": (2, 59, 162), "light blue 1": (54, 79, 116), "light blue 2": (61, 85, 130),
+    "green/blue": (21, 70, 80), "black": (11, 11, 11), "white": (245, 245, 245),
+    "purple": (32, 2, 53), "light purple": (119, 31, 91), "yellow": (194, 195, 0),
+}
+
+
+def kicad_color(text: str) -> str:
+    """A color as KiCad's stackup gives it (a name like "Green", or "#RRGGBBAA") as
+    "#rrggbb"; "" when it names none."""
+    t = (text or "").strip()
+    if t.startswith("#") and len(t) >= 7:
+        try:
+            int(t[1:7], 16)
+        except ValueError:
+            return ""
+        return "#" + t[1:7].lower()
+    rgb = _KICAD_COLORS.get(t.lower())
+    return "#%02x%02x%02x" % rgb if rgb else ""
+
+
+def coating_of(layer_name: str, layer_type: str, thickness_mm: float = 0.0,
+               material: str = "", color: str = "") -> Optional[Coating]:
+    """The coating a KiCad stackup layer is, from its name ("F.Mask", "B.SilkS") or type
+    ("Top Solder Mask"), or None for any other layer. A mask without a thickness gets
+    KiCad's default; a silkscreen, which KiCad gives none, a typical ink's."""
+    text = f"{layer_name} {layer_type}".lower()
+    if "mask" in text and "paste" not in text:
+        kind = MASK
+    elif "silk" in text:
+        kind = SILK
+    else:
+        return None
+    name = layer_name.lower()
+    side = ("bottom" if name.startswith("b.") or "bottom" in text
+            else "top")
+    if thickness_mm <= 0:
+        thickness_mm = DEFAULT_MASK_MM if kind == MASK else DEFAULT_SILK_MM
+    material = "" if material.lower() in ("not specified", "not_specified") else material
+    return Coating(kind, side, thickness_mm, material, color)
+
+
 def build_stackup(entries: Sequence[LayerSpec], cu_ids: Sequence[int], names: Dict[int, str],
                   progress: ProgressReporter = NULL,
-                  assumed: Optional[List[str]] = None) -> Stackup:
+                  assumed: Optional[List[str]] = None,
+                  coatings: Optional[Sequence[Coating]] = None) -> Stackup:
     """The stackup of ``entries`` (top to bottom), or the default stackup for ``cu_ids``
     when ``entries`` does not hold every copper layer (said in ``assumed``). ``names`` maps
-    layer id to the name shown for it."""
+    layer id to the name shown for it. ``coatings`` are the solder masks and silkscreens
+    the board gives; a default stackup has KiCad's default ones."""
     from_board = sum(1 for e in entries if e[0] == "cu") == len(cu_ids) and len(cu_ids) > 0
     if not from_board:
         progress.warn("Stackup incomplete; synthesizing a default "
@@ -72,6 +143,7 @@ def build_stackup(entries: Sequence[LayerSpec], cu_ids: Sequence[int], names: Di
         if assumed is not None:
             assumed.append(DEFAULT_STACKUP_NOTE)
         entries = default_entries(cu_ids)
+        coatings = default_coatings()
 
     total = sum(e[2] for e in entries)
     z = total
@@ -98,7 +170,7 @@ def build_stackup(entries: Sequence[LayerSpec], cu_ids: Sequence[int], names: Di
     for c in copper:
         progress.info(f"  {c.name:<8} t={c.thickness_mm * 1000:.1f} um  z={c.z_mid_mm:.3f} mm")
     return Stackup(copper=copper, dielectrics=dielectrics, board_thickness_mm=total,
-                   from_board=from_board)
+                   from_board=from_board, coatings=sort_coatings(coatings or []))
 
 
 # --- Edited stackups ---------------------------------------------------------------------
@@ -120,6 +192,11 @@ def thicknesses(stackup: Stackup) -> List[float]:
     return [e.thickness_mm for e in stack_order(stackup)]
 
 
+def coating_thicknesses(stackup: Stackup) -> List[float]:
+    """Each solder mask's and silkscreen's thickness in mm, top to bottom."""
+    return [c.thickness_mm for c in stackup.coatings]
+
+
 def dielectric_er(stackup: Stackup) -> List[float]:
     """Each dielectric's εr (0 where the stackup gives none), top to bottom."""
     return [e.epsilon_r for e in stack_order(stackup) if isinstance(e, DielectricLayer)]
@@ -138,10 +215,12 @@ def dielectric_materials(stackup: Stackup) -> List[str]:
 
 def restack(stackup: Stackup, new_mm: Sequence[float], er: Optional[Sequence[float]] = None,
             edited: bool = True, materials: Optional[Sequence[str]] = None,
-            k: Optional[Sequence[float]] = None) -> Stackup:
+            k: Optional[Sequence[float]] = None,
+            coating_mm: Optional[Sequence[float]] = None) -> Stackup:
     """``stackup`` with the layers' thicknesses set to ``new_mm`` (in :func:`stack_order`),
     restacked from z = 0 at the bottom, and the dielectrics' εr, material names and thermal
-    conductivities set to ``er``, ``materials`` and ``k`` (top to bottom) when given."""
+    conductivities set to ``er``, ``materials`` and ``k`` (top to bottom) when given, and
+    the coatings' thicknesses to ``coating_mm``."""
     order = stack_order(stackup)
     if len(new_mm) != len(order):
         raise ValueError(f"{len(new_mm)} thicknesses for {len(order)} layers")
@@ -152,6 +231,9 @@ def restack(stackup: Stackup, new_mm: Sequence[float], er: Optional[Sequence[flo
     if len(ers) != n_diel or len(mats) != n_diel or len(ks) != n_diel:
         raise ValueError(f"{len(ers)} εr values, {len(mats)} materials and {len(ks)} k values "
                          f"for {n_diel} dielectrics")
+    coat = list(coating_thicknesses(stackup) if coating_mm is None else coating_mm)
+    if len(coat) != len(stackup.coatings):
+        raise ValueError(f"{len(coat)} thicknesses for {len(stackup.coatings)} coatings")
     ers.reverse()
     mats.reverse()
     ks.reverse()
@@ -165,25 +247,29 @@ def restack(stackup: Stackup, new_mm: Sequence[float], er: Optional[Sequence[flo
         else:
             dielectrics.append(replace(e, thickness_mm=float(t), epsilon_r=float(ers.pop()),
                                        material=str(mats.pop()), k_w_mk=float(ks.pop())))
+    coatings = [replace(c, thickness_mm=float(t)) for c, t in zip(stackup.coatings, coat)]
     return Stackup(copper=copper, dielectrics=dielectrics, board_thickness_mm=sum(new_mm),
-                   from_board=stackup.from_board, edited=edited)
+                   from_board=stackup.from_board, edited=edited, coatings=coatings)
 
 
 def to_setup(stackup: Stackup) -> Dict:
     """The stackup as kept in the setup file: copper thickness by layer name, dielectric
-    thickness, εr, material and thermal conductivity in order, top to bottom."""
+    thickness, εr, material and thermal conductivity in order, top to bottom, and the
+    coatings' thicknesses by name."""
     return {"copper_mm": {c.name: c.thickness_mm for c in stackup.copper},
             "dielectric_mm": [d.thickness_mm for d in stack_order(stackup)
                               if isinstance(d, DielectricLayer)],
             "dielectric_er": dielectric_er(stackup),
             "dielectric_material": dielectric_materials(stackup),
-            "dielectric_k": dielectric_k(stackup)}
+            "dielectric_k": dielectric_k(stackup),
+            "coating_mm": {c.name: c.thickness_mm for c in stackup.coatings}}
 
 
 def from_setup(stackup: Stackup, saved: Optional[Dict]) -> Tuple[Optional[Stackup], str]:
     """``stackup`` with the thicknesses, εr, materials and k ``saved`` by :func:`to_setup`,
     and "" — or None and the reason when they no longer fit the board (a layer added,
-    removed or renamed). A setup saved without εr, materials or k keeps the board's."""
+    removed or renamed). A setup saved without εr, materials, k or coatings keeps the
+    board's, as does a coating the setup does not name."""
     if not saved:
         return None, ""
     cu = saved.get("copper_mm") or {}
@@ -207,7 +293,11 @@ def from_setup(stackup: Stackup, saved: Optional[Dict]) -> Tuple[Optional[Stacku
     mats = [str(m) for m in mats] if mats is not None and len(mats) == n_diel else None
     k = saved.get("dielectric_k")
     k = [float(x) for x in k] if k is not None and len(k) == n_diel else None
-    return restack(stackup, values, er, materials=mats, k=k), ""
+    coat = saved.get("coating_mm") or {}
+    coat_mm = [float(coat.get(c.name, c.thickness_mm)) for c in stackup.coatings]
+    if not all(t > 0 for t in coat_mm):
+        return None, "a saved thickness is not above zero"
+    return restack(stackup, values, er, materials=mats, k=k, coating_mm=coat_mm), ""
 
 
 def with_dielectric_k(stackup: Stackup, k_w_mk: float) -> Stackup:
@@ -226,6 +316,10 @@ def summary(stackup: Stackup) -> str:
         else:
             er = f" εr {e.epsilon_r:g}" if e.epsilon_r > 0 else ""
             parts.append(f"{e.material or 'dielectric'} {e.thickness_mm * 1000:.4g} µm{er}")
+    coat = [(c.side, f"{c.name.lower()} {c.thickness_mm * 1000:.4g} µm")
+            for c in stackup.coatings]
+    parts = ([t for side, t in coat if side == "top"] + parts
+             + [t for side, t in coat if side == "bottom"])
     text = ", ".join(parts) + f"; {stackup.board_thickness_mm:.3f} mm in all"
     if stackup.edited:
         text += " (edited in KiPI)"

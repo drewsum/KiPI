@@ -1,4 +1,4 @@
-"""Self-contained HTML report for an AC impedance solve of one rail.
+"""Self-contained HTML (or PDF) report for an AC impedance solve of one rail.
 
 One ``.html`` file with:
 * a summary and the probe table (worst impedance against each target, PASS / FAIL),
@@ -9,6 +9,9 @@ One ``.html`` file with:
 
 Plotly's JavaScript is embedded once, so the report works offline and can be shared as a
 single file. It uses the same layout and styling as the DC report.
+
+A ``.pdf`` path gets the same report printed (#119), with matplotlib images of the
+impedance plot and the board map in place of the interactive ones.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from kipi.ac.model import caps_dict
 from kipi.ac.solver.fem import dielectric_summary
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.naming import timestamp
-from kipi.dc.report.html import CSS, SORT_JS, _e, _table, _verdict
+from kipi.dc.report.html import CSS, _e, _png, _table, _verdict, finish, maps_html, notes_section
 
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf", "#bcbd22",
           "#8c564b", "#e377c2", "#7f7f7f")
@@ -53,12 +56,13 @@ CSS_EXTRA = ".caps td:not(:last-child) { white-space: nowrap; } .caps td:last-ch
             "{ text-align: left; }"
 
 
-def report_name(board_stem: str, rail: str, when: Optional[_dt.datetime] = None) -> str:
-    """File name of a rail's AC report: '<board>_<rail>_ac_report_<time stamp>.html', the
-    rail made safe for a file name ('+3.3V' stays '+3.3V'; '/' and the like become '_').
-    The time stamp keeps each solve's report (#66)."""
+def report_name(board_stem: str, rail: str, when: Optional[_dt.datetime] = None,
+                fmt: str = "html") -> str:
+    """File name of a rail's AC report: '<board>_<rail>_ac_report_<time stamp>.html' (or
+    .pdf), the rail made safe for a file name ('+3.3V' stays '+3.3V'; '/' and the like
+    become '_'). The time stamp keeps each solve's report (#66)."""
     safe = re.sub(r"[^\w.+\-]+", "_", rail).strip("_") or "rail"
-    return f"{board_stem}_{safe}_ac_report_{timestamp(when)}.html"
+    return f"{board_stem}_{safe}_ac_report_{timestamp(when)}.{fmt}"
 
 
 def _ohms(z: Optional[float]) -> str:
@@ -281,20 +285,105 @@ def _board_map(result, setup, snap: BoardSnapshot, div_id: str) -> str:
                        config={"displaylogo": False}, post_script=post_script)
 
 
+def _impedance_png(result) -> str:
+    """The impedance plot as an image, for the PDF: |Z| at every probe with its target."""
+    from matplotlib.figure import Figure
+    from matplotlib.ticker import EngFormatter
+
+    f = result.freqs
+    fig = Figure(figsize=(7.2, 4.0))
+    ax = fig.add_subplot(111)
+    for i, c in enumerate(result.probes):
+        color = COLORS[i % len(COLORS)]
+        ax.loglog(f, c.mag, color=color, lw=1.6, label=c.name)
+        t = c.target_at(f)
+        if t is not None:
+            ax.loglog(f, t, color=color, lw=1.1, ls="--", label=f"{c.name} target")
+    bw = getattr(result, "bandwidth_hz", None)
+    if bw and f[0] < bw < f[-1]:
+        ax.axvspan(f[0], bw, color="#888", alpha=0.08, lw=0)
+        ax.axvline(bw, color="#888", lw=0.8, ls=":")
+        ax.text(bw, 0.98, f"VRM bandwidth {_hz(bw)} ", transform=ax.get_xaxis_transform(),
+                ha="right", va="top", fontsize=7, color="#666")
+    ax.xaxis.set_major_formatter(EngFormatter(unit="Hz"))
+    ax.yaxis.set_major_formatter(EngFormatter(unit="Ω"))
+    ax.set_xlim(f[0], f[-1])
+    ax.set_xlabel("Frequency", fontsize=8)
+    ax.set_ylabel("|Z|", fontsize=8)
+    ax.tick_params(labelsize=7, which="both")
+    ax.grid(True, which="both", color="#e6e6e6", lw=0.5)
+    ax.legend(fontsize=7, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.14),
+              frameon=False)
+    return _png(fig)
+
+
+def _board_map_png(result, setup, snap: BoardSnapshot) -> str:
+    """The board map as an image, for the PDF: what :func:`_board_map` draws."""
+    from matplotlib.figure import Figure
+
+    fp = {f.reference: f for f in snap.footprints}
+    fig = Figure(figsize=(7.2, 5.0))
+    ax = fig.add_subplot(111)
+    for p in snap.outline or []:
+        if p.outline:
+            a = np.asarray(p.outline + p.outline[:1])
+            ax.plot(a[:, 0], a[:, 1], color="#555", lw=0.9)
+    try:
+        rings = _rail_copper(snap, result.rail_nets)
+    except Exception:                    # geometry trouble: the map works without it
+        rings = []
+    for k, r in enumerate(rings):
+        ax.plot(r[:, 0], r[:, 1], color="#d9a066", lw=0.6,
+                label=f"rail copper ({', '.join(result.rail_nets)})" if k == 0 else None)
+    model_of = caps_dict(setup.caps)
+    by_model: Dict[str, List[str]] = {}
+    for ref in result.caps:
+        m = model_of.get(ref)
+        by_model.setdefault(m.name if m else "?", []).append(ref)
+    for k, (name, refs) in enumerate(sorted(by_model.items())):
+        refs = [r for r in refs if r in fp]
+        if refs:
+            ax.scatter([fp[r].position[0] for r in refs], [fp[r].position[1] for r in refs],
+                       s=18, color=COLORS[k % len(COLORS)], edgecolors="#333",
+                       linewidths=0.4, label=f"{name} ({len(refs)})", zorder=3)
+    missing = [r for r in result.missing_caps if r in fp]
+    if missing:
+        ax.scatter([fp[r].position[0] for r in missing], [fp[r].position[1] for r in missing],
+                   s=18, marker="x", color="#999", label=f"no model, left out ({len(missing)})",
+                   zorder=3)
+    names = {c.name for c in result.probes}
+    for k, p in enumerate(p for p in setup.probes if p.name in names and p.rail.ref in fp):
+        x, y = fp[p.rail.ref].position
+        ax.scatter([x], [y], s=110, marker="*", color="#d62728", edgecolors="#600",
+                   linewidths=0.6, label="probes" if k == 0 else None, zorder=4)
+        ax.annotate(p.name, (x, y), textcoords="offset points", xytext=(0, 6), ha="center",
+                    fontsize=7)
+    ax.set_aspect("equal")
+    ax.invert_yaxis()
+    ax.set_xlabel("x (mm)", fontsize=8)
+    ax.set_ylabel("y (mm)", fontsize=8)
+    ax.tick_params(labelsize=7)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(fontsize=7, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.12),
+                  frameon=False)
+    return _png(fig)
+
+
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
 def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> Path:
     """Write the report of ``result`` (an :class:`~kipi.ac.solver.sweep.ACResult`) for the
-    rail it solved, with ``setup`` the setup it was solved with."""
-    import plotly.offline
+    rail it solved, with ``setup`` the setup it was solved with: a web page, or a PDF when
+    ``path`` ends in .pdf (#119)."""
 
     def info(t):
         if progress is not None:
             progress.info(t)
 
     path = Path(path)
+    pdf = path.suffix.lower() == ".pdf"
     freqs = result.freqs
     parts: List[str] = []
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -305,11 +394,12 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     parts.append(f"<h1>KiPI AC impedance report: {_e(result.rail)}</h1>"
                  f"<div class='meta'>{_e(snap.board_name)} · {now} · KiPI {__version__} · "
                  f"solved in {result.solve_s:.1f} s</div>")
-    parts.append("<nav><a href='#probes'>Probes</a> <a href='#impedance'>Impedance</a> "
-                 "<a href='#map'>Board map</a> <a href='#caps'>Capacitors</a> "
-                 "<a href='#model'>Model</a>"
-                 + (" <a href='#notes'>Notes</a>" if result.warnings or result.missing_caps
-                    else "") + "</nav>")
+    if not pdf:
+        parts.append("<nav><a href='#probes'>Probes</a> <a href='#impedance'>Impedance</a> "
+                     "<a href='#map'>Board map</a> <a href='#caps'>Capacitors</a> "
+                     "<a href='#model'>Model</a>"
+                     + (" <a href='#notes'>Notes</a>" if result.warnings or result.missing_caps
+                        else "") + " <a href='#user-notes'>User notes</a></nav>")
     parts.append(f"<p>Rail <b>{_e(result.rail)}</b>: {_e(', '.join(result.rail_nets))} against "
                  f"{_e(result.ground)}, from {_hz(freqs[0])} to {_hz(freqs[-1])}. "
                  f"{len(result.caps)} capacitor(s) with models, {len(result.links)} series "
@@ -355,19 +445,25 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
             counts[model_of[ref].name] = counts.get(model_of[ref].name, 0) + 1
     models = [(m, counts[m.name]) for m in setup.caps if m.name in counts]
     parts.append("<h2 id='impedance'>Impedance</h2>")
-    parts.append(_impedance_plot(result, models, "zplot"))
-    parts.append("<p class='note'>Drag to zoom, double-click to reset, hover for values. "
-                 "Click a legend entry to hide or show a curve: the grey dotted ones are each "
-                 "capacitor model on its own (one part, without its mounting), for "
-                 "comparing resonances.</p>")
+    if pdf:
+        parts.append(maps_html([_impedance_png(result)], pdf))
+    else:
+        parts.append(_impedance_plot(result, models, "zplot"))
+        parts.append("<p class='note'>Drag to zoom, double-click to reset, hover for values. "
+                     "Click a legend entry to hide or show a curve: the grey dotted ones are "
+                     "each capacitor model on its own (one part, without its mounting), for "
+                     "comparing resonances.</p>")
 
     # ---------------- board map
     info("Report: board map")
     parts.append("<h2 id='map'>Board map</h2>")
-    parts.append(_board_map(result, setup, snap, "mapplot"))   # not "map": the heading's id
+    if pdf:
+        parts.append(maps_html([_board_map_png(result, setup, snap)], pdf))
+    else:
+        parts.append(_board_map(result, setup, snap, "mapplot"))  # not "map": the heading's id
     parts.append("<p class='note'>Seen from the top, with the rail's copper on every layer "
-                 "merged. Hover a marker for the part; click a legend entry to hide a "
-                 "group.</p>")
+                 "merged." + ("" if pdf else " Hover a marker for the part; click a legend "
+                              "entry to hide a group.") + "</p>")
 
     # ---------------- capacitors
     parts.append("<h2 id='caps'>Capacitor models</h2>")
@@ -414,7 +510,9 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         ["Field solves", f"{len(ff)} ({s.field_points_per_decade or 'every point'} per decade; "
                          "the copper's response is interpolated in between)"],
         ["Mesh", f"max edge {s.max_edge_mm:g} mm, min edge {s.min_edge_mm:g} mm at plated "
-                 f"holes, grading {s.grading:g}"],
+                 f"holes, grading {s.grading:g}"
+                 + (", only at holes near the rail" if getattr(s, "grade_near_rail_only", False)
+                    else "")],
         ["Dielectric", f"loss tangent {s.loss_tangent:g}; εr top to bottom: "
                        f"{dielectric_summary(snap.stackup, s.default_er)}"],
         ["Copper", f"resistivity {setup.settings.rho_ohm_mm * 1e-3:.4g} Ω·m"],
@@ -440,13 +538,9 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         parts.append("<h2 id='notes'>Notes</h2><ul>"
                      + "".join(f"<li>{_e(w)}</li>" for w in notes) + "</ul>")
 
-    js = plotly.offline.get_plotlyjs()
-    doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-           f"<title>KiPI AC report — {_e(result.rail)} — {_e(snap.board_name)}</title>"
-           f"<style>{CSS}{CSS_EXTRA}</style><script type='text/javascript'>{js}</script>"
-           f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
-           + "".join(parts) + "</body></html>")
-    path.write_text(doc, encoding="utf-8")
+    parts.append(notes_section(pdf))             # last, after every result
+    finish(path, f"KiPI AC report — {result.rail} — {snap.board_name}", parts,
+           CSS + CSS_EXTRA, pdf)
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")
     return path
 

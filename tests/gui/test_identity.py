@@ -59,3 +59,28 @@ def test_windows_taskbar_button_is_kipi():
     assert "kipi_launcher.pyw" in appid.read_windows_property(
         h, appid.PKEY_RELAUNCH_COMMAND)
     w.close()
+
+
+def test_the_launchers_menu_entry_is_not_overwritten(tmp_path, monkeypatch):
+    """Both are kipi.desktop; --create-shortcut's visible one serves the window as well."""
+    from kipi.launcher import shortcut
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    path = shortcut.create("linux")
+    menu = path.read_text()
+    identity._write_desktop_file()
+    assert path.read_text() == menu
+    path.unlink()
+    identity._write_desktop_file()
+    assert "NoDisplay=true" in path.read_text()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux process name")
+def test_linux_process_is_named_kipi():
+    identity._set_linux_process_name()
+    assert Path("/proc/self/comm").read_text().strip() == "KiPI"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS LaunchServices")
+def test_macos_display_name_does_not_fail():
+    identity.make_app([])
+    identity._set_macos_process_name()        # private API: it must at least not raise

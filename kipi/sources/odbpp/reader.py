@@ -21,12 +21,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from kipi.core.geometry import silkscreen as silk
 from kipi.core.geometry.copper import shapely_to_polys
 from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Via, Zone,
 )
 from kipi.core.model.layers import B_CU, F_CU, canonical_name, copper_id
-from kipi.core.model.stackup import DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM, build_stackup
+from kipi.core.model.stackup import (
+    DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM, build_stackup, coating_of,
+)
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.sources.odbpp import eda as edamod, features as feat
 from kipi.sources.odbpp.archive import Job, OdbError, job_name
@@ -159,10 +162,22 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
         names[lid] = canonical if l.name.lower() == canonical.lower() else l.name
 
     entries = []
+    coatings = []
     missing_cu, missing_diel = [], []
     started = False
     for l in board:
-        if l.type in _COPPER_TYPES:
+        if l.type in ("SOLDER_MASK", "SILK_SCREEN"):
+            # Above the first copper layer it is on top, below it on the bottom.
+            attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
+            try:
+                t = float(attrs.get(".layer_dielectric", "")) * units.coord
+            except ValueError:
+                t = 0.0
+            coat = coating_of("B." if started else "F.",
+                              "Solder Mask" if l.type == "SOLDER_MASK" else "Silk Screen", t,
+                              attrs.get(".material", ""))
+            coatings.append(coat)
+        elif l.type in _COPPER_TYPES:
             started = True
             attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
             lid = ids[l.folder]
@@ -203,7 +218,7 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
     if not has_diel and n > 1:
         entries = []                    # no dielectrics at all: the default stackup
     return build_stackup(entries, [copper_id(i, n) for i in range(n)], names, progress,
-                         assumed), ids
+                         assumed, coatings), ids
 
 
 def _dielectric_attrs(job: Job, step: str, layer: Layer) -> Dict[str, str]:
@@ -322,7 +337,8 @@ def _read(job: Job, path: Path, progress: ProgressReporter, t0: float) -> BoardS
                 footprints.append(Footprint(id=f"{comp.ref}", reference=comp.ref,
                                             value=comp.value, position=comp.at, side=comp.side,
                                             pad_ids=[p.id for p in fp_pads],
-                                            footprint=comp.part))
+                                            footprint=comp.part,
+                                            angle_deg=comp.angle_deg))
         progress.info(f"{len(footprints)} footprints, {len(pads)} pads")
     progress.check_cancel()
 
@@ -368,12 +384,16 @@ def _read(job: Job, path: Path, progress: ProgressReporter, t0: float) -> BoardS
     with progress.timed("Reading board outline"):
         outline = _outline(job, step, units)
 
+    with progress.timed("Reading silkscreen"):
+        silkscreen = _silkscreen(board, layers)
+
     names = sorted(set(eda.nets) | {""})
     nets = [Net(code=i, name=n) for i, n in enumerate(names)]
     snap = BoardSnapshot(
         board_name=job_name(path), project_dir=str(path.parent), stackup=stackup,
         nets=nets, tracks=tracks, vias=vias, pads=pads, footprints=footprints, zones=zones,
-        outline=outline, source="odb++", source_format="odbpp", assumed=assumed)
+        outline=outline, source="odb++", source_format="odbpp", assumed=assumed,
+        silkscreen=silkscreen)
     progress.info(f"{len(nets)} nets")
     progress.info(f"Read in {time.perf_counter() - t0:.2f} s")
     return snap
@@ -556,6 +576,24 @@ def _loose_copper(board: _Board, cu_ids, used, tracks, vias, pads, zones,
         board.progress.warn(f"{no_net} pieces of copper have no net and carry no current in "
                             "the model")
     return out
+
+
+def _silkscreen(board: _Board, layers: List[Layer]) -> Dict[str, List[Poly]]:
+    """What each side's silkscreen prints: its layer's features (text comes as strokes).
+    A silkscreen above the first copper layer is on top, one below it on the bottom."""
+    parts: Dict[str, list] = {"top": [], "bottom": []}
+    started = False
+    for l in layers:
+        if l.context != "BOARD":
+            continue
+        if l.type in _COPPER_TYPES:
+            started = True
+        elif l.type == "SILK_SCREEN":
+            lf = board.features(l.folder)
+            if lf is not None:
+                parts["bottom" if started else "top"].extend(
+                    board.geometry(f, l.folder) for f in lf.features)
+    return silk.merge(parts)
 
 
 def _outline(job: Job, step: str, units: feat.Units) -> List[Poly]:

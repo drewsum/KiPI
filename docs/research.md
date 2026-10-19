@@ -163,3 +163,25 @@ KiCad. What matters is whether that KiCad has a handler for each request.
   tol·‖b‖/‖r₀‖, and the solve skipped when the warm start already meets it. Without that,
   re-solves ran to the iteration limit and fell back to direct solves (114 s → 52 s for
   four iterations).
+* **Per-layer temperatures (0.9.0, #34).** Prompted by PoeAlex/KiCad_Thermal_Sim, which
+  solves each copper layer on its own. The one-sheet argument holds for heat spread over
+  the board but not for concentrated heat: a regulator's loss on top copper must cross the
+  laminate, or go down vias, to reach the planes. Each copper layer is now its own sheet:
+  half of each touching dielectric's in-plane k·t, through-plane resistance Σ t/k_z between
+  neighbors (FR4 core k_z = 0.3 against 0.8 in-plane), plated-hole barrels k_cu·A/dz in
+  parallel, convection from the outer layers only. Unknowns go cell by cell (c·n + l) so the
+  layers of a cell sit together in the matrix. A 100 × 80 mm board on the automatic grid
+  (250 × 200) builds and factors in 0.4–1.7 s for 2–8 layers, against 0.6 s for the one
+  sheet; each solve takes under 0.15 s. The thermal sim's other features (time stepping,
+  PWL power, a heatsink pad on User.Eco1) were left for later.
+* **Solder mask and silkscreen (0.9.0, #82).** Coatings sit outside the board (they do not
+  move z or add to the board thickness) and add t/k in series with 1/h on their face, plus
+  k·t to the outer layer's in-plane conductance. LPI epoxy mask k ≈ 0.25 W/m·K, silkscreen
+  ink ≈ 0.2. A 25 µm mask is 1e-4 m²K/W against 0.1 for still air, so the effect is about
+  0.1%: worth having for completeness, not a correction to earlier results. KiCad gives a
+  silkscreen no thickness (taken as 15 µm). The silkscreen counts only where it prints:
+  each source's F.SilkS/B.SilkS drawings and text (KiCad's GetTextAsShapes for the live
+  board, ODB++'s strokes, matplotlib's DejaVu Sans scaled to KiCad's cap height for a
+  board file, with KiCad's keep-upright rule), clipped to the outline and off the mask
+  openings. A first version covered the whole face; on a real 100 x 100 mm board the
+  silkscreen printed 6% of the top and 0.6% of the bottom.

@@ -38,7 +38,8 @@ _PI_COLORS = {"vrm": ((0.25, 1.0, 0.35), (0.10, 0.45, 0.16)),
               "load": ((0.10, 0.95, 1.0), (0.04, 0.38, 0.45)),
               "link": ((1.0, 0.35, 1.0), (0.48, 0.14, 0.48)),
               "cap": ((0.95, 0.95, 0.95), (0.32, 0.33, 0.37)),
-              "probe": ((0.70, 0.55, 1.0), (0.33, 0.20, 0.62))}
+              "probe": ((0.70, 0.55, 1.0), (0.33, 0.20, 0.62)),
+              "victim": ((1.0, 0.50, 0.15), (0.55, 0.22, 0.02))}
 _PI_POINT_PX = {"power": 14, "ground": 9}       # rail pins, ground pins
 _PI_LABEL_LIFT_MM = 1.0
 # The part selected in the setup (#96): larger dots and its name, in amber.
@@ -253,6 +254,10 @@ def _pi_labels_actor(pts: np.ndarray, names: List[str], color) -> vtkActor2D:
     return actor
 
 
+# Features the copper and result views each keep their own setting of: over results they
+# start off, as they hide the result's colors.
+PER_VIEW = ("models", "mask", "silk")
+
 class Viewer3D(QWidget):
     """3D view of the board body plus individually added nets, with visibility controls.
 
@@ -284,6 +289,11 @@ class Viewer3D(QWidget):
         self._show_pads = True
         self._show_vias = True
         self._show_board = True
+        self._show_mask = False             # solder masks and silkscreens (#82): off until
+        self._show_silk = False             # asked for, as they hide the copper
+        self._show_mask_result = False      # over results they keep their own settings,
+        self._show_silk_result = False      # off until asked for (#144)
+        self._coating_actors: List[Tuple[str, object]] = []      # (kind, actor)
         self._show_models = True            # in the copper (geometry) view
         self._show_models_result = False    # over results: off until asked for
         self._show_pi = False               # PI Models markers, copper view only
@@ -343,6 +353,7 @@ class Viewer3D(QWidget):
         self._remove_pi_actors()
         self._pi_markers = []
         self._board_actors.clear()
+        self._coating_actors = []
         self._hidden_layers.clear()
         self._next_color = 0
         if body is not None:
@@ -358,6 +369,21 @@ class Viewer3D(QWidget):
         self._apply_visibility()
         if reset_view:
             self.view_iso()
+
+    def set_coatings(self, coatings):
+        """Draw the solder masks and silkscreens: ``(kind, mesh, color)`` each, from
+        :func:`~kipi.core.viz.meshes.board_coatings`."""
+        renderer = self.plotter.renderer
+        for _, a in self._coating_actors:
+            renderer.RemoveActor(a)
+        self._coating_actors = []
+        for i, (kind, mesh, color) in enumerate(coatings):
+            a = self.plotter.add_mesh(mesh, color=color, opacity=0.8 if kind == "mask" else 0.6,
+                                      name=f"coating{i}", pickable=False,
+                                      reset_camera=False, render=False)
+            a.SetScale(1.0, 1.0, self._zscale)
+            self._coating_actors.append((kind, a))
+        self._apply_visibility()
 
     def nets(self) -> List[str]:
         return list(self._net_color)
@@ -479,15 +505,15 @@ class Viewer3D(QWidget):
                 anchors[:, 2] += _PI_LABEL_LIFT_MM        # clear of the part's dots
                 self._pi_actors[name] = _pi_labels_actor(anchors, [m.name for m in parts],
                                                          colors[1])
-        sel = self._selected_marker()
-        if sel is not None:             # drawn last, so over the part's own dots and name
+        sel = self._selected_markers()
+        if sel:                         # drawn last, so over the parts' own dots and names
             self._pi_actors["pi_selected_dots"] = _pi_dots_actor(
-                view(np.vstack([sel.power, sel.ground])), _PI_SELECTED_COLORS[0],
-                _PI_SELECTED_PX)
-            anchor = view(sel.anchor[None, :])
-            anchor[:, 2] += _PI_LABEL_LIFT_MM
+                view(np.vstack([p for m in sel for p in (m.power, m.ground)])),
+                _PI_SELECTED_COLORS[0], _PI_SELECTED_PX)
+            anchors = view(np.array([m.anchor for m in sel]))
+            anchors[:, 2] += _PI_LABEL_LIFT_MM
             self._pi_actors["pi_selected_label"] = _pi_labels_actor(
-                anchor, [sel.name], _PI_SELECTED_COLORS[1])
+                anchors, [m.name for m in sel], _PI_SELECTED_COLORS[1])
         for actor in self._pi_actors.values():
             renderer.AddViewProp(actor)
 
@@ -499,13 +525,15 @@ class Viewer3D(QWidget):
     def pi_markers(self) -> list:
         return list(self._pi_markers)
 
-    def _selected_marker(self):
-        return next((m for m in self._pi_markers if (m.kind, m.item) == self._pi_selected),
-                    None)
+    def _selected_markers(self) -> list:
+        """The markers of the selected setup item: several for a capacitor model."""
+        if self._pi_selected is None:
+            return []
+        return [m for m in self._pi_markers if m.is_item(*self._pi_selected)]
 
     def set_pi_selected(self, key: Optional[Tuple[str, str]]):
-        """Highlight the part selected in the setup, ``(kind, item name)``, or none (#96).
-        Shown with the PI Models markers."""
+        """Highlight the part selected in the setup, ``(kind, item name)``, or none (#96):
+        every part of a capacitor model. Shown with the PI Models markers."""
         if key == self._pi_selected:
             return
         self._pi_selected = key
@@ -516,7 +544,7 @@ class Viewer3D(QWidget):
     def _start_blink(self):
         """Blink the selected part's dots and name between amber and red a few times."""
         self._blink_timer.stop()
-        self._blink_left = 2 * _PI_BLINKS if self._selected_marker() is not None else 0
+        self._blink_left = 2 * _PI_BLINKS if self._selected_markers() else 0
         if self._blink_left:
             self._blink_timer.start()
 
@@ -624,10 +652,16 @@ class Viewer3D(QWidget):
         self._apply_visibility()
 
     def set_feature_visible(self, feature: str, visible: bool):
-        if feature == "models" and self._result is not None:
-            feature = "models_result"       # the result view keeps its own setting
+        if feature in PER_VIEW and self._result is not None:
+            feature += "_result"            # the result view keeps its own setting
         setattr(self, f"_show_{feature}", visible)
         self._apply_visibility()
+
+    def feature_shown(self, feature: str) -> bool:
+        """Whether ``feature`` is shown in the current view (copper or results)."""
+        if feature in PER_VIEW and self._result is not None:
+            feature += "_result"
+        return getattr(self, f"_show_{feature}")
 
     @property
     def models_shown(self) -> bool:
@@ -666,6 +700,10 @@ class Viewer3D(QWidget):
                                                  or self._result_field == "via_current")
         for a in self._board_actors:
             a.SetVisibility(self._show_board)
+        mask = self._show_mask_result if showing_result else self._show_mask
+        silk = self._show_silk_result if showing_result else self._show_silk
+        for kind, a in self._coating_actors:
+            a.SetVisibility(mask if kind == "mask" else silk)
         models = self._show_models_result if showing_result else self._show_models
         for a in self._model_actors.values():
             a.SetVisibility(models)
@@ -676,6 +714,8 @@ class Viewer3D(QWidget):
     def set_zscale(self, s: float):
         self._zscale = max(1.0, float(s))
         for a in self._board_actors:
+            a.SetScale(1.0, 1.0, self._zscale)
+        for _, a in self._coating_actors:
             a.SetScale(1.0, 1.0, self._zscale)
         for a in self._chunk_actors.values():
             a.SetScale(1.0, 1.0, self._zscale)

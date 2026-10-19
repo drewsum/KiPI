@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """KiPI main window: board browser, 3D copper view and live log."""
 
 from __future__ import annotations
@@ -28,7 +29,9 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import PIPanel
 from kipi.dc.pi.tree import fmt_drop
+from kipi.gui.heartbeat import Heartbeat, busy_cursor
 from kipi.gui.stackup_window import StackupWindow
+from kipi.gui.tooltip_art import art_tip
 from kipi.gui.viewer3d import Viewer3D
 from kipi.gui.worker import QtProgress, Task
 from kipi.host import Host, current as current_host
@@ -44,7 +47,21 @@ MAX_AUTO_NETS = 4
 # it); the window waits this long for the file to settle before offering to reload.
 FILE_SETTLE_MS = 800
 # Analysis modes, chosen in the toolbar: (key, label, setup dock title).
-MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"))
+MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"),
+         ("noise", "Noise", "Coupled Noise setup"))
+# Keyboard shortcuts (#105). The view keys work while the 3D view has the focus, so that
+# Home and letters still reach the lists and text boxes; the rest work anywhere in the
+# window. Each is named in its control's tooltip and in the user guide.
+VIEW_KEYS = {"iso": "Home", "top": "Z", "bottom": "Shift+Z"}
+KEYS = {"open": "Ctrl+O", "reload": "F5", "save": "Ctrl+S", "screenshot": "F12",
+        "results": "Ctrl+Shift+O", "stackup": "Ctrl+L", "power_tree": "Ctrl+T",
+        "help": "F1", "solve": "Ctrl+Return", "cancel": "Esc", "dc": "Ctrl+1", "ac": "Ctrl+2",
+        "noise": "Ctrl+3"}
+
+
+def with_keys(tip: str, keys: str) -> str:
+    """``tip`` with its shortcut after it, as the tooltips show it."""
+    return f"{tip} ({keys})" if keys else tip
 VIA_PICK_PX = 10      # a click this close to a via barrel on screen selects it
 
 
@@ -85,6 +102,19 @@ def fit_to_screen(window: QMainWindow) -> None:
     window.move(max(x, area.left()), max(y, area.top()))
 
 
+def write_report_file(write, path, progress):
+    """``write(path)`` a solve's report; where a PDF cannot be made, the HTML report next to
+    where it would have been (#119). The path written is returned."""
+    from kipi.core.pdf import PdfError
+    with progress.timed(f"Writing {path.suffix.lstrip('.').upper()} report"):
+        try:
+            return write(path)
+        except PdfError as e:
+            progress.warn(f"Could not write the PDF report ({e}); writing it as HTML instead")
+    with progress.timed("Writing HTML report"):
+        return write(path.with_suffix(".html"))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, source: Optional[BoardSource] = None, tool: Optional[InstalledTool] = None,
                  snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None):
@@ -123,6 +153,7 @@ class MainWindow(QMainWindow):
         self._model_task: Optional[Task] = None
         self._model_gen = 0                 # bumped per board; stale loads are dropped
         self._models_pending = False        # wanted parts changed while a load ran
+        self._guess_wanted = False          # Guess models clicked: run once models are in
         self._model_source = None           # the board's ModelProvider, False if none
         self._closed = False
         self._layer_colors_from = None      # where the layer colors were last read from
@@ -147,26 +178,30 @@ class MainWindow(QMainWindow):
         self._own_write_until = 0.0         # changes before this are KiPI's own saves
 
         # The central area: the 3D view and, in AC mode, the impedance plot and the board
-        # map of the solve (#67).
+        # map of the solve (#67); in Coupled Noise mode, the aggressor's waveforms (#69).
         from kipi.ac.gui.board_map import BoardMap
         from kipi.ac.gui.plot import ImpedancePlot
+        from kipi.noise.gui.plot import NoisePlot
         self.views = QTabWidget(self)
         self.views.setDocumentMode(True)
         self.viewer = Viewer3D(self.views)
         self.plot = ImpedancePlot(self.views)
         self.board_map = BoardMap(self.views)
+        self.noise_plot = NoisePlot(self.views)
         self.views.addTab(self.viewer, "3D view")
         self.views.addTab(self.plot, "Impedance")
         self.views.addTab(self.board_map, "Board map")
+        self.views.addTab(self.noise_plot, "Waveforms")
         self.setCentralWidget(self.views)
         self.viewer.on_click(self._on_click)
         self.plot.cursor_moved.connect(self._show_cursor)
-        self._set_plot_tab_shown(False)
+        self._set_plot_tabs("dc")
 
         self._build_toolbar()
         self._build_left_panel()
         self._build_log_dock()
         self._build_solve_dock()
+        self._build_shortcuts()
         self.stackup_window = StackupWindow(self)
         self.stackup_window.stackup_changed.connect(self._stackup_changed)
         self.stackup_window.settings_changed.connect(self.solve_panel.setup_changed.emit)
@@ -184,11 +219,16 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         self.addToolBar(tb)
 
-        def act(text, slot, tip=""):
+        def act(text, slot, tip="", keys="", view=False):
             a = QAction(text, self)
-            a.setToolTip(tip or text)
+            a.setToolTip(with_keys(tip or text, keys))
             a.triggered.connect(slot)
             tb.addAction(a)
+            if keys:
+                a.setShortcut(keys)
+            if view:                    # only while the 3D view (or the toolbar) has focus
+                a.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+                self.viewer.addAction(a)
             return a
 
         # Reload and Refill zones follow the board's source (see _source_changed). As a
@@ -197,42 +237,50 @@ class MainWindow(QMainWindow):
         if self.host is Host.STANDALONE:
             self.act_open = act("Open…", self.open_board, "Open a board file: " +
                                 ", ".join(f.name for f in registry.FORMATS) +
-                                "; the arrow lists the boards opened lately")
+                                "; the arrow lists the boards opened lately",
+                                KEYS["open"])
             self.recent_menu = QMenu(self)
             self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
             self.act_open.setMenu(self.recent_menu)
             button = tb.widgetForAction(self.act_open)
             if isinstance(button, QToolButton):
                 button.setPopupMode(QToolButton.MenuButtonPopup)
-        self.act_reload = act("Reload", self.reload_board, "Re-read the board")
+        self.act_reload = act("Reload", self.reload_board, "Re-read the board",
+                              KEYS["reload"])
         self.chk_refill = QCheckBox("Refill zones", self)
         # A toolbar widget is shown and hidden through the action holding it.
         self._act_refill = tb.addWidget(self.chk_refill)
         tb.addSeparator()
         if self.host is Host.PLUGIN:
             act("Open snapshot…", self.open_snapshot,
-                "Load a saved board snapshot (.json / .json.gz), without KiCad running")
+                "Load a saved board snapshot (.json / .json.gz), without KiCad running",
+                KEYS["open"])
         self.act_save = act("Save snapshot…", self.save_snapshot,
-                            "Save the extracted board for offline use")
+                            "Save the extracted board for offline use", KEYS["save"])
         tb.addSeparator()
-        act("Top", lambda: self._show_3d(self.viewer.view_top), "Look down on the top of the board")
+        act("Top", lambda: self._show_3d(self.viewer.view_top),
+            "Look down on the top of the board", VIEW_KEYS["top"], view=True)
         act("Bottom", lambda: self._show_3d(self.viewer.view_bottom),
-            "Look up at the bottom of the board")
-        act("Iso", lambda: self._show_3d(self.viewer.view_iso), "Isometric view of the board")
+            "Look up at the bottom of the board", VIEW_KEYS["bottom"], view=True)
+        act("Iso", lambda: self._show_3d(self.viewer.view_iso), "Isometric view of the board",
+            VIEW_KEYS["iso"], view=True)
         act("Screenshot…", self.save_screenshot,
-            "Save the 3D view, or the impedance plot if it is showing, as a PNG")
+            "Save the 3D view, or the impedance plot if it is showing, as a PNG",
+            KEYS["screenshot"])
         tb.addSeparator()
-        self.act_open_results = act("Open results…", self.open_results)
+        self.act_open_results = act("Open results…", self.open_results, keys=KEYS["results"])
         self._set_open_results_tip()
         self.act_stackup = act("Stackup", self.show_stackup,
                                "The board's layers: thicknesses, εr and copper resistivity, "
-                               "for every analysis. Unlock to try another stackup.")
+                               "for every analysis. Unlock to try another stackup.",
+                               KEYS["stackup"])
         self.act_power_tree = act("Power tree", self.show_power_tree,
                                   "Block diagram of the setup: VRMs (by type), rails, series "
-                                  "links, loads and capacitors, in the direction power flows")
+                                  "links, loads and capacitors, in the direction power flows",
+                                  KEYS["power_tree"])
         tb.addSeparator()
-        self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser (F1)")
-        self.act_help.setShortcut("F1")
+        self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser",
+                            KEYS["help"])
         self.act_about = act("About", self.show_about, "Version, author and project links")
 
         # Analysis mode, at the far right.
@@ -242,11 +290,13 @@ class MainWindow(QMainWindow):
         tb.addWidget(QLabel("Mode: ", tb))
         self.mode_buttons = QButtonGroup(self)
         tips = {"dc": "DC power integrity: IR drop, current density, electro-thermal",
-                "ac": "AC power integrity: PDN impedance over frequency at probe points"}
+                "ac": "AC power integrity: PDN impedance over frequency at probe points",
+                "noise": "Coupled Noise: a buck or boost switcher's waveforms and the noise "
+                         "it couples onto signal nets"}
         for key, label, _ in MODES:
             rb = QRadioButton(label, tb)
             rb.setObjectName(f"mode_{key}")
-            rb.setToolTip(tips[key])
+            rb.setToolTip(with_keys(tips[key], KEYS[key]))
             rb.setChecked(key == self.mode)
             rb.toggled.connect(lambda on, k=key: on and self.set_mode(k))
             self.mode_buttons.addButton(rb)
@@ -260,6 +310,32 @@ class MainWindow(QMainWindow):
             rb.setEnabled(on)
         self.setup_bar.setEnabled(on and self.snapshot is not None)
 
+    def _build_shortcuts(self):
+        """Keys with no toolbar button: Solve and Cancel."""
+        def key(name, slot):
+            a = QAction(self)
+            a.setShortcut(KEYS[name])
+            a.triggered.connect(slot)
+            self.addAction(a)
+            return a
+
+        for mode, _, _ in MODES:
+            key(mode, lambda _=False, m=mode: self._mode_button(m).setChecked(True))
+        key("solve", self._solve_shortcut)
+        # Esc is only taken while there is something to cancel; otherwise it still closes
+        # popups and dialogs as usual.
+        self.act_cancel = key("cancel", self._cancel_task)
+        self.act_cancel.setEnabled(False)
+        self.btn_cancel.setToolTip(with_keys(self.btn_cancel.toolTip(), KEYS["cancel"]))
+        for panel in self._panels().values():
+            panel.btn_solve.setToolTip(with_keys(panel.btn_solve.toolTip(), KEYS["solve"]))
+
+    def _solve_shortcut(self):
+        """Press the current mode's Solve button, when it can be pressed."""
+        button = self._mode_panel().btn_solve
+        if button.isEnabled():
+            button.click()
+
     def set_mode(self, mode: str):
         """Switch the analysis mode: the setup dock shows that mode's panel. The DC setup
         and results are kept while in AC mode, and come back with DC."""
@@ -272,15 +348,15 @@ class MainWindow(QMainWindow):
             return
         self.mode = mode
         self._check_mode_button(mode)
-        # VRMs and series links are shared: show the other panel's edits.
+        # VRMs, series links and capacitor models are shared: show the other panels' edits.
         if mode == "dc":
             self.solve_panel.reload_shared()
         else:
-            self.ac_panel.reload()
-        self.setup_stack.setCurrentWidget(self.solve_panel if mode == "dc" else self.ac_panel)
+            self._mode_panel().reload()
+        self.setup_stack.setCurrentWidget(self._mode_panel())
         self.solve_dock.setWindowTitle(next(t for k, _, t in MODES if k == mode))
         self._set_open_results_tip()
-        self._set_plot_tab_shown(mode == "ac")
+        self._set_plot_tabs(mode)
         self._sync_pi_markers()
         self._mode_panel()._part_selection(False)     # the part selected in this mode's lists
         if mode == "dc":
@@ -288,21 +364,28 @@ class MainWindow(QMainWindow):
                 self._show_group(self.solve_panel.cmb_group.currentText())
         else:
             self.viewer.clear_result()        # DC results do not apply; show the copper
-            if self.plot.result is not None:
-                self.views.setCurrentWidget(self.plot)
+            plot = self.plot if mode == "ac" else self.noise_plot
+            if plot.result is not None:
+                self.views.setCurrentWidget(plot)
         self.log(f"Analysis mode: {mode.upper()}")
 
     def _set_open_results_tip(self):
-        self.act_open_results.setToolTip(
-            "Reopen a saved DC or DC + thermal solve (.kipi-dc-results, .kipi-dc-thermal-results); "
-            "load the board first"
-            if self.mode == "dc" else
-            "Reopen saved AC impedance results (.kipi-ac-results); load the board first")
+        self.act_open_results.setToolTip(with_keys(
+            {"dc": "Reopen a saved DC or DC + thermal solve (.kipi-dc-results, "
+                   ".kipi-dc-thermal-results); load the board first",
+             "ac": "Reopen saved AC impedance results (.kipi-ac-results); load the board "
+                   "first",
+             "noise": "Reopen saved Coupled Noise results (.kipi-noise-results); load the "
+                      "board first"}[self.mode],
+            KEYS["results"]))
 
-    def _set_plot_tab_shown(self, shown: bool):
-        """Show the impedance and board map tabs only in AC mode. QTabWidget.setTabVisible
-        needs Qt 5.15; older Qt disables the tabs instead."""
-        for w in (self.plot, self.board_map):
+    def _set_plot_tabs(self, mode: str):
+        """Show each mode's plot tabs only in that mode: the impedance and board map in AC
+        mode, the waveforms in Coupled Noise mode. QTabWidget.setTabVisible needs Qt 5.15;
+        older Qt disables the tabs instead."""
+        tabs = {self.plot: mode == "ac", self.board_map: mode == "ac",
+                self.noise_plot: mode == "noise"}
+        for w, shown in tabs.items():
             i = self.views.indexOf(w)
             if hasattr(self.views, "setTabVisible"):
                 self.views.setTabVisible(i, shown)
@@ -317,8 +400,11 @@ class MainWindow(QMainWindow):
         if then is not None:
             then()
 
+    def _mode_button(self, mode: str) -> QRadioButton:
+        return self.findChild(QRadioButton, f"mode_{mode}")
+
     def _check_mode_button(self, mode: str):
-        rb = self.findChild(QRadioButton, f"mode_{mode}")
+        rb = self._mode_button(mode)
         if rb is not None and not rb.isChecked():
             rb.blockSignals(True)
             rb.setChecked(True)          # the group unchecks the other button
@@ -433,40 +519,65 @@ class MainWindow(QMainWindow):
         opac.addWidget(self.sld_opacity, 1)
         opac.addWidget(self.lbl_opacity)
         feats = QVBoxLayout()
-        feat_rows = (QHBoxLayout(), QHBoxLayout())
+        feat_rows = (QHBoxLayout(), QHBoxLayout(), QHBoxLayout())
         for r in feat_rows:
             feats.addLayout(r)
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate",
+                     "mask": "Show the solder masks, open over the pads. They hide the "
+                             "copper, so they start off. The copper and result views "
+                             "each remember this; over results it starts off.",
+                     "silk": "Show what the silkscreens print, as read from the board: "
+                             "its drawings and text, off the pads. Off to start with. The "
+                             "copper and result views each remember this; over results "
+                             "it starts off.",
                      "pi": "Mark the parts of the current analysis on the nets shown: a "
                            "dot on each of their pads, larger on the rail and smaller on "
                            "ground, and the part's name. In DC mode its VRMs (green), "
-                           "loads (cyan), series links (magenta) and capacitors with a "
-                           "model (white); in AC mode its VRMs, series links, probes "
-                           "(violet) and capacitors, the probes in place of the loads, "
-                           "which no impedance sweep uses. Over the copper only, not over "
-                           "results. Off to start with. The VRM, load, series link or "
-                           "probe selected in the setup is marked in amber, and clicking "
+                           "loads (cyan) and series links (magenta); in AC mode its VRMs, "
+                           "series links, probes (violet) and capacitors with a model "
+                           "(white), the probes in place of the loads, which no impedance "
+                           "sweep uses. Over the copper only, not over results. Off to "
+                           "start with. The VRM, load, series link, probe or capacitor "
+                           "model selected in the setup is marked in amber, and clicking "
                            "its name selects it there.",
                      "models": "Show the 3D models of every part on the board. KiCad's "
-                               "kicad-cli reads them from the saved board file. The copper "
+                               "kicad-cli reads them from the saved board file; with none, "
+                               "Guess models picks them from KiCad's library. The copper "
                                "and result views each remember this; over results they "
                                "start off."}
-        for k, (name, label) in enumerate((("vias", "Vias"), ("pads", "Pads"),
-                                           ("board", "Board"), ("pi", "PI Models"),
-                                           ("models", "3D Models"))):
+        for k, (name, label) in ((0, ("vias", "Vias")), (0, ("pads", "Pads")),
+                                 (0, ("board", "Board")), (1, ("mask", "Mask")),
+                                 (1, ("silk", "Silkscreen")), (2, ("pi", "PI Models")),
+                                 (2, ("models", "3D Models"))):
             cb = QCheckBox(label, g_view)
-            cb.setChecked(name != "pi")
-            cb.setToolTip(feat_tips[name])
+            cb.setChecked(name not in ("pi", "mask", "silk"))
+            cb.setToolTip(art_tip(feat_tips[name], "coatings", name) if name in ("mask", "silk")
+                          else feat_tips[name])
             cb.toggled.connect(lambda v, n=name: self.viewer.set_feature_visible(n, v))
-            feat_rows[k // 3].addWidget(cb)
+            feat_rows[k].addWidget(cb)
             if name == "pi":
                 self.chk_pi = cb
+            elif name in ("mask", "silk"):
+                setattr(self, f"chk_{name}", cb)
         self.chk_models = cb
         self.chk_models.setVisible(self._tool.offers_part_models)
+        # Only on request: a guessed model may be the wrong part (#130).
+        self.btn_guess = QPushButton("Guess models", g_view)
+        self.btn_guess.setToolTip(
+            "Pick 3D models from KiCad's library for the parts that have none, by their "
+            "footprint name: for a board with no KiCad board file (an ODB++ job, a "
+            "snapshot away from its board), or parts whose models KiCad cannot find. "
+            "It is a guess: the log names each model picked by size code or the closest "
+            "name. Opening or reloading a board drops them.")
+        self.btn_guess.setVisible(self._tool.offers_part_models)
+        self.btn_guess.setEnabled(False)            # with a board loaded
+        self.btn_guess.clicked.connect(self.guess_models)
+        feat_rows[2].addWidget(self.btn_guess)
         self.chk_snap = QCheckBox("Snap to selected", g_view)
-        self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link or probe "
-                                 "when it is clicked in the setup's lists. Untick it to keep "
+        self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link, probe or "
+                                 "capacitor model (all its parts) when it is clicked in the "
+                                 "setup's lists. Untick it to keep "
                                  "the view where it is; the part is still marked in amber. "
                                  "Available while PI Models is ticked.")
         # QSettings may hand a bool back as "true" / "false" (an INI file, the registry).
@@ -478,9 +589,9 @@ class MainWindow(QMainWindow):
         self.chk_snap.setEnabled(self.chk_pi.isChecked())   # it snaps to the markers
         self.chk_pi.toggled.connect(self.chk_snap.setEnabled)
         self.chk_models.toggled.connect(lambda _: self._model_timer.start())
-        # The copper and result views each keep their own Models setting.
-        self.viewer.result_shown.connect(
-            lambda _: self.chk_models.setChecked(self.viewer.models_shown))
+        # The copper and result views each keep their own Models, Mask and Silkscreen
+        # settings (#144).
+        self.viewer.result_shown.connect(self._sync_view_features)
         fv.addRow("Color", self.cmb_color)
         fv.addRow("Z scale", self.spin_z)
         fv.addRow("Opacity", opac)
@@ -539,7 +650,16 @@ class MainWindow(QMainWindow):
         self.ac_panel.results_saved.connect(lambda path: self.log(f"Saved AC results to {path}"))
         self.ac_panel.part_selected.connect(
             lambda *a: self._pi_part_selected(*a) if self.mode == "ac" else None)
-        for panel in (self.solve_panel, self.ac_panel):
+        from kipi.noise.gui.panel import NoisePanel
+        self.noise_panel = NoisePanel(self)
+        self.noise_panel.solve_requested.connect(self.run_noise_solve)
+        self.noise_panel.result_selected.connect(self._show_noise_result)
+        self.noise_panel.victim_selected.connect(self._show_victim)
+        self.noise_panel.results_saved.connect(
+            lambda path: self.log(f"Saved Coupled Noise results to {path}"))
+        self.noise_panel.part_selected.connect(
+            lambda *a: self._pi_part_selected(*a) if self.mode == "noise" else None)
+        for panel in self._panels().values():
             panel.setup_changed.connect(self._model_timer.start)
             panel.setup_changed.connect(self._refresh_power_tree)
             panel.setup_changed.connect(self._show_unsaved)
@@ -551,8 +671,8 @@ class MainWindow(QMainWindow):
         self.setup_bar.save_requested.connect(self._save_setup)
         self.setup_bar.setEnabled(False)                       # until a board is read
         self.setup_stack = QStackedWidget(self)
-        self.setup_stack.addWidget(self.solve_panel)
-        self.setup_stack.addWidget(self.ac_panel)
+        for panel in self._panels().values():
+            self.setup_stack.addWidget(panel)
         holder = QWidget(self)
         col = QVBoxLayout(holder)
         col.setContentsMargins(0, 0, 0, 0)
@@ -601,6 +721,8 @@ class MainWindow(QMainWindow):
         dock.setWidget(w)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.resizeDocks([dock], [200], Qt.Vertical)
+        self.heartbeat = Heartbeat(self)          # turns while any task runs (#111)
+        self.statusBar().addPermanentWidget(self.heartbeat)
 
     # ============================================================ logging
     def showEvent(self, event):
@@ -620,6 +742,9 @@ class MainWindow(QMainWindow):
     def _on_stage(self, name: str):
         self.lbl_stage.setText(name)
         self.statusBar().showMessage(name)
+        # A new stage moves until it reports how far it is, so the last stage's full bar
+        # does not sit still while this one works.
+        self.progress_bar.setRange(0, 0)
 
     def _on_fraction(self, f: float):
         if f < 0:
@@ -655,11 +780,14 @@ class MainWindow(QMainWindow):
         if on_partial is not None:
             prog.sig_partial.connect(on_partial)
         task = Task(fn, prog, self)
-        task.done.connect(on_done)
+        task.done.connect(lambda result: self._task_done(on_done, result))
         task.failed.connect(lambda tb: self._on_task_failed(name, tb))
         task.finished.connect(lambda t=task: self._on_task_finished(t))
         self._task = task
+        self.heartbeat.start(task, name)
+        self.progress_bar.setRange(0, 0)          # moving until the first stage reports
         self.btn_cancel.setEnabled(True)
+        self.act_cancel.setEnabled(True)
         self.act_reload.setEnabled(False)
         self._set_controls_enabled(False)      # offered only when they can be taken
         from kipi.gui import app as kipi_app
@@ -668,7 +796,14 @@ class MainWindow(QMainWindow):
         task.start()
         return task
 
+    def _task_done(self, on_done, result):
+        """A task's result is drawn in the UI thread, which can take a while for a big
+        solve: the wait cursor shows meanwhile."""
+        with busy_cursor():
+            on_done(result)
+
     def _on_task_finished(self, task=None):
+        self.heartbeat.stop(task)
         # A task's done() may already have started the next task (loading a board
         # starts the net build). Its "finished" arrives after that, and must not reset
         # the UI or stop the watchdog for the task that is now running.
@@ -678,11 +813,13 @@ class MainWindow(QMainWindow):
         from kipi.gui import app as kipi_app
         kipi_app.watchdog_stop()
         log.info("Task finished")
-        self.solve_panel.set_busy(False)
-        self.ac_panel.set_busy(False)
+        for panel in self._panels().values():
+            panel.set_busy(False)
         pending, self._pending_solve = getattr(self, "_pending_solve", None), None
         pending_ac, self._pending_ac = getattr(self, "_pending_ac", None), None
+        pending_noise, self._pending_noise = getattr(self, "_pending_noise", None), None
         self.btn_cancel.setEnabled(False)
+        self.act_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
         self._set_controls_enabled(True)
         self.progress_bar.setRange(0, 1000)
@@ -699,6 +836,8 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self.run_solve(pending))
         elif pending_ac is not None:
             QTimer.singleShot(0, lambda: self.run_ac_solve(*pending_ac))
+        elif pending_noise is not None:
+            QTimer.singleShot(0, lambda: self.run_noise_solve(*pending_noise))
 
     def _on_task_failed(self, name: str, tb: str):
         log.error(tb)
@@ -722,8 +861,8 @@ class MainWindow(QMainWindow):
             self.act_reload.setText(f"Load from {src.name}")
         else:
             self.act_reload.setText("Reload")
-        self.act_reload.setToolTip(f"Re-read the board from {src.description}" if src
-                                   else "Re-read the board")
+        self.act_reload.setToolTip(with_keys(f"Re-read the board from {src.description}"
+                                             if src else "Re-read the board", KEYS["reload"]))
         self.act_reload.setVisible(src is not None and src.caps.reload)
         self.chk_refill.setToolTip(f"Refill all zones in {src.name if src else 'the editor'} "
                                    "before reading (recommended)")
@@ -844,14 +983,15 @@ class MainWindow(QMainWindow):
         from kipi.core.model.snapshot_io import save
         self._own_write_until = time.monotonic() + 2.0   # may be the file Reload reads
         # A snapshot is the board as its source has it; edited thicknesses live in the setup.
-        save(dataclasses.replace(self.snapshot, stackup=self._imported_stackup
-                                 or self.snapshot.stackup), path)
+        with busy_cursor():
+            save(dataclasses.replace(self.snapshot, stackup=self._imported_stackup
+                                     or self.snapshot.stackup), path)
         self.log(f"Snapshot saved to {path}")
 
     def save_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save screenshot", "kipi.png", "PNG (*.png)")
         if path:
-            if self.views.currentWidget() in (self.plot, self.board_map):
+            if self.views.currentWidget() in (self.plot, self.board_map, self.noise_plot):
                 self.views.currentWidget().save_png(path)
             else:
                 self.viewer.screenshot(path)
@@ -868,6 +1008,8 @@ class MainWindow(QMainWindow):
         self._model_cache.clear()
         self._model_gen += 1
         self._model_source = None
+        self._guess_wanted = False
+        self.btn_guess.setEnabled(True)
         self._picked = None
         self.btn_select.setEnabled(False)
         self._set_title(snap.board_name)
@@ -887,8 +1029,9 @@ class MainWindow(QMainWindow):
         self._show_unsaved()
         self.setup_bar.setEnabled(not self._busy())
         self._show_board_summary()
-        from kipi.core.viz.meshes import board_body
+        from kipi.core.viz.meshes import board_body, board_coatings
         self.viewer.set_board(*board_body(snap))
+        self.viewer.set_coatings(board_coatings(snap))
         self.sync_nets()
 
     def _load_layer_colors(self, snap: BoardSnapshot):
@@ -1030,6 +1173,7 @@ class MainWindow(QMainWindow):
             return
         self.solve_panel.set_nets(list(self._checked_set()))
         self.ac_panel.set_nets(list(self._checked_set()))
+        self.noise_panel.set_nets(list(self._checked_set()))
         self.solve_panel.setup.nets = self._checked_nets()   # saved with the setup
         self._model_timer.start()
         if self._busy():
@@ -1086,8 +1230,9 @@ class MainWindow(QMainWindow):
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):
         """Mark the parts the current mode solves, on the ticked nets (#84): DC mode's VRMs,
-        loads, series links and capacitors, or, in AC mode, the VRMs, series links, probes
-        and capacitors of an impedance sweep."""
+        loads and series links, or, in AC mode, the VRMs, series links, probes and
+        modelled capacitors of an impedance sweep, plus each victim's driver and
+        receiver in Coupled Noise mode."""
         if self._closed:
             return
         if self.snapshot is None:
@@ -1098,28 +1243,42 @@ class MainWindow(QMainWindow):
         if self.mode == "dc":
             from kipi.dc.viz.markers import pi_markers
             markers = pi_markers(self.snapshot, setup, nets)
+        elif self.mode == "noise":
+            from kipi.noise.markers import noise_markers
+            markers = noise_markers(self.snapshot, setup, nets)
         else:
             from kipi.ac.viz.markers import ac_markers
             markers = ac_markers(self.snapshot, setup, nets)
         self.viewer.set_pi_markers(markers)
 
+    def _panels(self):
+        """Each mode's setup panel, by mode key."""
+        return {"dc": self.solve_panel, "ac": self.ac_panel, "noise": self.noise_panel}
+
     def _mode_panel(self):
         """The setup panel of the current mode."""
-        return self.solve_panel if self.mode == "dc" else self.ac_panel
+        return self._panels()[self.mode]
 
     def _pi_part_selected(self, kind: str, name: str, by_user: bool):
         """Mark the part selected in the current mode's setup lists in the 3D view: a VRM,
-        load or series link in DC mode, a VRM, series link or probe in AC mode. With PI Models
+        load or series link in DC mode, a VRM, series link, probe or capacitor model (all
+        its parts) in AC mode. With PI Models
         shown and Snap to selected ticked, one the user picked brings the view to it (#96)."""
         self.viewer.set_pi_selected((kind, name) if kind else None)
         if not (by_user and kind and self.chk_pi.isChecked() and self.chk_snap.isChecked()):
             return
-        m = next((m for m in self.viewer.pi_markers if (m.kind, m.item) == (kind, name)),
-                 None)
-        if m is None:
+        marks = [m for m in self.viewer.pi_markers if m.is_item(kind, name)]
+        if not marks:
             self.statusBar().showMessage(f"{name} has no pads on the nets shown", 5000)
             return
-        self.viewer.focus_on(np.vstack([m.power, m.ground]))
+        self.viewer.focus_on(np.vstack([p for m in marks for p in (m.power, m.ground)]))
+
+    def _sync_view_features(self, _=None):
+        """Tick the features each view keeps its own setting of as the view now shown has
+        them."""
+        self.chk_models.setChecked(self.viewer.models_shown)
+        self.chk_mask.setChecked(self.viewer.feature_shown("mask"))
+        self.chk_silk.setChecked(self.viewer.feature_shown("silk"))
 
     # ============================================================ part models
     def _wanted_models(self) -> List[str]:
@@ -1143,6 +1302,9 @@ class MainWindow(QMainWindow):
             self._load_models(todo)
         elif todo:
             self._models_pending = True
+        if (self._guess_wanted and wanted and self._model_task is None
+                and all(r in self._model_cache for r in wanted)):
+            self._run_guess(wanted)
         side = {f.reference: f.side for f in snap.footprints}
         shown = {r: (self._model_cache[r], side.get(r, "top")) for r in wanted
                  if self._model_cache.get(r) is not None}
@@ -1160,8 +1322,31 @@ class MainWindow(QMainWindow):
             self._model_source = provider or False
         return self._model_source
 
-    def _load_models(self, refs: List[str]):
-        provider = self._models_source()
+    def guess_models(self):
+        """Guess models from KiCad's library for the parts that have none (#130): once
+        the board's own models are in, ticking 3D Models if it is not."""
+        if self.snapshot is None:
+            return
+        self._guess_wanted = True
+        if self.chk_models.isChecked():
+            self._model_timer.start()
+        else:
+            self.chk_models.setChecked(True)        # starts the timer
+
+    def _run_guess(self, wanted: List[str]):
+        self._guess_wanted = False
+        refs = [r for r in wanted if self._model_cache.get(r) is None]
+        if not refs:
+            self.log("3D models: every part has one already")
+            return
+        provider, why = self._tool.guessed_models(self.snapshot)
+        if provider is None:
+            self.log(why, logging.WARNING)
+            return
+        self._load_models(refs, provider)
+
+    def _load_models(self, refs: List[str], provider=None):
+        provider = provider or self._models_source()
         if not provider:
             self._model_cache.update({r: None for r in refs})
             return
@@ -1187,6 +1372,7 @@ class MainWindow(QMainWindow):
         task.done.connect(lambda found: self._models_loaded(gen, found))
         task.finished.connect(self._model_task_finished)
         self._model_task = task
+        self.heartbeat.start(task, "Loading 3D models")
         task.start()
 
     def _models_loaded(self, gen: int, found: dict):
@@ -1196,8 +1382,9 @@ class MainWindow(QMainWindow):
         self._sync_models()
 
     def _model_task_finished(self):
+        self.heartbeat.stop(self._model_task)
         self._model_task = None
-        if self._models_pending:
+        if self._models_pending or self._guess_wanted:
             self._models_pending = False
             self._model_timer.start()
 
@@ -1228,12 +1415,13 @@ class MainWindow(QMainWindow):
                 label = f"Could not read {found.name}; starting empty"
         self._setup_path = path
         self._saved = copy.deepcopy(setup)
-        self.solve_panel.set_board(snap, setup)
-        self.ac_panel.set_board(snap, setup)
+        for panel in self._panels().values():
+            panel.set_board(snap, setup)
         self.setup_bar.set_label(label)
         self._refresh_power_tree()
         self.plot.clear()
         self.board_map.clear()
+        self.noise_plot.clear()
         return setup
 
     def import_pdn(self):
@@ -1272,8 +1460,8 @@ class MainWindow(QMainWindow):
         self._set_checked(lambda it: it.checkState() == Qt.Checked
                           or it.data(Qt.UserRole) in used)
         label = f"Imported from {name}"
-        self.solve_panel.set_board(self.snapshot, setup)
-        self.ac_panel.set_board(self.snapshot, setup)
+        for panel in self._panels().values():
+            panel.set_board(self.snapshot, setup)
         self._refresh_power_tree()
         self.setup_bar.set_label(f"{label} - not saved")
         # Last in the Log, under the notes, so it is the line in view.
@@ -1320,7 +1508,8 @@ class MainWindow(QMainWindow):
         report_path = None
         if frozen.html_report and self._setup_path is not None:
             from kipi.dc.report.html import report_name
-            report_path = self._setup_path.parent / report_name(self._results_stem())
+            report_path = self._setup_path.parent / report_name(self._results_stem(),
+                                                                fmt=frozen.report_format)
 
         def work(progress):
             from kipi.core.mesh.mesher import MeshError
@@ -1340,12 +1529,12 @@ class MainWindow(QMainWindow):
                 scenes = build_scenes(tree, snap, progress)
             if report_path is not None:
                 from kipi.dc.report.html import write_report
-                with progress.timed("Writing HTML report"):
-                    try:
-                        tree.report_path = write_report(report_path, tree, scenes, snap, frozen,
-                                                        progress)
-                    except OSError as e:
-                        progress.warn(f"Could not write the report: {e}")
+                try:
+                    tree.report_path = write_report_file(
+                        lambda p: write_report(p, tree, scenes, snap, frozen, progress),
+                        report_path, progress)
+                except OSError as e:
+                    progress.warn(f"Could not write the report: {e}")
             return tree, scenes
 
         def done(out):
@@ -1391,7 +1580,8 @@ class MainWindow(QMainWindow):
         report_path = None
         if frozen.ac.html_report and self._setup_path is not None:
             from kipi.ac.html_report import report_name
-            report_path = self._setup_path.parent / report_name(self._results_stem(), vrm_name)
+            report_path = self._setup_path.parent / report_name(self._results_stem(), vrm_name,
+                                                                fmt=frozen.ac.report_format)
 
         def work(progress):
             from kipi.ac.solver import ACError, solve_ac
@@ -1404,12 +1594,12 @@ class MainWindow(QMainWindow):
                 return None, str(e)
             if report_path is not None:
                 from kipi.ac.html_report import write_ac_report
-                with progress.timed("Writing HTML report"):
-                    try:
-                        result.report_path = write_ac_report(report_path, result, snap, frozen,
-                                                             progress)
-                    except Exception as e:        # the solve's results stand without it
-                        progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+                try:
+                    result.report_path = write_report_file(
+                        lambda p: write_ac_report(p, result, snap, frozen, progress),
+                        report_path, progress)
+                except Exception as e:        # the solve's results stand without it
+                    progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
             return result, None
 
         def done(out):
@@ -1441,6 +1631,101 @@ class MainWindow(QMainWindow):
         if self.board_map.board_map is not getattr(result, "board_map", None):
             self.board_map.set_map(getattr(result, "board_map", None))  # None: saved before 0.7.2
         self.views.setCurrentWidget(self.plot)
+
+    def run_noise_solve(self, setup, aggressor: str):
+        """Solve one aggressor (#69): its waveforms are shown as soon as they are built."""
+        snap = self.snapshot
+        if snap is None:
+            return
+        if self._busy():
+            self._pending_noise = (setup, aggressor)
+            self.noise_panel.set_busy(True, queued=True)
+            self.log("Coupled Noise solve queued until the current task finishes")
+            return
+        self._save_setup()
+        import copy
+        frozen = copy.deepcopy(setup)
+        report_path = None
+        if frozen.noise.html_report and self._setup_path is not None:
+            from kipi.noise.html_report import report_name
+            report_path = self._setup_path.parent / report_name(
+                self._results_stem(), aggressor, fmt=frozen.noise.report_format)
+
+        def work(progress):
+            from kipi.noise.checks import NoiseError
+            from kipi.noise.solver import solve_noise
+            try:
+                result = solve_noise(snap, frozen, aggressor, progress)
+            except NoiseError as e:
+                progress.warn(str(e))
+                return None, str(e)
+            if report_path is not None:
+                from kipi.noise.html_report import write_noise_report
+                try:
+                    result.report_path = str(write_report_file(
+                        lambda p: write_noise_report(p, result, snap, frozen, progress),
+                        report_path, progress))
+                except Exception as e:        # the solve's results stand without it
+                    progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+            return result, None
+
+        def done(out):
+            result, error = out
+            if result is None:
+                self.noise_panel.show_error(error)
+                return
+            self.noise_panel.show_result(result)
+            self._open_new_report(getattr(result, "report_path", "") or None)
+
+        def partial(result):
+            """The waveforms, shown while the coupling solves."""
+            self.noise_panel.show_result(result)
+
+        if self._run(work, done, "Coupled Noise solve", on_partial=partial) is not None:
+            self.noise_panel.set_busy(True)
+
+    def _show_noise_result(self, result):
+        """The Coupled Noise panel's shown result (None: that aggressor has not been
+        solved)."""
+        if result is None:
+            self.noise_plot.clear()
+            return
+        self.noise_plot.periods = self.noise_panel.setup.noise.periods_shown
+        self.noise_plot.set_result(result)
+        if self.mode == "noise":
+            self.views.setCurrentWidget(self.noise_plot)
+
+    def _show_victim(self, name: str):
+        """A victim picked in the Coupled Noise results: plot its noise."""
+        self.noise_plot.set_victim(name)
+        if self.mode == "noise":
+            self.views.setCurrentWidget(self.noise_plot)
+
+    def _open_noise_results(self):
+        from kipi.noise import report
+        start = str(self._setup_path.parent) if self._setup_path else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Coupled Noise results", start,
+            f"KiPI Coupled Noise results (*{report.RESULTS_SUFFIX})")
+        if not path:
+            return
+        try:
+            data = report.load_results(path)
+        except Exception as e:  # noqa: BLE001 - any unreadable file
+            QMessageBox.warning(self, "KiPI", f"Could not open {path}:\n{e}")
+            return
+        if data["board"] != self.snapshot.board_name:
+            self.log(f"Results are for {data['board']}, not {self.snapshot.board_name}",
+                     logging.WARNING)
+        left_out = self.noise_panel.load_results(data["results"])
+        if left_out:
+            self.log(f"No aggressor in the setup named {', '.join(left_out)}; their results "
+                     f"were left out", logging.WARNING)
+        if not data["results"] or len(left_out) == len(data["results"]):
+            QMessageBox.information(self, "KiPI", "None of the aggressors in this file is in "
+                                                  "the setup, so there is nothing to show.")
+            return
+        self.log(f"Opened Coupled Noise results saved {data['saved']} from {path}")
 
     def _show_cursor(self, text: str):
         """The impedance plot's cursor values, in the Info pane in place of the last pick."""
@@ -1493,8 +1778,12 @@ class MainWindow(QMainWindow):
             self._pending_stackup = st
             self.log("Stackup change waits for the current task to finish")
             return
+        with busy_cursor():
+            self._apply_stackup(snap, st)
+
+    def _apply_stackup(self, snap, st):
         from kipi.core.model.stackup import to_setup
-        from kipi.core.viz.meshes import board_body
+        from kipi.core.viz.meshes import board_body, board_coatings
         snap.stackup = st
         self.solve_panel.setup.stackup = to_setup(st) if st.edited else None
         self.log(f"Stackup: {'edited in KiPI' if st.edited else 'from KiCad'}, "
@@ -1506,6 +1795,7 @@ class MainWindow(QMainWindow):
         self._populate_layers()
         self._show_board_summary()
         self.viewer.set_board(*board_body(snap), reset_view=False)
+        self.viewer.set_coatings(board_coatings(snap))
         for i in range(self.layer_list.count()):
             it = self.layer_list.item(i)
             if it.checkState() != Qt.Checked:
@@ -1548,18 +1838,32 @@ class MainWindow(QMainWindow):
                     self._save_results(path)
                 return
             folder = QFileDialog.getExistingDirectory(self, "Export to folder", start)
-            if not folder:
-                return
-            if kind == "csv":
-                paths = report.export_csv(self._tree, self.snapshot, folder, self._results_stem(),
-                                          self.solve_panel.setup.via_current_limit_a,
-                                          self.solve_panel.setup.thermal)
-            else:
-                paths = report.export_vtk(self._tree, self._scenes, self.snapshot, folder,
-                                          self._results_stem())
-            self.log(f"Exported {len(paths)} file(s) to {folder}")
         except OSError as e:
             QMessageBox.warning(self, "KiPI", f"Export failed: {e}")
+            return
+        if not folder:
+            return
+        tree, scenes, snap, stem = self._tree, self._scenes, self.snapshot, self._results_stem()
+        setup = self.solve_panel.setup
+
+        def work(progress):
+            """In the background: a big board's VTK files take a while (#111)."""
+            with progress.timed(f"Exporting {'CSV' if kind == 'csv' else 'VTK'} files"):
+                try:
+                    if kind == "csv":
+                        return report.export_csv(tree, snap, folder, stem,
+                                                 setup.via_current_limit_a, setup.thermal)
+                    return report.export_vtk(tree, scenes, snap, folder, stem)
+                except OSError as e:
+                    return e
+
+        def done(paths):
+            if isinstance(paths, OSError):
+                QMessageBox.warning(self, "KiPI", f"Export failed: {paths}")
+            else:
+                self.log(f"Exported {len(paths)} file(s) to {folder}")
+
+        self._run(work, done, "Exporting")
 
     def open_results(self):
         if self.snapshot is None:
@@ -1570,6 +1874,9 @@ class MainWindow(QMainWindow):
             return
         if self.mode == "ac":
             self._open_ac_results()
+            return
+        if self.mode == "noise":
+            self._open_noise_results()
             return
         from kipi.dc.pi import report
         start = str(self._setup_path.parent) if self._setup_path else ""
@@ -1785,8 +2092,11 @@ class MainWindow(QMainWindow):
             return
         # A PI Models name (or dot) selects its part in the current mode's setup (#96).
         marker = self.viewer.pi_marker_at(screen_xy)
-        if marker is not None and self._mode_panel().select_part(marker.kind, marker.item):
-            self.statusBar().showMessage(f"Selected {marker.name} in the setup", 5000)
+        if marker is not None and self._mode_panel().select_part(marker.kind,
+                                                                 marker.setup_item):
+            what = (f"model {marker.setup_item} ({marker.name})" if marker.kind == "cap"
+                    else marker.name)
+            self.statusBar().showMessage(f"Selected {what} in the setup", 5000)
             return
         segs, ids = self._via_candidates()
         via_id = None
@@ -1947,6 +2257,7 @@ class MainWindow(QMainWindow):
         self._model_timer.stop()            # start no kicad-cli for a closed window
         self._changed_timer.stop()
         self._models_pending = False
+        self._guess_wanted = False
         self._closed = True
         for task in (self._task, self._model_task):
             if task is not None and task.isRunning():

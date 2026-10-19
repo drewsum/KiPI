@@ -17,6 +17,9 @@ what the user kept, and nothing is inferred at solve time:
 * **AC setup** (:mod:`kipi.ac.model`): capacitor models, probe points and sweep settings.
   VRMs and series links are shared with the AC analysis; some of their fields apply to
   only one of the two (see each field).
+* **Coupled Noise setup** (:mod:`kipi.noise.model`): aggressors (a switching VRM's
+  frequency, edges and power parts) and their settings. It uses the VRMs and the
+  capacitor models above.
 
 Pins are referenced by footprint reference + pad numbers on a net, so a setup
 survives re-extracting the board from KiCad (pad ids are not stable across sessions).
@@ -31,9 +34,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from kipi.ac.model import DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, Probe
+from kipi.ac.model import (
+    DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, Probe, report_format,
+)
 from kipi.dc.solver.setup import SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
+from kipi.noise.model import (
+    Aggressor, NoiseSettings, Victim, aggressor_from_dict, settings_from_dict as noise_settings,
+    victim_from_dict,
+)
 
 FORMAT_VERSION = 1
 VRM_KINDS = ("source", "ldo", "smps")
@@ -79,14 +88,18 @@ class Vrm:
     vin_min: Optional[float] = None      # input range it regulates over (LDO / switcher)
     vin_max: Optional[float] = None
     # The input range in % from the input rail's nominal voltage (that of the VRM feeding
-    # it, see rail_nominal), e.g. -10 / +10, instead of in volts.
+    # it, see rail_nominal), e.g. -10 / +10, or with vin_dv, in volts from it (e.g. -0.5 /
+    # +0.5), instead of in volts (#131).
     vin_pct: bool = False
+    vin_dv: bool = False
     # DC accuracy of the set voltage (LDO / switcher), either end None: in % of it (e.g.
-    # -1 / +1), or with acc_pct False, the output's lowest and highest volts. The target
-    # calculator takes its larger side off the AC tolerance.
+    # -1 / +1), with acc_dv in volts from it (e.g. -0.01 / +0.01), or with neither, the
+    # output's lowest and highest volts. The target calculator takes its larger side off
+    # the AC tolerance.
     acc_min: Optional[float] = None
     acc_max: Optional[float] = None
     acc_pct: bool = True
+    acc_dv: bool = False
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
     load_line_mohm: float = 0.0
@@ -107,12 +120,12 @@ class Vrm:
         return self.acc_min is not None or self.acc_max is not None
 
     def accuracy_label(self) -> str:
-        return tolerance_label(self.acc_min, self.acc_max, self.acc_pct)
+        return tolerance_label(self.acc_min, self.acc_max, self.acc_pct, self.acc_dv)
 
     def accuracy_v(self) -> Optional[float]:
         """The larger side of the DC accuracy, volts from the set voltage; None if not set."""
-        lo, hi = ((self.acc_min, self.acc_max) if not self.acc_pct else
-                  pct_to_volts(self.voltage, self.acc_min, self.acc_max))
+        lo, hi = range_volts(self.voltage, self.acc_min, self.acc_max,
+                             range_unit(self.acc_pct, self.acc_dv))
         sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
         return max(sides) if sides else None
 
@@ -132,18 +145,15 @@ class Load:
     current: float
     ground: Optional[PinRef] = None
     # PASS if every pin is within this range, either end None for no limit: in % from
-    # nominal, the set point of the VRM driving the rail (e.g. -5 / +5), or, with tol_pct
-    # False, in volts.
+    # nominal, the set point of the VRM driving the rail (e.g. -5 / +5), with tol_dv in
+    # volts from nominal (e.g. -0.15 / +0.15, #131), or with neither, in volts.
     tol_min: Optional[float] = None
     tol_max: Optional[float] = None
     tol_pct: bool = True
+    tol_dv: bool = False
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
-    # Heat the part puts into the board. None: all the power it takes from its supply
-    # pins (V x I). Set it for a part that passes power on, such as a load switch or an
-    # LED or motor driver, whose own loss is far less than what flows through it.
-    dissipation_w: Optional[float] = None
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
@@ -153,14 +163,13 @@ class Load:
 
     def limits(self, nominal: float) -> Tuple[Optional[float], Optional[float]]:
         """The tolerance as (lowest, highest) volts on a rail at ``nominal``, either None."""
-        if not self.tol_pct:
-            return self.tol_min, self.tol_max
-        if not nominal:
+        unit = range_unit(self.tol_pct, self.tol_dv)
+        if unit != VOLTS and not nominal:
             return None, None
-        return pct_to_volts(nominal, self.tol_min, self.tol_max)
+        return range_volts(nominal, self.tol_min, self.tol_max, unit)
 
     def tolerance_label(self) -> str:
-        return tolerance_label(self.tol_min, self.tol_max, self.tol_pct)
+        return tolerance_label(self.tol_min, self.tol_max, self.tol_pct, self.tol_dv)
 
     def __setstate__(self, state):
         # Setups pickled in results files before asymmetric tolerances: +/- one %.
@@ -182,14 +191,51 @@ def volts_to_pct(nominal: float, lo: Optional[float], hi: Optional[float]):
     return (hi, lo) if nominal < 0 else (lo, hi)
 
 
-def tolerance_label(lo: Optional[float], hi: Optional[float], pct: bool) -> str:
-    """A range for tables: "±5 %", "-3 / +5 %", "3.135 to 3.465 V", "min 3.2 V"..."""
+# A range's units (#131): volts, volts from nominal, or % from nominal.
+VOLTS, DELTA_VOLTS, PERCENT = "V", "±V", "%"
+
+
+def range_unit(pct: bool, dv: bool = False) -> str:
+    """The unit of a range saved as its ``*_pct`` and ``*_dv`` flags."""
+    return PERCENT if pct else DELTA_VOLTS if dv else VOLTS
+
+
+def range_volts(nominal: Optional[float], lo: Optional[float], hi: Optional[float],
+                unit: str):
+    """A (min, max) range in ``unit`` as volts, either None (both None when it is
+    relative and ``nominal`` is None). Volts from nominal add to it, so min is the lower
+    end on a negative rail too."""
+    if unit == VOLTS:
+        return lo, hi
+    if nominal is None:
+        return None, None
+    if unit == PERCENT:
+        return pct_to_volts(nominal, lo, hi)
+    return tuple(None if x is None else nominal + x for x in (lo, hi))
+
+
+def volts_in(nominal: Optional[float], lo: Optional[float], hi: Optional[float], unit: str):
+    """The inverse of :func:`range_volts`."""
+    if unit == VOLTS:
+        return lo, hi
+    if nominal is None:
+        return None, None
+    if unit == PERCENT:
+        return volts_to_pct(nominal, lo, hi)
+    return tuple(None if x is None else x - nominal for x in (lo, hi))
+
+
+def tolerance_label(lo: Optional[float], hi: Optional[float], pct: bool,
+                    dv: bool = False) -> str:
+    """A range for tables: "±5 %", "-3 / +5 %", "±0.1 V", "3.135 to 3.465 V",
+    "min 3.2 V"..."""
     if lo is None and hi is None:
         return ""
-    if pct:
+    if pct or dv:
+        u = "%" if pct else "V"
         if lo is not None and hi is not None:
-            return f"±{hi:g} %" if lo == -hi else f"{lo:+g} / {hi:+g} %"
-        return f"min {lo:+g} %" if hi is None else f"max {hi:+g} %"
+            return f"±{hi:g} {u}" if lo == -hi else f"{lo:+g} / {hi:+g} {u}"
+        return f"min {lo:+g} {u}" if hi is None else f"max {hi:+g} {u}"
     if lo is not None and hi is not None:
         return f"{lo:g} to {hi:g} V"
     return f"min {lo:g} V" if hi is None else f"max {hi:g} V"
@@ -217,7 +263,8 @@ class PISetup:
     # typical 0.3 mm via (#114).
     via_current_limit_a: Optional[float] = DEFAULT_VIA_CURRENT_LIMIT_A
     thermal: ThermalSettings = field(default_factory=ThermalSettings)   # off by default
-    html_report: bool = False                     # write an HTML report after solving
+    html_report: bool = False                     # write a report after solving
+    report_format: str = "html"                   # "html" or "pdf" (#119)
     # Nets ticked in the Board panel (the nets in scope). None = never chosen, so the
     # GUI guesses the main power and ground planes; [] = the user unticked them all.
     nets: Optional[List[str]] = None
@@ -233,6 +280,10 @@ class PISetup:
     caps: List[CapModel] = field(default_factory=list)
     probes: List[Probe] = field(default_factory=list)
     ac: ACSettings = field(default_factory=ACSettings)
+    # Coupled Noise analysis (#69)
+    aggressors: List[Aggressor] = field(default_factory=list)
+    victims: List[Victim] = field(default_factory=list)
+    noise: NoiseSettings = field(default_factory=NoiseSettings)
 
     def pin_nets(self) -> set:
         """Nets the VRMs, loads, series links and probes have pins on."""
@@ -240,6 +291,7 @@ class PISetup:
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
         refs += [r for p in self.probes for r in (p.rail, p.ground) if r]
+        refs += self._aggressor_pins()
         return {r.net for r in refs}
 
     def part_refs(self) -> set:
@@ -247,9 +299,16 @@ class PISetup:
         refs = [r for v in self.vrms for r in v.pin_refs()]
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
+        refs += self._aggressor_pins()
         out = {r.ref for r in refs} | {ref for m in self.caps for ref in m.refs}
+        out |= {ph.inductor for a in self.aggressors for ph in a.phases}
         out.discard("")
         return out
+
+    def _aggressor_pins(self) -> List[PinRef]:
+        return ([r for a in self.aggressors for ph in a.phases
+                 for r in (ph.high_side, ph.low_side) if r]
+                + [r for v in self.victims for r in (v.driver, v.receiver) if r])
 
     # ------------------------------------------------------------------ file
     def to_dict(self) -> dict:
@@ -278,16 +337,16 @@ class PISetup:
                       current_limit_a=v.get("current_limit_a"),
                       dropout_v=v.get("dropout_v", 0.0), vin_min=v.get("vin_min"),
                       vin_max=v.get("vin_max"), vin_pct=v.get("vin_pct", False),
+                      vin_dv=v.get("vin_dv", False),
                       acc_min=v.get("acc_min"), acc_max=v.get("acc_max"),
-                      acc_pct=v.get("acc_pct", True),
+                      acc_pct=v.get("acc_pct", True), acc_dv=v.get("acc_dv", False),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
                       bandwidth_khz=v.get("bandwidth_khz"))
                   for v in d.get("vrms", [])],
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), **_load_tolerance(l),
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
-                                for g in l.get("groups", [])],
-                        dissipation_w=l.get("dissipation_w"))
+                                for g in l.get("groups", [])])
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                           resistance=k["resistance"], esl_h=k.get("esl_h"))
@@ -296,6 +355,7 @@ class PISetup:
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
             html_report=bool(d.get("html_report", False)),
+            report_format=report_format(d.get("report_format")),
             nets=list(d["nets"]) if d.get("nets") is not None else None,
             excluded_nets=list(d.get("excluded_nets", [])),
             stackup=d.get("stackup") or None,
@@ -314,6 +374,9 @@ class PISetup:
                     for p in d.get("probes", [])],
             ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
                              if k in {f.name for f in dataclasses.fields(ACSettings)}}),
+            aggressors=[aggressor_from_dict(a, pin) for a in d.get("aggressors", [])],
+            victims=[victim_from_dict(v, pin) for v in d.get("victims", [])],
+            noise=noise_settings(d.get("noise", {})),
         )
 
     def save(self, path) -> Path:
@@ -390,7 +453,7 @@ def _load_tolerance(d: dict) -> dict:
     """A load's tolerance fields from a setup file; older files have +/- one %."""
     if "tol_min" in d or "tol_max" in d:
         return {"tol_min": d.get("tol_min"), "tol_max": d.get("tol_max"),
-                "tol_pct": d.get("tol_pct", True)}
+                "tol_pct": d.get("tol_pct", True), "tol_dv": d.get("tol_dv", False)}
     t = d.get("tolerance_pct")
     return {} if t is None else {"tol_min": -t, "tol_max": t}
 
@@ -440,12 +503,11 @@ def rail_nominal(setup: PISetup, net: Optional[str], skip: str = "",
 def vin_range(setup: PISetup, v: Vrm, groups=None) -> Tuple[Optional[float], Optional[float]]:
     """The VRM's input range in volts, (min, max), either None when not set. A range in %
     is taken from its input rail's nominal voltage; (None, None) without one."""
-    if not v.vin_pct:
+    unit = range_unit(v.vin_pct, v.vin_dv)
+    if unit == VOLTS:
         return v.vin_min, v.vin_max
     nom = rail_nominal(setup, v.input.net if v.input else None, v.name, groups)
-    if nom is None:
-        return None, None
-    return pct_to_volts(nom, v.vin_min, v.vin_max)
+    return range_volts(nom, v.vin_min, v.vin_max, unit)
 
 
 def group_name(group) -> str:
@@ -521,11 +583,14 @@ def validate(setup: PISetup) -> List[str]:
             errors.append(f"VRM {v.name}: input range minimum is above its maximum")
         if v.acc_min is not None and v.acc_max is not None and v.acc_min > v.acc_max:
             errors.append(f"VRM {v.name}: DC accuracy minimum is above its maximum")
-        if (v.vin_pct and v.kind != "source" and (v.vin_min, v.vin_max) != (None, None)
+        if ((v.vin_pct or v.vin_dv) and v.kind != "source"
+                and (v.vin_min, v.vin_max) != (None, None)
                 and rail_nominal(setup, v.input.net if v.input else None, v.name,
                                  groups) is None):
-            errors.append(f"VRM {v.name}: an input range in % needs a VRM driving its input "
-                          "rail, whose voltage it is a % of; give the range in volts instead")
+            how = "in %" if v.vin_pct else "in volts from nominal"
+            errors.append(f"VRM {v.name}: an input range {how} needs a VRM driving its "
+                          "input rail, whose voltage it is taken from; give the range in "
+                          "volts instead")
         if v.sense and groups[v.sense.net] != groups[v.output.net]:
             errors.append(f"VRM {v.name}: sense pins must be on the output net (or nets "
                           "DC-connected to it)")
@@ -549,8 +614,6 @@ def validate(setup: PISetup) -> List[str]:
     for l in setup.loads:
         if l.tol_min is not None and l.tol_max is not None and l.tol_min > l.tol_max:
             errors.append(f"Load {l.name}: tolerance minimum is above its maximum")
-        if l.dissipation_w is not None and l.dissipation_w < 0:
-            errors.append(f"Load {l.name}: heat cannot be negative")
         if l.groups:
             seen_pins: Dict[str, int] = {}
             for gi, g in enumerate(l.groups):

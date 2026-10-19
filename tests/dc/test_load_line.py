@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """VRM load line (#94): the regulated voltage droops by R_LL times the output current its
 connected loads (and the VRMs it feeds) actually draw."""
 

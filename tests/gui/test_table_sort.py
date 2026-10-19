@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Tables sort by a clicked column header, alternating ascending and descending (#85):
 results tables, the setup tables and the HTML reports' tables."""
 

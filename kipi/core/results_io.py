@@ -31,7 +31,7 @@ from kipi import compat
 MANIFEST = "results.json"
 _GZIP_MAGIC = b"\x1f\x8b"
 # Only classes from these packages are rebuilt.
-_PACKAGES = ("kipi.core.", "kipi.dc.", "kipi.ac.")
+_PACKAGES = ("kipi.core.", "kipi.dc.", "kipi.ac.", "kipi.noise.")
 
 
 class LegacyResults(ValueError):

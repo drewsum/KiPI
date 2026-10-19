@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="176" viewBox="0 0 300 176">
+  <rect x="0" y="0" width="300" height="176" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <text x="46" y="20" fill="{muted}">elements grow away from the plated hole</text>
+    <!-- a strip of mesh triangles, graded from the hole out to the max edge -->
+    <circle cx="30" cy="56" r="8" stroke="{fg}" stroke-width="1.6" fill="{grid}"/>
+    <g stroke="{muted}" stroke-width="0.9" fill="none" stroke-linejoin="round">
+      <path d="M40.0,56.0 L42.0,52.5 L44.0,56.0 Z M44.0,56.0 L46.7,51.3 L49.4,56.0 Z M49.4,56.0 L53.0,49.7 L56.7,56.0 Z M56.7,56.0 L61.6,47.5 L66.5,56.0 Z M66.5,56.0 L73.2,44.5 L79.8,56.0 Z M79.8,56.0 L88.8,40.5 L97.8,56.0 Z M97.8,56.0 L109.9,35.0 L122.0,56.0 Z M122.0,56.0 L135.0,33.5 L148.0,56.0 Z M148.0,56.0 L161.0,33.5 L174.0,56.0 Z M174.0,56.0 L187.0,33.5 L200.0,56.0 Z M200.0,56.0 L213.0,33.5 L226.0,56.0 Z M226.0,56.0 L239.0,33.5 L252.0,56.0 Z M252.0,56.0 L265.0,33.5 L278.0,56.0 Z"/>
+      <path d="M42.0,52.5 L46.7,51.3 L44.0,56.0 Z M46.7,51.3 L53.0,49.7 L49.4,56.0 Z M53.0,49.7 L61.6,47.5 L56.7,56.0 Z M61.6,47.5 L73.2,44.5 L66.5,56.0 Z M73.2,44.5 L88.8,40.5 L79.8,56.0 Z M88.8,40.5 L109.9,35.0 L97.8,56.0 Z M109.9,35.0 L135.0,33.5 L122.0,56.0 Z M135.0,33.5 L161.0,33.5 L148.0,56.0 Z M161.0,33.5 L187.0,33.5 L174.0,56.0 Z M187.0,33.5 L213.0,33.5 L200.0,56.0 Z M213.0,33.5 L239.0,33.5 L226.0,56.0 Z M239.0,33.5 L265.0,33.5 L252.0,56.0 Z"/>
+    </g>
+    <!-- edge length against distance: min edge, rising by the grading, capped at max edge -->
+    <path d="M40,80 V150 H284" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <text x="34" y="92" fill="{muted}" text-anchor="end">edge</text>
+    <text x="162" y="166" fill="{muted}" text-anchor="middle">distance from the hole</text>
+    <path d="M40,140.4 L102.9,87.6" stroke="{grading}" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M102.9,87.6 H278" stroke="{max}" stroke-width="2.6" stroke-linecap="round"/>
+    <circle cx="40" cy="140.4" r="3.6" fill="{min}"/>
+    <text x="58" y="146" fill="{min}">min edge</text>
+    <text x="86" y="120" fill="{grading}">slope: via grading</text>
+    <text x="278" y="102" fill="{max}" text-anchor="end">max edge</text>
+  </g>
+</svg>

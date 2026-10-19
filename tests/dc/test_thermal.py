@@ -43,13 +43,14 @@ def plate(width=40.0, cu_t=0.035):
 
 
 def test_uniform_heating_matches_convection_balance():
-    """Spread heat uniformly: every cell sits at T_amb + q / (2 h)."""
+    """Spread heat uniformly over both layers: every cell sits at T_amb + q / (2 h)."""
     s = ThermalSettings(enabled=True, ambient_c=25.0, airflow_m_s=2.0, grid_mm=1.0)
     m = BoardThermalModel(plate(), s)
     heat = m.empty_heat()
     q = 1e-4                                         # W per mm^2 of board
-    heat[m.inside] = q * m.d * m.d
+    heat[:, m.inside] = q * m.d * m.d / 2
     t = m.solve(heat)
+    assert t.shape == (2,) + m.inside.shape
     expected = 25.0 + q / (2 * s.h_w_mm2_k())
     assert np.nanmax(np.abs(t - expected)) < 1e-6
     assert s.h_w_mm2_k() == pytest.approx((10 + 3.8 * 2) * 1e-6)
@@ -59,11 +60,12 @@ def test_point_heat_spreads_and_total_balances():
     s = ThermalSettings(enabled=True, ambient_c=20.0, grid_mm=1.0)
     m = BoardThermalModel(plate(), s)
     heat = m.empty_heat()
-    m.deposit(heat, np.array([[20.0, 20.0]]), np.array([0.5]))
+    m.deposit(heat, np.array([[20.0, 20.0]]), np.array([0.5]), F)
     t = m.solve(heat)
-    # Energy balance: all 0.5 W leaves by convection.
+    # Energy balance: all 0.5 W leaves by convection, from the top and bottom faces.
     out = np.nansum((t - 20.0) * m.g_conv)
     assert out == pytest.approx(0.5, rel=1e-9)
+    t = t[0]
     # Hottest at the source, falling off with distance; copper spreads it widely.
     x, y = np.meshgrid(m.x, m.y)
     r = np.hypot(x - 20, y - 20)
@@ -120,23 +122,13 @@ def test_loads_heat_the_board_with_the_power_they_take():
     assert th.heat_by_kind["VRM conversion"] == pytest.approx(u1.p_loss, rel=1e-9)
 
 
-def test_stated_dissipation_replaces_supply_power():
-    snap = board()
-    s = setup("ldo")
-    s.loads[0].dissipation_w = 0.25          # a part passing most of its power on
-    res = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=True))
-    assert res.thermal.heat_by_kind["loads"] == pytest.approx(0.25)
-
-
 def test_load_heat_raises_the_board_temperature():
     snap = board()
     s = setup("ldo")
     hot = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
                                                    load_power=True))
-    s.loads[0].dissipation_w = 0.0
     cool = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=True))
+                                                   load_power=False))
     assert hot.thermal.t_max > cool.thermal.t_max + 1.0
 
 
@@ -210,9 +202,10 @@ def test_a_layers_conductor_sets_its_heat_spreading():
     copper = BoardThermalModel(plate(), ThermalSettings(enabled=True, grid_mm=1.0))
     alu = BoardThermalModel(plate(), ThermalSettings(enabled=True, grid_mm=1.0),
                             conductor_by_layer={"F.Cu": "Aluminum"})
-    lam = 0.8e-3 * 1.5
-    assert np.nanmax(copper.g) - lam == pytest.approx(0.39 * 0.035, rel=1e-6)
-    assert np.nanmax(alu.g) - lam == pytest.approx(0.237 * 0.035, rel=1e-6)
+    lam = 0.8e-3 * 1.5 / 2                         # each layer carries half the laminate
+    assert np.nanmax(copper.g[0]) - lam == pytest.approx(0.39 * 0.035, rel=1e-6)
+    assert np.nanmax(alu.g[0]) - lam == pytest.approx(0.237 * 0.035, rel=1e-6)
+    assert np.nanmax(alu.g[1]) == pytest.approx(lam)        # B.Cu: no copper
 
 
 def test_dc_and_thermal_solves_use_the_direct_backend(monkeypatch):
@@ -232,3 +225,188 @@ def test_dc_and_thermal_solves_use_the_direct_backend(monkeypatch):
                                                              grid_mm=0.5))
     assert len(names) >= 3                          # the heat grid, then copper per pass
     assert set(names) == {direct.backend()}
+
+
+# ------------------------------------------------------------- per-layer temperatures
+
+def test_heat_on_one_side_crosses_the_laminate():
+    """Uniform heat on F.Cu only: the 1D balance of the two faces through 1.5 mm of FR4.
+    Per mm²: q = h (T_F + T_B) in rises, and (T_F - T_B) / R = h T_B, R = t / k_through."""
+    s = ThermalSettings(enabled=True, ambient_c=25.0, grid_mm=1.0)
+    m = BoardThermalModel(plate(), s)
+    heat = m.empty_heat()
+    q = 1e-4
+    heat[0, m.inside] = q * m.d * m.d
+    t = m.solve(heat)
+    h, r = s.h_w_mm2_k(), 1.5 / 0.3e-3                 # FR4 core: 0.3 W/m·K through
+    t_top = q / (h * (1 + 1 / (1 + h * r)))
+    t_bottom = t_top / (1 + h * r)
+    assert np.nanmax(np.abs(t[0] - 25.0 - t_top)) < 1e-6
+    assert np.nanmax(np.abs(t[1] - 25.0 - t_bottom)) < 1e-6
+    assert t_top - t_bottom > 0.04 * t_top            # no longer one temperature
+
+
+def test_a_one_layer_board_loses_heat_from_both_faces():
+    snap = plate()
+    snap.stackup = Stackup([snap.stackup.copper[0]], [DielectricLayer(1.5, "FR4", 4.5, F, -1)],
+                           1.5 + 0.035)
+    s = ThermalSettings(enabled=True, grid_mm=1.0)
+    m = BoardThermalModel(snap, s)
+    assert m.layers == [F] and len(m.g_conv) == 1
+    heat = m.empty_heat()
+    heat[:, m.inside] = 1e-4
+    assert np.nanmax(np.abs(m.solve(heat) - 25.0 - 1e-4 / (2 * s.h_w_mm2_k()))) < 1e-6
+
+
+def test_vias_carry_heat_between_layers():
+    from kipi.core.model.board import Via
+    from kipi.dc.solver.via_barrel import barrel_copper_area, default_via_rules, rule_for
+    s = ThermalSettings(enabled=True, grid_mm=1.0)
+    bare = BoardThermalModel(plate(), s)
+    snap = plate()
+    snap.vias = [Via(f"v{i}", "N", (19.5 + 0.5 * (i % 3), 19.5 + 0.5 * (i // 3)), 0.3, 0.6,
+                     [F, B]) for i in range(9)]
+    vias = BoardThermalModel(snap, s)
+    i, j = np.searchsorted(vias.y, 20.0), np.searchsorted(vias.x, 20.0)
+    area = barrel_copper_area(rule_for(default_via_rules(), "through", 0.3), 0.3, None, 1.7e-5)
+    one = 0.39 * area / (1.5 + 0.035)
+    assert vias.g_vertical.sum() - bare.g_vertical.sum() == pytest.approx(9 * one, rel=1e-9)
+    # A part on F heating the stitched spot: the vias pull B.Cu up to it.
+    spread = []
+    for m in (bare, vias):
+        heat = m.empty_heat()
+        m.deposit(heat, np.array([[20.0, 20.0]]), np.array([0.5]), F)
+        t = m.solve(heat)
+        spread.append(t[0, i, j] - t[1, i, j])
+    assert spread[1] < 0.5 * spread[0]
+
+
+def test_heat_without_a_layer_is_shared():
+    m = BoardThermalModel(plate(), ThermalSettings(enabled=True, grid_mm=1.0))
+    heat = m.empty_heat()
+    m.deposit(heat, np.array([[5.0, 5.0], [6.0, 6.0]]), np.array([1.0, 2.0]), [-1, B])
+    assert heat[0].sum() == pytest.approx(0.5) and heat[1].sum() == pytest.approx(2.5)
+
+
+def test_laminate_is_shared_by_the_copper_it_touches():
+    from kipi.dc.thermal.materials import laminate_layers
+    ids = [3, 4, 5, 34]
+    t = [0.035] * 4
+    diel = [DielectricLayer(0.2, "2116 prepreg", 4.2, 3, 4),
+            DielectricLayer(1.0, "FR4 core", 4.5, 4, 5),
+            DielectricLayer(0.2, "2116 prepreg", 4.2, 5, 34)]
+    z, copper = 1.54, []
+    for k, lid in enumerate(ids):
+        z -= t[k] + (diel[k - 1].thickness_mm if k else 0)
+        copper.append(CopperLayer(lid, f"L{k}", k, t[k], z))
+    st = Stackup(copper, diel, 1.54)
+    g, r = laminate_layers(st)
+    assert g == pytest.approx([0.6e-3 * 0.1, 0.6e-3 * 0.1 + 0.8e-3 * 0.5,
+                               0.8e-3 * 0.5 + 0.6e-3 * 0.1, 0.6e-3 * 0.1])
+    assert r == pytest.approx([0.2 / 0.25e-3, 1.0 / 0.3e-3, 0.2 / 0.25e-3])
+    st.dielectrics = []                     # no dielectric data: the gaps as FR4 core
+    g, r = laminate_layers(st)
+    assert r == pytest.approx([0.2 / 0.3e-3, 1.0 / 0.3e-3, 0.2 / 0.3e-3])
+    # A k typed in the Stackup window is in-plane; through it keeps FR4's 0.3 / 0.8.
+    st.dielectrics = [DielectricLayer(0.2, "FR4", 4.5, 3, 4, k_w_mk=1.6),
+                      *diel[1:]]
+    assert laminate_layers(st)[1][0] == pytest.approx(0.2 / 0.6e-3)
+
+
+def test_each_layer_of_the_cosim_has_its_own_temperature():
+    """The rail is on F.Cu and the ground return on B.Cu: F.Cu, carrying the regulator's and
+    the rail's heat, runs hotter, and the solvers read each layer's own copper."""
+    from kipi.dc.pi.report import layer_temps
+    snap = board()
+    s = setup("ldo", ground=True)
+    tree = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=2,
+                                                         grid_mm=0.5))
+    th = tree.thermal
+    assert th.layers == [F, B] and th.temps.shape[0] == 2
+    rows = {r.layer: r for r in layer_temps(tree, snap)}
+    assert rows["F.Cu"].t_max > rows["B.Cu"].t_max > 25.0
+    x, y, t = th.hottest()
+    assert t == pytest.approx(th.hottest(F)[2]) and t > th.hottest(B)[2]
+    T = th.sampler()
+    assert T.on_layers([[x, y]], F)[0] > T.on_layers([[x, y]], B)[0]
+    assert T([[x, y]])[0] == pytest.approx(T.on_layers([[x, y]], F)[0])   # the hottest
+
+
+def test_results_saved_before_layers_read_as_one_sheet():
+    from kipi.dc.thermal.cosim import ThermalResult
+    from kipi.dc.thermal.model import ThermalSettings as TS
+    x, y = np.arange(3.0), np.arange(2.0)
+    temps = np.array([[30.0, 31.0, 32.0], [33.0, 34.0, 35.0]])
+    th = ThermalResult.__new__(ThermalResult)
+    th.__setstate__({"settings": TS(), "x": x, "y": y, "temps": temps, "history": []})
+    assert th.temps.shape == (1, 2, 3) and th.layers == []
+    assert th.hottest() == (2.0, 1.0, 35.0) and th.hottest(F) == (2.0, 1.0, 35.0)
+    T = th.sampler()
+    assert T.on_layers([[1.0, 0.0]], F)[0] == pytest.approx(31.0) == T([[1.0, 0.0]])[0]
+
+
+def test_the_solver_reads_each_layers_own_copper():
+    """A temperature that knows layers: the strip on F.Cu sees F.Cu's, not the hottest."""
+    class ByLayer:
+        def __call__(self, xy):
+            return np.full(len(xy), 220.0)
+
+        def on_layers(self, xy, layers):
+            return np.where(np.broadcast_to(layers, (len(xy),)) == F, 120.0, 220.0)
+
+    snap = board()
+    prob = lambda temp: NetProblem("VIN", [VoltageSource("J1", ["j1_1"], 12.0)],
+                                   [CurrentLoad("U1", ["u1_1"], 1.0)], SolveSettings(max_edge_mm=0.3),
+                                   temperature=temp)
+    hot = run(snap, prob(ByLayer()))
+    assert 12.0 - hot.fields.terminals[1].v_mean == pytest.approx(R(8) * (1 + TCR * 100), rel=1e-9)
+
+
+def _coat(snap, silk_box=None):
+    """Mask and silkscreen on both faces; the silkscreen prints ``silk_box`` on each."""
+    from kipi.core.model.board import MASK, SILK, Coating
+    snap.stackup.coatings = [Coating(SILK, "top", 0.02), Coating(MASK, "top", 0.03),
+                             Coating(MASK, "bottom", 0.03), Coating(SILK, "bottom", 0.02)]
+    if silk_box is not None:
+        ink = [Poly(list(box(*silk_box).exterior.coords)[:-1])]
+        snap.silkscreen = {"top": ink, "bottom": ink}
+    return snap
+
+
+def test_solder_mask_and_silkscreen_hold_heat_in():
+    """Uniform heat on a coated board: each face loses q_face / (1/h + sum t/k) (#82)."""
+    from kipi.dc.thermal.materials import MASK_K_W_MK, SILK_K_W_MK, coating_resistance
+    s = ThermalSettings(enabled=True, ambient_c=25.0, grid_mm=1.0)
+    snap = plate()
+    bare = BoardThermalModel(snap, s)
+    _coat(snap, (-1, -1, 41, 41))                    # printed all over
+    r = 0.02 / (SILK_K_W_MK * 1e-3) + 0.03 / (MASK_K_W_MK * 1e-3)
+    assert coating_resistance(snap.stackup, "top") == pytest.approx(r)
+    assert coating_resistance(snap.stackup, "bottom") == pytest.approx(r)
+    m = BoardThermalModel(snap, s)
+    h = s.h_w_mm2_k()
+    q = 1e-4                                         # W per mm^2 of board
+    heat = m.empty_heat()
+    heat[:, m.inside] = q * m.d * m.d / 2
+    t = m.solve(heat)
+    expected = 25.0 + q / (2 / (1 / h + r))
+    assert np.nanmax(np.abs(t - expected)) < 1e-6
+    hot = np.nanmax(t) - 25.0
+    cold = np.nanmax(bare.solve(heat)) - 25.0
+    assert cold < hot < cold * 1.01                  # thin coatings: a little warmer
+
+
+def test_the_silkscreen_holds_heat_in_only_where_it_prints():
+    """The mask covers the face; the silkscreen adds its t/k only in the cells it prints
+    on (here the left half), and nothing when it prints nothing (#82)."""
+    from kipi.dc.thermal.materials import MASK_K_W_MK, SILK_K_W_MK
+    s = ThermalSettings(enabled=True, ambient_c=25.0, grid_mm=1.0)
+    h = s.h_w_mm2_k()
+    r_mask, r_silk = 0.03 / (MASK_K_W_MK * 1e-3), 0.02 / (SILK_K_W_MK * 1e-3)
+    m = BoardThermalModel(_coat(plate(), (0, 0, 20, 40)), s)
+    x, _ = np.meshgrid(m.x, m.y)
+    for g in m.g_conv:
+        assert g[x < 20] == pytest.approx(m.d ** 2 / (1 / h + r_mask + r_silk))
+        assert g[x > 20] == pytest.approx(m.d ** 2 / (1 / h + r_mask))
+    blank = BoardThermalModel(_coat(plate()), s)
+    assert blank.g_conv[0][blank.inside] == pytest.approx(m.d ** 2 / (1 / h + r_mask))

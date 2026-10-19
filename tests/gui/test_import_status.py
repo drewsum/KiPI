@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """After a pdn.json import the Log says what was read and what changed, as its last line,
 where it can be seen without hunting for a log file; the setup file is written only by
 Save."""

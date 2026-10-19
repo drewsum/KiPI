@@ -1,5 +1,6 @@
 """The Stackup window: the board's layers with their thicknesses, materials, εr and
-resistivity, for every analysis (#61).
+resistivity, for every analysis (#61), and beside them a cross-section drawn to scale that
+follows the thicknesses as they are typed (#104).
 
 Locked (the default), the thicknesses, materials and εr are the ones read from KiCad, and
 the copper layers' conductors and resistivities cannot be changed.
@@ -9,7 +10,12 @@ analysis then uses the edited stackup. KiCad's
 API cannot change a board's stackup yet, so edits stay in KiPI. A copper layer's conductor
 and resistivity are setup settings, changed while unlocked: choosing a conductor sets the
 layer's resistivity, TCR and thermal conductivity. Locking keeps them as set. The board's
-copper resistivity and TCR can always be changed.
+copper resistivity and TCR, and the dielectric loss tangent and Default εr the AC solve uses
+(#134), can always be changed.
+
+The solder masks and silkscreens (#82) are listed above and below the copper. Their
+thicknesses can be changed while unlocked, for the electro-thermal solve; they sit outside
+the board and do not add to its thickness.
 """
 
 from __future__ import annotations
@@ -25,12 +31,16 @@ from qtpy.QtWidgets import (
     QTableWidgetItem, QVBoxLayout,
 )
 
-from kipi.core.model.board import CopperLayer, Stackup
+from kipi.core.model.board import MASK, Coating, CopperLayer, Stackup
 from kipi.core.model.conductors import UOHM_CM, conductors, find, layer_k_w_mk
 from kipi.core.model.stackup import (
-    dielectric_er, dielectric_k, dielectric_materials, restack, stack_order, thicknesses,
+    coating_thicknesses, dielectric_er, dielectric_k, dielectric_materials, restack,
+    stack_order, thicknesses,
 )
-from kipi.dc.thermal.materials import catalog, lookup
+from kipi.core.viz.layer_colors import coating_rgb
+from kipi.dc.thermal.materials import catalog, coating_k, lookup
+from kipi.gui.stackup_view import Band, StackupView
+from kipi.gui.tooltip_art import art_tip
 from kipi.gui.unit_spin import UnitSpinBox
 
 # Thickness units, as mm per unit. 1 oz/ft² is taken as 35 µm, the usual nominal value
@@ -50,6 +60,19 @@ def row_unit(unit: str, copper: bool) -> str:
     return "mil" if unit == "oz" and not copper else unit
 
 
+def full_order(stackup: Stackup) -> list:
+    """Every layer the window lists, top to bottom: the top coatings, the board's copper
+    and dielectrics, the bottom coatings."""
+    coat = stackup.coatings
+    return ([c for c in coat if c.side == "top"] + stack_order(stackup)
+            + [c for c in coat if c.side != "top"])
+
+
+def full_thicknesses(stackup: Stackup) -> List[float]:
+    """Each layer's thickness in mm, in :func:`full_order`."""
+    return [e.thickness_mm for e in full_order(stackup)]
+
+
 def _spin(lo, hi, value, decimals, suffix, step) -> UnitSpinBox:
     s = UnitSpinBox()
     s.setShownDecimals(decimals)
@@ -65,7 +88,7 @@ class StackupWindow(QDialog):
     analyses should use: the imported one while locked, else the edited one."""
 
     stackup_changed = Signal(object)
-    settings_changed = Signal()          # resistivity or TCR
+    settings_changed = Signal()          # resistivity, TCR, loss tangent or Default εr
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,6 +149,8 @@ class StackupWindow(QDialog):
         self.table.setToolTip("The stackup, top to bottom. Values take units and prefixes, "
                               "like 35um or 0.2mm in a µm or mm field.")
         self.lbl_total = QLabel(self)
+        self.view = StackupView(self)
+        self.view.layer_clicked.connect(self._focus_row)
 
         g_cu = QGroupBox("Copper", self)
         f = QFormLayout(g_cu)
@@ -148,6 +173,28 @@ class StackupWindow(QDialog):
         note.setStyleSheet("color: #999;")
         f.addRow(note)
 
+        g_diel = QGroupBox("Dielectric", self)
+        f = QFormLayout(g_diel)
+        self.spin_tand = _spin(0.0, 0.2, 0.02, 4, "", 0.001)
+        self.spin_tand.setToolTip("Dielectric loss tangent of every dielectric, for the AC "
+                                  "solve (FR4 is about 0.02). It damps the plane resonances.")
+        self.spin_er = _spin(1.0, 20.0, 4.3, 2, "", 0.1)
+        self.spin_er.setToolTip("Dielectric constant, for the AC solve, of every dielectric "
+                                "whose εr is 'default' (KiCad gives none, or it is a metal)")
+        f.addRow("Loss tangent", self.spin_tand)
+        f.addRow("Default εr", self.spin_er)
+        for sp in (self.spin_tand, self.spin_er):
+            f.labelForField(sp).setToolTip(sp.toolTip())
+            sp.valueChanged.connect(self._dielectric_changed)
+        note = QLabel("Used by the AC analysis. Like the copper settings, these are not "
+                      "locked.", g_diel)
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #999;")
+        f.addRow(note)
+        settings = QHBoxLayout()
+        settings.addWidget(g_cu, 1)
+        settings.addWidget(g_diel, 1)
+
         row = QHBoxLayout()
         self.btn_reset = QPushButton("Reset", self)
         self.btn_reset.setToolTip("Go back to the thicknesses, materials, εr and thermal "
@@ -161,11 +208,14 @@ class StackupWindow(QDialog):
         row.addWidget(btn_close)
 
         lay.addLayout(top)
-        lay.addWidget(self.table, 1)
+        mid = QHBoxLayout()
+        mid.addWidget(self.table, 1)
+        mid.addWidget(self.view)
+        lay.addLayout(mid, 1)
         lay.addWidget(self.lbl_total)
-        lay.addWidget(g_cu)
+        lay.addLayout(settings)
         lay.addLayout(row)
-        self.resize(900, 560)
+        self.resize(1150, 600)
         self._update_enabled()
 
     # ------------------------------------------------------------------ state
@@ -184,7 +234,9 @@ class StackupWindow(QDialog):
         self.chk_lock.blockSignals(False)
         if setup is not None:
             for sp, v in ((self.spin_rho, setup.settings.rho_ohm_mm / UOHM_CM),
-                          (self.spin_tcr, setup.settings.tcr_per_c)):
+                          (self.spin_tcr, setup.settings.tcr_per_c),
+                          (self.spin_tand, setup.ac.loss_tangent),
+                          (self.spin_er, setup.ac.default_er)):
                 sp.blockSignals(True)
                 sp.setValue(v)
                 sp.blockSignals(False)
@@ -201,7 +253,7 @@ class StackupWindow(QDialog):
         """Back to the imported thicknesses, materials, εr and k (the lock is left as it is)."""
         if self._imported is None:
             return
-        self._mm = thicknesses(self._imported)
+        self._mm = full_thicknesses(self._imported)
         self._er = dielectric_er(self._imported)
         self._mat = dielectric_materials(self._imported)
         self._k = dielectric_k(self._imported)
@@ -229,10 +281,11 @@ class StackupWindow(QDialog):
         if st is None:
             self._order, self._mm, self._er, self._mat, self._k = [], [], [], [], []
             self.lbl_total.setText("Load a board to see its stackup.")
+            self.view.set_bands([])
             return
         names = {c.id: c.name for c in st.copper}
-        self._order = stack_order(st)
-        self._mm = thicknesses(st)
+        self._order = full_order(st)
+        self._mm = full_thicknesses(st)
         self._er = dielectric_er(st)
         self._mat = dielectric_materials(st)
         self._k = dielectric_k(st)
@@ -242,6 +295,9 @@ class StackupWindow(QDialog):
         d = 0
         for i, e in enumerate(self._order):
             copper = isinstance(e, CopperLayer)
+            if isinstance(e, Coating):
+                self._fill_coating(i, e)
+                continue
             if copper:
                 item = QTableWidgetItem(e.name)
                 if e.id in self._colors:
@@ -288,8 +344,8 @@ class StackupWindow(QDialog):
                 er = _spin(0.0, 20.0, self._er[d], 2, "", 0.1)
                 er.setSpecialValueText("default")
                 er.setFrame(False)
-                er.setToolTip("Dielectric constant ('default' uses the AC setup's Default "
-                              "εr)")
+                er.setToolTip("Dielectric constant ('default' uses the Default εr "
+                              "setting below)")
                 er.valueChanged.connect(partial(self._er_edited, d))
                 self.table.setCellWidget(i, C_ER, er)
                 self._er_spins.append(er)
@@ -301,6 +357,43 @@ class StackupWindow(QDialog):
                 self.table.setItem(i, C_RHO, QTableWidgetItem(""))
                 d += 1
         self._show_values()
+
+    def _fill_coating(self, i: int, c: Coating):
+        """A solder mask's or silkscreen's row: its thickness, editable while unlocked."""
+        item = QTableWidgetItem(c.name)
+        pm = QPixmap(12, 12)
+        pm.fill(QColor.fromRgbF(*coating_rgb(c)))
+        item.setIcon(QIcon(pm))
+        what = "solder mask" if c.kind == MASK else "silkscreen"
+        tip = (f"The {what} over the {c.side} copper. It holds a little heat in the copper "
+               "in the electro-thermal solve" + ("" if c.kind == MASK else
+                                                 ", where it prints")
+               + "; it does not add to the board's thickness.")
+        item.setToolTip(art_tip(tip, "coatings", c.kind))
+        self.table.setItem(i, C_NAME, item)
+        mat = QTableWidgetItem(c.material or ("Solder mask" if c.kind == MASK
+                                              else "Silkscreen ink"))
+        mat.setToolTip(tip)
+        self.table.setItem(i, C_MAT, mat)
+        thk = UnitSpinBox(self.table)
+        thk.setFrame(False)
+        thk.setToolTip(f"Thickness of the {c.side} {what}")
+        thk.valueChanged.connect(partial(self._thickness_edited, i))
+        self.table.setCellWidget(i, C_THK, thk)
+        self._thk_spins.append(thk)
+        k = QTableWidgetItem(f"{coating_k(c):g}")
+        k.setTextAlignment(Qt.AlignCenter)
+        k.setToolTip(f"Thermal conductivity of a typical {what}")
+        self.table.setItem(i, C_K, k)
+        for col in (C_ER, C_RHO):
+            self.table.setItem(i, col, QTableWidgetItem(""))
+
+    def _split(self, mm: List[float]):
+        """The thicknesses in the window's order as (the board's, in stack order; the
+        coatings', top to bottom)."""
+        board = [t for e, t in zip(self._order, mm) if not isinstance(e, Coating)]
+        coat = [t for e, t in zip(self._order, mm) if isinstance(e, Coating)]
+        return board, coat
 
     def _conductor_box(self, layer: str) -> QComboBox:
         """A copper layer's conductor: the setup's board-wide copper, or one KiPI knows."""
@@ -373,6 +466,32 @@ class StackupWindow(QDialog):
             box.blockSignals(False)
         self._show_k()
         self._show_total()
+        self._show_view()
+
+    def _show_view(self):
+        """The cross-section, with each layer's thickness in the unit chosen."""
+        unit = self.unit()
+        mats = iter(self._mat)
+        bands = []
+        for e, t in zip(self._order, self._mm):
+            copper = isinstance(e, CopperLayer)
+            u = row_unit(unit, copper)
+            thk = f"{t / THICKNESS_UNITS[u]:.{UNIT_DECIMALS[u]}f} {u}"
+            if isinstance(e, Coating):
+                bands.append(Band(f"{e.name}  {thk}", t, coating_rgb(e)))
+            elif copper:
+                bands.append(Band(f"{e.name}  {thk}", t, self._colors.get(e.id), True))
+            else:
+                mat = next(mats, "")
+                bands.append(Band(f"{mat or 'Dielectric'}  {thk}", t, material=mat))
+        self.view.set_bands(bands)
+
+    def _focus_row(self, i: int):
+        """A layer clicked in the cross-section: its thickness in the table."""
+        if 0 <= i < len(self._thk_spins):
+            self.table.scrollToItem(self.table.item(i, C_NAME))
+            self._thk_spins[i].setFocus()
+            self._thk_spins[i].selectAll()
 
     def _show_k(self):
         """Each dielectric's in-plane thermal conductivity: typed here, or its material's."""
@@ -416,7 +535,7 @@ class StackupWindow(QDialog):
             spin.setButtonSymbols(UnitSpinBox.UpDownArrows if unlocked and has_setup
                                   else UnitSpinBox.NoButtons)
         self.btn_reset.setEnabled(unlocked)
-        for w in (self.spin_rho, self.spin_tcr):
+        for w in (self.spin_rho, self.spin_tcr, self.spin_tand, self.spin_er):
             w.setEnabled(self._setup is not None)
 
     def _unit_changed(self, unit: str):
@@ -432,6 +551,7 @@ class StackupWindow(QDialog):
     def _thickness_edited(self, i: int, value: float):
         u = row_unit(self.unit(), isinstance(self._order[i], CopperLayer))
         self._mm[i] = value * THICKNESS_UNITS[u]
+        self._show_view()                # at once; the analyses wait for the timer
         self._timer.start()
 
     def _er_edited(self, d: int, value: float):
@@ -460,23 +580,26 @@ class StackupWindow(QDialog):
         self._er_spins[d].setValue(self._er[d])
         self._er_spins[d].blockSignals(False)
         self._show_k()
+        self._show_view()
         self._timer.start()
 
     def _emit_edit(self):
         if self._imported is None or self.chk_lock.isChecked():
             return
         imp = self._imported
-        same = (all(abs(a - b) < 1e-9 for a, b in zip(self._mm, thicknesses(imp)))
+        board, coat = self._split(self._mm)
+        same = (all(abs(a - b) < 1e-9 for a, b in zip(self._mm, full_thicknesses(imp)))
                 and all(abs(a - b) < 1e-9 for a, b in zip(self._er, dielectric_er(imp)))
                 and self._mat == dielectric_materials(imp)
                 and self._k == dielectric_k(imp))
-        self._apply(imp if same else restack(imp, self._mm, self._er, materials=self._mat,
-                                             k=self._k))
+        self._apply(imp if same else restack(imp, board, self._er, materials=self._mat,
+                                             k=self._k, coating_mm=coat))
 
     def _apply(self, st: Stackup):
         cur = self._current
         unchanged = cur is st or (cur is not None and cur.edited == st.edited
                                   and thicknesses(cur) == thicknesses(st)
+                                  and coating_thicknesses(cur) == coating_thicknesses(st)
                                   and dielectric_er(cur) == dielectric_er(st)
                                   and dielectric_materials(cur) == dielectric_materials(st)
                                   and dielectric_k(cur) == dielectric_k(st))
@@ -492,6 +615,13 @@ class StackupWindow(QDialog):
         s = self._setup.settings
         s.rho_ohm_mm = self.spin_rho.value() * UOHM_CM
         s.tcr_per_c = self.spin_tcr.value()
+        self.settings_changed.emit()
+
+    def _dielectric_changed(self, *_):
+        if self._setup is None:
+            return
+        self._setup.ac.loss_tangent = self.spin_tand.value()
+        self._setup.ac.default_er = self.spin_er.value()
         self.settings_changed.emit()
 
     def _layer_rho_changed(self, name: str, value: float):

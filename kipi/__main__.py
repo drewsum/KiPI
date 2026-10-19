@@ -68,7 +68,8 @@ def main(argv=None) -> int:
     try:
         if host is Host.STANDALONE:
             from kipi.gui.app import run
-            return run(source=source, instance=instance)
+            from kipi.sources.kicad_ipc.source import KiCadPartModels
+            return run(source=source, tool=KiCadPartModels(), instance=instance)
         if path:
             from kipi.gui.app import run
             from kipi.core.model.snapshot_io import load
@@ -122,4 +123,8 @@ def _run_live(instance) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Windows, started windowed (the launcher): on to KiPI.exe, so Task Manager shows KiPI
+    # rather than Python (#124).
+    from kipi.launcher.named_exe import relaunch
+    code = relaunch(["-m", "kipi", *sys.argv[1:]])
+    sys.exit(main() if code is None else code)

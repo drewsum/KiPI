@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """The few lines an import says: its notes with repeats folded, and what it changed."""
 
 import copy

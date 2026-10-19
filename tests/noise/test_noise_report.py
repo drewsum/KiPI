@@ -1,0 +1,69 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
+"""The Coupled Noise report, the victims a solve covers, and the scan's controls (#69)."""
+
+import os
+
+import pytest
+
+from kipi.noise.html_report import report_name, write_noise_report
+from kipi.noise.solver import solve_noise
+from validation_boards import open_board
+
+pytest.importorskip("qtpy")
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(scope="module")
+def board():
+    snap, setup = open_board("coupled_noise")
+    setup.victims = []                       # the scan finds them
+    setup.noise.board_model = False
+    setup.noise.scan = True
+    return snap, setup, solve_noise(snap, setup, "U1")
+
+
+def test_the_report_has_every_section(board, tmp_path):
+    snap, setup, r = board
+    path = write_noise_report(tmp_path / report_name("cn", "U1"), r, snap, setup)
+    text = path.read_text(encoding="utf-8")
+    for section in ("id='victims'", "id='aggressor'", "id='waveforms'", "id='noise'",
+                    "id='scan'", "id='notes'"):
+        assert section in text, section
+    assert "SIG_LOOP" in text and "data:image/png" in text
+    assert report_name("cn", "U1 / buck").startswith("cn_U1_buck_noise_report_")
+
+
+@pytest.fixture
+def panel():
+    from qtpy.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from kipi.noise.gui.panel import NoisePanel
+    snap, setup = open_board("coupled_noise")
+    p = NoisePanel()
+    p.set_board(snap, setup)
+    yield p
+    p.close()
+
+
+def test_the_victims_choice_and_scan_reach_the_setup(panel):
+    items = [panel.cmb_victims.itemData(i) for i in range(panel.cmb_victims.count())]
+    assert items == ["all", "SIG_SW", "SIG_LOOP", "SIG_BURIED", "none"]
+    panel.cmb_victims.setCurrentIndex(items.index("SIG_LOOP"))
+    assert panel.setup.noise.victims == "SIG_LOOP"
+    panel.chk_scan.setChecked(True)
+    assert panel.setup.noise.scan
+    panel.spin_top.setValue(3)
+    assert panel.setup.noise.scan_top_n == 3
+    panel.victim_list.lst.setCurrentRow(0)
+    panel.victim_list._remove()                    # a removed victim leaves the choice
+    assert panel.cmb_victims.count() == 4
+
+
+def test_scanned_victims_are_marked_in_the_table(panel, board):
+    _, _, r = board
+    picked = []
+    panel.victim_selected.connect(picked.append)
+    panel.show_result(r)
+    names = [panel.tbl_victims.item(i, 0).text() for i in range(panel.tbl_victims.rowCount())]
+    assert "SIG_LOOP (scan)" in names
+    assert picked and not picked[-1].endswith("(scan)")

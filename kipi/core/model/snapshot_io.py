@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from kipi.core.model.board import (
-    BoardSnapshot, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup,
+    BoardSnapshot, Coating, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup,
     Track, Via, Zone,
 )
 
@@ -65,7 +65,9 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
         copper=[CopperLayer(**c) for c in st["copper"]],
         dielectrics=[DielectricLayer(**x) for x in st["dielectrics"]],
         board_thickness_mm=st["board_thickness_mm"],
-        from_board=st.get("from_board", True))
+        from_board=st.get("from_board", True),
+        # Snapshots from before #82 have no solder masks or silkscreens.
+        coatings=[Coating(**c) for c in st.get("coatings", [])])
     return BoardSnapshot(
         board_name=d["board_name"],
         project_dir=d.get("project_dir", ""),
@@ -87,7 +89,8 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
               for p in d["pads"]],
         footprints=[Footprint(id=f["id"], reference=f["reference"], value=f["value"],
                               position=tuple(f["position"]), side=f["side"],
-                              pad_ids=list(f["pad_ids"]), footprint=f.get("footprint", ""))
+                              pad_ids=list(f["pad_ids"]), footprint=f.get("footprint", ""),
+                              angle_deg=f.get("angle_deg"))
                     for f in d["footprints"]],
         zones=[Zone(id=z["id"], net=z["net"], name=z["name"], priority=z["priority"],
                     filled=_layer_polys(z["filled"])) for z in d["zones"]],
@@ -98,6 +101,9 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
         source_format=d.get("source_format") or ("kicad-ipc" if d.get("source") == "kicad"
                                                  else ""),
         assumed=list(d.get("assumed", [])),
+        # Snapshots from before #82 say nothing of the silkscreens.
+        silkscreen={side: [_poly(p) for p in polys]
+                    for side, polys in d.get("silkscreen", {}).items()},
     )
 
 

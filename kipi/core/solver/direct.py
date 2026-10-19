@@ -14,6 +14,7 @@ factorized again with SuperLU. Either way the solve goes on.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import weakref
@@ -59,6 +60,15 @@ def _pardiso_module():
         os.environ.setdefault("PYPARDISO_MKL_RT", path)
     _pardiso = pypardiso
     return _pardiso
+
+
+def retry_pardiso() -> None:
+    """Look for PARDISO again at the next factorization: it was just installed (#129)."""
+    global _pardiso_problem, _native_problem
+    if _pardiso is None:
+        importlib.invalidate_caches()
+        _pardiso_problem = None
+        _native_problem = None
 
 
 def backend() -> str:

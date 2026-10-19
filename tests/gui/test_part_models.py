@@ -37,7 +37,9 @@ def _view(zscale=1.0):
            _zscale=zscale, _show_models=True, _show_models_result=False, _show_board=True,
            _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
-           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
+           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
+           _coating_actors=[], _show_mask=False, _show_silk=False,
+           _show_mask_result=False, _show_silk_result=False)
     for name in ("set_models", "_remove_model_actors", "_place_models", "_apply_visibility",
                  "set_zscale"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
@@ -118,6 +120,41 @@ def test_the_checkbox_follows_the_view(app, no_3d, monkeypatch):
     w.viewer.models_shown = True                          # back to the copper view's
     w.viewer.result_shown.emit(False)
     assert w.chk_models.isChecked()
+    w.close()
+
+
+def test_mask_and_silk_are_off_over_results_until_asked_for():
+    """#144: the copper view's Mask and Silkscreen settings do not carry over results."""
+    v = _view()
+    v.set_feature_visible = MethodType(Viewer3D.set_feature_visible, v)
+    v.feature_shown = MethodType(Viewer3D.feature_shown, v)
+    mask, silk = pv.Plotter(off_screen=True).add_mesh(_part()), \
+        pv.Plotter(off_screen=True).add_mesh(_part())
+    v._coating_actors = [("mask", mask), ("silk", silk)]
+    v.set_feature_visible("mask", True)
+    v.set_feature_visible("silk", True)
+    assert mask.GetVisibility() and silk.GetVisibility()
+    v._result = object()                                  # a result is shown
+    v._apply_visibility()
+    assert not mask.GetVisibility() and not silk.GetVisibility()
+    assert not v.feature_shown("mask") and not v.feature_shown("silk")
+    v.set_feature_visible("silk", True)
+    assert silk.GetVisibility() and not mask.GetVisibility()
+    v._result = None                                      # the copper view's are kept
+    v._apply_visibility()
+    assert mask.GetVisibility() and silk.GetVisibility() and v.feature_shown("mask")
+
+
+def test_mask_and_silk_checkboxes_follow_the_view(app, no_3d, monkeypatch):
+    w, *_ = _window(no_3d, monkeypatch)
+    w.chk_mask.setChecked(True)
+    w.chk_silk.setChecked(True)
+    w.viewer.feature_shown = lambda f: False              # the result view's settings
+    w.viewer.result_shown.emit(True)
+    assert not w.chk_mask.isChecked() and not w.chk_silk.isChecked()
+    w.viewer.feature_shown = lambda f: True               # back to the copper view's
+    w.viewer.result_shown.emit(False)
+    assert w.chk_mask.isChecked() and w.chk_silk.isChecked()
     w.close()
 
 
@@ -214,3 +251,56 @@ def test_a_closed_window_loads_no_more_models(app, no_3d, monkeypatch):
     assert not w._model_timer.isActive()
     w._sync_models()
     assert asked == [] and w._model_task is None
+
+
+def test_models_are_guessed_only_when_asked(app, no_3d, monkeypatch):
+    """With no board file, no models are guessed until Guess models is clicked; then only
+    the parts with none are guessed (#130)."""
+    from kipi.sources.kicad_ipc import model_guess, models3d
+    mesh = _part()
+    guessed = []
+
+    class Guess:
+        label = "a guess"
+
+        def load(self, refs, progress=None):
+            guessed.append(list(refs))
+            return {r: mesh if r == "L1" else None for r in refs}
+
+    w, shown, asked, said = _window(no_3d, monkeypatch)
+    monkeypatch.setattr(models3d, "board_file", lambda snap: None)
+    monkeypatch.setattr(model_guess, "guessed_models", lambda cli, snap: Guess())
+    w._sync_models()
+    _settle(app, w)
+    assert guessed == [] and asked == [] and shown[-1][0] == {}
+    assert any("Guess models" in s for s in said)          # the log says how
+
+    w.chk_models.setChecked(False)
+    w.guess_models()
+    assert w.chk_models.isChecked()                        # ticked for the models
+    w._sync_models()
+    _settle(app, w)
+    parts = sorted({p.footprint for p in w.snapshot.pads} - {""})
+    assert guessed == [parts]
+    assert set(shown[-1][0]) == {"L1"}
+
+    w.guess_models()                                       # again: only those still without
+    w._sync_models()
+    _settle(app, w)
+    assert guessed[-1] == [r for r in parts if r != "L1"]
+    w._sync_models()
+    _settle(app, w)
+    assert len(guessed) == 2                               # and not again unasked
+    w.close()
+
+
+def test_a_guess_with_no_library_says_why(app, no_3d, monkeypatch):
+    from kipi.sources.kicad_ipc import model_guess, models3d
+    w, shown, asked, said = _window(no_3d, monkeypatch)
+    monkeypatch.setattr(models3d, "board_file", lambda snap: None)
+    monkeypatch.setattr(model_guess, "library_dirs", lambda cli: [])
+    w.guess_models()
+    w._sync_models()
+    assert w._model_task is None
+    assert any("library was not found" in s for s in said)
+    w.close()

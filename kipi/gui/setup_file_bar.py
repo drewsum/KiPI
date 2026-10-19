@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """The setup file's bar above the DC and AC pages: which setup is open, Import and Save.
 DC and AC share one setup file, so the bar is the same in both modes."""
 

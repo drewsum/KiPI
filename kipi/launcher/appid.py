@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 APP_ID = "com.github.drewsum.kipi"        # the plugin.json identifier
 
@@ -76,6 +77,29 @@ def set_shortcut_app_id(path: Path) -> None:
     """Give a Start menu shortcut KiPI's AppUserModelID, so pinning it and the running
     window share one taskbar button. Raises OSError."""
     set_properties(*_file_property_store(path, write=True), [(PKEY_ID, APP_ID)])
+
+
+def set_process_app_id() -> None:
+    """Group this process's windows under KiPI's taskbar button, with the window icon,
+    instead of Python's. Only works before the first window opens. Raises OSError."""
+    import ctypes
+    hr = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(ctypes.c_wchar_p(APP_ID))
+    if hr != 0:
+        raise OSError(f"SetCurrentProcessExplicitAppUserModelID failed: {hr & 0xFFFFFFFF:#x}")
+
+
+def tag_window(hwnd: int, command: Optional[str], name: str, icon: Optional[Path]) -> None:
+    """Name a window's taskbar button and say what pinning it runs (``command``; None turns
+    pinning off). Raises OSError."""
+    # PreventPinning has to be set before the ID. The display name and icon only count
+    # when a relaunch command is set too.
+    values = [(PKEY_PREVENT_PINNING, command is None)]
+    if command:
+        values += [(PKEY_RELAUNCH_COMMAND, command), (PKEY_RELAUNCH_DISPLAY_NAME, name)]
+        if icon is not None and icon.is_file():
+            values.append((PKEY_RELAUNCH_ICON, f"{icon},0"))
+    values.append((PKEY_ID, APP_ID))
+    set_properties(*win_property_store(hwnd), values)
 
 
 def read_windows_property(hwnd: int, pid: int):

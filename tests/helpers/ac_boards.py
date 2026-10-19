@@ -4,13 +4,17 @@ from kipi.core.model.board import BoardSnapshot, Footprint, Net, Pad, Poly, Via,
 from synthetic import B, F, IN1, IN2, make_board, rect, square  # noqa: F401
 
 
-def plane_pair(size=50.0, probe_xy=(5.0, 5.0), caps=()) -> BoardSnapshot:
+def plane_pair(size=50.0, probe_xy=(5.0, 5.0), caps=(), rail=None,
+               ground=None) -> BoardSnapshot:
     """+3V3 plane on F.Cu over a GND plane on In1.Cu (0.2 mm FR4, er 4.5).
 
     The probe U1 has a +3V3 pad on the plane and a GND pad in a cut-out, with a via down to
     In1. ``caps`` is a list of (ref, value, (x, y)): each gets a +3V3 pad on the plane and
-    a GND pad + via 1.2 mm to its right.
+    a GND pad + via 1.2 mm to its right. ``rail`` and ``ground`` are the planes' outlines
+    (default: a ``size`` square).
     """
+    rail = rail or rect(0, 0, size, size)
+    ground = ground or rect(0, 0, size, size)
     snap = make_board()
     snap.board_name = "plane_pair.kicad_pcb"
     snap.tracks, snap.vias, snap.pads, snap.footprints = [], [], [], []
@@ -34,10 +38,11 @@ def plane_pair(size=50.0, probe_xy=(5.0, 5.0), caps=()) -> BoardSnapshot:
         part(ref, value, xy)
     snap.pads, snap.footprints, snap.vias = pads, fps, vias
     snap.zones = [
-        Zone("z1", "+3V3", "", 0, filled={F: [Poly(rect(0, 0, size, size), holes)]}),
-        Zone("z2", "GND", "", 0, filled={IN1: [Poly(rect(0, 0, size, size))]}),
+        Zone("z1", "+3V3", "", 0, filled={F: [Poly(rail, holes)]}),
+        Zone("z2", "GND", "", 0, filled={IN1: [Poly(ground)]}),
     ]
-    snap.outline = [Poly(rect(-1, -1, size + 1, size + 1))]
+    xs, ys = [x for x, _ in ground], [y for _, y in ground]
+    snap.outline = [Poly(rect(min(xs) - 1, min(ys) - 1, max(xs) + 1, max(ys) + 1))]
     snap.invalidate_index()
     return snap
 

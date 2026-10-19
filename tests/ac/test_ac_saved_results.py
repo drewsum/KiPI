@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """AC results files: every solved rail is saved and opens again without solving."""
 
 import os

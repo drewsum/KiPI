@@ -55,8 +55,9 @@ class Installer:
         if not env_python(self.env).is_file():
             raise InstallError(f"the environment was made but has no Python: {self.env}")
 
-    def install(self, requirements: Optional[Path] = None, packages: Sequence[str] = ()) -> None:
-        args = (["-r", str(requirements)] if requirements else []) + list(packages)
+    def install(self, requirements: Optional[Path] = None, packages: Sequence[str] = (),
+                options: Sequence[str] = ()) -> None:
+        args = list(options) + (["-r", str(requirements)] if requirements else []) + list(packages)
         if self.uv:
             self._run([*self.uv, "pip", "install", "--python", str(env_python(self.env)), *args])
         else:

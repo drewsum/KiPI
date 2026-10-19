@@ -4,6 +4,7 @@ Windows has none) or there is no display (Linux CI)."""
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,14 +21,29 @@ import tkinter as tk  # noqa: E402
 from kipi.launcher.ui_tk import TkUI  # noqa: E402
 
 
-@pytest.fixture
-def ui():
+@pytest.fixture(scope="module")
+def _window():
+    """One window for every test, as the launcher has: creating and destroying a Tk root
+    per test now and then aborted Python on the macOS runner."""
     try:
         u = TkUI()
     except tk.TclError as e:
         pytest.skip(f"Tk cannot open a window here: {e}")
     yield u
     u.close()
+
+
+@pytest.fixture
+def ui(_window):
+    yield _window
+    root = _window.root
+    for job in root.tk.splitlist(root.tk.call("after", "info")):    # polls, later()
+        root.tk.call("after", "cancel", job)
+    if _window.frame is not None:
+        _window.frame.destroy()
+    _window.frame, _window._tagged, _window._on_close = None, False, root.quit
+    root.withdraw()
+    root.update()
 
 
 def _summary(offered=True, default=False):
@@ -160,3 +176,22 @@ def test_cancel_stops_the_install(ui, later):
     with pytest.raises(Canceled):
         ui.install(task)
     assert Slow.canceled
+
+
+def test_the_window_is_kipi_with_its_icon(ui, monkeypatch):
+    """#127: the KiPI icon and window class, not Python's; on Windows, pinning its taskbar
+    button pins the launcher."""
+    from kipi.launcher import appid, ui_tk
+    assert ui.root.winfo_class().lower() == "kipi"           # matches kipi.desktop
+    assert ui._icons and max(i.width() for i in ui._icons) == 256
+    tagged = []
+    monkeypatch.setattr(appid, "tag_window", lambda *a: tagged.append(a))
+    # Windows only as the window code sees it: faking sys.platform for the whole process
+    # while Tk draws a real Cocoa window crashed Python on the macOS runner.
+    monkeypatch.setattr(ui_tk, "sys", SimpleNamespace(platform="win32"))
+    ui.status("Checking which packages KiPI needs...")
+    ui.status("Still checking...")
+    assert len(tagged) == 1                                 # once, when it first shows
+    hwnd, command, name, icon = tagged[0]
+    assert hwnd and "kipi_launcher.pyw" in command and name == "KiPI"
+    assert icon.name == "kipi.ico"

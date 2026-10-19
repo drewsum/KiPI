@@ -125,6 +125,8 @@ def test_footprints_match_kicad(snap, ref):
     def key(f):
         return (f.reference, f.value, f.position, f.side, len(f.pad_ids))
     assert sorted(map(key, snap.footprints)) == sorted(map(key, ref.footprints))
+    # Turned as KiCad shows them, on either side (#130)
+    assert {f.reference: f.angle_deg for f in snap.footprints} == {"U1": 30.0, "J1": 90.0}
 
 
 def test_outline_matches_kicad(snap, ref):

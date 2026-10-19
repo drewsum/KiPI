@@ -70,6 +70,10 @@ version = { attr = "kipi.__version__" }
 [tool.setuptools.packages.find]
 include = ["kipi*"]
 
+[tool.setuptools.package-data]
+# The tooltip drawings (kipi/gui/tooltip_art.py).
+"kipi.gui" = ["graphics/*.svg", "graphics/*.md"]
+
 [tool.ruff]
 target-version = "py310"
 line-length = 110

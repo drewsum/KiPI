@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """AC solves at a temperature (#77): the copper's resistivity and the capacitance of models
 with a dielectric follow a fixed board temperature, or the copper temperatures of the last
 DC thermal co-simulation."""

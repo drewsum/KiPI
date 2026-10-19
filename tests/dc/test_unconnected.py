@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Loads not connected by copper (#88): before solving, each load pin is checked for a path
 through copper or series links to its VRM. Unconnected pins draw nothing; a load with no
 supply pin (or no ground pin) connected is left out and shown as disconnected; a rail with

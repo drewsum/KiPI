@@ -225,7 +225,7 @@ def test_heat_by_source_with_phases():
     s.thermal.load_power = True
     tree = solve_tree(snap, s)
     u1, ld = by_name(tree.vrms, "U1"), by_name(tree.loads, "U2")
-    xy, w, by_kind = heat_sources(tree, snap, s)
+    xy, w, _, by_kind = heat_sources(tree, snap, s)
     assert by_kind["VRM conversion"] == pytest.approx(u1.p_loss, rel=1e-9)
     assert by_kind["loads"] == pytest.approx(ld.v_effective * ld.current, rel=1e-9)
     # Each phase's loss sits at its own output pad.

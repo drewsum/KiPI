@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="146" viewBox="0 0 300 146">
+  <rect x="0" y="0" width="300" height="146" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <!-- equal: the total shared by every supply pin -->
+    <text x="78" y="22" fill="{equal}">I / 4 into each pin</text>
+    <g stroke="{equal}" stroke-width="1.8" fill="none">
+      <path d="M42,32 V68 M64,32 V68 M92,32 V68 M114,32 V68"/>
+      <path d="M38,62 l4,6 l4,-6 M60,62 l4,6 l4,-6 M88,62 l4,6 l4,-6 M110,62 l4,6 l4,-6"/>
+    </g>
+    <rect x="28" y="70" width="100" height="40" rx="4" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="78" y="94" fill="{fg}">load</text>
+    <text x="78" y="132" fill="{equal}">Equal</text>
+    <!-- per pin group: each group its own current -->
+    <g stroke="{groups}" stroke-width="1.8" fill="none">
+      <path d="M186,40 V68 M204,40 V68 M244,40 V68 M262,40 V68"/>
+      <path d="M182,62 l4,6 l4,-6 M200,62 l4,6 l4,-6 M240,62 l4,6 l4,-6 M258,62 l4,6 l4,-6"/>
+      <path d="M180,36 V32 H210 V36 M238,36 V32 H268 V36" stroke-width="1.4"/>
+    </g>
+    <text x="195" y="24" fill="{groups}">core 2 A</text>
+    <text x="253" y="24" fill="{groups}">I/O 0.1 A</text>
+    <rect x="172" y="70" width="100" height="40" rx="4" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="222" y="94" fill="{fg}">load</text>
+    <text x="222" y="132" fill="{groups}">Per pin group</text>
+  </g>
+</svg>

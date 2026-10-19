@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC HTML report: written from a real solve, self-contained, with every section; and
 the AC panel's HTML report option."""
 
@@ -29,9 +30,11 @@ def test_report_has_every_section(solved, tmp_path):
     snap, setup, result = solved
     path = write_ac_report(tmp_path / "r.html", result, snap, setup)
     text = path.read_text(encoding="utf-8")
-    for anchor in ("probes", "impedance", "map", "caps", "model", "notes"):
+    for anchor in ("probes", "impedance", "map", "caps", "model", "notes", "user-notes"):
         assert f"id='{anchor}'" in text
     assert "Plotly.newPlot" in text and "<script src=" not in text     # works offline
+    assert "contenteditable='true'" in text and "href='#user-notes'" in text    # #128
+    assert text.rindex("<h2") == text.index("<h2 id='user-notes'")     # the last section
     assert "100n (one part)" in text                                   # model curve
     assert "C3" in text and "no model" in text                         # left out, mapped
     import re

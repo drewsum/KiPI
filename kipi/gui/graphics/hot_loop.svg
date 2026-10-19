@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="170" viewBox="0 0 300 170">
+  <rect x="0" y="0" width="300" height="170" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <g stroke-width="1.6" fill="none">
+      <path d="M20,30 H120 V42 M120,74 V96 M120,128 V142 M20,142 H265" stroke="{muted}"/>
+      <path d="M40,30 V78 M40,94 V142 M30,78 H50 M30,94 H50" stroke="{cin}"/>
+      <rect x="108" y="42" width="24" height="32" rx="3" stroke="{hs}"/>
+      <rect x="108" y="96" width="24" height="32" rx="3" stroke="{ls}"/>
+      <path d="M120,85 H140 M200,85 H245 V100 M245,116 V142 M235,100 H255 M235,116 H255" stroke="{muted}"/>
+      <path d="M140,85 a7.5,7.5 0 0 1 15,0 a7.5,7.5 0 0 1 15,0 a7.5,7.5 0 0 1 15,0 a7.5,7.5 0 0 1 15,0" stroke="{ind}"/>
+      <circle cx="120" cy="85" r="3" stroke="{sw}"/>
+      <path d="M52,40 H100 V134 H52 Z" stroke="{loop}" stroke-dasharray="5 3"/>
+      <path d="M96,82 l4,8 l4,-8 M48,92 l4,-8 l4,8" stroke="{loop}"/>
+    </g>
+    <text x="8" y="24" fill="{muted}">VIN</text>
+    <text x="250" y="80" fill="{muted}">VOUT</text>
+    <text x="8" y="158" fill="{muted}">GND</text>
+    <text x="14" y="90" fill="{cin}">C in</text>
+    <text x="137" y="62" fill="{hs}">high side</text>
+    <text x="137" y="116" fill="{ls}">low side</text>
+    <text x="150" y="73" fill="{ind}">inductor</text>
+    <text x="126" y="100" fill="{sw}">SW</text>
+    <text x="258" y="112" fill="{cout}">C out</text>
+    <path d="M245,100 M235,100 H255 M235,116 H255" stroke="{cout}" stroke-width="1.6"/>
+    <text x="52" y="152" fill="{loop}">hot loop</text>
+  </g>
+</svg>

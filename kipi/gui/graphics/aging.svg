@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="160" viewBox="0 0 280 160">
+  <rect x="0" y="0" width="280" height="160" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <path d="M40,14 V120 H266" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <text x="34" y="24" fill="{muted}" text-anchor="end">C</text>
+    <path d="M90,120 v4 M145,120 v4 M200,120 v4 M255,120 v4" stroke="{muted}" stroke-width="1.2"/>
+    <g fill="{muted}" text-anchor="middle">
+      <text x="90" y="136">1000</text><text x="145" y="136">10k</text>
+      <text x="200" y="136">100k</text><text x="255" y="136">1M</text>
+    </g>
+    <text x="153" y="153" fill="{muted}" text-anchor="middle">hours operated (log scale)</text>
+    <path d="M90,30 H160" stroke="{grid}" stroke-width="1" stroke-dasharray="3,3"/>
+    <path d="M40,30 H90 L255,96" stroke="{fg}" stroke-width="2.4" fill="none" stroke-linejoin="round"/>
+    <path d="M152,30 V52 M148,30 h8 M148,52 h8" stroke="{aging}" stroke-width="2"/>
+    <text x="162" y="45" fill="{aging}">aging: lost per decade</text>
+    <text x="46" y="22" fill="{muted}">no aging before 1000 h</text>
+  </g>
+</svg>

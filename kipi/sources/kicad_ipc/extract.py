@@ -14,11 +14,12 @@ from kipi.core.geometry.arcs import arc_points
 from kipi.core.geometry.shapes import board_outline
 from kipi.sources.kicad_ipc.convert import mm, poly, pt
 from kipi.sources.kicad_ipc.copper_shapes import copper_shape_zones
+from kipi.sources.kicad_ipc.silkscreen import read_silkscreen
 from kipi.sources.kicad_ipc.vias import read_vias
 from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Zone,
 )
-from kipi.core.model.stackup import build_stackup, combined_epsilon_r
+from kipi.core.model.stackup import build_stackup, coating_of, combined_epsilon_r
 from kipi.core.progress import NULL, ProgressReporter
 
 
@@ -167,6 +168,7 @@ def extract_stackup(board, progress: ProgressReporter = NULL,
     names = _layer_names(board, cu_ids, stackup_layers)
 
     entries = []  # (kind, layer_id, thickness_mm, material, epsilon_r), top to bottom
+    coatings = []
     try:
         reports_enabled = _reports_enabled(stackup_layers)
         for sl in stackup_layers:
@@ -181,11 +183,39 @@ def extract_stackup(board, progress: ProgressReporter = NULL,
                 mat = subs[0].material_name if subs else sl.material_name
                 er = combined_epsilon_r([(mm(s.thickness), s.epsilon_r) for s in subs])
                 entries.append(("diel", -1, t, mat, er))
+            elif sl.type in (board_pb2.BoardStackupLayerType.BSLT_SOLDERMASK,
+                             board_pb2.BoardStackupLayerType.BSLT_SILKSCREEN):
+                coat = _coating(sl, board_pb2)
+                if coat is not None:
+                    coatings.append(coat)
     except Exception as e:  # noqa: BLE001 - stackup is optional; fall back below
         progress.warn(f"Could not read board stackup layers ({e}); using defaults")
         entries = []
+        coatings = []
 
-    return build_stackup(entries, cu_ids, names, progress, assumed)
+    return build_stackup(entries, cu_ids, names, progress, assumed, coatings)
+
+
+def _coating(sl, board_pb2):
+    """A solder mask or silkscreen of the stackup (#82); its side from its layer."""
+    mask = sl.type == board_pb2.BoardStackupLayerType.BSLT_SOLDERMASK
+    # None before KiCad 10.0.6; kicad-python before 0.8 has neither field
+    sub = getattr(sl, "soldermask" if mask else "silkscreen", None)
+    t = mm(sl.thickness)
+    if not t and mask and sub is not None:
+        t = mm(sub.thickness)
+    c = sl.color
+    color = ("#%02x%02x%02x" % tuple(round(min(max(v, 0.0), 1.0) * 255)
+                                     for v in (c.red, c.green, c.blue))
+             if c.alpha > 0 else "")
+    from kipy.proto.board.board_types_pb2 import BoardLayer
+    try:
+        name = BoardLayer.Name(sl.layer)[3:].replace("_", ".")    # BL_F_Mask -> F.Mask
+    except ValueError:
+        name = ""
+    return coating_of(name, "Solder Mask" if mask else "Silk Screen", t,
+                      (sub.material_name if sub is not None else "") or sl.material_name,
+                      color)
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +308,13 @@ def _pad_angle(pad) -> Optional[float]:
     try:
         return float(pad.padstack.angle.degrees)
     except Exception:  # noqa: BLE001 - older API: slots fall back to the pad's shape
+        return None
+
+
+def _fp_angle(fp) -> Optional[float]:
+    try:
+        return float(fp.orientation.degrees)
+    except Exception:  # noqa: BLE001 - an API without it: the angle is not known
         return None
 
 
@@ -414,10 +451,12 @@ def extract_board(board, refill_zones: bool = False,
 
     with progress.timed("Reading footprints and pads"):
         footprints: List[Footprint] = []
+        kfootprints = []
         kpads = []
         fp_shapes = []
         pad_ref: Dict[str, str] = {}
         for fp in board.get_footprints():
+            kfootprints.append(fp)
             ref = _field_text(fp.reference_field)
             fpads = list(fp.definition.pads)
             from kipy.proto.board.board_types_pb2 import BoardLayer
@@ -425,7 +464,8 @@ def extract_board(board, refill_zones: bool = False,
                 id=fp.id.value, reference=ref, value=_field_text(fp.value_field),
                 position=pt(fp.position),
                 side="bottom" if fp.layer == BoardLayer.BL_B_Cu else "top",
-                pad_ids=[p.id.value for p in fpads], footprint=_footprint_name(fp)))
+                pad_ids=[p.id.value for p in fpads], footprint=_footprint_name(fp),
+                angle_deg=_fp_angle(fp)))
             for p in fpads:
                 pad_ref[p.id.value] = ref
             kpads.extend(fpads)
@@ -471,6 +511,10 @@ def extract_board(board, refill_zones: bool = False,
     with progress.timed("Reading board outline"):
         outline = _outline(board_shapes, progress)
 
+    with progress.timed("Reading silkscreen"):
+        silkscreen = read_silkscreen(board, board_shapes + fp_shapes, kfootprints, progress,
+                                     assumed)
+
     project_dir = ""
     try:
         project_dir = board.document.project.path
@@ -480,7 +524,8 @@ def extract_board(board, refill_zones: bool = False,
     snap = BoardSnapshot(
         board_name=board.name, project_dir=project_dir, stackup=stackup, nets=nets,
         tracks=tracks, vias=vias, pads=pads, footprints=footprints, zones=zones,
-        outline=outline, source="kicad", source_format="kicad-ipc", assumed=assumed)
+        outline=outline, source="kicad", source_format="kicad-ipc", assumed=assumed,
+        silkscreen=silkscreen)
     progress.info(f"Extraction complete in {time.perf_counter() - t0:.2f} s")
     return snap
 

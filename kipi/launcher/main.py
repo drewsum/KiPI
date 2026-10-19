@@ -5,7 +5,7 @@
     python kipi_launcher.py --repair      # reinstall everything from scratch
     python kipi_launcher.py --reset       # delete KiPI's environment; set up on next start
     python kipi_launcher.py --add-pardiso | --remove-pardiso
-    python kipi_launcher.py --create-shortcut   # add KiPI to the Start menu / app menu
+    python kipi_launcher.py --create-shortcut   # add KiPI to the Start menu / app menu / Applications
 
 ``kipi_launcher.pyw`` does the same with no console window (double-click it).
 """
@@ -65,7 +65,8 @@ def parse(argv: Optional[List[str]]) -> argparse.Namespace:
     what.add_argument("--add-pardiso", action="store_true", help="install PARDISO")
     what.add_argument("--remove-pardiso", action="store_true", help="remove PARDISO")
     what.add_argument("--create-shortcut", action="store_true",
-                      help="add KiPI to the Start menu (Windows) or applications menu (Linux)")
+                      help="add KiPI to the Start menu (Windows), applications menu "
+                           "(Linux) or Applications folder (macOS)")
     ap.add_argument("--console", action="store_true", help="set up in this terminal")
     ap.add_argument("--no-launch", action="store_true", help="set up only; do not start KiPI")
     # KiPI asking for its own setup to change: wait for it to close, as its environment
@@ -160,8 +161,9 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
             ui.error("KiPI is still open. Close it, then change the setup again.")
             return 1
     previous = load(env)
-    want_pardiso = previous.pardiso if previous else False
     pardiso_ok, pardiso_why = system.pardiso_supported()
+    # Ticked by default wherever it can be had (#129); after that, whatever was chosen.
+    want_pardiso = previous.pardiso if previous else pardiso_ok
     reason = needs_setup(env, deps.requirements_hash(req))
     fresh, ask = False, True
     try:
@@ -224,6 +226,9 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
             ui.error(f"{e}\n\nEverything the installer printed is in {log.path}")
             return 1
     ui.close()
+    # A KiPI icon to double-click in the KiPI folder (Windows; made once, #127).
+    from kipi.launcher.shortcut import keep_folder_icon
+    keep_folder_icon(stamp=data / "folder-shortcut.txt")
     if args.no_launch:
         return 0
     return launch(env, args.board, windowed)

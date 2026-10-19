@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 # a typical curve's shape; the datasheet's curve is better where there is one.
 BIAS_EXP = 1.5
 DEFAULT_KEPT_AT_RATED_PCT = 40.0
+REPORT_FORMATS = ("html", "pdf")          # what a report can be written as (#119)
 
 # Aging (#109): a class II ceramic loses a fixed share of its capacitance per decade of
 # hours since it was last heated past its Curie point. Its rated capacitance is taken as
@@ -157,13 +158,17 @@ class ACSettings:
     max_edge_mm: float = 1.0
     grading: float = 0.3
     min_edge_mm: float = 0.03
+    # Grade the mesh only at plated holes near the rail (#123, kipi.ac.solver.near_rail);
+    # off: at every hole of the rail and its ground.
+    grade_near_rail_only: bool = True
     # Dielectric
     loss_tangent: float = 0.02
     default_er: float = 4.3               # where the stackup has no dielectric constant
     # Last rail (VRM name) and ground net chosen for a solve.
     rail: str = ""
     ground: str = ""
-    html_report: bool = False             # write an HTML report after each rail's solve
+    html_report: bool = False             # write a report after each rail's solve
+    report_format: str = "html"           # "html" or "pdf" (#119)
     # Derate the capacitor models that estimate DC bias (#74); off: every model as entered.
     dc_bias: bool = True
     # Take the capacitor models that have a manufacturing tolerance to the low end of it.
@@ -176,6 +181,9 @@ class ACSettings:
     # DC thermal co-simulation's copper temperatures, temperature_c where it has none).
     temperature: str = "none"
     temperature_c: float = 25.0
+
+    def __post_init__(self):
+        self.report_format = report_format(self.report_format)
 
     def frequencies(self):
         import numpy as np
@@ -191,6 +199,12 @@ class ACSettings:
         decades = np.log10(self.f_stop_hz / self.f_start_hz)
         n = max(4, int(np.ceil(decades * self.field_points_per_decade)) + 1)
         return np.logspace(np.log10(self.f_start_hz), np.log10(self.f_stop_hz), n)
+
+
+def report_format(value) -> str:
+    """A saved report format, or HTML where it is missing or unknown."""
+    value = str(value or "").lower()
+    return value if value in REPORT_FORMATS else "html"
 
 
 def caps_dict(caps: List[CapModel]) -> Dict[str, CapModel]:

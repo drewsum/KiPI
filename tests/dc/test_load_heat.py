@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Load power and DC connection losses as heat in the electro-thermal solve (#62)."""
 
 import copy
@@ -77,6 +78,14 @@ def test_load_power_round_trips_through_the_setup_file():
     assert not PISetup.from_dict(setup("ldo").to_dict()).thermal.load_power    # off by default
 
 
+def test_setups_with_a_stated_load_heat_still_open():
+    d = setup("ldo").to_dict()
+    d["loads"][0]["dissipation_w"] = 0.25             # saved before #121 removed it
+    s = PISetup.from_dict(d)
+    assert s.loads[0].name == setup("ldo").loads[0].name
+    assert "dissipation_w" not in s.to_dict()["loads"][0]
+
+
 def test_thermal_results_saved_before_load_heat():
     th = ThermalResult.__new__(ThermalResult)
     th.__setstate__({"settings": ThermalSettings(), "heat_w": 1.0})
@@ -109,7 +118,7 @@ def test_dc_connection_losses_heat_its_pins():
     tree = SimpleNamespace(groups={"A + B": SimpleNamespace(result=res)}, vrms=[])
     for load_power in (False, True):
         s = SimpleNamespace(vrms=[], loads=[], thermal=ThermalSettings(load_power=load_power))
-        xy, w, _ = heat_sources(tree, snap, s)
+        xy, w, _, _ = heat_sources(tree, snap, s)
         at_r1 = np.isin(xy[:, 0], [9.5, 12.5]) & (xy[:, 1] == 0.5)
         assert w[at_r1].sum() == pytest.approx(2.0 ** 2 * 0.02, rel=1e-9)
 

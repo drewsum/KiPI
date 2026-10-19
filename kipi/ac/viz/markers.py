@@ -25,4 +25,4 @@ def ac_markers(snap: Optional[BoardSnapshot], setup,
     parts += [link_part(k) for k in setup.links]
     parts += [("probe", p.name, f"Probe {p.name}", [p.rail], [p.ground])
               for p in setup.probes]
-    return markers_from(snap, setup, nets, parts)
+    return markers_from(snap, setup, nets, parts, caps=True)

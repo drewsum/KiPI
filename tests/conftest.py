@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Shared test fixtures."""
 
 import pytest
@@ -69,10 +70,15 @@ def no_3d(monkeypatch):
             super().__init__(parent)
             self._nets = []
             self.models_shown = self.models_wanted = True
+            self.shown = {}
 
         def set_feature_visible(self, feature, visible):
             if feature == "models":
                 self.models_shown = self.models_wanted = visible
+            self.shown[feature] = visible
+
+        def feature_shown(self, feature):
+            return self.shown.get(feature, False)
 
         def nets(self):
             return list(self._nets)

@@ -9,7 +9,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.sources.base import BoardSource, Capabilities, InstalledTool, ModelProvider
-from kipi.sources.kicad_ipc import colors, models3d
+from kipi.sources.kicad_ipc import colors, model_guess, models3d
 
 
 class KiCadLiveSource(BoardSource):
@@ -82,15 +82,41 @@ class InstalledKiCad(InstalledTool):
     def layer_colors(self, snap: BoardSnapshot):
         return colors.copper_theme(snap.kicad_version)
 
-    def part_models(self, snap: BoardSnapshot) -> Tuple[Optional[ModelProvider], str]:
+    def _find_cli(self) -> Optional[List[str]]:
         if not self._cli_looked:
             self._cli_looked = True
             self._cli = models3d.find_kicad_cli(self._live.kicad if self._live else None)
-        if self._cli is None:
+        return self._cli
+
+    def part_models(self, snap: BoardSnapshot) -> Tuple[Optional[ModelProvider], str]:
+        if self._find_cli() is None:
             return None, ("3D models are read with KiCad's kicad-cli, which KiPI could not "
                           f"find; set {models3d.CLI_ENV} to its path to show them")
         board = models3d.board_file(snap)
         if board is None:
             return None, (f"3D models: the board file {snap.board_name} was not found next "
-                          "to the project, so no models are shown")
+                          "to the project, so no models are shown. Guess models picks them "
+                          "from KiCad's library by footprint name.")
         return KiCadCliModels(self._cli, board), ""
+
+    def guessed_models(self, snap: BoardSnapshot) -> Tuple[Optional[ModelProvider], str]:
+        if self._find_cli() is None:
+            return None, ("3D models are read with KiCad's kicad-cli, which KiPI could not "
+                          f"find; set {models3d.CLI_ENV} to its path to show them")
+        guessed = model_guess.guessed_models(self._cli, snap)
+        if guessed is None:
+            return None, ("3D models: KiCad's 3D model library was not found; set "
+                          "KICAD10_3DMODEL_DIR (or your KiCad version's) to its folder")
+        return guessed, ""
+
+
+class KiCadPartModels(InstalledKiCad):
+    """For KiPI on its own: KiPI's colors, and KiCad's part models when KiCad is installed
+    on this computer (the 3D view offers none when it is not)."""
+
+    @property
+    def offers_part_models(self) -> bool:
+        return self._find_cli() is not None
+
+    def layer_colors(self, snap: BoardSnapshot):
+        return InstalledTool.layer_colors(self, snap)

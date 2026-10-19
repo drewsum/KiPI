@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="172" viewBox="0 0 300 172">
+  <rect x="0" y="0" width="300" height="172" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <path d="M40,14 V134 H286" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <text x="34" y="24" fill="{muted}" text-anchor="end">|Z|</text>
+    <text x="284" y="148" fill="{muted}" text-anchor="end">f (log)</text>
+    <!-- below the VRM bandwidth its loop holds the rail: no target there -->
+    <path d="M84,134 V100" stroke="{muted}" stroke-width="1.2" stroke-dasharray="3,3"/>
+    <text x="84" y="148" fill="{muted}" text-anchor="middle">VRM bw</text>
+    <!-- flat: one |Z| up to the target frequency -->
+    <path d="M84,100 H196" stroke="{flat}" stroke-width="2.6" stroke-linecap="round"/>
+    <text x="100" y="94" fill="{flat}">flat</text>
+    <path d="M196,134 V100" stroke="{tf}" stroke-width="1.6" stroke-dasharray="4,3"/>
+    <text x="196" y="148" fill="{tf}" text-anchor="middle">target f</text>
+    <!-- custom: straight lines on the log-log plot through frequency/|Z| points -->
+    <path d="M44,30 H110 L160,56 H220 L276,26" stroke="{custom}" stroke-width="2.2" fill="none" stroke-linejoin="round"/>
+    <g fill="{custom}">
+      <circle cx="110" cy="30" r="3.4"/><circle cx="160" cy="56" r="3.4"/>
+      <circle cx="220" cy="56" r="3.4"/><circle cx="276" cy="26" r="3.4"/>
+    </g>
+    <text x="226" y="76" fill="{custom}">custom</text>
+    <text x="150" y="164" fill="{muted}" text-anchor="middle" font-size="10">PASS where the PDN |Z| stays under the target</text>
+  </g>
+</svg>

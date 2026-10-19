@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """What an import did, in a few lines: the notes with repeats folded together, and how
 the imported power tree differs from the one it replaced."""
 

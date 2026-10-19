@@ -11,6 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def main() -> int:
+    # Windows: on to KiPI.exe, so Task Manager shows KiPI rather than Python (#124).
+    from kipi.launcher.named_exe import relaunch
+    code = relaunch([os.path.abspath(__file__), *sys.argv[1:]])
+    if code is not None:
+        return code
     from kipi.gui import app as kipi_app
     from kipi.gui.app import run, setup_logging
     from kipi.sources.kicad_ipc.extract import ExtractionError, connect
@@ -31,6 +36,10 @@ def main() -> int:
     try:
         # The welcome screen first, so the click in KiCad is answered at once (#55).
         _app, splash = kipi_app.start_splash()
+        # Before anything loads MKL: PARDISO is not in requirements.txt, so KiPI offers
+        # it here, with an opt-out, rather than KiCad installing it unasked (#129).
+        from kipi.gui import pardiso_setup
+        pardiso_setup.startup(splash)
         kipi_app.set_status(splash, "Connecting to KiCad…")
         try:
             kicad, board = connect(progress=ProgressReporter())

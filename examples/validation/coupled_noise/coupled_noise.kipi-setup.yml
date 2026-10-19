@@ -1,0 +1,313 @@
+vrms:
+- name: J1
+  output:
+    ref: J1
+    net: VIN
+    pins:
+    - '1'
+  voltage: 12.0
+  kind: source
+  efficiency: 0.9
+  quiescent_a: 0.0
+  input: null
+  sense: null
+  ground:
+    ref: J1
+    net: GND
+    pins:
+    - '2'
+  ground_sense: null
+  phases: []
+  current_limit_a: null
+  dropout_v: 0.0
+  vin_min: null
+  vin_max: null
+  vin_pct: false
+  vin_dv: false
+  acc_min: null
+  acc_max: null
+  acc_pct: true
+  acc_dv: false
+  load_line_mohm: 0.0
+  bandwidth_khz: null
+- name: U1
+  output:
+    ref: L1
+    net: VOUT
+    pins:
+    - '2'
+  voltage: 1.8
+  kind: smps
+  efficiency: 0.9
+  quiescent_a: 0.0
+  input:
+    ref: U1
+    net: VIN
+    pins:
+    - '1'
+  sense: null
+  ground:
+    ref: U1
+    net: GND
+    pins:
+    - '2'
+  ground_sense: null
+  phases: []
+  current_limit_a: null
+  dropout_v: 0.0
+  vin_min: null
+  vin_max: null
+  vin_pct: false
+  vin_dv: false
+  acc_min: null
+  acc_max: null
+  acc_pct: true
+  acc_dv: false
+  load_line_mohm: 0.0
+  bandwidth_khz: null
+loads:
+- name: U2
+  supply:
+    ref: U2
+    net: VOUT
+    pins:
+    - '1'
+  current: 5.0
+  ground:
+    ref: U2
+    net: GND
+    pins:
+    - '2'
+  tol_min: null
+  tol_max: null
+  tol_pct: true
+  tol_dv: false
+  groups: []
+links: []
+settings:
+  max_edge_mm: 0.5
+  min_angle_deg: 28.0
+  simplify_mm: 0.003
+  circle_quad_segs: 4
+  min_edge_mm: 0.02
+  grading: 0.2
+  via_rules:
+  - kind: micro
+    plating_mm: 0.012
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: buried
+    plating_mm: 0.013
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: blind
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: blind_buried
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: through
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: pth
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  - kind: any
+    plating_mm: 0.02
+    drill_min_mm: 0.0
+    drill_max_mm: null
+    fill: nonconductive
+    fill_rho_ohm_mm: null
+  rho_ohm_mm: 1.724e-05
+  tcr_per_c: 0.00393
+  rho_by_layer: {}
+  tcr_by_layer: {}
+  conductor_by_layer: {}
+  tol: 1.0e-10
+  max_iter: 2000
+via_current_limit_a: 1.0
+thermal:
+  enabled: false
+  ambient_c: 25.0
+  iterations: 3
+  airflow_m_s: 0.0
+  grid_mm: 0.0
+  load_power: false
+  max_temp_c: null
+  max_rise_c: null
+html_report: false
+report_format: html
+nets: null
+excluded_nets: []
+stackup: null
+caps:
+- name: 10u
+  capacitance_f: 1.0e-05
+  esl_h: 4.0e-10
+  esr_ohm: 0.003
+  refs:
+  - C1
+  rated_v: null
+  kept_at_rated_pct: 40.0
+  dielectric: ''
+  aging_pct_per_decade: 0.0
+  mfg_tolerance_pct: null
+- name: 47u
+  capacitance_f: 4.7e-05
+  esl_h: 6.0e-10
+  esr_ohm: 0.002
+  refs:
+  - C2
+  rated_v: null
+  kept_at_rated_pct: 40.0
+  dielectric: ''
+  aging_pct_per_decade: 0.0
+  mfg_tolerance_pct: null
+probes: []
+ac:
+  f_start_hz: 1000.0
+  f_stop_hz: 300000000.0
+  points_per_decade: 250
+  field_points_per_decade: 20
+  max_edge_mm: 1.0
+  grading: 0.3
+  min_edge_mm: 0.03
+  grade_near_rail_only: true
+  loss_tangent: 0.02
+  default_er: 4.3
+  rail: ''
+  ground: ''
+  html_report: false
+  report_format: html
+  dc_bias: true
+  mfg_tolerance: false
+  aging: false
+  aging_hours: 87600.0
+  temperature: none
+  temperature_c: 25.0
+aggressors:
+- name: U1
+  vrm: U1
+  topology: auto
+  vin_v: null
+  fsw_hz: 1000000.0
+  rise_s: 2.0e-09
+  fall_s: 2.0e-09
+  duty: null
+  load_a: null
+  phases:
+  - inductor: L1
+    inductance_h: 1.0e-06
+    dcr_ohm: 0.0
+    switch_net: SW
+    high_side:
+      ref: U1
+      net: VIN
+      pins:
+      - '1'
+    low_side:
+      ref: U1
+      net: GND
+      pins:
+      - '2'
+    input_caps:
+    - C1
+    output_caps:
+    - C2
+    coss_f: 3.0e-10
+    rds_on_hs_ohm: null
+    rds_on_ls_ohm: null
+    package_l_h: 0.0
+victims:
+- net: SIG_SW
+  name: SIG_SW
+  preset: cmos
+  driver:
+    ref: U3
+    net: SIG_SW
+    pins:
+    - '1'
+  receiver:
+    ref: U4
+    net: SIG_SW
+    pins:
+    - '1'
+  driver_ohm: 33.0
+  receiver_ohm: 1000000.0
+  receiver_pf: 3.0
+  termination_ohm: null
+  logic_v: 3.3
+  noise_margin_v: null
+- net: SIG_LOOP
+  name: SIG_LOOP
+  preset: cmos
+  driver:
+    ref: U5
+    net: SIG_LOOP
+    pins:
+    - '1'
+  receiver:
+    ref: U6
+    net: SIG_LOOP
+    pins:
+    - '1'
+  driver_ohm: 33.0
+  receiver_ohm: 1000000.0
+  receiver_pf: 3.0
+  termination_ohm: null
+  logic_v: 3.3
+  noise_margin_v: null
+- net: SIG_BURIED
+  name: SIG_BURIED
+  preset: cmos
+  driver:
+    ref: U7
+    net: SIG_BURIED
+    pins:
+    - '1'
+  receiver:
+    ref: U8
+    net: SIG_BURIED
+    pins:
+    - '1'
+  driver_ohm: 33.0
+  receiver_ohm: 1000000.0
+  receiver_pf: 3.0
+  termination_ohm: null
+  logic_v: 3.3
+  noise_margin_v: null
+noise:
+  aggressor: U1
+  f_max_hz: null
+  max_harmonics: 4000
+  periods_shown: 2
+  min_ring_zeta: 0.05
+  segment_mm: 0.5
+  window_mm: 3.0
+  board_model: true
+  field_per_decade: 10
+  victims: all
+  scan: false
+  scan_radius_mm: 10.0
+  scan_top_n: 10
+  scan_driver_ohm: 33.0
+  scan_logic_v: 3.3
+  html_report: false
+  report_format: html
+format_version: 1

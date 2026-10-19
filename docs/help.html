@@ -134,6 +134,7 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#info">Info</a></li>
       </ol></li>
     <li><a href="#view3d">3D view and mouse</a></li>
+    <li><a href="#keys">Keyboard shortcuts</a></li>
     <li><a href="#log">Log and progress</a></li>
     <li class="group">DC analysis</li>
     <li><a href="#dc-concepts">DC concepts</a></li>
@@ -174,9 +175,20 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#ac-plot">Impedance plot and cursor</a></li>
         <li><a href="#ac-map">Board map</a></li>
         <li><a href="#ac-table">Results table</a></li>
-        <li><a href="#ac-report">AC HTML report</a></li>
+        <li><a href="#ac-report">AC report</a></li>
         <li><a href="#ac-reading">Reading the curve</a></li>
       </ol></li>
+    <li class="group">Coupled Noise analysis</li>
+    <li><a href="#noise-concepts">Coupled Noise concepts</a></li>
+    <li><a href="#noise-setup">Coupled Noise setup tabs</a>
+      <ol>
+        <li><a href="#noise-aggressors">Aggressors</a></li>
+        <li><a href="#noise-victims">Victims</a></li>
+        <li><a href="#noise-caps">Capacitors</a></li>
+        <li><a href="#noise-settings">Settings</a></li>
+      </ol></li>
+    <li><a href="#noise-solving">Solving an aggressor</a></li>
+    <li><a href="#noise-results">Waveforms and parasitics</a></li>
     <li class="group">Workflows</li>
     <li><a href="#workflows">Step-by-step workflows</a></li>
     <li class="group">Reference</li>
@@ -197,7 +209,9 @@ section below can be opened and closed; use the contents on the left to jump aro
 </div>
 
 <div class="callout tip"><b>Tip:</b> almost every button, box and table in KiPI has a tooltip.
-Hover over it for a one-line reminder of what it does. Press <kbd>F1</kbd> in KiPI to open this
+Hover over it for a one-line reminder of what it does. Fields that are easier to see than to
+read, such as a capacitor's ESL and ESR or a VRM's load line, show a small drawing in their
+tooltip with that field's part picked out. Press <kbd>F1</kbd> in KiPI to open this
 guide.</div>
 
 <!-- ================================================================== OVERVIEW -->
@@ -340,6 +354,12 @@ float them in their own windows.</p>
     standalone KiPI through the launcher, even when it was pinned from the plugin, since
     only KiCad can start the plugin; a running KiPI of either kind shows on that
     button.</li>
+  <li><b>Task Manager</b>: KiPI shows as <i>KiPI</i> with its icon, not as Python, in Windows
+    Task Manager, macOS Activity Monitor and Linux System Monitor or <code>top</code>. On
+    Windows it runs on <code>KiPI.exe</code>, a copy of its environment's Python that it makes
+    in the environment's <code>Scripts</code> folder the first time, with the Python DLLs it
+    needs beside it. Should that copy not start, KiPI runs on <code>pythonw.exe</code> as
+    before and does not try it again until Python or KiPI changes.</li>
   <li>While KiPI starts it shows a <b>welcome screen</b> with the logo, its version, whether
     it runs as the plugin or standalone, and the versions of Python and its main packages.
     It closes on its own after one play of the animation, or when you click it.</li>
@@ -392,8 +412,9 @@ of decimals, plus more when a small typed value needs them.</p>
     <code>.kipi.json.gz</code>, to analyze later, on another machine, or to attach to a bug
     report.</td></tr>
   <tr><td><b>Top / Bottom / Iso</b></td><td class="wrap">Snap the 3D camera to look down on
-    the board, up at its underside, or from an isometric angle. They also bring the 3D view
-    to the front from the Impedance and Board map tabs.</td></tr>
+    the board, up at its underside, or from an isometric angle (keys <b>Z</b>,
+    <b>Shift+Z</b> and <b>Home</b>; see <a href="#keys">Keyboard shortcuts</a>). They also
+    bring the 3D view to the front from the Impedance and Board map tabs.</td></tr>
   <tr><td><b>Screenshot…</b></td><td class="wrap">Saves whatever is in the middle as a PNG:
     the 3D view, the impedance plot or the board map, whichever tab is showing.</td></tr>
   <tr><td><b>Open results…</b></td><td class="wrap">Reopens saved results without solving again. Load the same board
@@ -437,6 +458,21 @@ of decimals, plus more when a small typed value needs them.</p>
 each copper layer and each dielectric with its thickness, each dielectric's material, εr and
 in-plane thermal conductivity, and each copper layer's conductor and resistivity. Every analysis, DC and AC, uses this stackup, and the 3D view
 draws it. The window can stay open beside the main window.</p>
+<p>Beside the table, a cross-section draws the layers to scale, top to bottom: copper in its
+layer colour, each dielectric in a colour for its material, and each layer's thickness
+beside it in the unit chosen. It follows the thicknesses as you type them. A layer too thin
+to see at the window's size, such as a copper foil on a thick board, is drawn 3 pixels
+tall, and its label gives the real thickness; where the labels do not all fit, only the
+copper layers are labelled and the rest show on hover. Click a layer in the drawing to edit
+its thickness in the table.</p>
+<p>The solder mask and silkscreen on each side are listed above and below the copper, in
+their color. They come from the board: KiCad's stackup gives the mask's thickness and
+color, an ODB++ job its mask and silkscreen layers. KiCad gives a silkscreen no thickness,
+so KiPI takes 15 µm; a board with no stackup of its own gets KiCad's default, a 10 µm mask
+and a silkscreen on both sides. Unlocked, their thicknesses can be changed. They sit
+outside the board, so they do not add to its thickness or move any layer. Only the
+electro-thermal solve uses them: heat leaving the outer copper for the air crosses them
+(see <a href="#dc-thermal">Thermal</a>).</p>
 <figure><img src="images/stackup.png" alt="The Stackup window listing copper and dielectric layers">
 <figcaption>The Stackup window.</figcaption></figure>
 <details open>
@@ -462,7 +498,10 @@ draws it. The window can stay open beside the main window.</p>
     Choosing a material sets its typical εr (a datasheet value near 1 GHz; type another if
     your laminate's differs) and its in-plane thermal conductivity <b>k</b>, which the
     electro-thermal solve uses. Type over k, unlocked, if your laminate's differs; choosing a
-    material again goes back to its typical value. A ⚠ beside k means KiPI did not recognize
+    material again goes back to its typical value. The solve also needs the conductivity
+    through the laminate, from one copper layer to the next: KiPI takes the material's typical
+    through-plane value (FR4 core 0.3 W/m·K), and a k you type keeps the material's ratio of
+    the two. A ⚠ beside k means KiPI did not recognize
     KiCad's name and took the layer as FR4. Setups from before 0.8.0 with a Thermal tab
     <b>Laminate k</b> open with that value as every dielectric's k.</td></tr>
   <tr><td><b>Material</b> (copper layers)</td><td class="wrap">What each copper layer is
@@ -476,8 +515,11 @@ draws it. The window can stay open beside the main window.</p>
     thicknesses, a layer's conductor is changed only with <b>Lock to imported values</b>
     unticked; ticking it again keeps the conductor chosen.</td></tr>
   <tr><td><b>εr</b></td><td class="wrap">Each dielectric's constant, for the AC solve.
-    <code>default</code> means the stackup gives none (or the material is a metal), and the AC
-    setup's <b>Default εr</b> applies.</td></tr>
+    <code>default</code> means the stackup gives none (or the material is a metal), and the
+    <b>Default εr</b> below applies. Every other dielectric uses the εr from KiCad's board
+    stackup (Board Setup → Physical Stackup); a dielectric made of several sublayers gets
+    their series combination. The AC log and report list the εr used for each
+    dielectric.</td></tr>
   <tr><td><b>Resistivity at 20 °C</b> (table)</td><td class="wrap">A copper layer's own
     resistivity, set by its conductor or typed in while unlocked; <code>default</code> uses
     the <b>Resistivity</b> below.</td></tr>
@@ -486,6 +528,11 @@ draws it. The window can stay open beside the main window.</p>
     plating, and its temperature coefficient (0.00393 /°C for copper), used by the
     electro-thermal solve. These are setup settings, so they can be changed while the
     stackup is locked.</td></tr>
+  <tr><td><b>Loss tangent</b>, <b>Default εr</b></td><td class="wrap">For the AC solve: the
+    dielectric loss (FR4 about 0.02), which damps the plane resonances, and the dielectric
+    constant of every dielectric whose εr is <code>default</code>. Setup settings too, so
+    they can be changed while the stackup is locked. (Before 0.9.0 they were on the AC
+    setup's Mesh tab.)</td></tr>
   <tr><td><b>Reset</b></td><td class="wrap">Back to KiCad's thicknesses, materials and εr,
     still unlocked.</td></tr>
 </table>
@@ -558,21 +605,30 @@ Hiding layers does not change the result colors; set the
     layers beneath; vias stay solid.</td></tr>
   <tr><td><b>Vias / Pads / Board</b></td><td class="wrap">Show or hide via barrels, pads and
     the board body.</td></tr>
+  <tr><td><b>Mask / Silkscreen</b></td><td class="wrap">Show the solder masks, in their
+    color and open over the pads, and what the silkscreens print: the board's drawings
+    and text on F.SilkS and B.SilkS, off the pads. Text read from a board file is drawn in
+    a font like KiCad's, in the same place; the running KiCad and ODB++ give KiCad's own.
+    Both start off, since they hide the copper. The copper and result views each
+    remember these settings, like 3D Models: over results they start off, whatever the
+    copper view shows.</td></tr>
   <tr><td id="pi-models"><b>PI Models</b></td><td class="wrap">Marks the parts the current
     analysis uses on the copper: a dot on each of their pads, larger on the rail's pins and
     smaller on ground, with the part's name above. In DC mode those are the setup's
-    <b>VRMs</b> (green), <b>loads</b> (cyan), <b>series links</b> (magenta) and
-    <b>capacitors</b> with a model (white). In AC mode the <b>probes</b> (violet) take the
-    loads' place — the impedance is looked into at a probe, and a load's current says
-    nothing about it — beside the same VRMs, series links and capacitors. Only pads on a
+    <b>VRMs</b> (green), <b>loads</b> (cyan) and <b>series links</b> (magenta). In AC mode
+    the <b>probes</b> (violet) take the loads' place — the impedance is looked into at a
+    probe, and a load's current says nothing about it — beside the same VRMs and series
+    links and the <b>capacitors</b> with a model (white), which only an impedance sweep
+    uses. Only pads on a
     net shown are marked, and the marks follow setup edits. They are drawn over the plain
     copper only, not over results. Unticked to start with.<br>
-    Clicking a VRM, load, series link or probe in the setup's lists marks it in
+    Clicking a VRM, load, series link, probe or capacitor model in the setup's lists marks it
+    (every part of a capacitor model) in
     <b>amber</b>, and with <a href="#snap">Snap to selected</a> ticked brings the view to it;
     PI Models is left as you set it. Clicking a part's name (or one
     of its dots) in 3D selects it in the current mode's setup, ready to edit. Either way, the
-    newly selected part blinks red and amber for a few seconds. Capacitors
-    are marked but not selected this way: a model names several parts.</td></tr>
+    newly selected part blinks red and amber for a few seconds. Clicking a capacitor in
+    3D selects its model in AC mode's Capacitors tab.</td></tr>
   <tr><td id="snap"><b>Snap to selected</b></td><td class="wrap">Brings the view to a part
     when it is picked in the setup's lists (ticked to start with). Available only while PI
     Models is ticked, since it goes to the part's marks. Untick it to keep the view where it
@@ -581,6 +637,9 @@ Hiding layers does not change the result colors; set the
     part on the board. In the geometry view they are on to start with; over results they start
     hidden, and ticking <b>3D Models</b> there shows them too. Each view remembers its own
     setting. See <a href="#part-models">Part 3D models</a> below.</td></tr>
+  <tr><td id="guess-models"><b>Guess models</b></td><td class="wrap">Picks models from KiCad's
+    library for the parts that have none, by footprint name, and ticks <b>3D Models</b>.
+    Only when clicked; see <a href="#part-models">Part 3D models</a>.</td></tr>
 </table>
 <figure><img src="images/pi_models.png" alt="PI Models marks on the board, the selected switcher in amber">
 <figcaption>PI Models, snapped to the selected +3.3V switcher.</figcaption></figure>
@@ -601,6 +660,18 @@ Hiding layers does not change the result colors; set the
   <li>A part whose model KiCad cannot find is named in the log with the missing path. If
     <code>kicad-cli</code> or the board file cannot be found, the log says so once and no
     models are drawn; see <a href="#ts-models">Troubleshooting</a>.</li>
+  <li><b>Guess models</b> is for a board with no KiCad board file to read models from (an
+    ODB++ job, a snapshot opened away from its board) and for parts whose models KiCad cannot
+    find. For each part with no model, it looks up the footprint (or ODB++ package) name in
+    the 3D model library KiCad installs: the whole name, a name the part's ends with
+    (<code>Capacitor_SMD_C_0402_1005Metric</code>), the name it starts with (a
+    <code>_HandSolder</code> variant), a chip resistor, capacitor or inductor's size code
+    (<code>CAPC1005X55N</code>, <code>C0402</code>, <code>R0805</code>), and last the closest
+    name. <code>kicad-cli</code> then places the models where the parts sit, turned and on
+    their side. It is a guess, so it never runs by itself: a model not found by the whole
+    name is left out if it is far larger or smaller than the part's pads, and the log names
+    each one kept. Opening or reloading the board drops them.</li>
+  <li>Standalone, part models are offered when KiCad is installed on the computer.</li>
 </ul>
 </div>
 </details>
@@ -643,6 +714,36 @@ standalone KiPI does not.</p>
 </div>
 </details>
 
+<!-- ================================================================== KEYS -->
+<h2 id="keys">Keyboard shortcuts</h2>
+<details open>
+<summary>Every key</summary>
+<div class="body">
+<p>The view keys work once you have clicked in the 3D view, so that Home and letters still
+reach the lists and text boxes. The rest work anywhere in the main window. Each button's
+tooltip names its key. On macOS, <b>Ctrl</b> is the <b>Command</b> key.</p>
+<table>
+  <tr><th>Key</th><th>What it does</th></tr>
+  <tr><td><b>Home</b></td><td class="wrap">Iso view (in the 3D view)</td></tr>
+  <tr><td><b>Z</b> / <b>Shift+Z</b></td><td class="wrap">Top / bottom view (in the 3D
+    view)</td></tr>
+  <tr><td><b>Ctrl+O</b></td><td class="wrap"><b>Open…</b> (standalone) or <b>Open
+    snapshot…</b> (plugin)</td></tr>
+  <tr><td><b>F5</b></td><td class="wrap"><b>Reload</b>, or <b>Load from KiCad</b></td></tr>
+  <tr><td><b>Ctrl+S</b></td><td class="wrap"><b>Save snapshot…</b></td></tr>
+  <tr><td><b>F12</b></td><td class="wrap"><b>Screenshot…</b></td></tr>
+  <tr><td><b>Ctrl+Shift+O</b></td><td class="wrap"><b>Open results…</b></td></tr>
+  <tr><td><b>Ctrl+L</b></td><td class="wrap">The <a href="#stackup">Stackup window</a></td></tr>
+  <tr><td><b>Ctrl+T</b></td><td class="wrap">The <b>Power tree</b></td></tr>
+  <tr><td><b>Ctrl+1</b> / <b>Ctrl+2</b> / <b>Ctrl+3</b></td><td class="wrap">DC / AC / Coupled Noise mode</td></tr>
+  <tr><td><b>Ctrl+Enter</b></td><td class="wrap">Solve: <b>Solve all</b> in DC mode,
+    <b>Solve rail</b> in AC mode, when the button can be pressed</td></tr>
+  <tr><td><b>Esc</b></td><td class="wrap"><b>Cancel</b> the running operation</td></tr>
+  <tr><td><b>F1</b></td><td class="wrap">This guide</td></tr>
+</table>
+</div>
+</details>
+
 <!-- ================================================================== LOG -->
 <h2 id="log">Log and progress</h2>
 <details>
@@ -651,6 +752,11 @@ standalone KiPI does not.</p>
 <p>The bottom dock shows the current stage, a progress bar, and <b>Cancel</b>, which stops the
 running task (loading, building nets or solving). The log streams every stage with its
 timing, solver residuals and warnings: warnings are amber, errors red, stage headers blue.</p>
+<p>While anything runs, the right end of the status bar shows a turning spinner with the
+operation and how long it has taken so far (part 3D models loading in the background
+included). The spinner keeps turning while KiPI works; a stage that cannot say how far it
+is moves the progress bar back and forth instead. While the window itself is busy, drawing
+a big solve's results or saving a snapshot, the mouse pointer shows the wait cursor.</p>
 <p>Each session also writes a log file to <code>kipi/</code> in your temporary folder
 (<code>%TEMP%</code> on Windows, <code>$TMPDIR</code> on macOS, <code>/tmp</code> on Linux).
 See <a href="#troubleshooting">Troubleshooting</a>.</p>
@@ -789,18 +895,22 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Dropout</td><td class="wrap">LDO only: the least input-to-output difference at which it
     still regulates.</td></tr>
   <tr><td>Input range</td><td class="wrap">Optional input range, min and max on one row, in
-    <b>V</b> or in <b>%</b> from the input rail's nominal voltage (the set voltage of the VRM
-    driving it; e.g. min -10 %, max +10 %). Switching the unit converts the values when that
-    VRM is known. A range in % with no VRM driving the input is a setup error. A VRM whose
+    <b>V</b>, in <b>±V</b> from the input rail's nominal voltage (the set voltage of the VRM
+    driving it; e.g. min -0.5 V, max +0.5 V) or in <b>%</b> from it (e.g. min -10 %, max
+    +10 %). Switching the unit converts the values when that VRM is known. A range in ±V or
+    % with no VRM driving the input is a setup error. A VRM whose
     solved input is outside its range (or an LDO below its dropout) cannot hold its output, and every load it
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
   <tr><td>DC accuracy</td><td class="wrap">LDO and switcher only; used by the AC
-    <a href="#ac-calc">target calculator</a>. The output's DC error from
-    the datasheet (reference and feedback tolerance, line and load regulation): min and max
-    on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %) or in <b>V</b>, the lowest
-    and highest output voltage.</td></tr>
-  <tr><td>Control loop bandwidth</td><td class="wrap">AC only. The AC solve
+    <a href="#ac-calc">target calculator</a>. The output's DC error (DC accuracy or DC
+    tolerance) from the datasheet: the regulator's reference accuracy, the feedback resistor
+    tolerances, leakage into the FB pin, and line and load regulation. Min and max
+    on one row, in <b>%</b> of the set voltage (e.g. -1 %, +1 %), in <b>±V</b> from it (e.g.
+    -0.01 V, +0.01 V) or in <b>V</b>, the lowest and highest output voltage.</td></tr>
+  <tr><td>Control loop bandwidth</td><td class="wrap">AC only. Also called the loop
+    gain crossover, gain crossover or control loop crossover frequency; it depends on the
+    total output capacitance and the loop tuning. The AC solve
     leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
     frequency the converter's loop holds the rail. Probe targets are drawn and judged only
     above it (see <a href="#ac-bandwidth">Targets and the VRM bandwidth</a>);
@@ -838,14 +948,45 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return. Filled in
     with the supply part's ground pins.</td></tr>
   <tr><td>Tolerance</td><td class="wrap">Optional min and max on one row, in <b>%</b> from the
-    VRM set voltage (e.g. min -3 %, max +5 %) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
+    VRM set voltage (e.g. min -3 %, max +5 %), in <b>±V</b> from it (e.g. min -0.1 V, max
+    +0.15 V) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
     may be left "not set". PASS if every supply pin is within it. Switching the unit
     converts the values when a VRM drives the load's rail.</td></tr>
-  <tr><td>Heat</td><td class="wrap">Optional, W: the heat the part puts into the board in the
-    electro-thermal solve, when load power is included. Not set: the power it draws. Set it
-    for a part that passes most of its power on, such as a load switch.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
+<h4 id="load-models">Load models</h4>
+<p>A <b>load model</b> is a part's supplies in a YAML file of their own: for each
+supply its pins, current or pin groups, tolerance and heat, and for the AC analysis its
+target impedance, or the load step it is worked out from. One model serves every copy of a
+part, on this board or another. The <b>Model ▾</b> button under the Loads list (and under the
+AC Probes list) has:</p>
+<ul>
+  <li><b>Apply model file to loads…</b>: pick a model, then tick the loads to apply it to,
+    each with the model supply to take beside it. Loads whose pins or name match a supply
+    come ticked. Only what the model gives is set; pins are left as they are.</li>
+  <li><b>Add loads from model file…</b>: one load per supply on each part ticked. The list
+    holds the parts that have the pins of at least one of the model's supplies; a load's net
+    is the one its pins are on, and its ground pins are the model's or, without them,
+    guessed as for a new load.</li>
+  <li><b>Export a part's model…</b>: every load and probe on one reference designator, one
+    supply each (named after the load, less its reference), so a part with several supplies
+    keeps them all.</li>
+</ul>
+<p>On the Probes list the same menu sets targets: the model's flat target or custom points,
+or one from its load step, slew rate and AC tolerance, as the target calculator works it out
+(without an AC tolerance, the tighter side of the DC tolerance of the rail's VRM voltage).
+A model file, by hand:</p>
+<pre>kipi_load_model: 1
+part: XC7A35T-1CSG324C
+supplies:
+  - name: VCCINT
+    pins: [F7, F9, H7]
+    ground_pins: [A1, A10]
+    current_a: 1.2              # or pin_groups: [{name: core, pins: [F7], current_a: 0.8}, ...]
+    tolerance: {min: -3, max: 3, unit: "%"}     # V, ±V or %
+    target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[1.0e3, 0.01], [1.0e8, 0.1]]}
+    load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}</pre>
+<p>Every key but <code>name</code> is optional.</p>
 </div>
 </details>
 
@@ -919,7 +1060,8 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     The air always flows parallel to the board, along both faces, and its direction is fixed:
     every point is cooled equally, as if the air stayed at ambient across the whole board, so
     upstream parts do not warm the air that reaches downstream ones.
-    Convection is h = 10 + 3.8·v W/m²K per face.</td></tr>
+    Convection is h = 10 + 3.8·v W/m²K per face. The heat crosses each face's solder mask
+    and silkscreen on the way (Stackup window).</td></tr>
   <tr><td>Grid</td><td class="wrap">Thermal cell size; <i>auto</i> is about 250 cells across
     the board.</td></tr>
   <tr><td>Include load power dissipation</td><td class="wrap">Off by default. When ticked,
@@ -931,7 +1073,10 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
 </table>
 <p>Heat comes from every solved net and layer, vias, DC connections (I²R, at their pins), VRM
-conversion loss and, with <b>Include load power dissipation</b>, the loads. The report's
+conversion loss and, with <b>Include load power dissipation</b>, the loads. Each copper layer
+has its own temperature: heat goes onto the layer it is made on (a part's on the layers of its
+pads), crosses the laminate to the layers above and below, and goes down plated holes on any
+net. Only the top and bottom layers lose heat to the air. The report's
 <b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
@@ -941,17 +1086,32 @@ limits grade the last solve straight away when you change them.</p>
 <!-- ================================================================== DC SOLVING -->
 <h2 id="dc-solving">Solving</h2>
 <details open>
-<summary>Solve all, HTML report and Cancel</summary>
+<summary>Solve all, report and Cancel</summary>
 <div class="body">
 <p><b>Solve all</b> saves the setup, meshes every ticked net group and solves the power tree.
 It is disabled while there are problems (listed in red). If you click it while the 3D view is
 still building nets, the solve is queued and starts as soon as that finishes.</p>
-<p>Tick <b>HTML report</b> before solving to also write
+<p>Tick <b>Report</b> before solving to also write
 <code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the board; the
 time stamp keeps each solve's report instead of overwriting the last one. It opens in your web browser when the solve finishes, and
-<b>Report</b> opens it again later. The report is a single offline file with every
+<b>Open report</b> opens it again later. The report is a single offline file with every
 table, an interactive 3D view of each net group, per-layer statistics and maps, and the
 temperature map.</p>
+<p>Choose <b>PDF</b> beside <b>Report</b> for a <code>.pdf</code> to print or attach
+instead. It has the same tables and maps, without the sortable columns. It opens in your
+PDF viewer. Its <b>User notes</b> box is a form field: click in it and type in Acrobat, a
+web browser, Preview or most other PDF viewers, then save the PDF to keep the notes in it.
+Printed, it is an empty box to write in.</p>
+<p>A PDF can't show the interactive 3D views, so they travel inside it: a web page of their
+own, <code>&lt;report&gt;_3d.html</code>, attached to the PDF (nothing extra is written next
+to it). The <b>3D Results View</b> link at the top of the report, and the one under each
+net group, opens it in your web browser: click the link in Acrobat, Foxit or PDF-XChange,
+or double-click the paperclip beside it in Firefox or Okular. It is also in the viewer's
+attachments panel, which Acrobat opens the PDF on; Chrome's and Edge's own viewers and macOS Preview
+mostly don't, so there save the PDF and open it in one that does, or extract the
+attachment with a PDF tool. The static views stay in the PDF either way. It adds about
+1–2 MB to the PDF. Should the page fail to go in, KiPI saves it beside the PDF instead, and the links open
+it there.</p>
 <p>The report's <b>Pins</b> section, and <code>_pins.csv</code> in <b>Export ▾ Tables as
 CSV…</b>, list every pin each group was solved with. That covers VRM output, phase, input
 and sense pins, load supply and ground pins, and DC connection pins. Each row gives the pin's
@@ -988,7 +1148,8 @@ color the copper in 3D.</p>
     Hot spots that the thermal solve will pick up.</td></tr>
   <tr><td>Via current (mA)</td><td class="wrap">Current in each via barrel.</td><td class="wrap">
     Vias doing all the work while neighbors idle.</td></tr>
-  <tr><td>Temperature (°C)</td><td class="wrap">Board temperature (electro-thermal only).</td>
+  <tr><td>Temperature (°C)</td><td class="wrap">Each layer's copper temperature
+    (electro-thermal only).</td>
     <td class="wrap">Peak location and rise.</td></tr>
 </table>
 <p><b>Show copper</b> returns to the plain geometry; pick a group or field again to bring the
@@ -1028,8 +1189,9 @@ scale, a minimum of zero or below falls back to four decades below the maximum.<
   <tr><td><b>Losses</b></td><td class="wrap">Copper loss per group and layer, in vias and
     series parts, with the total and each VRM's conversion loss at the bottom.</td></tr>
   <tr><td><b>Thermal</b></td><td class="wrap">After an electro-thermal solve: the hottest copper
-    on each layer, its rise and location, PASS/FAIL against the limits, the iteration history
-    and the dielectric conductivities used. Double-click a row to show its group's
+    on each layer, at that layer's own temperature, its rise and location, PASS/FAIL against
+    the limits, the iteration history and the dielectric conductivities used, in-plane and
+    through. Double-click a row to show its group's
     temperature.</td></tr>
   <tr><td><b>Notes</b></td><td class="wrap">Solve time, the nets in each group, pin group
     results, warnings and excluded groups.</td></tr>
@@ -1229,6 +1391,8 @@ are required.</p>
 its dropdown. The dropdown also lists the input of every LDO and switcher, one entry per phase
 (e.g. <i>VR4 phase 2 input</i>): a regulator's input pins load the rail feeding it just as a
 device does.</p>
+<p><b>Model ▾</b> applies a <a href="#load-models">load model</a>'s targets to many probes at
+once, adds a model's probes for the parts ticked, or exports a part's model.</p>
 <p>A rail can have several probes, e.g. one per device; they are all solved together and each
 sees the others as open circuits.</p>
 </div>
@@ -1326,7 +1490,8 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
   <tr><td>Temperature</td><td class="wrap"><i>Not modeled</i> (the default): copper at 20 °C
     and capacitors at their rated values. <i>Fixed</i>: the whole board at <b>Board
     temperature</b>. <i>From DC thermal co-simulation</i>: each copper triangle and capacitor
-    at the temperature the last DC solve with thermal co-simulation found there; DC results
+    at the temperature the last DC solve with thermal co-simulation found there, on its own
+    copper layer; DC results
     opened from a file work too. Without one, the AC solve uses the Board temperature and
     says so. The copper's resistivity follows its temperature coefficient (from the DC
     settings), and models with a dielectric follow its temperature curve.</td></tr>
@@ -1354,14 +1519,16 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
   <tr><td>Via grading</td><td class="wrap">Element growth per mm away from plated holes.</td></tr>
   <tr><td>Min edge (at holes)</td><td class="wrap">Element size at plated holes. The mesh here
     decides the via and mounting inductance.</td></tr>
-  <tr><td>Loss tangent</td><td class="wrap">Dielectric loss (FR4 about 0.02). Damps the plane
-    resonances.</td></tr>
-  <tr><td>Default εr</td><td class="wrap">Dielectric constant where the stackup gives none.
-    Every other dielectric uses the εr from KiCad's board stackup (Board Setup → Physical
-    Stackup); a dielectric made of several sublayers gets their series combination. The log
-    and the HTML report list the εr used for each dielectric.</td></tr>
+  <tr><td>Grade only near the rail</td><td class="wrap">On by default. The mesh is refined only
+    at plated holes within five board thicknesses (at least 5 mm) of the rail's copper or a
+    part on it. Far ground vias carry almost none of the rail's current, but grading them can
+    be most of the mesh on a board stitched with many. All the copper is kept either way, so
+    the low-frequency return still takes every path it has. On an 8-layer board it halved the
+    solve and changed the impedance by under 0.002 %.</td></tr>
 </table>
-<p>Copper resistivity and the via plating rules come from the DC setup's Copper and Mesh tabs.</p>
+<p>The via plating rules come from the DC setup's Mesh tab; copper resistivity and the
+dielectric <b>Loss tangent</b> and <b>Default εr</b> from the
+<a href="#stackup">Stackup window</a>.</p>
 </div>
 </details>
 
@@ -1374,11 +1541,11 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
 nets with grounds first, defaulting to the VRM's ground pins' net. <b>Solve rail</b> saves the
 setup and runs the sweep; problems that stop it are listed in red above. The log shows the
 field solves as they go.</p>
-<p>Tick <b>HTML report</b> next to <b>Solve rail</b> to also write
-<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
-board after each rail's solve;
-the report opens in your web browser when the rail finishes solving, and <b>Report</b> opens
-the shown rail's report again later. See <a href="#ac-report">AC HTML report</a>.</p>
+<p>Tick <b>Report</b> next to <b>Solve rail</b> to also write
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> (or, with
+<b>PDF</b> chosen, <code>.pdf</code>) next to the board after each rail's solve;
+the report opens when the rail finishes solving, and <b>Open report</b> opens
+the shown rail's report again later. See <a href="#ac-report">AC report</a>.</p>
 <p>Each rail keeps its last result: switch <b>Rail</b> to look at another rail's curves
 without solving again. If you change the rail while a solve is running, the result is kept
 for its own rail and the notes say so.</p>
@@ -1464,9 +1631,9 @@ under its VRM in <b>Rail</b>. Rails whose VRM is no longer in the setup are left
 </details>
 
 <details id="ac-report">
-<summary>AC HTML report</summary>
+<summary>AC report</summary>
 <div class="body">
-<p>With <b>HTML report</b> ticked, each rail's solve also writes
+<p>With <b>Report</b> ticked, each rail's solve also writes
 <code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
 board; the time stamp keeps every solve's report. Like the DC report, it is a single offline file you can email. It holds:</p>
 <ul>
@@ -1483,6 +1650,10 @@ board; the time stamp keeps every solve's report. Like the DC report, it is a si
     links, the sweep, mesh and copper settings, and the solver's size, backend and time;</li>
   <li>notes: capacitors left out and any warnings.</li>
 </ul>
+<p>With <b>PDF</b> chosen, the report is a <code>.pdf</code> with the same sections, the
+impedance plot and board map as images (probes and targets; no hover or per-model curves),
+and the User notes box as a form field to type in and save. If a PDF can't be made,
+KiPI writes the HTML report instead and the log says why.</p>
 <p>If the report can't be written, the log says why; the solve's results are kept either
 way.</p>
 </div>
@@ -1506,6 +1677,197 @@ way.</p>
     from the board's dimensions and stackup.</li>
   <li><b>Phase</b> near −90° is capacitive, near +90° inductive, near 0° resistive.</li>
 </ul>
+</div>
+</details>
+
+<!-- ================================================================== COUPLED NOISE -->
+<h2 id="noise-concepts">Coupled Noise concepts</h2>
+<details open>
+<summary>A switcher as a noise source</summary>
+<div class="body">
+<p><b>Coupled Noise</b> mode (<b>Ctrl+3</b>) treats a buck or boost switching regulator as an
+<b>aggressor</b>: from a few of its parameters and the board's layout it builds the
+converter's waveforms (the switch node, the inductor currents, each capacitor's ripple
+current and the rails' ripple voltage), then couples them onto the signal nets you name, the
+<b>victims</b>, and compares the noise at each victim's receiver with its noise margin.
+Three coupling paths are modeled: <b>capacitive</b>, the switch node's copper charging
+the victim's traces through their mutual capacitance; <b>inductive</b>, the current loops
+through each input and output capacitor inducing a voltage along the victim's traces
+through their mutual inductance; and <b>common</b> (shared-ground) coupling, the switching
+currents' return through shared copper leaving the ground under the victim's driver at
+another voltage than its receiver's (the copper's resistance: the inductive part of that is
+the victim's own loop picking up the field, which the inductive path counts).</p>
+<p>The <b>board model</b> solves the converter's input and output rails and their ground
+with AC mode's field model: the switching currents divide among all the capacitors on the
+rails through the copper's own impedance, the rails' ripple is taken at the switching
+device's pins, and the ground difference between each victim's ends gives its shared-
+ground coupling. It is the slow part of a solve (comparable to an AC solve of the rails);
+untick it in Settings for a quick look.</p>
+<p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
+Its input rail and set voltage give the input and output voltages, and from them the
+topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
+current is the DC setup's loads on its output rail, unless you enter one.</p>
+<p>The <b>hot loop</b> is the path the switching current takes on every edge: in a buck,
+from the input capacitors through the high-side switch and back from the low-side switch to
+the capacitors' ground; in a boost, the same through the output capacitors. KiPI draws it
+between the pads you name, as wide as the copper along it, and computes its inductance from
+partial inductances, with the plane under it taking image currents. With the switch node's
+capacitance to ground (the switch's Coss plus the switch-node copper's capacitance to the
+neighbouring planes) it sets the <b>ringing</b> on every edge, at
+f = 1 / (2π√(L·C)).</p>
+<p>The waveforms are exact Fourier series of piecewise-linear shapes (trapezoids and
+triangles) up to a highest frequency set by the edges and the ringing, so nothing is
+time-stepped and a solve takes well under a second.</p>
+</div>
+</details>
+
+<h2 id="noise-setup">Coupled Noise setup tabs</h2>
+<details open id="noise-aggressors">
+<summary>Aggressors</summary>
+<div class="body">
+<p><b>Add</b> makes an aggressor for a switcher VRM and fills its phases from the board. The
+top of the form holds what all phases share:</p>
+<ul>
+  <li><b>VRM</b> and <b>Topology</b> (Auto from the voltages, or Buck or Boost). The line
+    below shows the operating point: voltages, output current and duty cycle, or what is
+    missing for one.</li>
+  <li><b>Input voltage</b> and <b>Output current</b>: blank uses the VRM's and the DC loads'.</li>
+  <li><b>Switching frequency</b>, <b>Rise time</b> and <b>Fall time</b> of the switch node.
+    Phases are interleaved evenly, 360°/N apart.</li>
+  <li><b>Duty cycle</b>: blank computes it from the voltages, raised by the losses you enter.</li>
+</ul>
+<p>Below, one phase at a time: pick it in the phase list, or <b>Add phase</b> /
+<b>Remove phase</b>. <b>Fill from VRM</b> replaces the phases with one per VRM phase, read
+from the board: the switching device's pins from the VRM's, the inductor between the device
+and the rail, its value, the switch node, and the capacitors from each rail to ground, each
+given to the nearest phase. Each phase has:</p>
+<ul>
+  <li><b>Inductor</b>, <b>Inductance</b> and <b>DCR</b>.</li>
+  <li><b>Switch node</b>: the net between the switching device and the inductor.</li>
+  <li><b>High-side pins</b> and <b>Low-side pins</b> (<a href="#pin-picker">pin pickers</a>):
+    the switching device's pins on the rail its hot loop is fed from (VIN for a buck, the
+    output for a boost) and its power ground pins. A discrete design may name a different
+    part for each.</li>
+  <li><b>Input capacitors</b> and <b>Output capacitors</b>: tick the capacitors on each rail
+    this phase uses. The ripple current is shared among them by their impedances.</li>
+  <li><b>Coss</b>, <b>High-side Rds(on)</b> and <b>Low-side Rds(on)</b> from the datasheet,
+    all optional: without them typical values are used and the ringing is approximate.</li>
+  <li><b>Package inductance</b>: the loop inductance inside the device, added to the board's.</li>
+</ul>
+</div>
+</details>
+<details open id="noise-victims">
+<summary>Victims</summary>
+<div class="body">
+<p><b>Add</b> makes a victim of the first signal net not yet one, with its driver and
+receiver guessed as the net's two pads farthest apart. For each victim:</p>
+<ul>
+  <li><b>Net</b> and an optional <b>Name</b>.</li>
+  <li><b>Type</b>: what drives and loads the net. CMOS push-pull, open drain (held only by its
+    pull-up), series or parallel terminated, a differential (LVDS) leg or a high-impedance
+    analog input. A type fills in the values below; editing them makes it Custom.</li>
+  <li><b>Driver pins</b> and <b>Receiver pins</b> (<a href="#pin-picker">pin pickers</a>):
+    where the trace is driven and where its noise is judged. Blank guesses them.</li>
+  <li><b>Driver resistance</b>, <b>Receiver resistance</b>, <b>Receiver capacitance</b> and
+    <b>Termination</b> (a parallel termination at the receiver).</li>
+  <li><b>Logic level</b>: the family's supply; its JESD8 levels give the noise margin,
+    min(VIL − VOL, VOH − VIH), 400 mV for 3.3 V CMOS. <b>Noise margin</b> overrides it.</li>
+</ul>
+<p>With <b>PI Models</b> shown, each victim's driver and receiver pins are marked in orange
+in the 3D view ("<i>victim</i> driver", "<i>victim</i> receiver"; the guessed ones where
+they are not set). Selecting a victim highlights both; clicking either marker selects the
+victim.</p>
+</div>
+</details>
+<details open id="noise-caps">
+<summary>Capacitors</summary>
+<div class="body">
+<p>The same capacitor models as <a href="#ac-caps">AC mode</a>, edited here too. A ticked
+capacitor without a model is taken at its value from the board with a typical ESR and ESL,
+and the results say so.</p>
+</div>
+</details>
+<details open id="noise-settings">
+<summary>Settings</summary>
+<div class="body">
+<ul>
+  <li><b>Highest frequency</b>: the highest harmonic kept. Blank: ten times the faster
+    edge's corner frequency, 1/(π·rise time), or three times the ringing, at most 3 GHz.</li>
+  <li><b>Harmonic limit</b>: the most harmonics of the switching frequency kept.</li>
+  <li><b>Least ringing damping</b>: the hot loop's resistance alone barely damps a real
+    switch node; its switches' output capacitance, reverse recovery and radiation take
+    energy too, and measured ringing usually dies within five to ten cycles. The ringing is
+    damped at least this much (ζ, default 0.05); 0 uses the loop's resistance alone.</li>
+  <li><b>Periods shown</b> in the waveform plot.</li>
+  <li><b>Victim segment</b>: victim traces are cut into pieces this long, each with its own
+    cross-section of the copper around it (default 0.5 mm).</li>
+  <li><b>Coupling window</b>: how far either side of a victim trace copper is taken into its
+    cross-section (default 3 mm). Switch-node copper further away does not couple.</li>
+  <li><b>Board model</b>: solve the rails and ground's copper (above). Off, the capacitors
+    share the current by their own impedances and there is no shared-ground coupling.</li>
+  <li><b>Field solves per decade</b>: copper solves per decade of the harmonics; the board's
+    response in between is interpolated (default 10).</li>
+  <li><b>Scan radius</b>: the scan looks at signal nets with a trace this close to the
+    aggressor's parts (default 10 mm). <b>Scan: solve in full</b>: how many of the worst
+    estimates are solved in full (default 10). <b>Scan: driver resistance</b> and
+    <b>logic level</b>: what scanned nets are solved and judged with, as their real
+    drivers are not known.</li>
+</ul>
+</div>
+</details>
+
+<h2 id="noise-solving">Solving an aggressor</h2>
+<details open>
+<summary>Aggressor and Solve</summary>
+<div class="body">
+<p>Below the tabs, pick the <b>Aggressor</b> and click <b>Solve</b>; problems that stop it
+are listed in red above. Only one aggressor is solved at a time, and each keeps its last
+result. <b>Victims</b> picks which victims a solve covers: all of them, one by name (quicker
+while you work on one route), or none (the aggressor's waveforms only).</p>
+<p>Tick <b>Scan nearby nets</b> to also look for victims you have not named: every signal net
+with a trace within the scan radius of the aggressor's parts gets a quick estimate of its
+noise (capacitive from its distance to the switch-node copper, inductive from the full
+model), and the worst are solved in full with the scan's default driver and logic level
+(Settings). They are marked <b>(scan)</b> in the results table. Scan and a chosen victim
+work together: name the nets you know, scan for the ones you do not.</p>
+<p>Tick <b>Report</b> to write <code>&lt;board&gt;_&lt;aggressor&gt;_noise_report_&lt;date&gt;_&lt;time&gt;.html</code>
+(or <code>.pdf</code>) next to the board after each solve: the victims against their
+margins, the aggressor's parasitics, its waveforms, each victim's noise by mechanism, the
+scan's estimates and the notes. <b>Open report</b> opens it again. <b>Save results…</b> writes every solved aggressor to a
+<code>.kipi-noise-results</code> file that <b>Open results…</b> reopens in this mode.</p>
+</div>
+</details>
+
+<h2 id="noise-results">Waveforms and parasitics</h2>
+<details open>
+<summary>The Waveforms tab and the results notes</summary>
+<div class="body">
+<p>The <b>Waveforms</b> tab beside the 3D view plots, over a few switching periods: the
+switch node of every phase (with its ringing), the inductor currents, each input and output
+capacitor's ripple current (the largest twelve), and the input and output rails' ripple
+voltage. Tick <b>Spectrum</b> to see each waveform's harmonics instead; hover to read the
+curves.</p>
+<p>The results notes give the operating point and, for each phase, the hot loop's
+inductance, the switch node's capacitance to ground (Coss and copper), the loop's
+resistance, and the ringing's frequency and damping.</p>
+<p>The <b>results table</b> lists each victim: its receiver's peak noise over a switching
+period, its noise margin, the share of the margin used, the coupling mechanism that
+dominates, and <b>PASS</b> or <b>FAIL</b>. The worst victim is selected; select one to plot
+its noise under <b>Victim noise</b> in the Waveforms tab: the receiver's total, each
+mechanism's share of it and the driver's, against its margin (in time, or as a
+spectrum). The log gives each victim's mutual capacitance to the switch node, the length
+of trace beside it, and its mutual inductance to the capacitor loops.</p>
+<p>The mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
+node's dV/dt: keep victims away from the switch node's copper (or behind a plane), and
+drive them harder. <b>Inductive</b> noise comes from the hot loop's dI/dt: make the loop
+small and keep it over a solid plane, and route victims away from it, or on the far side
+of the plane. <b>Common</b> noise comes from the switching current's return path: give the
+hot loop's ground its own short return (vias next to the switching device and its
+capacitors) and keep the victim's driver and receiver grounds out of that path.</p>
+<p>A capacitor on the rails without a model is taken at its value from the board with a
+typical ESR and ESL, and the results say so. Copper the board model reaches only through
+parts (a ground pad whose via misses it, say) is tied weakly for the solve and named in
+the results: check it, as its currents have nowhere real to go.</p>
 </div>
 </details>
 
@@ -1675,6 +2037,10 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>*.kipi-results</code></td><td class="wrap">DC results saved by KiPI 0.7 and
     earlier, as Python pickles, which can run code; KiPI asks before it opens one, and they
     are deprecated.</td></tr>
+  <tr><td><code>*_noise_report_*.html</code>, <code>.pdf</code></td><td class="wrap">Coupled
+    Noise report, written after a solve with Report ticked</td></tr>
+  <tr><td><code>*.kipi-noise-results</code></td><td class="wrap">Saved Coupled Noise results,
+    every solved aggressor (Save results… / Open results… in Coupled Noise mode)</td></tr>
   <tr><td><code>*.kipi-ac-results</code></td><td class="wrap">Saved AC results, every rail
     solved, in the same format.</td></tr>
   <tr><td><code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code></td><td class="wrap">The DC HTML report.</td></tr>
@@ -1774,7 +2140,10 @@ standalone KiPI) from the temporary folder.</p></div>
     KiCad, the PATH, the usual install folders and a Flatpak KiCad. Otherwise set the
     environment variable <code>KIPI_KICAD_CLI</code> to its full path.</li>
   <li>It also needs the board's <code>.kicad_pcb</code> on disk, next to the project or the
-    snapshot. A snapshot opened on another machine usually has none.</li>
+    snapshot. A snapshot opened on another machine usually has none, nor does an ODB++ job:
+    click <a href="#guess-models">Guess models</a> to pick models from KiCad's library by
+    footprint name. It needs KiCad's 3D model library installed; if it is somewhere KiPI
+    does not look, set <code>KICAD10_3DMODEL_DIR</code> (or your KiCad version's) to it.</li>
   <li>A part whose model file KiCad cannot find is named in the log with the missing path;
     KiCad's own 3D viewer shows the same gap. Fix the path in the footprint's 3D model
     settings and save the board.</li>
@@ -1816,7 +2185,8 @@ README) for a direct solve of up to 1M unknowns.</p></div>
 <details>
 <summary>Solves are slow</summary>
 <div class="body"><p>Raise <b>Max edge</b>, analyze fewer nets at once, and untick unneeded groups
-in the Solve tab. In AC, lower <b>Field solves per decade</b> or raise <b>Min edge</b>. Large planes
+in the Solve tab. In AC, lower <b>Field solves per decade</b>, raise <b>Min edge</b>, or check
+that <b>Grade only near the rail</b> is ticked. Large planes
 are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
 x86-64).</p></div>
 </details>

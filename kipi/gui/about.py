@@ -308,6 +308,12 @@ class AboutDialog(QDialog):
                               "reinstall KiPI's packages; KiPI starts again afterwards")
             manage.clicked.connect(self._manage_dependencies)
             buttons.addButton(manage, QDialogButtonBox.ActionRole)
+        elif current_host() is Host.PLUGIN:
+            manage = QPushButton("Manage dependencies…", self)
+            manage.setToolTip("Add or remove PARDISO, the optional faster solver, in KiPI's "
+                              "plugin environment")
+            manage.clicked.connect(self._manage_plugin_dependencies)
+            buttons.addButton(manage, QDialogButtonBox.ActionRole)
         buttons.rejected.connect(self.reject)
 
         lay = QVBoxLayout(self)
@@ -349,6 +355,10 @@ class AboutDialog(QDialog):
             return
         self.accept()
         QApplication.instance().closeAllWindows()
+
+    def _manage_plugin_dependencies(self):
+        from kipi.gui import pardiso_setup
+        pardiso_setup.manage(self)
 
     def _show_stats(self, stats: Optional[RepoStats]):
         if stats is not None:

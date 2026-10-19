@@ -192,6 +192,48 @@ def terminate(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef]) -> np.nda
     return out
 
 
+def _elements(freqs: np.ndarray, ports: List[PortDef]):
+    """The indices of the ports that hold parts and their impedances (F, E)."""
+    idx = [i for i, p in enumerate(ports) if p.kind != "probe"]
+    omega = 2 * np.pi * freqs
+    ze = (np.stack([element_impedance(ports[i], omega) for i in idx], axis=1)
+          if idx else np.zeros((len(freqs), 0)))
+    return np.array(idx, dtype=int), ze
+
+
+def terminate_transfer(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef],
+                       src: List[int], obs: List[int]) -> np.ndarray:
+    """Transfer impedances (F, len(obs), len(src)) between probe ports with every part on
+    its port: the voltage at each ``obs`` port per ampere into each ``src`` port, the other
+    probes open. Z_os − Z_oE (Z_EE + Z_e)⁻¹ Z_Es; its diagonal for ``obs = src`` is
+    :func:`terminate`."""
+    E, ze = _elements(freqs, ports)
+    S, O = np.array(src, dtype=int), np.array(obs, dtype=int)
+    out = np.zeros((len(freqs), len(O), len(S)), complex)
+    for k in range(len(freqs)):
+        z = zb[k]
+        out[k] = z[np.ix_(O, S)]
+        if len(E):
+            m = z[np.ix_(E, E)] + np.diag(ze[k])
+            out[k] -= z[np.ix_(O, E)] @ np.linalg.solve(m, z[np.ix_(E, S)])
+    return out
+
+
+def element_currents(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef],
+                     src: List[int]) -> Tuple[np.ndarray, np.ndarray]:
+    """How currents into the ``src`` probe ports divide among the parts: (part port
+    indices, (F, parts, len(src))), each part's port current per ampere into each source,
+    entering the board at its plus side: −(Z_EE + Z_e)⁻¹ Z_Es."""
+    E, ze = _elements(freqs, ports)
+    S = np.array(src, dtype=int)
+    out = np.zeros((len(freqs), len(E), len(S)), complex)
+    for k in range(len(freqs)):
+        if len(E):
+            z = zb[k]
+            out[k] = -np.linalg.solve(z[np.ix_(E, E)] + np.diag(ze[k]), z[np.ix_(E, S)])
+    return E, out
+
+
 def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
              progress: ProgressReporter = NULL, dc_result=None) -> ACResult:
     """Sweep the rail driven by ``vrm_name`` against ``gnd``. ``dc_result``, the last DC

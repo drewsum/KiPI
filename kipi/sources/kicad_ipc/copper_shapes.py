@@ -23,9 +23,11 @@ from kipi.core.progress import ProgressReporter
 
 
 def shape_geometry(shape) -> Optional[object]:
-    """Copper of one kipy board shape as a shapely geometry, or None if it has no area."""
-    from kipy.board_types import (BoardArc, BoardBezier, BoardCircle, BoardPolygon,
-                                  BoardRectangle, BoardSegment)
+    """Copper of one kipy shape (a board shape, or a shape KiCad drew text with) as a
+    shapely geometry, or None if it has no area."""
+    from kipy.common_types import (Arc as BoardArc, Bezier as BoardBezier,
+                                   Circle as BoardCircle, Polygon as BoardPolygon,
+                                   Rectangle as BoardRectangle, Segment as BoardSegment)
     from shapely.geometry import Point as SPoint, Polygon as SPolygon
     from shapely.ops import unary_union
 

@@ -67,7 +67,8 @@ def load_results(path, legacy: bool = False) -> dict:
         if payload.get("format", 0) > RESULTS_FORMAT:
             raise ValueError("These results are from a newer KiPI")
     if payload.get("kind") != RESULTS_KIND:
-        raise ValueError("This holds DC results: open it in DC mode")
+        mode = "Coupled Noise" if payload.get("kind") == "noise" else "DC"
+        raise ValueError(f"This holds {mode} results: open it in {mode} mode")
     if not payload.get("legacy"):
         from kipi.dc.pi.model import PISetup
         payload["results"] = payload.pop("data")["results"]

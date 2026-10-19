@@ -1,4 +1,4 @@
-"""Self-contained HTML report for a solved power tree.
+"""Self-contained HTML (or PDF) report for a solved power tree.
 
 One ``.html`` file with:
 * a summary and the load / VRM / DC connection / pin / loss / via tables,
@@ -8,6 +8,10 @@ One ``.html`` file with:
 
 Plotly's JavaScript is embedded once, so the report works offline and can be shared
 as a single file. Images are rendered with matplotlib's Agg backend (thread safe).
+
+A ``.pdf`` path gets the same report printed (#119): the tables and maps, with the notes
+box as a form field. The 3D views need a browser, so they go in a web page of their own,
+attached to the PDF (#133): '<report>_3d.html', listed in the PDF viewer's attachments.
 """
 
 from __future__ import annotations
@@ -29,6 +33,9 @@ from kipi.core.naming import timestamp
 from kipi.dc.pi.tree import fmt_drop
 
 TRIANGLE_BUDGET = 60_000      # per group's 3D view
+VIEW_NOTE = ("Drag to rotate, scroll to zoom, double-click to reset; hover for values. The 3D "
+             "mesh is simplified for the report, and its color scale spans the 1st–99th "
+             "percentile of voltages (the maps are scaled per layer).")
 Z_EXAGGERATION = 5.0
 
 
@@ -73,18 +80,49 @@ def _png(fig) -> str:
 # ---------------------------------------------------------------------------
 
 def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
-               clip_pct: Optional[float] = None, outline=None) -> str:
-    """Top-down tripcolor of one layer (KiCad y down, drawn the same way as in KiCad)."""
+               clip_pct: Optional[float] = None, outline=None,
+               v_ref: Optional[float] = None) -> str:
+    """Top-down tripcolor of one layer (KiCad y down, drawn the same way as in KiCad).
+
+    A voltage map passes its set point ``v_ref``. When its spread is so narrow that the
+    colorbar would label ticks against an offset ("1e-5+3.2999", #145), it is redrawn as
+    the drop from ``v_ref`` in V, mV or µV, the absolute range moving into the title.
+    Maps whose colorbar reads plainly are left as they are."""
+    vals = np.asarray(values, dtype=float)
+    finite = vals[np.isfinite(vals)]
+    if len(finite) == 0:
+        return ""
+    fig, cb = _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline)
+    if v_ref is not None and _has_offset(fig, cb):
+        lo, hi = float(finite.min()), float(finite.max())
+        rail = v_ref != 0
+        shift = (v_ref - vals) if rail else vals
+        big = float(np.abs(shift[np.isfinite(shift)]).max())
+        scale, prefix = (1.0, "") if big >= 1 else (1e3, "m") if big >= 1e-3 else (1e6, "µ")
+        shift = shift * scale
+        label = (f"Drop from {v_ref:g} V ({prefix}V)" if rail
+                 else f"Offset from 0 V ({prefix}V)")
+        fig, cb = _draw_map(lr, shift, shift[np.isfinite(shift)], cell,
+                            f"{title}, {lo:.6f} to {hi:.6f} V", cmap, label, clip_pct, outline)
+        cb.formatter.set_useOffset(False)
+    return _png(fig)
+
+
+def _has_offset(fig, cb) -> bool:
+    """Whether the colorbar's ticks are labelled against an offset or a multiplier."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    FigureCanvasAgg(fig).draw()
+    fmt = cb.ax.yaxis.get_major_formatter()
+    return bool(getattr(fmt, "get_offset", lambda: "")())
+
+
+def _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline):
     from matplotlib.figure import Figure
     from matplotlib.tri import Triangulation
     pts, tris = lr.pts2, lr.tris
     fig = Figure(figsize=(5.2, 4.2))
     ax = fig.add_subplot(111)
     tri = Triangulation(pts[:, 0], pts[:, 1], tris)
-    vals = np.asarray(values, dtype=float)
-    finite = vals[np.isfinite(vals)]
-    if len(finite) == 0:
-        return ""
     vmin, vmax = float(finite.min()), float(finite.max())
     if clip_pct is not None:
         vmax = float(np.percentile(finite, clip_pct))
@@ -109,24 +147,35 @@ def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
     cb = fig.colorbar(m, ax=ax, shrink=0.85)
     cb.set_label(unit, fontsize=8)
     cb.ax.tick_params(labelsize=7)
-    return _png(fig)
+    return fig, cb
 
 
-def _thermal_map(th, outline) -> str:
+def _thermal_maps(th, snap: BoardSnapshot, outline) -> List[str]:
+    """One map per copper layer of the result, on one color scale; a result without
+    layers is one board map."""
+    names = {cu.id: cu.name for cu in snap.stackup.copper}
+    layers = [lid for lid in th.layers if lid in names] if len(th.layers) == len(th.temps)         else []
+    lo, hi = float(np.nanmin(th.temps)), float(np.nanmax(th.temps))
+    if not layers:
+        return [_thermal_map(th, outline, None, "Board temperature", lo, hi)]
+    return [_thermal_map(th, outline, lid, names[lid], lo, hi) for lid in layers]
+
+
+def _thermal_map(th, outline, layer, title, vmin, vmax) -> str:
     from matplotlib.figure import Figure
     fig = Figure(figsize=(6.0, 4.8))
     ax = fig.add_subplot(111)
     ext = [th.x[0], th.x[-1], th.y[-1], th.y[0]]
-    m = ax.imshow(th.temps, extent=ext, cmap="inferno", origin="upper",
-                  interpolation="bilinear")
+    m = ax.imshow(th.layer_temps(layer), extent=ext, cmap="inferno", origin="upper",
+                  interpolation="bilinear", vmin=vmin, vmax=vmax)
     if outline is not None:
         for ring in outline:
             a = np.asarray(ring + ring[:1])
             ax.plot(a[:, 0], a[:, 1], color="#bbb", lw=0.6)
-    x, y, t = th.hottest()
+    x, y, t = th.hottest(layer)
     ax.plot([x], [y], marker="+", color="cyan", ms=12)
     ax.set_aspect("equal")
-    ax.set_title(f"Board temperature (peak {t:.1f} °C)", fontsize=10)
+    ax.set_title(f"{title} (peak {t:.1f} °C)", fontsize=10)
     ax.set_xlabel("x (mm)", fontsize=8)
     ax.set_ylabel("y (mm)", fontsize=8)
     ax.tick_params(labelsize=7)
@@ -188,6 +237,9 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
             x=p[:, 0], y=p[:, 1], z=p[:, 2], i=tri[:, 0], j=tri[:, 1], k=tri[:, 2],
             intensity=np.asarray(sheet.point_data["V"]), colorscale="Turbo", cmin=vmin,
             cmax=vmax, name=cu.name, showscale=not traces, flatshading=True,
+            # Lit evenly, so a color is only its voltage: shading each flat facet lit the
+            # thin triangles left by thinning at random, a patchwork of dark ones (#122).
+            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0, fresnel=0.0),
             colorbar=dict(title="V", len=0.7),
             hovertemplate=(f"{cu.name}<br>x %{{x:.2f}} mm<br>y %{{y:.2f}}"
                            "<br>V %{intensity:.5f}<extra></extra>")))
@@ -232,7 +284,79 @@ nav a { margin-right: 12px; }
 details > summary { cursor: pointer; margin: 6px 0; }
 thead th { cursor: pointer; user-select: none; }
 thead th[data-sort=asc]::after { content: " \\25B2"; } thead th[data-sort=desc]::after { content: " \\25BC"; }
+#user-notes-text { min-height: 4em; background: white; border: 1px solid #ccc; padding: 8px 10px;
+                   border-radius: 3px; white-space: pre-wrap; outline: none; }
+#user-notes-text:focus { border-color: #4a90d9; }
+#user-notes-text.empty::before { content: attr(data-placeholder); color: #999; }
+#user-notes-text img { max-width: 100%; }
+.notes-bar { margin-top: 6px; font-size: 12px; color: #666; }
+.notes-bar button { margin-right: 10px; }
+@media print { .notes-bar { display: none; } #user-notes-text { border: none; padding: 0; }
+               #user-notes-text.empty::before { content: none; } .notes-empty { display: none; } }
 """
+
+# Notes anyone reading the report can type in (#128). A report is a file opened from disk,
+# which a page cannot write to, so the notes are kept in the browser as they are typed
+# (localStorage, per file) and "Save a copy with notes" downloads the report with them in
+# it, to keep or share. Plotly's drawn plots are emptied in the copy; it draws them again
+# when the copy is opened.
+NOTES_JS = r"""
+(function () {
+  var box = document.getElementById("user-notes-text");
+  var section = document.getElementById("user-notes-section");
+  var status = document.getElementById("user-notes-status");
+  var key = "kipi-notes:" + location.pathname;
+  function store(f) { try { return f(window.localStorage); } catch (e) { return undefined; } }
+  function empty() { return !box.textContent.trim() && !box.querySelector("img"); }
+  function mark() {
+    box.classList.toggle("empty", empty());
+    section.classList.toggle("notes-empty", empty());
+  }
+  var draft = store(function (s) { return s.getItem(key); });
+  if (draft !== null && draft !== undefined && draft !== box.innerHTML) {
+    box.innerHTML = draft;
+    status.textContent = "Notes restored from this browser.";
+  }
+  mark();
+  box.addEventListener("input", function () {
+    mark();
+    var ok = store(function (s) { s.setItem(key, box.innerHTML); return true; });
+    status.textContent = ok ? "Kept in this browser. Save a copy to keep them in the file."
+                            : "This browser cannot keep them: save a copy before closing.";
+  });
+  document.getElementById("user-notes-save").addEventListener("click", function () {
+    var root = document.documentElement.cloneNode(true);
+    root.querySelectorAll(".plotly-graph-div").forEach(function (d) { d.innerHTML = ""; });
+    root.querySelectorAll("head style:not([data-kipi])").forEach(function (s) { s.remove(); });
+    var st = root.querySelector("#user-notes-status");
+    if (st) st.textContent = "Notes are kept in this browser as you type.";
+    var blob = new Blob(["<!DOCTYPE html>" + root.outerHTML], {type: "text/html"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = decodeURIComponent(location.pathname.split("/").pop()) || "kipi_report.html";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+})();
+"""
+
+
+def notes_section(pdf: bool = False) -> str:
+    """The editable notes box (#128); in a PDF, a box with a form field to type in."""
+    if pdf:
+        from kipi.core.pdf import NOTES_MARKER
+        return ("<h2 id='user-notes'>User notes</h2>"
+                f"<table class='notes'><tr><td>{NOTES_MARKER}</td></tr></table>")
+    return ("<section id='user-notes-section'><h2 id='user-notes'>User notes</h2>"
+            "<div id='user-notes-text' contenteditable='true' spellcheck='true' "
+            "data-placeholder='Click to add notes: what was checked, by whom, what to change…'>"
+            "</div>"
+            "<div class='notes-bar'><button type='button' id='user-notes-save'>Save a copy "
+            "with notes</button><span id='user-notes-status'>Notes are kept in this browser "
+            "as you type.</span></div>"
+            f"<script type='text/javascript'>{NOTES_JS}</script></section>")
+
 
 # Click a column header to sort the table by it; click again to reverse (#85). The keys
 # match the plugin's tables (kipi.gui.sortable): numbers with SI prefixes, natural text,
@@ -283,15 +407,76 @@ SORT_JS = r"""
 """
 
 
-def report_name(board_stem: str, when: Optional[_dt.datetime] = None) -> str:
-    """File name of the DC report: '<board>_kipi_report_<time stamp>.html', so each solve
-    keeps its own report (#66)."""
-    return f"{board_stem}_kipi_report_{timestamp(when)}.html"
+def report_name(board_stem: str, when: Optional[_dt.datetime] = None, fmt: str = "html") -> str:
+    """File name of the DC report: '<board>_kipi_report_<time stamp>.html' (or .pdf), so
+    each solve keeps its own report (#66)."""
+    return f"{board_stem}_kipi_report_{timestamp(when)}.{fmt}"
+
+
+def maps_html(images: List[str], pdf: bool) -> str:
+    """Figures side by side: wrapped by the browser, two to a row on a PDF page."""
+    images = [m for m in images if m]
+    if not pdf:
+        return "<div class='maps'>" + "".join(
+            f"<figure><img src='{m}'></figure>" for m in images) + "</div>"
+    width = 330 if len(images) > 1 else 440
+    rows = [images[i:i + 2] for i in range(0, len(images), 2)]
+    return "<table class='maps'>" + "".join(
+        "<tr>" + "".join(f"<td><img src='{m}' width='{width}'></td>" for m in r) + "</tr>"
+        for r in rows) + "</table>"
+
+
+def page(title: str, body: str, css: str, script: str = "") -> str:
+    """A web page that works offline: Plotly's JavaScript in it."""
+    import plotly.offline
+    js = plotly.offline.get_plotlyjs()
+    extra = f"<script type='text/javascript'>{script}</script>" if script else ""
+    return (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            f"<title>{_e(title)}</title><style data-kipi>{css}</style>"
+            f"<script type='text/javascript'>{js}</script>{extra}</head><body>"
+            + body + "</body></html>")
+
+
+def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool,
+           attachments=()) -> Path:
+    """Write the report's body as a page that works offline, or print it to a PDF with
+    ``attachments`` ((file name, content, description) each) in it."""
+    body = "".join(parts)
+    if pdf:
+        from kipi.core.pdf import write_pdf
+        return write_pdf(f"<html><head><meta charset='utf-8'><title>{_e(title)}</title>"
+                         f"</head><body>{body}</body></html>", path, title,
+                         attachments=attachments)
+    path.write_text(page(title, body, css, SORT_JS), encoding="utf-8")
+    return path
+
+
+def views_name(path: Path) -> str:
+    """The file name of a PDF report's attached 3D views (#133)."""
+    return f"{Path(path).stem}_3d.html"
+
+
+def _views_link(path: Path) -> str:
+    """A PDF report's link to its attached 3D views; nothing may follow it on its line,
+    where the paperclip goes."""
+    from kipi.core.pdf import file_link
+    name = views_name(path)
+    return f"<a href='{_e(file_link(name))}'>{_e(name)}</a>"
+
+
+def views_page(title: str, meta: str, views: List[tuple]) -> bytes:
+    """The 3D views of a PDF report, as a page of their own: ``views`` are (group name,
+    Plotly HTML) pairs."""
+    body = [f"<h1>{_e(title)}</h1><div class='meta'>{meta}</div>",
+            f"<p class='note'>{_e(VIEW_NOTE)}</p>"]
+    for name, view in views:
+        body.append(f"<h2>{_e(name)}</h2>{view}")
+    return page(title, "".join(body), CSS).encode("utf-8")
 
 
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,
                  progress=None) -> Path:
-    import plotly.offline
+    """Write the report to ``path``: a web page, or a PDF when it ends in .pdf (#119)."""
     from kipi.dc.pi.report import (
         layer_temps, limits_text, loss_rows, pin_rows, thermal_passed, via_rows,
     )
@@ -301,6 +486,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             progress.info(t)
 
     path = Path(path)
+    pdf = path.suffix.lower() == ".pdf"
+    views: List[tuple] = []                     # a PDF's 3D views, attached (#133)
     outline = [p.outline for p in snap.outline] if snap.outline else None
     names = {c.id: c.name for c in snap.stackup.copper}
     parts: List[str] = []
@@ -308,15 +495,18 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     th = getattr(tree, "thermal", None)
 
     # ---------------- summary
-    parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{_e(snap.board_name)} "
-                 f"· {now} · KiPI {__version__} · solved in {tree.solve_s:.1f} s</div>")
+    meta = (f"{_e(snap.board_name)} · {now} · KiPI {__version__} · solved in "
+            f"{tree.solve_s:.1f} s")
+    parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{meta}</div>")
     nav = ["<a href='#loads'>Loads</a>", "<a href='#vrms'>VRMs</a>",
            "<a href='#pins'>Pins</a>", "<a href='#losses'>Losses</a>",
            "<a href='#vias'>Vias</a>"]
     if th is not None:
         nav.append("<a href='#thermal'>Thermal</a>")
     nav += [f"<a href='#g{i}'>{_e(n)}</a>" for i, n in enumerate(tree.groups)]
-    parts.append("<nav>" + " ".join(nav) + "</nav>")
+    nav.append("<a href='#user-notes'>User notes</a>")
+    if not pdf:
+        parts.append("<nav>" + " ".join(nav) + "</nav>")
     s = setup.settings
     parts.append(f"<p class='note'>Mesh: max edge {s.max_edge_mm:g} mm, via grading "
                  f"{s.grading:g}, copper resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
@@ -329,6 +519,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  + ". Via plating, first matching rule (drill = hole in the laminate, plated "
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
+    if pdf and tree.groups:
+        parts.append(f"<p><b>3D Results View:</b> {_views_link(path)}</p>")
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
@@ -381,8 +573,9 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             rows = [r for r in pins if r.group == name]
             if not rows:
                 continue
+            title = f"<b>{_e(name)}</b>: {len(rows)} pin(s)"
             parts.append(
-                f"<details><summary><b>{_e(name)}</b>: {len(rows)} pin(s)</summary>" +
+                (f"<h3>{title}</h3>" if pdf else f"<details><summary>{title}</summary>") +
                 _table(["Terminal", "Role", "Pin", "x (mm)", "y (mm)", "V", "Drop / boost (mV)",
                         "%", "I (mA)", "I is"],
                        [[_e(r.terminal), _e(r.role),
@@ -391,7 +584,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                          _num(abs(100.0 * r.deviation / r.nominal), ".3f") if r.nominal else "",
                          _num(None if r.current is None else r.current * 1e3, ".4g"),
                          _e(r.current_is)] for r in rows]) +
-                "</details>")
+                ("" if pdf else "</details>"))
         parts.append("<p class='note'>Every pin each group was solved with: VRM outputs, "
                      "phases, inputs and sense pins, load supply and ground pins and the pins "
                      "of DC connections. I is the current drawn from the copper at the pin; "
@@ -432,7 +625,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      + (f" ({sum(max(v, 0.0) for v in loads_w.values()):.3g} W of it from the "
                         "loads)" if with_loads else ", load power not included")
                      + f"; peak <b>{tmax:.1f} °C</b> at "
-                     f"({x:.1f}, {y:.1f}) mm. Ambient {th.settings.ambient_c:g} °C, airflow "
+                     f"({x:.1f}, {y:.1f}) mm{th.peak_layer(snap.stackup)}. Ambient "
+                     f"{th.settings.ambient_c:g} °C, airflow "
                      f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
         if getattr(th, "heat_by_kind", None):
             parts.append(f"<p>Heat by source: {_e(th.heat_breakdown())}.</p>")
@@ -446,8 +640,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                 ["Part", "Kind", "Power (W)"], heat_rows))
             parts.append("<p class='note'>Heat put into the board at each part's pins. A DC "
                          "connection dissipates I²R. "
-                         + ("A load dissipates its stated Heat, else the sum over its supply "
-                            "and ground pins of pin current × pin voltage." if with_loads else
+                         + ("A load dissipates the sum over its supply and ground pins of pin "
+                            "current × pin voltage." if with_loads else
                             "Load power is not included (Thermal settings tab).") + "</p>")
         temps = layer_temps(tree, snap, setup.thermal)
         if temps:
@@ -460,14 +654,23 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             parts.append("<p class='note'>The hottest solved copper on each layer. "
                          + (f"Limits: {lim}; overall {_verdict(verdict)}." if lim
                             else "No temperature limits were set.") + "</p>")
-        parts.append(f"<div class='maps'><figure><img src='{_thermal_map(th, outline)}'>"
-                     "</figure></div>")
+        parts.append(maps_html(_thermal_maps(th, snap, outline), pdf))
         if th.dielectrics:
-            parts.append("<h3>Laminate (in-plane thermal conductivity)</h3>" + _table(
-                ["Stackup material", "Thickness (mm)", "Taken as", "k (W/m·K)"],
-                [[_e(m or "(unnamed)"), _num(t, ".3f"),
-                  _e(i.matched) + (" ⚠" if i.assumed else ""), _num(i.k_w_mk, "g")]
-                 for m, t, i in th.dielectrics]))
+            from kipi.dc.thermal.materials import coating_k
+            coat = [[_e(c.name), _num(c.thickness_mm, ".3f"),
+                     "solder mask" if c.kind == "mask" else "silkscreen, where it prints",
+                     _num(coating_k(c), "g"), _num(coating_k(c), "g")]
+                    for c in snap.stackup.coatings]
+            n_top = sum(1 for c in snap.stackup.coatings if c.side == "top")
+            parts.append("<h3>Laminate (thermal conductivity)</h3>" + _table(
+                ["Stackup material", "Thickness (mm)", "Taken as", "In-plane k (W/m·K)",
+                 "Through-plane k (W/m·K)"],
+                coat[:n_top]
+                + [[_e(m or "(unnamed)"), _num(t, ".3f"),
+                    _e(i.matched) + (" ⚠" if i.assumed else ""), _num(i.k_w_mk, "g"),
+                    _num(i.k_through, "g")]
+                   for m, t, i in th.dielectrics]
+                + coat[n_top:]))
         parts.append(_table(["Iteration", "Heat (W)", "Peak (°C)", "Max change (°C)"],
                             [[str(h["iteration"]), _num(h["heat_w"]), _num(h["t_max"], ".2f"),
                               _num(h["dt_max"], ".3f")] for h in th.history]))
@@ -481,11 +684,12 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         role = (f"driven by {_e(g.driver)}" if g.kind == "rail"
                 else f"ground, referenced at {_e(g.driver)}")
         parts.append(f"<p>{role}; nets: {_e(', '.join(g.nets))}.</p>")
-        parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
-        parts.append("<p class='note'>Drag to rotate, scroll to zoom, double-click to reset; "
-                     "hover for values. The 3D mesh is simplified for the report, and its color "
-                     "scale spans the 1st–99th percentile of voltages (the maps below are "
-                     "scaled per layer).</p>")
+        if pdf:
+            views.append((name, _plotly_3d(scene, snap, f"plot{gi}")))
+            parts.append(f"<p class='note'>Interactive 3D view: {_views_link(path)}</p>")
+        else:
+            parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
+            parts.append(f"<p class='note'>{_e(VIEW_NOTE)}</p>")
         rows = []
         tri_layer = g.result.mesh.tri_layer
         for lid, lr in scene.layers.items():
@@ -513,11 +717,10 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         for lid, lr in scene.layers.items():
             lname = names.get(lid, str(lid))
             maps.append(_layer_map(lr, lr.node_v, False, f"{lname}: voltage", "turbo", "V",
-                                   outline=outline))
+                                   outline=outline, v_ref=scene.v_ref))
             maps.append(_layer_map(lr, lr.tri_j, True, f"{lname}: current density", "inferno",
                                    "A/mm²", clip_pct=99.5, outline=outline))
-        parts.append("<div class='maps'>" + "".join(
-            f"<figure><img src='{m}'></figure>" for m in maps if m) + "</div>")
+        parts.append(maps_html(maps, pdf))
         parts.append("<p class='note'>Current-density maps clip at the 99.5th percentile; pad "
                      "corners are singular and would otherwise wash out the map.</p>")
 
@@ -525,12 +728,11 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         parts.append("<h2>Notes</h2><ul>" + "".join(f"<li>{_e(w)}</li>" for w in tree.warnings)
                      + "</ul>")
 
-    js = plotly.offline.get_plotlyjs()
-    doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-           f"<title>KiPI report — {_e(snap.board_name)}</title><style>{CSS}</style>"
-           f"<script type='text/javascript'>{js}</script>"
-           f"<script type='text/javascript'>{SORT_JS}</script></head><body>"
-           + "".join(parts) + "</body></html>")
-    path.write_text(doc, encoding="utf-8")
+    parts.append(notes_section(pdf))             # last, after every result
+    title = f"KiPI report — {snap.board_name}"
+    attachments = [(views_name(path), views_page(f"KiPI 3D views — {snap.board_name}",
+                                                 f"{meta} · from {_e(path.name)}", views),
+                    "Interactive 3D views of the report's net groups")] if views else []
+    finish(path, title, parts, CSS, pdf, attachments)
     info(f"Report written: {path} ({path.stat().st_size / 1e6:.1f} MB)")
     return path

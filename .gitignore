@@ -10,3 +10,4 @@ dist/
 !tests/data/**/*.kipi.json.gz
 uv.lock
 .vscode/
+KiPI.lnk

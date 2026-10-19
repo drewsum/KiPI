@@ -8,10 +8,16 @@ interpreter's name and icon. Each platform needs its own fix:
   standalone launcher, since nothing outside KiCad can start the plugin. Without the
   launcher, pinning is turned off. The launcher's Start menu shortcut carries the same
   ID, so a pin from the Start menu and the running window share one button.
+  Task Manager is another matter: it names an app by the program that owns its window,
+  so KiPI starts again on a copy of Python named KiPI.exe (#124, see
+  :mod:`kipi.launcher.named_exe`).
 * macOS: the app name in the menu bar comes from the main bundle's CFBundleName, set
-  before Qt starts; the Dock icon comes from the application icon.
+  before Qt starts; the Dock icon comes from the application icon. Activity Monitor shows
+  the name LaunchServices has for the app, set once Qt has checked it in (#124).
 * Linux: the window icon and WM_CLASS / Wayland app id ("kipi") name the window; GNOME on
-  Wayland also needs a matching .desktop file, so a hidden one is written for the user.
+  Wayland also needs a matching .desktop file, so a hidden one is written for the user,
+  unless the launcher's menu entry is there already. The process is named "KiPI" too, for
+  System Monitor, top and ps (#124).
 
 Everything here is best effort: a failure is logged and never stops KiPI starting.
 """
@@ -24,10 +30,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from kipi.launcher.appid import (
-    APP_ID, PKEY_ID, PKEY_PREVENT_PINNING, PKEY_RELAUNCH_COMMAND, PKEY_RELAUNCH_DISPLAY_NAME,
-    PKEY_RELAUNCH_ICON, set_properties, win_property_store,
-)
+from kipi.launcher.appid import APP_ID, set_process_app_id  # noqa: F401 - tests use APP_ID
+from kipi.launcher.appid import tag_window as tag_windows_button
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +60,8 @@ def make_app(argv: Optional[List[str]] = None):
         app.setWindowIcon(icon)
     if sys.platform.startswith("linux") and app.platformName() in ("xcb", "wayland"):
         _try(_write_desktop_file)
+    if sys.platform == "darwin":
+        _try(_set_macos_process_name)
     return app
 
 
@@ -86,6 +92,7 @@ def _before_app() -> None:
     elif sys.platform.startswith("linux"):
         # X11 WM_CLASS is (RESOURCE_NAME or argv[0], application name), else "python3".
         os.environ.setdefault("RESOURCE_NAME", DESKTOP_NAME)
+        _try(_set_linux_process_name)
 
 
 def _try(fn, *args) -> None:
@@ -98,10 +105,7 @@ def _try(fn, *args) -> None:
 # --- Windows --------------------------------------------------------------------------
 
 def _set_windows_app_id() -> None:
-    import ctypes
-    hr = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(ctypes.c_wchar_p(APP_ID))
-    if hr != 0:
-        raise OSError(f"SetCurrentProcessExplicitAppUserModelID failed: {hr:#x}")
+    set_process_app_id()
 
 
 def relaunch_command() -> Optional[str]:
@@ -117,17 +121,7 @@ def relaunch_command() -> Optional[str]:
 
 
 def _set_windows_relaunch_properties(hwnd: int) -> None:
-    ico = RESOURCES / "kipi.ico"
-    command = relaunch_command()
-    # PreventPinning has to be set before the ID. The display name and icon only count
-    # when a relaunch command is set too.
-    values = [(PKEY_PREVENT_PINNING, command is None)]
-    if command:
-        values += [(PKEY_RELAUNCH_COMMAND, command), (PKEY_RELAUNCH_DISPLAY_NAME, NAME)]
-        if ico.is_file():
-            values.append((PKEY_RELAUNCH_ICON, f"{ico},0"))
-    values.append((PKEY_ID, APP_ID))
-    set_properties(*win_property_store(hwnd), values)
+    tag_windows_button(hwnd, relaunch_command(), NAME, RESOURCES / "kipi.ico")
 
 
 # --- macOS ----------------------------------------------------------------------------
@@ -164,7 +158,57 @@ def _set_macos_bundle_name() -> None:
                      restype=None, argtypes=(ctypes.c_void_p, ctypes.c_void_p))
 
 
+def _set_macos_process_name() -> None:
+    """Name the app "KiPI" in Activity Monitor and the Force Quit window, as Chromium
+    names its processes: LaunchServices' display name for this process. Those functions
+    are private, so each is looked up and the step skipped if it is not there."""
+    import ctypes
+    import ctypes.util
+
+    ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreServices"))
+    cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
+    cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+    cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+    for fn in (cf.CFBundleGetBundleWithIdentifier,):
+        fn.restype = ctypes.c_void_p
+        fn.argtypes = [ctypes.c_void_p]
+    for fn in (cf.CFBundleGetFunctionPointerForName, cf.CFBundleGetDataPointerForName):
+        fn.restype = ctypes.c_void_p
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+
+    def cfstr(text):
+        return cf.CFStringCreateWithCString(None, text.encode(), 0x08000100)  # UTF-8
+
+    ls = cf.CFBundleGetBundleWithIdentifier(cfstr("com.apple.LaunchServices"))
+    if not ls:
+        return
+    get_asn = cf.CFBundleGetFunctionPointerForName(ls, cfstr("_LSGetCurrentApplicationASN"))
+    set_item = cf.CFBundleGetFunctionPointerForName(ls,
+                                                    cfstr("_LSSetApplicationInformationItem"))
+    key = cf.CFBundleGetDataPointerForName(ls, cfstr("_kLSDisplayNameKey"))
+    if not (get_asn and set_item and key):
+        return
+    asn = ctypes.CFUNCTYPE(ctypes.c_void_p)(get_asn)()
+    if not asn:                               # not checked in with LaunchServices
+        return
+    set_info = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int, ctypes.c_void_p,
+                                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(set_item)
+    default_session = -2
+    set_info(default_session, asn, ctypes.c_void_p.from_address(key).value, cfstr(NAME), None)
+
+
 # --- Linux ----------------------------------------------------------------------------
+
+def _set_linux_process_name() -> None:
+    """Name the process "KiPI" rather than "python3" in System Monitor, top and ps -e:
+    its comm, which prctl(PR_SET_NAME) sets for the main thread, and so the process."""
+    import ctypes
+    import ctypes.util
+
+    libc = ctypes.CDLL(ctypes.util.find_library("c") or None, use_errno=True)
+    if libc.prctl(15, NAME.encode(), 0, 0, 0) != 0:          # 15: PR_SET_NAME
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_NAME) failed")
+
 
 def desktop_entry() -> str:
     icon = RESOURCES / "kipi_256.png"
@@ -187,7 +231,10 @@ def _write_desktop_file() -> None:
     base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
     path = base / "applications" / f"{DESKTOP_NAME}.desktop"
     text = desktop_entry()
-    if path.is_file() and path.read_text(encoding="utf-8") == text:
-        return
+    if path.is_file():
+        old = path.read_text(encoding="utf-8")
+        # The launcher's menu entry (--create-shortcut) serves the window just as well.
+        if old == text or "kipi_launcher" in old:
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

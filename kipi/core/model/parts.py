@@ -72,6 +72,40 @@ def is_capacitor_ref(ref: str) -> bool:
     return bool(_CAPACITOR_REF_RE.match(ref or ""))
 
 
+# "4.7uH", "10 µH 3A", "1u0", "470n", "2R2" (RKM: µH, the usual power-inductor code),
+# "0.47". A bare number is henries only if it has a unit; else microhenries.
+_IND_PREFIX = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "µ": 1e-6, "μ": 1e-6, "m": 1e-3,
+               "R": 1e-6, "": None}
+_IND_RE = re.compile(r"^\s*(\d*\.?\d+)?\s*([pnuµμmR]?)(\d*)\s*(H|h)?(?=$|[\s,;/_(])")
+_INDUCTOR_REF_RE = re.compile(r"^L\d")
+
+
+def parse_inductance(value: str) -> Optional[float]:
+    """Henries from an inductor's value field, or None if it isn't an inductance."""
+    m = _IND_RE.match(value or "")
+    if not m:
+        return None
+    num, prefix, frac, unit = m.groups()
+    if frac:                                  # "4u7", "2R2": the letter is the decimal point
+        if not prefix or (num is not None and "." in num):
+            return None
+        base = float(f"{num or '0'}.{frac}")
+    elif num is not None:
+        if prefix == "R":                     # "10R" is a resistor's code, not an inductor's
+            return None
+        base = float(num)
+    else:
+        return None
+    scale = _IND_PREFIX[prefix]
+    if scale is None:
+        scale = 1.0 if unit else 1e-6
+    return base * scale
+
+
+def is_inductor_ref(ref: str) -> bool:
+    return bool(_INDUCTOR_REF_RE.match(ref or ""))
+
+
 # "10uF 6.3V X5R", "100n/50V", "4.7u 16 V", "1u 6V3" (RKM). The rating is the first
 # voltage in the field.
 _VOLT_RE = re.compile(r"(?:^|[\s,;/_(])(\d*\.?\d+)\s*(?:V(\d*)|(?i:volts?))(?=$|[\s,;/_)])")
