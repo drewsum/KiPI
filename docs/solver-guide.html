@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KiPI Solver Guide</title>
-<meta name="description" content="What power integrity analysis is, why it matters, and how KiPI's DC, electro-thermal and AC PDN impedance solvers work.">
+<meta name="description" content="What power integrity analysis is, why it matters, and how KiPI's DC, electro-thermal, AC PDN impedance and Coupled Noise solvers work.">
 <style>
 :root {
   --bg: #fbfbfa; --panel: #ffffff; --text: #1f2328; --muted: #5d646d; --border: #d9dce0;
@@ -156,6 +156,7 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
       </ol></li>
     <li><a href="#noise">Coupled Noise: a switcher as aggressor</a>
       <ol>
+        <li><a href="#noise-flow">How a solve runs</a></li>
         <li><a href="#noise-waveforms">The aggressor's waveforms</a></li>
         <li><a href="#noise-hotloop">Hot loop and ringing</a></li>
         <li><a href="#noise-capacitive">Capacitive coupling</a></li>
@@ -163,6 +164,7 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
         <li><a href="#noise-common">The board model and shared-ground coupling</a></li>
         <li><a href="#noise-scan">Scanning for victims</a></li>
         <li><a href="#noise-victim">The victim's line</a></li>
+        <li><a href="#noise-verdict">From harmonics to a verdict</a></li>
       </ol></li>
     <li><a href="#solvers">Linear solvers and PARDISO</a></li>
     <li class="group">In practice</li>
@@ -174,8 +176,9 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
 <main>
 <h1>KiPI Solver Guide</h1>
 <p class="lead">What power integrity analysis is, why it is worth doing before a board is
-built, and how KiPI's DC, thermal and AC solvers turn a PCB layout into voltages,
-currents, temperatures and impedances.</p>
+built, and how KiPI's DC, thermal, AC and Coupled Noise solvers turn a PCB layout into
+voltages, currents, temperatures, impedances and the noise a switcher couples onto signal
+nets.</p>
 <div class="toolbar">
   <button type="button" id="theme">Toggle light/dark</button>
 </div>
@@ -228,8 +231,14 @@ problem means moving copper rather than adding bodge wires.</p>
     kHz to hundreds of MHz? Does it meet the chip's target impedance?</td><td class="wrap">|Z|,
     R and X at each probe over frequency, against flat or custom targets, with each
     capacitor model's own curve.</td></tr>
+  <tr><td>Coupled Noise</td><td class="wrap">How much of a buck or boost converter's
+    switching noise reaches nearby signal nets, through which path, and is it within the
+    receiver's noise margin?</td><td class="wrap">The converter's switch-node, inductor,
+    capacitor and ripple waveforms; its hot-loop inductance and ringing; each victim's noise
+    at its receiver over time and frequency, split by mechanism, with PASS/FAIL against its
+    noise margin; a ranked scan of the nets near the converter.</td></tr>
 </table>
-<p>All three use the same model of the board: the copper of each net on each layer, read from
+<p>All four use the same model of the board: the copper of each net on each layer, read from
 KiCad (or a board file), the stackup's thicknesses and materials, and a <b>power tree</b>
 you describe once. The power tree says which pads are VRM outputs, which are loads and
 what they draw, and which parts (sense resistors, ferrite beads, load switches) join one net
@@ -520,6 +529,74 @@ victim is far weaker than the aggressor, so the problem is solved one way (weak
 coupling): the converter's waveforms are built first, and each coupling path then acts on
 the victim as a source, harmonic by harmonic. The noise from each path is kept apart, so
 the dominant one shows.</p>
+<figure>
+<svg viewBox="0 0 680 280" width="100%" role="img" aria-label="Sketch of a buck converter beside a victim net: the switch node couples through mutual capacitance, the hot loop through its magnetic flux, and the switching current's return through the shared ground">
+  <ellipse cx="220" cy="150" rx="78" ry="104" class="svg-target" fill="none"/>
+  <rect x="150" y="40" width="410" height="10" class="svg-cu"/>
+  <rect x="110" y="30" width="40" height="30" class="svg-pad"/>
+  <rect x="560" y="30" width="40" height="30" class="svg-pad"/>
+  <text x="130" y="22" class="svg-label" text-anchor="middle">driver</text>
+  <text x="580" y="22" class="svg-label" text-anchor="middle">receiver</text>
+  <text x="440" y="34" class="svg-label" text-anchor="middle">victim net</text>
+  <rect x="240" y="110" width="180" height="18" class="svg-cu"/>
+  <text x="380" y="146" class="svg-label" text-anchor="middle">switch node</text>
+  <rect x="200" y="100" width="40" height="38" class="svg-pad"/>
+  <text x="220" y="123" class="svg-label" text-anchor="middle">FETs</text>
+  <rect x="420" y="102" width="50" height="34" class="svg-pad"/>
+  <text x="445" y="123" class="svg-label" text-anchor="middle">L</text>
+  <rect x="200" y="168" width="40" height="26" class="svg-pad"/>
+  <text x="220" y="186" class="svg-label" text-anchor="middle">Cin</text>
+  <rect x="180" y="92" width="80" height="112" rx="18" class="svg-curve" stroke-dasharray="5 4"/>
+  <text x="304" y="214" class="svg-label">hot loop, i<tspan dy="3" font-size="9">HS</tspan></text>
+  <line x1="320" y1="50" x2="320" y2="77" class="svg-axis"/>
+  <line x1="308" y1="77" x2="332" y2="77" class="svg-axis"/>
+  <line x1="308" y1="84" x2="332" y2="84" class="svg-axis"/>
+  <line x1="320" y1="84" x2="320" y2="110" class="svg-axis"/>
+  <text x="340" y="85" class="svg-label">1 · capacitive: i = C<tspan dy="3" font-size="9">m</tspan><tspan dy="-3">·dV/dt</tspan></text>
+  <text x="122" y="144" class="svg-label" text-anchor="end">2 · inductive:</text>
+  <text x="122" y="160" class="svg-label" text-anchor="end">v = M·di/dt</text>
+  <rect x="110" y="236" width="490" height="8" class="svg-cu"/>
+  <line x1="130" y1="60" x2="130" y2="236" class="svg-axis"/>
+  <line x1="580" y1="60" x2="580" y2="236" class="svg-axis"/>
+  <line x1="220" y1="194" x2="220" y2="236" class="svg-axis"/>
+  <line x1="445" y1="136" x2="445" y2="236" class="svg-axis" stroke-dasharray="3 3"/>
+  <text x="604" y="244" class="svg-label">ground</text>
+  <text x="355" y="266" class="svg-label" text-anchor="middle">3 · common impedance: ΔV between the driver's and receiver's grounds</text>
+</svg>
+<figcaption>The three paths KiPI models. The switch node's swing pushes charge onto the
+victim through their mutual capacitance (1); the hot loop's changing current links flux
+through the loop the victim makes with its return (2); and the switching current's return
+through the ground copper moves the driver's ground against the receiver's (3).</figcaption>
+</figure>
+
+<h3 id="noise-flow">How a solve runs</h3>
+<p>One converter, the <b>aggressor</b>, is solved at a time, against every victim set up
+for it (and, with the scan on, the worst of the nets near it). A solve takes these steps,
+and the log reports each:</p>
+<ol class="steps">
+  <li><b>Operating point.</b> The input and output voltages come from the VRM (or your
+    override) and decide buck or boost; the output current is what the DC loads on the
+    output rail draw, unless you set it.</li>
+  <li><b>Hot loop.</b> Each phase's loop through its input (buck) or output (boost)
+    capacitors is traced on the copper, giving its inductance, resistance and the switch
+    node's capacitance, and so the frequency and damping of the ringing on every edge.</li>
+  <li><b>Waveforms.</b> The switch-node voltage, inductor current, pulsed current and each
+    capacitor's ripple current are built as spectra of harmonics of the switching
+    frequency, ringing included. They are shown at once, before any coupling is
+    solved.</li>
+  <li><b>Board model</b> (optional). AC mode's field model of the rails and ground shares
+    the ripple current among the capacitors through the real copper, and gives the ground
+    voltage between each victim's ends.</li>
+  <li><b>Scan</b> (optional). Every signal net near the converter is estimated cheaply and
+    the worst are added as victims with default drivers and receivers.</li>
+  <li><b>Victims.</b> For each one, the coupling to its traces is extracted (mutual
+    capacitance by 2D field cuts, mutual inductance by PEEC), its line is solved at every
+    harmonic once per mechanism, and the result is turned back into a waveform at the
+    receiver and checked against its noise margin.</li>
+</ol>
+<p>Because the coupling is weak, each step only feeds the next: the victims never load the
+converter, and each mechanism can be solved and judged alone. The sections below follow
+the same order.</p>
 
 <h3 id="noise-waveforms">The aggressor's waveforms</h3>
 <p>From the input and output voltages, the duty cycle is D = V<sub>out</sub>/V<sub>in</sub>
@@ -640,6 +717,29 @@ picks up far more. The receiver's noise over a period is compared with its noise
 from its logic family's JESD8 levels: min(V<sub>IL</sub> − V<sub>OL</sub>,
 V<sub>OH</sub> − V<sub>IH</sub>).</p>
 
+<h3 id="noise-verdict">From harmonics to a verdict</h3>
+<p>Every source is periodic at the switching frequency, so the victim's response is too:
+at each harmonic k·f<sub>sw</sub> the network gives a complex voltage at the receiver, one
+per mechanism. The waveform over one period is their inverse Fourier series, sampled at
+least four times per highest harmonic:</p>
+<p class="eq">v(t) = Σ<sub>k</sub> 2·Re(V<sub>k</sub>·e<sup>jω<sub>k</sub>t</sup>)</p>
+<p>The phases matter. Capacitive noise follows the switch node's dV/dt and inductive noise
+the loop's di/dt, so they peak at different moments of an edge and can add or partly cancel.
+The total is therefore the sum of the mechanisms' complex spectra, turned into one
+waveform, and its peak is not the sum of the mechanisms' own peaks. Each mechanism's peak is
+still reported alone, and the largest names the <b>dominant</b> mechanism, the one to fix
+first.</p>
+<p>The victim's verdict is its total peak |v| at the receiver over a period against its
+noise margin: PASS at or below 100 %. The peak is usually a short burst on each switching
+edge, the edge's own coupling followed by the ringing, with quiet between. A receiver that
+samples away from the edges may tolerate more, and a clock or an edge-triggered input
+less, so the margin is yours to set when the logic levels' default does not fit.</p>
+<p>The Victim noise plot shows the receiver's waveform per mechanism and in total, with the
+margin; the Spectrum option shows the same as harmonics, where a peak at the ringing
+frequency or a line resonance points at its cause. Victims the scan added are marked
+(scan) in the results, and the report's Scan table ranks every net it estimated, with the
+ones solved in full marked.</p>
+
 <h2 id="solvers">Linear solvers and PARDISO</h2>
 <p>Every analysis ends in a large sparse system of equations, one unknown per mesh node. DC
 and thermal systems are symmetric positive definite; AC systems are complex. How KiPI
@@ -705,6 +805,21 @@ way. Because PARDISO utilizes all cores, the machine running the simulation will
   <tr><td>Capacitors too far away</td><td class="wrap">High impedance above a few MHz at the
     probe despite enough capacitance on the rail.</td><td class="wrap">Move capacitors next to
     the pins, shorten their vias, use thinner dielectric to ground. Consider smaller case size/lower ESR/lower ESL capacitors at load. Adding these at supply will do little.</td></tr>
+  <tr><td>Victim beside the switch node</td><td class="wrap">Capacitive coupling dominant;
+    the victim's results show tens of fF to the switch node over a long run beside
+    it.</td><td class="wrap">Move the trace away or onto a layer shielded by a plane, keep
+    the switch-node copper small, slow the edges.</td></tr>
+  <tr><td>Large hot loop</td><td class="wrap">Inductive coupling dominant; a hot-loop
+    inductance of several nH and ringing at tens to hundreds of MHz.</td><td class="wrap">Put
+    the input capacitors right at the switching device, with a solid ground plane on the
+    next layer; route victims on the far side of that plane.</td></tr>
+  <tr><td>Shared ground return</td><td class="wrap">Common-impedance coupling dominant; a
+    victim whose driver and receiver sit on either side of the converter's
+    current.</td><td class="wrap">Keep the switching current's return away from the
+    victim's ends; more ground copper or vias between them.</td></tr>
+  <tr><td>Weak victim drivers</td><td class="wrap">Open-drain or high-impedance lines FAIL
+    where push-pull lines pass.</td><td class="wrap">A stronger pull-up, a series or
+    parallel termination, or a filter at the receiver.</td></tr>
 </table>
 
 <h2 id="limits">What KiPI does not model</h2>
