@@ -795,7 +795,7 @@ class NoisePanel(QWidget, PartSelection):
         return (self.agg_list, self.victim_list, self.cap_list)
 
     def _part_lists(self):
-        return {"cap": self.cap_list}
+        return {"victim": self.victim_list, "cap": self.cap_list}
 
     def _settings_tab(self) -> QWidget:
         w = QWidget()

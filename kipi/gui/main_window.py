@@ -1147,7 +1147,8 @@ class MainWindow(QMainWindow):
     def _sync_pi_markers(self):
         """Mark the parts the current mode solves, on the ticked nets (#84): DC mode's VRMs,
         loads and series links, or, in AC mode, the VRMs, series links, probes and
-        modelled capacitors of an impedance sweep."""
+        modelled capacitors of an impedance sweep, plus each victim's driver and
+        receiver in Coupled Noise mode."""
         if self._closed:
             return
         if self.snapshot is None:
@@ -1158,6 +1159,9 @@ class MainWindow(QMainWindow):
         if self.mode == "dc":
             from kipi.dc.viz.markers import pi_markers
             markers = pi_markers(self.snapshot, setup, nets)
+        elif self.mode == "noise":
+            from kipi.noise.markers import noise_markers
+            markers = noise_markers(self.snapshot, setup, nets)
         else:
             from kipi.ac.viz.markers import ac_markers
             markers = ac_markers(self.snapshot, setup, nets)

@@ -18,7 +18,7 @@ from kipi.core.model.board import BoardSnapshot, Pad
 from kipi.core.model.nets import is_ground_name
 from kipi.dc.pi.diagram import _ground_nets
 
-KINDS = ("vrm", "load", "link", "cap", "probe")
+KINDS = ("vrm", "load", "link", "cap", "probe", "victim")
 LIFT_MM = 0.05          # markers sit this far off the copper, so they are never buried
 
 # One part to mark: (kind, the setup item's name, the name shown, the pin refs on the rail
