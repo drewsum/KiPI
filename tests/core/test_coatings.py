@@ -294,5 +294,7 @@ def test_kicad_gives_its_masks_and_silkscreens():
     assert _kinds(st) == ORDER
     top_silk, top_mask = st.coatings[:2]
     assert top_mask.thickness_mm == pytest.approx(0.01)
-    assert top_mask.material == "Epoxy" and top_mask.color == "#ff0000"
+    from kipy.proto.board.board_pb2 import BoardStackupLayer
+    has_sub = "soldermask" in BoardStackupLayer.DESCRIPTOR.fields_by_name   # kicad-python 0.8 on
+    assert top_mask.material == ("Epoxy" if has_sub else "") and top_mask.color == "#ff0000"
     assert top_silk.thickness_mm == DEFAULT_SILK_MM and top_silk.color == ""

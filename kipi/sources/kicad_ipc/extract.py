@@ -199,7 +199,8 @@ def extract_stackup(board, progress: ProgressReporter = NULL,
 def _coating(sl, board_pb2):
     """A solder mask or silkscreen of the stackup (#82); its side from its layer."""
     mask = sl.type == board_pb2.BoardStackupLayerType.BSLT_SOLDERMASK
-    sub = sl.soldermask if mask else sl.silkscreen      # None before KiCad 10.0.6
+    # None before KiCad 10.0.6; kicad-python before 0.8 has neither field
+    sub = getattr(sl, "soldermask" if mask else "silkscreen", None)
     t = mm(sl.thickness)
     if not t and mask and sub is not None:
         t = mm(sub.thickness)

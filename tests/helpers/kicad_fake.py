@@ -310,11 +310,13 @@ class FakeKiCad:
         if lid in (L.BL_F_Mask, L.BL_B_Mask):
             sl.type = bp.BoardStackupLayerType.BSLT_SOLDERMASK
             sl.thickness.value_nm = 10000
-            sl.soldermask.material_name = "Epoxy"
+            if "soldermask" in sl.DESCRIPTOR.fields_by_name:     # kicad-python 0.8 on
+                sl.soldermask.material_name = "Epoxy"
             sl.color.r, sl.color.g, sl.color.b, sl.color.a = 1.0, 0.0, 0.0, 1.0
         else:
             sl.type = bp.BoardStackupLayerType.BSLT_SILKSCREEN
-            sl.silkscreen.material_name = ""
+            if "silkscreen" in sl.DESCRIPTOR.fields_by_name:
+                sl.silkscreen.material_name = ""
 
     def _GetBoardEnabledLayers(self, cmd):
         r = bc.BoardEnabledLayersResponse()
