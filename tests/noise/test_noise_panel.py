@@ -76,6 +76,8 @@ def test_edits_reach_the_setup(panel):
     assert a.phases[0].qrr_c == 0.0
     panel.spin_soft_zeta.setValue(0.3)
     assert panel.setup.noise.soft_edge_zeta == pytest.approx(0.3)
+    panel.spin_dead.setValue(35)
+    assert panel.setup.noise.dead_time_ns == pytest.approx(35)
     ed.input_caps.item(0).setCheckState(Qt.Unchecked)
     assert a.phases[0].input_caps == []
     ed.inductance.setValue(0)

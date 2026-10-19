@@ -153,7 +153,8 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
                                       max(rings) if rings else None,
                                       setup.noise.f_max_hz, setup.noise.max_harmonics)
     parts = [PhaseParts(ph.inductance_h, r.f_ring_hz, r.zeta, r.c_sw_f,
-                        setup.noise.soft_edge_zeta, r.qrr_c)
+                        setup.noise.soft_edge_zeta, r.qrr_c,
+                        setup.noise.dead_time_ns * 1e-9)
              for ph, r in zip(agg.phases, reports)]
     wf = synthesize(op.topology, op.vin, op.vout, op.iout, op.iin, op.duty, agg.fsw_hz,
                     agg.rise_s, agg.fall_s, parts, k,

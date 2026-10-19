@@ -7,8 +7,9 @@ import math
 import numpy as np
 import pytest
 
-from kipi.noise.model import DEFAULT_QRR_C, AggressorPhase, NoiseSettings, phase_from_dict
-from kipi.noise.waveforms import CapBranch, PhaseParts, edge_shapes, synthesize
+from kipi.noise.model import (DEFAULT_QRR_C, AggressorPhase, NoiseSettings, phase_from_dict,
+                              settings_from_dict)
+from kipi.noise.waveforms import CapBranch, PhaseParts, describe_edges, edge_shapes, synthesize
 
 FSW = 500e3
 
@@ -112,3 +113,24 @@ def test_a_solve_reports_its_edges_and_the_assumed_qrr():
     assert not any("No Qrr entered" in w for w in r.warnings)
     assert any("rising edge hard, ζ" in x for x in r.summary_lines())
     assert np.isfinite(r.waveforms.phases[0].switch_node.c).all()
+
+
+def test_a_soft_edge_slower_than_the_dead_time_is_finished_hard():
+    # 0.08 A below zero would take 200 pF across 12 V in 30 ns: the high side turns on
+    # after the 20 ns dead time and finishes the edge at the entered time, ringing.
+    ph = PhaseParts(2.2e-6, 150e6, 0.05, 200e-12, 0.5, 5e-9, 20e-9)
+    on, off = edge_shapes("buck", -0.08, 0.36, 2e-9, 2e-9, 12.0, ph)
+    assert on.hard and on.time_s == 2e-9 and on.zeta == 0.05 and on.irr_a == 0.0
+    assert on.carried == pytest.approx(20e-9 / 30e-9)
+    assert "carries only 67 %" in describe_edges((on, off), 5e-9)
+    # 0.36 A carries the falling edge across in 6.7 ns: soft.
+    assert not off.hard and off.time_s == pytest.approx(200e-12 * 12.0 / 0.36)
+    # No dead time: the current takes as long as it needs.
+    ph.dead_time_s = 0.0
+    on, _ = edge_shapes("buck", -0.08, 0.36, 2e-9, 2e-9, 12.0, ph)
+    assert not on.hard and on.time_s == pytest.approx(30e-9)
+
+
+def test_the_dead_time_is_kept_and_defaulted():
+    assert NoiseSettings().dead_time_ns == 20.0
+    assert settings_from_dict({"dead_time_ns": 35.0}).dead_time_ns == 35.0

@@ -1739,7 +1739,9 @@ diode: a <b>hard</b> edge, which must also sweep out the diode's reverse-recover
 control switch turns off, the inductor current itself carries the node across into the
 other switch's body diode, whose clamp takes the ringing's energy: a <b>soft</b> edge,
 which overshoots once and settles. So a buck rings on its rising edge and a boost on its
-falling one. The results notes say which edge is which.</p>
+falling one. At light load the current may be too small to carry the node across within
+the controller's dead time; the next switch then turns on part way and finishes the edge
+hard. The results notes say which edge is which.</p>
 <p>The waveforms are exact Fourier series of piecewise-linear shapes (trapezoids and
 triangles) up to a highest frequency set by the edges and the ringing, so nothing is
 time-stepped and a solve takes well under a second.</p>
@@ -1839,6 +1841,10 @@ and the results say so.</p>
   <li><b>Soft edge damping</b>: the least damping of the soft edge, the one the inductor
     current carries into a body diode's clamp (ζ, default 0.5: one overshoot, then
     settled). Set it to the least ringing damping to ring both edges alike.</li>
+  <li><b>Dead time</b>: how long the inductor current has to carry a soft edge across
+    (default 20 ns). A soft edge that would take longer (C_sw·V/I, at light load) is
+    finished hard by the next switch, at the entered edge time. 0 lets the current take as
+    long as it needs.</li>
   <li><b>Periods shown</b> in the waveform plot.</li>
   <li><b>Victim segment</b>: victim traces are cut into pieces this long, each with its own
     cross-section of the copper around it (default 0.5 mm).</li>

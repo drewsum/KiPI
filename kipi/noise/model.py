@@ -229,6 +229,9 @@ class NoiseSettings:
     # a conducting body diode's clamp (a buck's falling edge, a boost's rising one).
     # The clamp takes the ringing's energy, so the edge overshoots once and settles.
     soft_edge_zeta: float = 0.5
+    # The controller's dead time: a soft edge the inductor current cannot carry across in
+    # it (light load, a valley just below zero) is finished hard by the next switch.
+    dead_time_ns: float = 20.0
     # Capacitive coupling (cross-sections of the victim): its traces are cut every
     # segment_mm, and copper within window_mm of the cut counts.
     segment_mm: float = 0.5

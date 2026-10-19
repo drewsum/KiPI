@@ -647,7 +647,11 @@ inductor. The inductor current itself carries the node across, so the edge is no
 than C·V/I, into the other switch's body diode, which turns on and clamps it. The clamp
 takes the ringing's energy: the soft edge is damped at least the soft-edge damping
 (ζ = 0.5 by default, one overshoot and settled). A valley current below zero (forced PWM
-at light load) makes the turn-on soft too: zero-voltage switching. The trapezoid's
+at light load) makes the turn-on soft too: zero-voltage switching. But the controller
+waits only its dead time (20 ns by default) before turning the next switch on. A current
+too small to carry the node across in that time (C·V/I longer than the dead time) leaves
+the switch to finish the edge: it is hard, at the entered edge time and the least ringing
+damping, with no recovery, since no diode was conducting. The trapezoid's
 spectrum is a sum of its corners' terms, so each edge's two corners pass through their own
 H.</p>
 <p>The ringing is the switch node's capacitance trading charge with the loop's inductance,

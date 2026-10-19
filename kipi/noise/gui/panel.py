@@ -896,6 +896,7 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_periods.setValue(s.periods_shown)
         self.spin_zeta = _spin(0, 1, s.min_ring_zeta, 3, "", 0.01)
         self.spin_soft_zeta = _spin(0, 5, s.soft_edge_zeta, 2, "", 0.05)
+        self.spin_dead = _spin(0, 1000, s.dead_time_ns, 1, " ns", 5)
         self.spin_segment = _spin(0.05, 10, s.segment_mm, 2, " mm", 0.1)
         self.spin_window = _spin(0.2, 50, s.window_mm, 1, " mm", 0.5)
         self.chk_board = QCheckBox("Board model")
@@ -907,6 +908,7 @@ class NoisePanel(QWidget, PartSelection):
         f.addRow("Harmonic limit", self.spin_harm)
         f.addRow("Least ringing damping", self.spin_zeta)
         f.addRow("Soft edge damping", self.spin_soft_zeta)
+        f.addRow("Dead time", self.spin_dead)
         f.addRow("Periods shown", self.spin_periods)
         f.addRow("Victim segment", self.spin_segment)
         f.addRow("Coupling window", self.spin_window)
@@ -973,6 +975,13 @@ class NoisePanel(QWidget, PartSelection):
                                     "control switch turns on against a conducting diode, "
                                     "keeps the least ringing damping above. Set it to "
                                     "that to ring both edges alike.", ("sw_edges", "soft"))
+        tip(f, self.spin_dead, "The controller's dead time: how long the inductor current "
+                               "has to carry a soft edge across, C_sw·V/I, before the next "
+                               "switch turns on. At light load, or a valley current just "
+                               "below zero, it cannot: the switch turns on part way and "
+                               "finishes the edge hard, at the entered edge time and the "
+                               "least ringing damping. 0 lets the current take as long as "
+                               "it needs.", ("sw_edges", "soft"))
         tip(f, self.spin_periods, "Switching periods shown in the waveform plot")
         tip(f, self.spin_segment, "Victim traces are cut into pieces this long; each is a "
                                   "short transmission line with its own cross-section. "
@@ -995,7 +1004,8 @@ class NoisePanel(QWidget, PartSelection):
         self.chk_board.toggled.connect(self._settings_changed)
         self.chk_board.toggled.connect(self.spin_fpd.setEnabled)
         for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta,
-                    self.spin_soft_zeta, self.spin_segment, self.spin_window, self.spin_fpd):
+                    self.spin_soft_zeta, self.spin_dead, self.spin_segment, self.spin_window,
+                    self.spin_fpd):
             wdg.valueChanged.connect(self._settings_changed)
         return w
 
@@ -1007,6 +1017,7 @@ class NoisePanel(QWidget, PartSelection):
         s.periods_shown = self.spin_periods.value()
         s.min_ring_zeta = self.spin_zeta.value()
         s.soft_edge_zeta = self.spin_soft_zeta.value()
+        s.dead_time_ns = self.spin_dead.value()
         s.segment_mm = self.spin_segment.value()
         s.window_mm = self.spin_window.value()
         s.board_model = self.chk_board.isChecked()
@@ -1023,7 +1034,8 @@ class NoisePanel(QWidget, PartSelection):
         s = self.setup.noise
         for wdg, v in ((self.spin_harm, s.max_harmonics), (self.spin_periods, s.periods_shown),
                        (self.spin_zeta, s.min_ring_zeta),
-                       (self.spin_soft_zeta, s.soft_edge_zeta), (self.spin_segment, s.segment_mm),
+                       (self.spin_soft_zeta, s.soft_edge_zeta), (self.spin_dead, s.dead_time_ns),
+                       (self.spin_segment, s.segment_mm),
                        (self.spin_window, s.window_mm), (self.spin_fpd, s.field_per_decade),
                        (self.spin_radius, s.scan_radius_mm), (self.spin_top, s.scan_top_n),
                        (self.spin_scan_drv, s.scan_driver_ohm)):

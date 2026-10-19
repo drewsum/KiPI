@@ -200,6 +200,7 @@ class PhaseParts:
     c_sw_f: float = 0.0             # the switch node's capacitance, which carries the ringing
     soft_zeta: float = 0.5          # the least damping of a soft (diode-clamped) edge
     qrr_c: float = 0.0              # the reverse-recovery charge a hard edge sweeps out
+    dead_time_s: float = 20e-9      # how long the inductor current has to carry a soft edge
 
 
 @dataclass
@@ -211,6 +212,7 @@ class EdgeShape:
     zeta: float
     irr_a: float = 0.0              # reverse-recovery peak current (hard edges)
     i_a: float = 0.0                # the inductor current at the edge
+    carried: float = 0.0            # the part of the swing the current carried, if not all
 
 
 def edge_shapes(topology: str, lo: float, hi: float, rise: float, fall: float,
@@ -222,7 +224,10 @@ def edge_shapes(topology: str, lo: float, hi: float, rise: float, fall: float,
     conducting, in reverse, until Qrr is swept out at the edge's di/dt = lo/t, then snaps
     off over the edge: Qrr = ½·Irr·(Irr/(di/dt) + t). Turn-off is soft while the peak
     current ``hi`` does: it carries the node across, no faster than C_sw·V/I, into the
-    other body diode's clamp. A soft edge is damped at least ``soft_zeta``.
+    other body diode's clamp. A soft edge is damped at least ``soft_zeta``. A current too
+    small to carry the node across within the dead time does not: the next switch turns
+    on part way and finishes the edge hard at the entered time (no recovery: no diode was
+    conducting).
     """
     buck = topology == "buck"
     names = ("rising", "falling") if buck else ("falling", "rising")
@@ -230,14 +235,19 @@ def edge_shapes(topology: str, lo: float, hi: float, rise: float, fall: float,
     out = []
     for name, t, i, turn_on in zip(names, times, (lo, hi), (True, False)):
         hard = (i > 0) if turn_on else not (i > 0)
+        carried = 0.0
         if not hard and ph.c_sw_f > 0 and i:
-            t = max(t, ph.c_sw_f * swing / abs(i))
+            t_carry = ph.c_sw_f * swing / abs(i)
+            if ph.dead_time_s and t_carry > ph.dead_time_s:
+                hard, carried = True, ph.dead_time_s / t_carry
+            else:
+                t = max(t, t_carry)
         zeta = ph.zeta if hard else max(ph.zeta, ph.soft_zeta)
         irr = 0.0
         if hard and turn_on and ph.qrr_c > 0 and i > 0:
             didt = i / t
             irr = 0.5 * didt * (math.sqrt(t * t + 8 * ph.qrr_c / didt) - t)
-        out.append(EdgeShape(name, t, hard, zeta, irr, i))
+        out.append(EdgeShape(name, t, hard, zeta, irr, i, carried))
     return out[0], out[1]
 
 
@@ -248,6 +258,10 @@ def describe_edges(edges: Sequence[EdgeShape], qrr_c: float) -> str:
         if e.hard and e.irr_a:
             parts.append(f"{e.name} edge hard (reverse recovery {qrr_c * 1e9:.3g} nC, "
                          f"{e.irr_a:.3g} A peak), ζ = {e.zeta:.3g}")
+        elif e.hard and e.carried:
+            parts.append(f"{e.name} edge hard (the inductor's {abs(e.i_a):.3g} A carries "
+                         f"only {e.carried * 100:.0f} % of it within the dead time), "
+                         f"ζ = {e.zeta:.3g}")
         elif e.hard:
             parts.append(f"{e.name} edge hard, ζ = {e.zeta:.3g}")
         else:

@@ -26,6 +26,13 @@ milestones rather than versions that were ever set.
   link joins to one, and the board model must be on.
 
 ### Fixed
+- **A soft edge the inductor current cannot carry within the dead time is hard.** At
+  light load, with the valley current just below zero, the turn-on was taken as zero-
+  voltage switching however small the current: 0.08 A took a buck's rising edge 30 ns
+  through 200 pF, at the soft edge's damping. The controller turns the next switch on
+  after its dead time, so a soft edge slower than a new **Dead time** (Settings, default
+  20 ns) is now finished hard by that switch, at the entered edge time and the least
+  ringing damping. The notes say how much of the swing the current carried.
 - **The hot-loop capacitors carry the switch node's ringing** (#151). The ringing on the
   switch node is its capacitance trading charge with the hot loop's inductance, so the
   same ringing current, C_sw·dv/dt (about V/Z0 at its peak), now flows through a buck's
