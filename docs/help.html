@@ -927,6 +927,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Sense pins</td><td class="wrap">Optional remote sense (positive).</td></tr>
   <tr><td>Ground sense pins</td><td class="wrap">Optional negative remote sense on the ground net
     (needs ground pins).</td></tr>
+  <tr><td>Mesh sense</td><td class="wrap">Off by default. Any number of sense points (<b>Sense
+    points</b>, edited one at a time with <b>Edit sense point</b>), each with its own sense
+    and optional ground sense pins. Every point's sense pins are held at the set voltage
+    (less the load line), above its own ground sense pins; the VRM's current enters there
+    and its output pins only measure.</td></tr>
 </table>
 </div>
 </details>
@@ -2009,6 +2014,9 @@ imbalance.</p>
     ground pins too).</li>
   <li>Solve. The sense point sits exactly at the set voltage; pins nearer the VRM read
     <em>above</em> it (a boost). The tolerance check catches both directions.</li>
+  <li>To hold several points at the set voltage at once (mesh remote sense), tick <b>Mesh
+    sense</b>, set <b>Sense points</b> and pick each point's pins in turn with <b>Edit sense
+    point</b>. Every point is then a fixed voltage, the VRM's current entering there.</li>
 </ol>
 </div>
 </details>

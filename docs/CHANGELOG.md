@@ -7,6 +7,11 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **Mesh remote sense** (#93). A VRM's new **Mesh sense** tickbox (DC, off by default)
+  takes any number of sense points, each with its own sense and optional ground sense
+  pins, picked one at a time like a multi-phase VRM's phases. Every point's sense pins
+  are held at the set voltage, less the load line, above that point's ground sense pins:
+  the VRM's current enters at the points, and its output pins only measure.
 - **A 20 MHz bandwidth limit for the noise waveforms.** A **20 MHz limit** tickbox in the
   waveform viewer plots every view (the switch node, the currents, the ripple, the victim
   noise and its high and low states, and their spectra) as an oscilloscope with its

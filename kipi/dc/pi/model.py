@@ -68,6 +68,14 @@ class VrmPhase:
 
 
 @dataclass
+class SensePoint:
+    """One mesh remote sense point (#93): sense pins on the rail and, optionally, the
+    ground sense pins the rail's voltage there is held above."""
+    sense: Optional[PinRef] = None
+    ground_sense: Optional[PinRef] = None
+
+
+@dataclass
 class Vrm:
     name: str
     output: PinRef                       # phase 1's pins: output, input, ground
@@ -105,13 +113,25 @@ class Vrm:
     load_line_mohm: float = 0.0
     # AC only: control loop bandwidth, kHz (None = not given).
     bandwidth_khz: Optional[float] = None
+    # Mesh remote sense (#93, DC only, off by default): every sense point's pins are held
+    # at the set voltage (less the load line, above that point's ground sense pins), the
+    # VRM's current entering there; its output pins only measure. Point 1 is sense and
+    # ground_sense above, points 2..N these.
+    mesh_sense: bool = False
+    sense_points: List[SensePoint] = field(default_factory=list)
 
     def all_phases(self) -> List[VrmPhase]:
         return [VrmPhase(self.output, self.input, self.ground), *self.phases]
 
+    def all_sense_points(self) -> List[SensePoint]:
+        """Every sense point: point 1 (sense, ground_sense), then the mesh's others when
+        mesh sense is on."""
+        return [SensePoint(self.sense, self.ground_sense),
+                *(self.sense_points if self.mesh_sense else [])]
+
     def pin_refs(self) -> List[PinRef]:
         """Every pin reference of the VRM, all phases included."""
-        refs = [self.sense, self.ground_sense]
+        refs = [r for sp in self.all_sense_points() for r in (sp.sense, sp.ground_sense)]
         for ph in self.all_phases():
             refs.extend((ph.output, ph.input, ph.ground))
         return [r for r in refs if r]
@@ -341,7 +361,11 @@ class PISetup:
                       acc_min=v.get("acc_min"), acc_max=v.get("acc_max"),
                       acc_pct=v.get("acc_pct", True), acc_dv=v.get("acc_dv", False),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
-                      bandwidth_khz=v.get("bandwidth_khz"))
+                      bandwidth_khz=v.get("bandwidth_khz"),
+                      mesh_sense=v.get("mesh_sense", False),
+                      sense_points=[SensePoint(pin(sp.get("sense")),
+                                               pin(sp.get("ground_sense")))
+                                    for sp in v.get("sense_points", [])])
                   for v in d.get("vrms", [])],
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), **_load_tolerance(l),
@@ -591,15 +615,20 @@ def validate(setup: PISetup) -> List[str]:
             errors.append(f"VRM {v.name}: an input range {how} needs a VRM driving its "
                           "input rail, whose voltage it is taken from; give the range in "
                           "volts instead")
-        if v.sense and groups[v.sense.net] != groups[v.output.net]:
-            errors.append(f"VRM {v.name}: sense pins must be on the output net (or nets "
-                          "DC-connected to it)")
-        if v.ground_sense and not v.ground:
-            errors.append(f"VRM {v.name}: ground sense needs the VRM's ground pins set "
-                          "(that is what makes its ground net simulated)")
-        elif v.ground_sense and groups[v.ground_sense.net] != groups[v.ground.net]:
-            errors.append(f"VRM {v.name}: ground sense pins must be on the VRM's ground net "
-                          "(or nets DC-connected to it)")
+        points = v.all_sense_points()
+        for k, sp in enumerate(points, 1):
+            at = f" (sense point {k})" if v.mesh_sense else ""
+            if v.mesh_sense and not sp.sense:
+                errors.append(f"VRM {v.name}: mesh sense point {k} has no sense pins")
+            if sp.sense and groups[sp.sense.net] != groups[v.output.net]:
+                errors.append(f"VRM {v.name}{at}: sense pins must be on the output net (or "
+                              "nets DC-connected to it)")
+            if sp.ground_sense and not v.ground:
+                errors.append(f"VRM {v.name}{at}: ground sense needs the VRM's ground pins "
+                              "set (that is what makes its ground net simulated)")
+            elif sp.ground_sense and groups[sp.ground_sense.net] != groups[v.ground.net]:
+                errors.append(f"VRM {v.name}{at}: ground sense pins must be on the VRM's "
+                              "ground net (or nets DC-connected to it)")
         if v.input and groups[v.input.net] == groups[v.output.net]:
             errors.append(f"VRM {v.name}: input and output are on the same net group")
         if v.ground:
@@ -761,6 +790,8 @@ def active_setup(setup: PISetup) -> Tuple[PISetup, List[str]]:
             v.ground = v.ground_sense = None
             for ph in v.phases:
                 ph.ground = None
+            for sp in v.sense_points:
+                sp.ground_sense = None
         vrms.append(v)
     out.vrms, out.loads = vrms, loads
     return out, notes

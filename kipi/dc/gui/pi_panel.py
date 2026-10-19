@@ -40,7 +40,7 @@ from kipi.dc.pi.autofill import (
 from kipi.dc.pi.load_model import apply_to_load, new_items
 from kipi.dc.pi.model import (
     DEFAULT_VIA_CURRENT_LIMIT_A, DELTA_VOLTS, PERCENT, VOLTS, DcLink, Load, PinRef, PISetup,
-    Vrm, VrmPhase, active_setup, group_name, net_groups, range_unit, range_volts, rail_nominal,
+    SensePoint, Vrm, VrmPhase, active_setup, group_name, net_groups, range_unit, range_volts, rail_nominal,
     validate, volts_in,
 )
 from kipi.gui.load_model_dialogs import (
@@ -493,6 +493,12 @@ class VrmEditor(_Editor):
         self.sense = self._picker(optional=True)
         self.ground = self._picker(optional=True)
         self.ground_sense = self._picker(optional=True)
+        # Mesh remote sense (#93): the sense pickers show the selected point.
+        self.mesh = QCheckBox("Hold every sense point at the set voltage")
+        self.n_points = QSpinBox()
+        self.n_points.setRange(1, 64)
+        self.cmb_point = QComboBox()
+        self._point = 0
         # Multi-phase: the output, input and ground pickers show the selected phase.
         self.n_phases = QSpinBox()
         self.n_phases.setRange(1, 32)
@@ -516,6 +522,9 @@ class VrmEditor(_Editor):
         f.addRow("Output pins", self.output)
         f.addRow("Input pins", self.input)
         f.addRow("Ground pins", self.ground)
+        f.addRow("Mesh sense", self.mesh)
+        f.addRow("Sense points", self.n_points)
+        f.addRow("Edit sense point", self.cmb_point)
         f.addRow("Sense pins", self.sense)
         f.addRow("Ground sense pins", self.ground_sense)
         # Drawings under the tooltips (#116), the field's part picked out.
@@ -527,6 +536,8 @@ class VrmEditor(_Editor):
                self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
                self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
                self.ground_sense: ("remote_sense", "gsense"),
+               self.mesh: ("remote_sense", "sense", "gsense"),
+               self.n_points: ("remote_sense", "sense"),
                self.vin_row.unit: ("tolerance", "volts", "dv", "pct"),
                self.acc_row.unit: ("tolerance", "volts", "dv", "pct"),
                self.output: ("vrm_pins", "out"), self.input: ("vrm_pins", "inp"),
@@ -607,7 +618,17 @@ class VrmEditor(_Editor):
                              "pins instead of at its output"),
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
                                     "set voltage is held relative to these pins instead of "
-                                    "0 V (needs ground pins)")):
+                                    "0 V (needs ground pins)"),
+                (self.mesh, "Mesh remote sense, a niche model, off by default: any number "
+                            "of sense points, each with its sense pins and optional ground "
+                            "sense pins. Every point's sense pins are held at the set "
+                            "voltage (less the load line), above its own ground sense pins; "
+                            "the VRM's current enters there and its output pins only "
+                            "measure."),
+                (self.n_points, "How many mesh sense points; the sense pickers below show "
+                                "the one picked in Edit sense point"),
+                (self.cmb_point, "The mesh sense point whose sense and ground sense pins "
+                                 "are shown below")):
             tip(f, w, text, art.get(w))
         self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.bandwidth)
@@ -616,6 +637,9 @@ class VrmEditor(_Editor):
         self.kind.currentIndexChanged.connect(self._kind_rows)
         self.n_phases.valueChanged.connect(self._phase_count_changed)
         self.cmb_phase.currentIndexChanged.connect(self._phase_selected)
+        self.mesh.toggled.connect(self._point_count_changed)
+        self.n_points.valueChanged.connect(self._point_count_changed)
+        self.cmb_point.currentIndexChanged.connect(self._point_selected)
         self.output.cmb_net.currentIndexChanged.connect(
             lambda _i: self._guess_voltage(self.output.net()))
         self._legend(unused=True)
@@ -631,7 +655,8 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.acc_row, kind != "source")
         dc = self.mode == "dc"
         dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
-                   self.input, self.sense, self.ground_sense, self.dropout)
+                   self.input, self.sense, self.ground_sense, self.dropout, self.mesh,
+                   self.n_points)
         ac_only = (self.bandwidth, self.acc_row)
         _gray((*dc_only, *self.vin_row.fields()),
               dc, "Used by the DC analysis only", editable=True)
@@ -639,7 +664,8 @@ class VrmEditor(_Editor):
               editable=True)
         needs = {w: OPTIONAL for w in (self.iq, self.i_limit, self.load_line, self.dropout,
                                        self.vin_row, self.n_phases, self.ground, self.sense,
-                                       self.ground_sense, *ac_only)}
+                                       self.ground_sense, self.mesh, self.n_points,
+                                       *ac_only)}
         needs.update({w: REQUIRED for w in (self.name, self.kind, self.voltage, self.output)})
         needs[self.eff] = REQUIRED              # a switcher's input current follows from it
         needs[self.input] = REQUIRED if kind != "source" else OPTIONAL   # ties it into the tree
@@ -680,6 +706,48 @@ class VrmEditor(_Editor):
         self.ground.set_value(ph.ground)
         self._loading = loading
 
+    def _point_rows(self):
+        """Fill the sense point selector and label the sense pickers."""
+        mesh = self.mesh.isChecked()
+        n = self.n_points.value() if mesh else 1
+        self._point = min(self._point, n - 1)
+        self.cmb_point.blockSignals(True)
+        self.cmb_point.clear()
+        self.cmb_point.addItems([f"Point {k}" for k in range(1, n + 1)])
+        self.cmb_point.setCurrentIndex(self._point)
+        self.cmb_point.blockSignals(False)
+        self.form.setRowVisible(self.n_points, mesh)
+        self.form.setRowVisible(self.cmb_point, n > 1)
+        tag = f" (point {self._point + 1})" if n > 1 else ""
+        for w, text in ((self.sense, "Sense pins"), (self.ground_sense, "Ground sense pins")):
+            self.form.labelForField(w).setText(text + tag)
+
+    @staticmethod
+    def _points(v: Vrm) -> List[SensePoint]:
+        return [SensePoint(v.sense, v.ground_sense), *v.sense_points]
+
+    def _show_point(self, v: Vrm):
+        pts = self._points(v)
+        sp = pts[self._point] if self._point < len(pts) else SensePoint()
+        loading, self._loading = self._loading, True
+        self.sense.set_value(sp.sense)
+        self.ground_sense.set_value(sp.ground_sense)
+        self._loading = loading
+
+    def _point_count_changed(self, *_):
+        if self._loading or self.obj is None:
+            return
+        self._store()
+        self._point_rows()
+        self._show_point(self.obj)
+
+    def _point_selected(self, index):
+        if self._loading or self.obj is None or index < 0:
+            return
+        self._point = index
+        self._point_rows()
+        self._show_point(self.obj)
+
     def _phase_count_changed(self, _n):
         if self._loading or self.obj is None:
             return
@@ -710,8 +778,11 @@ class VrmEditor(_Editor):
         self.dropout.setValue(v.dropout_v)
         self.vin_row.set_values(v.vin_min, v.vin_max, v.vin_pct, v.vin_dv)
         self.acc_row.set_values(v.acc_min, v.acc_max, v.acc_pct, v.acc_dv)
-        self.sense.set_value(v.sense)
-        self.ground_sense.set_value(v.ground_sense)
+        self.mesh.setChecked(v.mesh_sense)
+        self.n_points.setValue(len(v.sense_points) + 1)
+        self._point = 0
+        self._point_rows()
+        self._show_point(v)
         self._kind_rows()
 
     def _save(self, v: Vrm):
@@ -734,8 +805,14 @@ class VrmEditor(_Editor):
         v.acc_min, v.acc_max = self.acc_row.values()
         v.acc_pct, v.acc_dv = self.acc_row.pct(), self.acc_row.dv()
         v.bandwidth_khz = self.bandwidth.value() or None
-        v.sense = self.sense.value()
-        v.ground_sense = self.ground_sense.value()
+        v.mesh_sense = self.mesh.isChecked()
+        pts = self._points(v)
+        while len(pts) < max(self.n_points.value(), self._point + 1):
+            pts.append(SensePoint())
+        pts[self._point] = SensePoint(self.sense.value(), self.ground_sense.value())
+        del pts[max(self.n_points.value(), 1):]
+        v.sense, v.ground_sense = pts[0].sense, pts[0].ground_sense
+        v.sense_points = pts[1:]
         phases = v.all_phases()
         ph = phases[min(self._phase, len(phases) - 1)]
         old = ph.output

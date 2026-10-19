@@ -77,8 +77,9 @@ def _ground_nets(setup: PISetup) -> set:
         for ph in v.all_phases():
             if ph.ground:
                 grounds.add(ph.ground.net)
-        if v.ground_sense:
-            grounds.add(v.ground_sense.net)
+        for sp in v.all_sense_points():
+            if sp.ground_sense:
+                grounds.add(sp.ground_sense.net)
     for l in setup.loads:
         if l.ground:
             grounds.add(l.ground.net)
@@ -130,7 +131,9 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
         tip = [f"{VRM_KIND_LABELS[kind]} {v.name}: output on {v.output.ref} ({v.output.net})"]
         if v.input:
             tip.append(f"input on {v.input.ref} ({v.input.net})")
-        if v.sense:
+        if v.mesh_sense:
+            tip.append(f"mesh remote sense at {len(v.all_sense_points())} points")
+        elif v.sense:
             tip.append(f"remote sense at {v.sense.ref} ({v.sense.net})")
         d.blocks[bid] = Block(bid, "vrm", v.name, lines, vrm_kind=kind, tip="\n".join(tip))
         if v.input and v.input.net not in grounds:

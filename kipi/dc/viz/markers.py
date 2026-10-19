@@ -112,10 +112,10 @@ def cap_points(snap: BoardSnapshot, ref: str, nets, grounds,
 def vrm_part(vrm) -> Part:
     """A VRM's marker spec: every phase's output and input pins and the sense pin on the
     rail side, the phases' and the sense's ground pins on the other."""
-    phases = vrm.all_phases()
+    phases, points = vrm.all_phases(), vrm.all_sense_points()
     return ("vrm", vrm.name, f"VRM {vrm.name}",
-            [vrm.sense, *(r for ph in phases for r in (ph.output, ph.input))],
-            [vrm.ground_sense, *(ph.ground for ph in phases)])
+            [*(sp.sense for sp in points), *(r for ph in phases for r in (ph.output, ph.input))],
+            [*(sp.ground_sense for sp in points), *(ph.ground for ph in phases)])
 
 
 def link_part(link) -> Part:

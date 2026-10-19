@@ -11,6 +11,9 @@ output delivers, and its input pins are a load on the group feeding it.
 * Remote sense: the VRM's output is corrected until the sense pins sit at the set point.
   With ground sense, the set point is held above the ground sense pins instead of 0 V;
   their voltage comes from the ground solve, so rails and grounds are iterated together.
+* Mesh remote sense (#93): every sense point's pins are a voltage boundary at the set
+  point (less the load line, above that point's ground sense pins); the VRM's current
+  enters there, split evenly over its phases, and its output pins only measure.
 * Ground: groups used as ground are referenced to 0 V at the source VRM's ground pins.
   Loads return their current at their ground pins; every other VRM returns
   I_in - I_out at its ground pins.
@@ -132,10 +135,18 @@ class _Rail:
 
     def __init__(self, vrm: Vrm, children: List[Vrm], pads: _Pads):
         self.vrm, self.children = vrm, children
+        self.mesh = vrm.mesh_sense
         self.sense_pads = pads(vrm.sense) if vrm.sense else []
+        # Mesh sense: one voltage source per sense point, (name, pads, ground sense pads).
+        self.points = [(f"{vrm.name} (sense {k})", pads(sp.sense),
+                        pads(sp.ground_sense) if sp.ground_sense else [])
+                       for k, sp in enumerate(vrm.all_sense_points(), 1)] if self.mesh else []
         # Phase 1 is the voltage source; phases 2..N inject their share of the demand.
+        # With mesh sense every phase's output pins only measure.
         self.phase_pads = [pads(ph.output) for ph in vrm.all_phases()]
-        self.phase_load = [_term(vrm, "output", k) for k in range(2, len(self.phase_pads) + 1)]
+        first = 1 if self.mesh else 2
+        self.phase_load = [_term(vrm, "output", k)
+                           for k in range(first, len(self.phase_pads) + 1)]
         self.child_load = {c.name: [_term(c, "input", k) for k in range(1, len(c.phases) + 2)]
                            for c in children}
         self.child_pads = {c.name: [pads(ph.input) for ph in c.all_phases()]
@@ -148,11 +159,22 @@ class _Rail:
     def terminal_loads(self) -> List[CurrentLoad]:
         loads = [CurrentLoad(name, pp, 0.0) for c in self.children
                  for name, pp in zip(self.child_load[c.name], self.child_pads[c.name])]
-        if self.sense_pads:
+        if self.sense_pads and not self.mesh:
             loads.append(CurrentLoad(f"{self.vrm.name} (sense)", self.sense_pads, 0.0))
         loads += [CurrentLoad(name, pp, 0.0)
-                  for name, pp in zip(self.phase_load, self.phase_pads[1:])]
+                  for name, pp in zip(self.phase_load, self.phase_pads[-len(self.phase_load):]
+                                      if self.phase_load else [])]
         return loads
+
+    def sources(self) -> List[VoltageSource]:
+        if self.mesh:
+            return [VoltageSource(name, pp, self.vrm.voltage) for name, pp, _ in self.points]
+        return [VoltageSource(self.vrm.name, self.phase_pads[0], self.vrm.voltage)]
+
+    def sense_pad_ids(self) -> List[str]:
+        if self.mesh:
+            return [p for _, pp, _ in self.points for p in pp]
+        return self.sense_pads
 
     def regulated(self, sol) -> Optional[float]:
         """The voltage the VRM regulates, or None when it holds its output pins directly."""
@@ -210,6 +232,9 @@ class _TreeSolver:
         # from the ground solve, which depends on the rails' currents: iterate both to a
         # fixed point (passes after the first only re-solve the factorized systems).
         self.v_gsense: Dict[str, float] = {v.name: 0.0 for v in setup.vrms if v.ground_sense}
+        # Mesh sense: each point's ground sense voltage (0 V where it has none).
+        self.v_gpoints: Dict[str, List[float]] = {
+            v.name: [0.0] * len(v.all_sense_points()) for v in setup.vrms if v.mesh_sense}
         self.rail_solutions: Dict[Group, object] = {}
         self.ground_solutions: Dict[Group, object] = {}
         self.not_converged: set = set()              # groups whose own iteration failed
@@ -289,10 +314,7 @@ class _TreeSolver:
             rail = _Rail(self.driver[g], self.fed_by.get(g, []), self.pads)
             self.rail_terms[g] = (rail, self._setup_loads_in(g) + rail.terminal_loads())
         rail, loads = self.rail_terms[g]
-        vrm = self.driver[g]
-        mesh, system = self._system_for(
-            g, [VoltageSource(vrm.name, rail.phase_pads[0], vrm.voltage)], loads,
-            self.label_of(g))
+        mesh, system = self._system_for(g, rail.sources(), loads, self.label_of(g))
         return rail, loads, mesh, system
 
     def _ground_system(self, g: Group):
@@ -435,6 +457,41 @@ class _TreeSolver:
             sol = system.solve({vrm.name: v_src}, currents, progress=NULL)
         return sol, v_src, vin_est, currents, it
 
+    def _iterate_mesh(self, rail: _Rail, system, demand: float, label: str,
+                      warnings: List[str]):
+        """The rail's fixed point with mesh sense: every sense point is held at the set
+        point less the droop, above its own ground sense pins; only the VRM input currents
+        downstream and the droop move. Returns as :meth:`_iterate_rail`."""
+        vrm = rail.vrm
+        r_ll = vrm.load_line_mohm * 1e-3
+        vin_est = {c.name: list(self.v_in.get(c.name, [vrm.voltage] * (len(c.phases) + 1)))
+                   for c in rail.children}
+        droop, change = 0.0, 0.0
+        for it in range(1, MAX_TREE_ITERATIONS + 1):  # noqa: B007 - reported after
+            currents = self._child_currents(rail, vin_est)
+            currents.update(self.zeroed)       # disconnected loads draw nothing (#88)
+            currents.update({name: 0.0 for name in rail.phase_load})
+            volts = {name: vrm.voltage + vg - droop
+                     for (name, _, _), vg in zip(rail.points, self.v_gpoints[vrm.name])}
+            sol = system.solve(volts, currents, progress=NULL)
+            change = 0.0
+            for c in rail.children:
+                for k, pp in enumerate(rail.child_pads[c.name]):
+                    new = _mean_v(sol, pp)
+                    change = max(change, abs(new - vin_est[c.name][k]))
+                    vin_est[c.name][k] = new
+            new_droop = r_ll * sum(sol.source_current[n] for n, _, _ in rail.points)
+            change = max(change, abs(new_droop - droop))
+            droop = new_droop
+            if change < V_TOL:
+                break
+        else:
+            warnings.append(f"{label}: power-tree iteration did not converge "
+                            f"(last change {change:.2e} V)")
+            self.not_converged.add(self.groups[vrm.output.net])
+        self.droop[vrm.name] = droop
+        return sol, float(np.mean(list(volts.values()))), vin_est, currents, it
+
     def _solve_rail(self, index: int, g: Group, suffix: str, warnings: List[str]):
         self.progress.check_cancel()
         vrm = self.driver[g]
@@ -445,13 +502,17 @@ class _TreeSolver:
         demand = sum(self.load_amps[l.name] for l in self.setup.loads     # fixed loads;
                      if self.groups[l.supply.net] == g)                    # the rest vary
 
-        sol, v_src, vin, currents, it = self._iterate_rail(rail, system, demand, label,
-                                                           warnings)
-        if rail.sense_pads:
-            self.v_sense[vrm.name] = _mean_v(sol, rail.sense_pads)
+        iterate = self._iterate_mesh if rail.mesh else self._iterate_rail
+        sol, v_src, vin, currents, it = iterate(rail, system, demand, label, warnings)
+        if rail.sense_pad_ids():
+            self.v_sense[vrm.name] = _mean_v(sol, rail.sense_pad_ids())
         self.v_out[vrm.name] = [_mean_v(sol, pp) for pp in rail.phase_pads]
-        self.i_out[vrm.name] = [sol.source_current[vrm.name],
-                                *(-currents[name] for name in rail.phase_load)]
+        if rail.mesh:
+            total = sum(sol.source_current[name] for name, _, _ in rail.points)
+            self.i_out[vrm.name] = [total / rail.n_phases] * rail.n_phases
+        else:
+            self.i_out[vrm.name] = [sol.source_current[vrm.name],
+                                    *(-currents[name] for name in rail.phase_load)]
         self.progress.info(f"{label}: {it} iteration(s), {vrm.name} supplies "
                            f"{sum(self.i_out[vrm.name]) * 1e3:.2f} mA at {v_src:.5f} V"
                            + (f" ({rail.n_phases} phases)" if rail.n_phases > 1 else ""))
@@ -475,6 +536,10 @@ class _TreeSolver:
                  for v, k, ph in self._vrm_ground_phases(g)]
         loads += [CurrentLoad(f"{v.name} (gnd sense)", self.pads(v.ground_sense), 0.0)
                   for v in self.setup.vrms if v.ground_sense and v.ground_sense.net in g]
+        loads += [CurrentLoad(f"{v.name} (gnd sense {k})", self.pads(sp.ground_sense), 0.0)
+                  for v in self.setup.vrms if v.mesh_sense
+                  for k, sp in enumerate(v.all_sense_points()[1:], 2)
+                  if sp.ground_sense and sp.ground_sense.net in g]
         return loads
 
     def _vrm_ground_returns(self, g: Group) -> Dict[str, float]:
@@ -508,6 +573,16 @@ class _TreeSolver:
                 new = _mean_v(gsol, self.pads(v.ground_sense))
                 change = max(change, abs(new - self.v_gsense[v.name]))
                 self.v_gsense[v.name] = new
+            if v.mesh_sense and v.ground:
+                gsol = self.ground_solutions[self.groups[v.ground.net]]
+                pts = self.v_gpoints[v.name]
+                for k, sp in enumerate(v.all_sense_points()):
+                    if sp.ground_sense:
+                        new = _mean_v(gsol, self.pads(sp.ground_sense))
+                        change = max(change, abs(new - pts[k]))
+                        pts[k] = new
+                if any(sp.ground_sense for sp in v.all_sense_points()):
+                    self.v_gsense[v.name] = float(np.mean(pts))
         return change
 
     # ------------------------------------------------------------ run

@@ -115,3 +115,23 @@ def test_solve_tab_excludes_unticked_groups(app):
     assert panel.btn_solve.text() == f"Solve {lst.count() - 1} of {lst.count()} net groups"
     panel._tick_all_groups(True)
     assert setup.excluded_nets == [] and panel.btn_solve.text() == "Solve all"
+
+
+def test_mesh_sense_points_edit_one_at_a_time(app):
+    setup = two_phase(ground=True, sense=True)
+    panel = PIPanel()
+    panel.set_board(board(), setup)
+    panel.vrm_list.lst.setCurrentRow(1)
+    ed, v = panel.vrm_list.editor, setup.vrms[1]
+    first = v.sense
+    assert not ed.form.isRowVisible(ed.n_points) and not v.mesh_sense
+    ed.mesh.setChecked(True)
+    ed.n_points.setValue(2)
+    assert v.mesh_sense and len(v.sense_points) == 1
+    ed.cmb_point.setCurrentIndex(1)
+    assert ed.sense.value() is None                   # point 2 starts empty
+    ed.cmb_point.setCurrentIndex(0)
+    assert ed.sense.value() == first and v.sense == first
+    ed.n_points.setValue(1)
+    assert v.sense_points == [] and v.sense == first
+    panel.close()

@@ -47,7 +47,7 @@ def setup_grounds(setup: Optional[PISetup]) -> List[str]:
     if setup is None:
         return []
     refs = [ph.ground for v in setup.vrms for ph in v.all_phases()]
-    refs += [v.ground_sense for v in setup.vrms]
+    refs += [sp.ground_sense for v in setup.vrms for sp in v.all_sense_points()]
     refs += [ld.ground for ld in setup.loads]
     refs += [p.ground for p in setup.probes]
     count: Dict[str, int] = {}
