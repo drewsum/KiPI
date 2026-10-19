@@ -95,6 +95,10 @@ def no_3d(monkeypatch):
             pass
 
         pi_markers = ()
+        coupling = None
+
+        def set_coupling(self, overlay):
+            self.coupling = overlay
 
         def set_pi_markers(self, markers):
             self.pi_markers = list(markers)

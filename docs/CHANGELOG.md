@@ -46,6 +46,14 @@ milestones rather than versions that were ever set.
   20 Ω, the switch's on-resistance, while the 4.7 kΩ pull-up holds the line high. Where
   the two differ, the solve runs once per state. The pass/fail verdict is unchanged: the
   largest noise in either state against the smaller margin.
+- **The 3D view shows where a victim's noise couples in** (#152). After a Coupled Noise
+  solve, pick **Coupling in 3D** under the results: Superposition, Capacitive, Inductive or
+  Common ground. The selected victim's traces are colored by each piece's share of the
+  receiver's peak noise: red adds to the peak, blue takes from it. The common-ground share
+  is a dot at the driver, and the capacitor loops that induce the inductive noise are drawn
+  in magenta. The shares come from one extra solve per frequency (reciprocity), so they add
+  up exactly to the peak. The line under the menu says how much of the peak each mechanism
+  gives.
 
 ## 0.9.0
 

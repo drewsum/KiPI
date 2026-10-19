@@ -670,6 +670,7 @@ class NoisePanel(QWidget, PartSelection):
     solve_requested = Signal(object, str)          # PISetup, aggressor name
     result_selected = Signal(object)               # NoiseResult shown in the plot; None clears
     victim_selected = Signal(str)                  # the victim picked in the results table
+    coupling_changed = Signal()                    # the 3D coupling overlay to draw changed
     setup_changed = Signal()
     results_saved = Signal(str)
     part_selected = Signal(str, str, bool)         # see ACPanel.part_selected
@@ -681,6 +682,7 @@ class NoisePanel(QWidget, PartSelection):
         self._nets: List[str] = []
         self.result = None
         self._results: Dict[str, object] = {}     # the last NoiseResult of each aggressor
+        self._victim = ""                         # the victim selected in the results
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
 
@@ -778,6 +780,32 @@ class NoisePanel(QWidget, PartSelection):
         make_sortable(self.tbl_victims)
         self.tbl_victims.setVisible(False)
         lr.addWidget(self.tbl_victims)
+        from kipi.noise.viz import VIEWS as COUPLING_VIEWS
+        self.coupling_row = QWidget(g_res)
+        row = QHBoxLayout(self.coupling_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.cmb_coupling = QComboBox(self.coupling_row)
+        for key, text in COUPLING_VIEWS:
+            self.cmb_coupling.addItem(text, key)
+        tip_3d = ("Show in the 3D view where the selected victim's peak noise couples in: "
+                  "each piece of its traces colored by its part of the receiver's peak (red "
+                  "adds to it, blue takes from it), by one mechanism or all of them. The "
+                  "common-ground part is a dot at the driver; the capacitor loops that "
+                  "induce the inductive part are drawn in magenta. Tick the switch node's net "
+                  "in the Board panel to see the capacitive source.")
+        self.cmb_coupling.setToolTip(tip_3d)
+        self.cmb_coupling.currentIndexChanged.connect(self._coupling_view_changed)
+        lbl = QLabel("Coupling in 3D", self.coupling_row)
+        lbl.setToolTip(tip_3d)
+        row.addWidget(lbl)
+        row.addWidget(self.cmb_coupling, 1)
+        self.lbl_coupling = QLabel(g_res)
+        self.lbl_coupling.setWordWrap(True)
+        self.lbl_coupling.setStyleSheet("color: #aaa;")
+        self.coupling_row.setVisible(False)
+        self.lbl_coupling.setVisible(False)
+        lr.addWidget(self.coupling_row)
+        lr.addWidget(self.lbl_coupling)
         self.txt_notes = QLabel(g_res)
         self.txt_notes.setWordWrap(True)
         self.txt_notes.setTextFormat(Qt.RichText)
@@ -1108,6 +1136,8 @@ class NoisePanel(QWidget, PartSelection):
         self.txt_notes.clear()
         reset_sort(self.tbl_victims)
         self.tbl_victims.setRowCount(0)
+        self.coupling_row.setVisible(False)
+        self._set_victim("")
 
     def show_error(self, message: str):
         self.txt_notes.setText(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
@@ -1170,15 +1200,36 @@ class NoisePanel(QWidget, PartSelection):
             t.item(r, 5).setForeground(QColor("#60d060" if v.passed else "#ff6060"))
         t.blockSignals(False)
         t.setVisible(bool(victims))
+        self.coupling_row.setVisible(bool(victims))
         if victims:
             worst = max(range(len(victims)), key=lambda i: victims[i].ratio)
             t.selectRow(worst)
+        else:
+            self._set_victim("")
 
     def _victim_row(self):
         rows = self.tbl_victims.selectionModel().selectedRows()
         if rows:
             item = self.tbl_victims.item(rows[0].row(), 0)
-            self.victim_selected.emit(item.text().removesuffix(" (scan)"))
+            name = item.text().removesuffix(" (scan)")
+            self._set_victim(name)
+            self.victim_selected.emit(name)
+
+    def _set_victim(self, name: str):
+        self._victim = name
+        self._coupling_view_changed()
+
+    def _coupling_view_changed(self, *_):
+        ov = self.coupling_overlay()
+        self.lbl_coupling.setText(ov.note if ov is not None else "")
+        self.lbl_coupling.setVisible(ov is not None)
+        self.coupling_changed.emit()
+
+    def coupling_overlay(self):
+        """The selected victim's coupling for the 3D view (#152), or None."""
+        from kipi.noise.viz import coupling_overlay
+        return coupling_overlay(self.result, self._victim,
+                                self.cmb_coupling.currentData() or "off")
 
     def _save_results(self):
         if not self._results or self.snapshot is None:

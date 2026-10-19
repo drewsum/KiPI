@@ -53,6 +53,12 @@ _PI_BLINKS = 6
 # of its dots, in pixels, picks the marker.
 _PI_LABEL_HALF_H_PX = 9
 _PI_DOT_PICK_PX = 8
+# Coupled Noise's coupling overlay (#152): the victim's traces as tubes this many pixels
+# wide, the common-ground dot, and the capacitor loops thinner, in the loops' color.
+_COUPLING_LINE_PX = 7
+_COUPLING_DOT_PX = 18
+_COUPLING_LOOP_PX = 3
+_COUPLING_LOOP_COLOR = "#ff4dff"
 
 
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
@@ -323,6 +329,10 @@ class Viewer3D(QWidget):
         self._clim: Optional[Tuple[float, float]] = None           # the range drawn
         self._arrows_on = False
         self._arrow_actors: Dict[int, object] = {}          # layer id -> actor
+        self._coupling = None               # Coupled Noise's overlay, copper view only
+        self._coupling_actors: List[object] = []
+        self._coupling_bar: Optional[str] = None
+        self._coupling_title = None
         # Clicks are handled here rather than with pyvista's point picking, so a click can
         # also select a via by its on-screen distance (vias are only a few pixels wide).
         self._picker = vtkCellPicker()
@@ -349,6 +359,8 @@ class Viewer3D(QWidget):
         self._layer_color.clear()
         self._clear_result_actors()
         self._set_result(None)
+        self._remove_coupling_actors()
+        self._coupling = None
         p.clear_actors()
         self._remove_pi_actors()
         self._pi_markers = []
@@ -516,6 +528,81 @@ class Viewer3D(QWidget):
                 anchors, [m.name for m in sel], _PI_SELECTED_COLORS[1])
         for actor in self._pi_actors.values():
             renderer.AddViewProp(actor)
+
+    # ------------------------------------------------------- coupling overlay
+    def set_coupling(self, overlay):
+        """Draw a Coupled Noise victim's coupling over the copper (#152): a
+        :class:`kipi.noise.viz.CouplingOverlay`, or None to remove it."""
+        self._coupling = overlay
+        self._remove_coupling_actors()
+        if overlay is not None:
+            self._draw_coupling(overlay)
+        self._apply_visibility()
+
+    @property
+    def coupling(self):
+        return self._coupling
+
+    def _remove_coupling_actors(self):
+        p = self.plotter
+        for a in self._coupling_actors:
+            p.remove_actor(a, render=False)
+        self._coupling_actors = []
+        if self._coupling_bar is not None:
+            try:
+                p.remove_scalar_bar(self._coupling_bar, render=False)
+            except (KeyError, ValueError, StopIteration):
+                pass
+            self._coupling_bar = None
+        if self._coupling_title is not None:
+            p.renderer.RemoveViewProp(self._coupling_title)
+            self._coupling_title = None
+
+    def _draw_coupling(self, ov):
+        p = self.plotter
+        lo, hi = -ov.limit_mv, ov.limit_mv
+        bar = _bar_args(ov.title, _bar_format(lo, hi, False))
+
+        def lines(segs):
+            pts = segs.reshape(-1, 3) * np.array([1.0, -1.0, 1.0])
+            n = len(segs)
+            cells = np.column_stack([np.full(n, 2), 2 * np.arange(n), 2 * np.arange(n) + 1])
+            return pv.PolyData(pts, lines=cells.ravel(), deep=True)
+
+        shown_bar = False
+        if len(ov.segments):
+            mesh = lines(ov.segments)
+            mesh.cell_data["share"] = ov.segment_mv
+            self._coupling_actors.append(p.add_mesh(
+                mesh, scalars="share", cmap="coolwarm", clim=(lo, hi), line_width=_COUPLING_LINE_PX,
+                render_lines_as_tubes=True, lighting=False, show_scalar_bar=True,
+                scalar_bar_args=bar, name="coupling:victim", pickable=False,
+                reset_camera=False, render=False))
+            shown_bar = True
+        if len(ov.points):
+            dots = pv.PolyData(ov.points * np.array([1.0, -1.0, 1.0]), deep=True)
+            dots.point_data["share"] = ov.point_mv
+            self._coupling_actors.append(p.add_mesh(
+                dots, scalars="share", cmap="coolwarm", clim=(lo, hi),
+                point_size=_COUPLING_DOT_PX, render_points_as_spheres=True, lighting=False,
+                show_scalar_bar=not shown_bar, scalar_bar_args=bar, name="coupling:common",
+                pickable=False, reset_camera=False, render=False))
+            shown_bar = True
+        if ov.loops:
+            self._coupling_actors.append(p.add_mesh(
+                lines(np.concatenate(ov.loops)), color=_COUPLING_LOOP_COLOR,
+                line_width=_COUPLING_LOOP_PX, render_lines_as_tubes=True, lighting=False,
+                name="coupling:loops", pickable=False, reset_camera=False, render=False))
+        for a in self._coupling_actors:
+            a.SetScale(1.0, 1.0, self._zscale)
+        if shown_bar and ov.title in p.scalar_bars:
+            b = p.scalar_bars[ov.title]
+            b.SetTextPositionToPrecedeScalarBar()
+            b.SetTextPad(-2)
+            b.GetTitleTextProperty().SetOpacity(0.0)
+            self._coupling_bar = ov.title
+            self._coupling_title = _bar_title_actor(ov.title)
+            p.renderer.AddViewProp(self._coupling_title)
 
     @property
     def pi_marker_names(self) -> List[str]:
@@ -709,6 +796,12 @@ class Viewer3D(QWidget):
             a.SetVisibility(models)
         for a in self._pi_actors.values():
             a.SetVisibility(self._show_pi and not showing_result)
+        for a in self._coupling_actors:
+            a.SetVisibility(not showing_result)
+        if self._coupling_bar in self.plotter.scalar_bars:
+            self.plotter.scalar_bars[self._coupling_bar].SetVisibility(not showing_result)
+        if self._coupling_title is not None:
+            self._coupling_title.SetVisibility(not showing_result)
         self.plotter.render()
 
     def set_zscale(self, s: float):
@@ -724,6 +817,8 @@ class Viewer3D(QWidget):
         if self._result_via_actor is not None:
             self._result_via_actor.SetScale(1.0, 1.0, self._zscale)
         for a in self._arrow_actors.values():
+            a.SetScale(1.0, 1.0, self._zscale)
+        for a in self._coupling_actors:
             a.SetScale(1.0, 1.0, self._zscale)
         self._place_models()
         if self._pi_markers:

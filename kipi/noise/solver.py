@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import ProgressReporter
 from kipi.dc.pi.model import PISetup
@@ -159,6 +161,9 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
     progress.partial(result)
 
     victims = _victims(snap, setup, agg, wf, layouts, result, progress)
+    result.loop_paths = {f"{ref} (phase {i})": np.array([[sg.a, sg.b] for sg in segs])
+                         for i, lay in enumerate(layouts, 1) for ref, segs in lay.loops.items()
+                         if segs}
 
     board = None
     if setup.noise.board_model:

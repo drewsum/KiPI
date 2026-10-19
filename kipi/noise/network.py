@@ -16,6 +16,10 @@ current loop's flux induces an EMF E along a segment instead: half of it in seri
 each end, which is the Norton current ∓(y11 − y12)·E/2 into the segment's two nodes. The
 nodal equations Y·V = I are solved at every harmonic, once per mechanism with the same
 factorization; the receiver's and driver's voltages are the coupled noise.
+
+Y is symmetric, so one more solve with a unit current at the receiver gives the receiver's
+voltage per unit current injected at each node (reciprocity). With it, each segment's share
+of the receiver's noise is found without a solve per segment (#152).
 """
 
 from __future__ import annotations
@@ -93,10 +97,15 @@ class VictimNetwork:
 
     def solve_many(self, freqs: np.ndarray, terminations: Sequence[Termination],
                    observe: Sequence[int], currents: Optional[Dict[str, np.ndarray]] = None,
-                   emfs: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, np.ndarray]:
+                   emfs: Optional[Dict[str, np.ndarray]] = None,
+                   transfer_to: Optional[int] = None) -> Dict[str, np.ndarray]:
         """Node voltages at ``observe`` (F, len(observe)) for each named set of sources:
         ``currents`` (F, nodes) injected at the nodes, or ``emfs`` (F, segments) induced
-        along the segments from end a to end b."""
+        along the segments from end a to end b.
+
+        With ``transfer_to`` (a node), :attr:`transfer` is then the voltage there per unit
+        current into each node (F, nodes), and :attr:`emf_gain` each segment's Norton
+        current per unit EMF (F, segments): what :meth:`shares` needs."""
         from scipy.sparse import coo_matrix
         from scipy.sparse.linalg import splu
         currents, emfs = currents or {}, emfs or {}
@@ -108,6 +117,11 @@ class VictimNetwork:
         rows = np.concatenate([a, b, a, b, idx, term_nodes])
         cols = np.concatenate([a, b, b, a, idx, term_nodes])
         observe = list(observe)
+        if transfer_to is not None:
+            self.transfer = np.zeros((len(freqs), self.n), complex)
+            self.emf_gain = np.zeros((len(freqs), len(self.segments)), complex)
+            unit = np.zeros(self.n, complex)
+            unit[transfer_to] = 1.0
         for k, f in enumerate(freqs):
             w = 2 * math.pi * f
             zs = self.r + 1j * w * self.l
@@ -120,6 +134,9 @@ class VictimNetwork:
                           dtype=complex)
             data = np.concatenate([y11, y11, y12, y12, np.full(self.n, LEAK_S + 0j), yt])
             lu = splu(coo_matrix((data, (rows, cols)), shape=(self.n, self.n)).tocsc())
+            if transfer_to is not None:
+                self.transfer[k] = lu.solve(unit)
+                self.emf_gain[k] = 0.5 * (y11 - y12)
             for name in names:
                 rhs = np.zeros(self.n, complex)
                 if name in currents:
@@ -130,3 +147,18 @@ class VictimNetwork:
                     np.add.at(rhs, b, i)
                 out[name][k] = lu.solve(rhs)[observe]
         return out
+
+    def shares(self, weights: np.ndarray, currents: Optional[np.ndarray] = None,
+               emfs: Optional[np.ndarray] = None) -> np.ndarray:
+        """Each segment's part of the observed voltage Σ_k 2·Re(w_k·V_k), after a
+        :meth:`solve_many` with ``transfer_to``: for ``currents`` (F, segments) entering a
+        segment, half at each end, or ``emfs`` (F, segments) along it. ``weights`` (F,)
+        are e^{jω_k·t} for the voltage at time t; the shares add up to it."""
+        a, b = self.ends[:, 0], self.ends[:, 1]
+        x = self.transfer
+        v = np.zeros((len(weights), len(self.segments)), complex)
+        if currents is not None:
+            v += currents * 0.5 * (x[:, a] + x[:, b])
+        if emfs is not None:
+            v += self.emf_gain * emfs * (x[:, b] - x[:, a])
+        return 2.0 * np.real(weights @ v)

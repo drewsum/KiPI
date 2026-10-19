@@ -101,7 +101,7 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
                         "capacitors): no inductive coupling")
     emf, res.m_h = victim_emf(snap, sources, segs, freqs)
 
-    def solve(driver_ohm: float):
+    def solve(driver_ohm: float, transfer: bool = False):
         terms = [Termination(d_xy, driver_ohm),
                  Termination(r_xy, victim.receiver_ohm, victim.receiver_pf * 1e-12,
                              victim.termination_ohm)]
@@ -112,9 +112,10 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
             gsrc = np.zeros((len(freqs), net.n), complex)
             gsrc[:, net.nearest(d_xy)] = ground_diff / driver_ohm
             currents["common"] = gsrc
-        return net.solve_many(freqs, terms, obs, currents, {"inductive": emf})
+        return net.solve_many(freqs, terms, obs, currents, {"inductive": emf},
+                              transfer_to=obs[0] if transfer else None)
 
-    out = solve(victim.driver_ohm)
+    out = solve(victim.driver_ohm, transfer=True)
     n_t = wf.samples_per_period()
     for col, store in ((0, res.receiver_v), (1, res.driver_v)):
         total = np.zeros(len(freqs), complex)
@@ -127,6 +128,7 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     res.peak_by = {k: float(np.max(np.abs(sp.samples(n_t)))) for k, sp in res.receiver_v.items()
                    if k != TOTAL}
     res.peak_v = float(np.max(np.abs(res.receiver_v[TOTAL].samples(n_t))))
+    _shares(res, snap, victim, agg, wf, net, segs, emf, ground_diff, d_xy, n_t)
     # Held high and held low (#156): a driver whose resistance differs between them (an
     # open drain) is solved again. Each state is judged on the noise toward its threshold.
     totals = {victim.driver_ohm: res.receiver_v[TOTAL]}
@@ -142,3 +144,35 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
         res.peak_v = max(res.peak_v, float(np.max(np.abs(y))))
     res.warnings = warnings
     return res
+
+
+def _shares(res: VictimResult, snap: BoardSnapshot, victim: Victim, agg: Aggressor,
+            wf: SmpsWaveforms, net: VictimNetwork, segs, emf: np.ndarray,
+            ground_diff: Optional[np.ndarray], d_xy, n_t: int):
+    """Where along the victim its peak noise couples in (#152): each segment's part of the
+    receiver's voltage at the instant of its largest |v| (the line driven high), by
+    mechanism, signed so that a positive share adds to the peak. The shares and the common-
+    ground part at the driver add up to the peak."""
+    y = res.receiver_v[TOTAL].samples(n_t)
+    i = int(np.argmax(np.abs(y)))
+    sign = 1.0 if y[i] >= 0 else -1.0
+    k = np.arange(1, len(wf.freqs()) + 1)
+    w = np.exp(2j * np.pi * k * i / n_t)
+    omega = 2 * np.pi * wf.freqs()
+    cap = np.zeros((len(k), len(segs)), complex)
+    for ph, phase_wf in zip(agg.phases, wf.phases):
+        if ph.switch_net:
+            cm = np.array([x.cm.get(ph.switch_net, 0.0) * x.length_mm for x in segs])
+            cap += (1j * omega * phase_wf.switch_node.c)[:, None] * cm[None, :]
+    res.peak_t_s = i / (n_t * wf.fsw_hz)
+    res.segment_v = {"capacitive": sign * net.shares(w, currents=cap),
+                     "inductive": sign * net.shares(w, emfs=emf)}
+    if ground_diff is not None:
+        x = net.transfer[:, net.nearest(d_xy)]
+        res.common_v = sign * 2.0 * float(np.real(w @ (ground_diff / victim.driver_ohm * x)))
+    z = {c.id: c.z_mid_mm for c in snap.stackup.copper}
+    res.segments_xyz = np.array([[(*x.a, z.get(x.layer, 0.0)), (*x.b, z.get(x.layer, 0.0))]
+                                 for x in segs])
+    first = min(range(len(segs)), key=lambda j: min(math.dist(segs[j].a, d_xy),
+                                                     math.dist(segs[j].b, d_xy)))
+    res.driver_xyz = np.array([*d_xy, z.get(segs[first].layer, 0.0)])

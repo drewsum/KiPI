@@ -114,11 +114,13 @@ def _view():
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
            _coating_actors=[], _show_mask=False, _show_silk=False,
-           _show_mask_result=False, _show_silk_result=False)
+           _show_mask_result=False, _show_silk_result=False, _coupling=None,
+           _coupling_actors=[], _coupling_bar=None, _coupling_title=None)
     for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
                  "set_feature_visible", "_place_models", "_selected_markers", "set_pi_selected",
                  "pi_marker_at", "_to_screen", "focus_on", "_start_blink", "_blink_step",
-                 "_paint_selected"):
+                 "_paint_selected", "set_coupling", "_remove_coupling_actors",
+                 "_draw_coupling"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
     return v
 
@@ -447,3 +449,31 @@ def test_clicking_a_marker_in_ac_mode_selects_it_in_the_ac_setup(app, no_3d, mon
     assert w.ac_panel.probe_list.current().name == "U2 core"
     assert w.solve_panel.tabs.currentWidget() is not w.solve_panel.load_list
     w.close()
+
+
+def test_a_victims_coupling_is_drawn_over_the_copper():
+    """Coupled Noise's overlay (#152): the victim's segments colored by their share, the
+    common-ground dot and the loops; hidden over results, removed with None."""
+    from kipi.noise.viz import CouplingOverlay
+    v = _view()
+    segs = np.array([[[0, 0, 1.5], [1, 0, 1.5]], [[1, 0, 1.5], [2, 0, 1.5]]], float)
+    ov = CouplingOverlay("Superposition share of the peak (mV)", segs, np.array([2.0, -1.0]),
+                         np.array([[0, 0, 1.5]]), np.array([0.5]),
+                         [np.array([[[0, 5, 1.5], [3, 5, 1.5]]])], 2.0)
+    v.set_coupling(ov)
+    assert len(v._coupling_actors) == 3 and v._coupling_bar == ov.title
+    mapper = v._coupling_actors[0].GetMapper()
+    mapper.Update()                     # the mesh reaches the mapper through its pipeline
+    victim = pv.wrap(mapper.GetInput())
+    assert victim.n_cells == 2
+    np.testing.assert_allclose(victim.points[3], (2, 0, 1.5))
+    assert v._coupling_actors[0].GetMapper().GetScalarRange() == (-2.0, 2.0)
+    v._result = object()
+    v._apply_visibility()
+    assert not any(a.GetVisibility() for a in v._coupling_actors)
+    v._result = None
+    v.set_zscale(3.0)
+    assert v._coupling_actors[0].GetScale() == (1.0, 1.0, 3.0)
+    v.set_coupling(None)
+    assert v._coupling_actors == [] and v._coupling_bar is None
+    assert ov.title not in v.plotter.scalar_bars

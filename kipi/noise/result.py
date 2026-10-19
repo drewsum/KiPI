@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from kipi.noise.checks import OperatingPoint
 from kipi.noise.parasitics import HotLoopReport
 from kipi.noise.scan import ScanRow
@@ -57,6 +59,15 @@ class VictimResult:
     # The line held high and held low, each with the driver's resistance in that state;
     # receiver_v and driver_v above are the high state's.
     states: List[StateResult] = field(default_factory=list)
+    # Where the peak couples in (#152): the victim's segments, (S, 2, 3) ends as (x, y, z)
+    # mm, and each one's part of the receiver's voltage at the peak's instant, by
+    # mechanism (V, signed: positive adds to the peak). The common-ground part enters at
+    # the driver.
+    segments_xyz: Optional[np.ndarray] = None
+    segment_v: Dict[str, np.ndarray] = field(default_factory=dict)
+    common_v: float = 0.0
+    driver_xyz: Optional[np.ndarray] = None
+    peak_t_s: float = 0.0
 
     @property
     def ratio(self) -> float:
@@ -83,6 +94,8 @@ class NoiseResult:
     victims: List[VictimResult] = field(default_factory=list)
     board_note: str = ""                # what the board model did, "" without one
     scan: List["ScanRow"] = field(default_factory=list)              # every net estimated
+    # Each capacitor loop's path, (N, 2, 3) segment ends as (x, y, z) mm (#152)
+    loop_paths: Dict[str, np.ndarray] = field(default_factory=dict)
 
     def victim(self, name: str) -> Optional[VictimResult]:
         return next((v for v in self.victims if v.name == name), None)

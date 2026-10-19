@@ -358,6 +358,7 @@ class MainWindow(QMainWindow):
         self._set_open_results_tip()
         self._set_plot_tabs(mode)
         self._sync_pi_markers()
+        self._show_coupling(front=False)      # Coupled Noise's overlay, that mode only
         self._mode_panel()._part_selection(False)     # the part selected in this mode's lists
         if mode == "dc":
             if self._tree:
@@ -655,6 +656,7 @@ class MainWindow(QMainWindow):
         self.noise_panel.solve_requested.connect(self.run_noise_solve)
         self.noise_panel.result_selected.connect(self._show_noise_result)
         self.noise_panel.victim_selected.connect(self._show_victim)
+        self.noise_panel.coupling_changed.connect(self._show_coupling)
         self.noise_panel.results_saved.connect(
             lambda path: self.log(f"Saved Coupled Noise results to {path}"))
         self.noise_panel.part_selected.connect(
@@ -1250,6 +1252,20 @@ class MainWindow(QMainWindow):
             from kipi.ac.viz.markers import ac_markers
             markers = ac_markers(self.snapshot, setup, nets)
         self.viewer.set_pi_markers(markers)
+        if self.mode == "noise":
+            self._show_coupling(front=False)  # a new board's view starts without it
+
+    def _show_coupling(self, front: bool = True):
+        """Draw the Coupled Noise victim's coupling picked in its results in the 3D view
+        (#152), and bring the view to the front; only in that mode."""
+        if self._closed:
+            return
+        ov = self.noise_panel.coupling_overlay() if self.mode == "noise" else None
+        if ov is None and self.viewer.coupling is None:
+            return
+        self.viewer.set_coupling(ov)
+        if ov is not None and front:
+            self.views.setCurrentWidget(self.viewer)
 
     def _panels(self):
         """Each mode's setup panel, by mode key."""
@@ -1690,13 +1706,14 @@ class MainWindow(QMainWindow):
             return
         self.noise_plot.periods = self.noise_panel.setup.noise.periods_shown
         self.noise_plot.set_result(result)
-        if self.mode == "noise":
+        if self.mode == "noise" and self.viewer.coupling is None:
             self.views.setCurrentWidget(self.noise_plot)
 
     def _show_victim(self, name: str):
-        """A victim picked in the Coupled Noise results: plot its noise."""
+        """A victim picked in the Coupled Noise results: plot its noise (or, with its
+        coupling shown in 3D, keep the 3D view in front)."""
         self.noise_plot.set_victim(name)
-        if self.mode == "noise":
+        if self.mode == "noise" and self.viewer.coupling is None:
             self.views.setCurrentWidget(self.noise_plot)
 
     def _open_noise_results(self):
