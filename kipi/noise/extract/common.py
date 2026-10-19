@@ -159,6 +159,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     try:
         for k, f in enumerate(f_field):
             progress.check_cancel()
+            progress.debug(f"Board model field solve {k + 1}/{n} at {f / 1e6:.4g} MHz")
             zb[k] = system.port_impedance(2 * np.pi * f, progress)
             progress.fraction((k + 1) / n)
     finally:

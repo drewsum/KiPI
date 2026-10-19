@@ -174,6 +174,7 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
         scanned = {r.net for r in result.scan if r.solved}
         for i, victim in enumerate(victims):
             progress.fraction(i / len(victims))
+            progress.debug(f"Victim {i + 1}/{len(victims)}: {victim.name}")
             with progress.timed(f"victim {victim.name}"):
                 vr = couple(snap, setup, victim, agg, wf, cache, progress.check_cancel,
                             layouts, board.ground_diff.get(victim.name)
