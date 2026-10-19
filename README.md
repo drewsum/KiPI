@@ -718,21 +718,24 @@ layer, behind the ground plane. Open its snapshot to try it.
   from the board: the switching device's pins, the inductor and its value, the switch node
   and the input and output capacitors. Give the switching frequency and edge times; the
   input and output voltages and the load current come from the DC setup unless you enter
-  them. **Coss**, **Rds(on)** and **package inductance** from the datasheet are optional.
+  them. **Coss**, **Qrr**, **Rds(on)** and **package inductance** from the datasheet are
+  optional.
   KiPI draws the hot loop through the copper and computes its inductance, which with the
-  switch node's capacitance sets the ringing on every edge. The ringing's current flows
-  round the hot loop too, through the input capacitors, and couples onto victims.
+  switch node's capacitance sets the ringing. The ringing's current flows round the hot
+  loop too, through the input capacitors, and couples onto victims. The control switch's
+  turn-on is a hard edge, taking the current from a conducting body diode and sweeping out
+  its reverse-recovery charge (Qrr), and rings; its turn-off is soft, carried by the
+  inductor current into the diode's clamp, and barely rings.
 * **Victims tab**: each victim is a net with its driver and receiver pins (guessed as the
   net's farthest-apart pads when left blank) and a **Type**: CMOS push-pull, open drain,
   series or parallel terminated, an LVDS leg, an analog input, or high impedance
-  (undriven: a tri-stated or floating net). The type fills in the
-  driver and receiver resistances, the receiver capacitance and any termination. An open
-  drain has a separate **Driving low** resistance: the line is held by its 4.7 kΩ pull-up
+  (undriven: a tri-stated or floating net). The type fills in the driver and receiver
+  resistances, the receiver capacitance and any termination. An open drain has a separate **Driving low** resistance: the line is held by its 4.7 kΩ pull-up
   when high, and by the switch when low. The **Logic level** gives the JESD8 levels and so
   the noise margin (400 mV for 3.3 V CMOS), unless you enter one.
 * **Capacitors tab**: the same capacitor models as AC mode.
-* **Settings tab**: the harmonics kept, the ringing's least damping, how finely victim
-  traces are cut into cross-sections, and the **Board model**: AC mode's field model of the
+* **Settings tab**: the harmonics kept, the ringing's least damping (and the soft edge's),
+  how finely victim traces are cut into cross-sections, and the **Board model**: AC mode's field model of the
   converter's rails and ground. It splits the ripple current among the capacitors through
   the copper's own impedance and gives the shared-ground noise. It is the slow part of a
   solve; untick it for a quick look.
@@ -747,7 +750,7 @@ ringing, the inductor currents, each capacitor's ripple current and the rails' r
 voltage, in time or, with **Spectrum**, as harmonics. The notes give the hot loop's
 inductance, the switch node's capacitance and the ringing's frequency and damping.
 
-![The Waveforms tab: the buck's switch node over two periods, ringing at 179 MHz on each edge](docs/images/noise_waveforms.png)
+![The Waveforms tab: the buck's switch node over two periods, ringing at 179 MHz on each hard rising edge while the soft falling edge settles at once](docs/images/noise_waveforms.png)
 
 The **Results** table lists each victim's peak noise at its receiver, its margin, the share
 of the margin used, the dominant mechanism and PASS or FAIL. Select a victim to plot its
@@ -773,7 +776,7 @@ ones to move. Below, SIG_LOOP picks up most of its noise near the switching devi
 runs closest to the hot loop, enough to fail: the hot loop's 179 MHz ringing current
 induces most of it.
 
-![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 695 mV peak, beside the magenta capacitor loops](docs/images/noise_coupling_3d.png)
+![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 631 mV peak, beside the magenta capacitor loops](docs/images/noise_coupling_3d.png)
 
 The mechanisms point to different fixes. Capacitive noise comes from the switch node's
 dV/dt: keep victims away from its copper or behind a plane, and drive them harder.

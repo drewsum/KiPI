@@ -1717,6 +1717,14 @@ neighbouring planes) it sets the <b>ringing</b> on every edge, at
 f = 1 / (2π√(L·C)). The ringing's current flows round the hot loop too, so the input
 capacitors of a buck (the output capacitors of a boost) carry it, and it couples onto
 victims through their loops.</p>
+<p>The two edges do not ring alike. When the control switch turns on (a buck's high side,
+a boost's low side) it takes the inductor current from the other switch's conducting body
+diode: a <b>hard</b> edge, which must also sweep out the diode's reverse-recovery charge
+(Qrr). The diode snaps off with that current in the loop, and the node rings. When the
+control switch turns off, the inductor current itself carries the node across into the
+other switch's body diode, whose clamp takes the ringing's energy: a <b>soft</b> edge,
+which overshoots once and settles. So a buck rings on its rising edge and a boost on its
+falling one. The results notes say which edge is which.</p>
 <p>The waveforms are exact Fourier series of piecewise-linear shapes (trapezoids and
 triangles) up to a highest frequency set by the edges and the ringing, so nothing is
 time-stepped and a solve takes well under a second.</p>
@@ -1754,6 +1762,10 @@ given to the nearest phase. Each phase has:</p>
     this phase uses. The ripple current is shared among them by their impedances.</li>
   <li><b>Coss</b>, <b>High-side Rds(on)</b> and <b>Low-side Rds(on)</b> from the datasheet,
     all optional: without them typical values are used and the ringing is approximate.</li>
+  <li><b>Qrr</b>: the reverse-recovery charge of the body diode the hard edge switches off
+    (a buck's low-side FET, a boost's rectifier), from its datasheet. Not set: 5 nC, a
+    low-voltage MOSFET's after a short dead time; enter 0 for a Schottky or GaN switch.
+    More charge rings the hard edge higher.</li>
   <li><b>Package inductance</b>: the loop inductance inside the device, added to the board's.</li>
 </ul>
 </div>
@@ -1804,6 +1816,9 @@ and the results say so.</p>
     switch node; its switches' output capacitance, reverse recovery and radiation take
     energy too, and measured ringing usually dies within five to ten cycles. The ringing is
     damped at least this much (ζ, default 0.05); 0 uses the loop's resistance alone.</li>
+  <li><b>Soft edge damping</b>: the least damping of the soft edge, the one the inductor
+    current carries into a body diode's clamp (ζ, default 0.5: one overshoot, then
+    settled). Set it to the least ringing damping to ring both edges alike.</li>
   <li><b>Periods shown</b> in the waveform plot.</li>
   <li><b>Victim segment</b>: victim traces are cut into pieces this long, each with its own
     cross-section of the copper around it (default 0.5 mm).</li>

@@ -630,6 +630,26 @@ copper over the neighbouring planes) rings at f = 1/(2π√(L·C)) on every edge
 nodes show, so a least damping (ζ = 0.05 by default) stands in for the losses the model
 leaves out. Each edge passes through H(jω) = ω₀²/(s² + 2ζω₀s + ω₀²), the switch node's
 response through the loop's L–C tank.</p>
+<p>The two edges are not alike (TI, SLPA010). The control switch's turn-on (a buck's high
+side, a boost's low side) is <b>hard</b> while the valley current flows into the inductor:
+the other switch's body diode is conducting it, and the control switch must take that
+current over and sweep out the diode's reverse-recovery charge Q<sub>rr</sub> before the
+node can move. The diode keeps conducting in reverse until the charge is gone, the current
+ramping at the edge's di/dt = I/t, then snaps off over the edge, so
+Q<sub>rr</sub> = ½·I<sub>rr</sub>·(I<sub>rr</sub>/(di/dt) + t) gives the recovery current's
+peak I<sub>rr</sub>. The hot loop carries this triangle of current. The node, held by the
+conducting diode until the snap, answers the snap alone: a current I<sub>rr</sub> leaving
+the diode for the node's capacitance, through the tank's impedance jωL·H. That rings the
+hard edge about I<sub>rr</sub>·Z<sub>0</sub> higher. The edge's own damping is the least
+ringing damping.</p>
+<p>The control switch's turn-off is <b>soft</b> while the peak current flows into the
+inductor. The inductor current itself carries the node across, so the edge is no faster
+than C·V/I, into the other switch's body diode, which turns on and clamps it. The clamp
+takes the ringing's energy: the soft edge is damped at least the soft-edge damping
+(ζ = 0.5 by default, one overshoot and settled). A valley current below zero (forced PWM
+at light load) makes the turn-on soft too: zero-voltage switching. The trapezoid's
+spectrum is a sum of its corners' terms, so each edge's two corners pass through their own
+H.</p>
 <p>The ringing is the switch node's capacitance trading charge with the loop's inductance,
 so its current flows round the hot loop, through the capacitors that close it. By KCL at
 the switch node, with the inductor current steady over an edge, a buck's high side carries
