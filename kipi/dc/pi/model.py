@@ -398,7 +398,8 @@ class PISetup:
                     for p in d.get("probes", [])],
             ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
                              if k in {f.name for f in dataclasses.fields(ACSettings)}}),
-            aggressors=[aggressor_from_dict(a, pin) for a in d.get("aggressors", [])],
+            aggressors=[aggressor_from_dict(a, pin, d.get("noise"))
+                        for a in d.get("aggressors", [])],
             victims=[victim_from_dict(v, pin) for v in d.get("victims", [])],
             noise=noise_settings(d.get("noise", {})),
         )

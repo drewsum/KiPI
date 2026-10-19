@@ -1767,6 +1767,13 @@ top of the form holds what all phases share:</p>
   <li><b>Switching frequency</b>, <b>Rise time</b> and <b>Fall time</b> of the switch node.
     Phases are interleaved evenly, 360°/N apart.</li>
   <li><b>Duty cycle</b>: blank computes it from the voltages, raised by the losses you enter.</li>
+  <li><b>Least ringing damping</b>: the hot loop's resistance alone barely damps a real
+    switch node; its switches' output capacitance, reverse recovery and radiation take
+    energy too, and measured ringing usually dies within five to ten cycles. The ringing is
+    damped at least this much (ζ, default 0.05); 0 uses the loop's resistance alone.</li>
+  <li><b>Soft edge damping</b>: the least damping of the soft edge, the one the inductor
+    current carries into a body diode's clamp (ζ, default 0.5: one overshoot, then
+    settled). Set it to the least ringing damping to ring both edges alike.</li>
   <li><b>Ripple at AC probes</b>: tick any of the AC setup's probes to see this aggressor's
     ripple there. The ripple is the voltage between the probe's rail and ground pins, from
     the board model, so the board model must be on. A probe has to be on the aggressor's
@@ -1839,13 +1846,6 @@ and the results say so.</p>
   <li><b>Highest frequency</b>: the highest harmonic kept. Blank: ten times the faster
     edge's corner frequency, 1/(π·rise time), or three times the ringing, at most 3 GHz.</li>
   <li><b>Harmonic limit</b>: the most harmonics of the switching frequency kept.</li>
-  <li><b>Least ringing damping</b>: the hot loop's resistance alone barely damps a real
-    switch node; its switches' output capacitance, reverse recovery and radiation take
-    energy too, and measured ringing usually dies within five to ten cycles. The ringing is
-    damped at least this much (ζ, default 0.05); 0 uses the loop's resistance alone.</li>
-  <li><b>Soft edge damping</b>: the least damping of the soft edge, the one the inductor
-    current carries into a body diode's clamp (ζ, default 0.5: one overshoot, then
-    settled). Set it to the least ringing damping to ring both edges alike.</li>
   <li><b>Dead time</b>: how long the inductor current has to carry a soft edge across
     (default 20 ns). A soft edge that would take longer (C_sw·V/I, at light load) is
     finished hard by the next switch, at the entered edge time. 0 lets the current take as

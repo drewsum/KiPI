@@ -65,7 +65,7 @@ class HotLoopReport:
     image_plane: str = ""           # the layer whose plane takes the image currents
     notes: List[str] = field(default_factory=list)
     # The damping the loop's resistance alone gives; ``zeta`` is at least the settings'
-    # least damping (NoiseSettings.min_ring_zeta).
+    # least damping (Aggressor.min_ring_zeta).
     zeta_loop: float = 1.0
     qrr_c: float = DEFAULT_QRR_C    # swept out on the hard edge
     qrr_default: bool = True

@@ -144,7 +144,7 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
             ground = gnd or (ph.low_side.net if ph.low_side else "")
             layouts.append(phase_layout(snap, setup, ph, i, op.topology, op.vin, op.vout,
                                         vin_net, vout_net, ground,
-                                        setup.noise.min_ring_zeta))
+                                        agg.min_ring_zeta))
     reports = [lay.report for lay in layouts]
 
     progress.stage("Waveforms")
@@ -153,7 +153,7 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
                                       max(rings) if rings else None,
                                       setup.noise.f_max_hz, setup.noise.max_harmonics)
     parts = [PhaseParts(ph.inductance_h, r.f_ring_hz, r.zeta, r.c_sw_f,
-                        setup.noise.soft_edge_zeta, r.qrr_c,
+                        agg.soft_edge_zeta, r.qrr_c,
                         setup.noise.dead_time_ns * 1e-9)
              for ph, r in zip(agg.phases, reports)]
     wf = synthesize(op.topology, op.vin, op.vout, op.iout, op.iin, op.duty, agg.fsw_hz,

@@ -77,6 +77,8 @@ class AggressorEditor(_Editor):
         self.fall = _spin(0.01, 1e4, 2, 2, " ns", 0.5)
         self.duty = _optional_spin(0.1, 99.9, 2, " %", 0.5)
         self.duty.setSpecialValueText("computed")
+        self.zeta = _spin(0, 1, 0.05, 3, "", 0.01)
+        self.soft_zeta = _spin(0, 5, 0.5, 2, "", 0.05)
         f.addRow("Name", self.name)
         f.addRow("VRM", self.vrm)
         f.addRow("Topology", self.topology)
@@ -87,6 +89,8 @@ class AggressorEditor(_Editor):
         f.addRow("Rise time", self.rise)
         f.addRow("Fall time", self.fall)
         f.addRow("Duty cycle", self.duty)
+        f.addRow("Least ringing damping", self.zeta)
+        f.addRow("Soft edge damping", self.soft_zeta)
         # AC probes to show the ripple at (#157).
         self.probes = QListWidget()
         self.probes.setMinimumHeight(50)
@@ -119,6 +123,24 @@ class AggressorEditor(_Editor):
                             "the period. Blank computes it from the voltages, raised by the "
                             "inductor DCR and on-resistances entered for a buck, and by the "
                             "VRM's efficiency for a boost.", ("sw_period", "duty")),
+                (self.zeta, "The least damping ratio ζ of the switch node's ringing. The "
+                            "hot loop's resistance (on-resistance, capacitor ESR, copper) "
+                            "alone damps it far less than a real switch node: the "
+                            "switches' output capacitance, reverse recovery and radiation "
+                            "take energy too, and measured ringing usually dies within "
+                            "five to ten cycles (ζ about 0.05 to 0.1). 0 uses the loop's "
+                            "resistance alone.",
+                 ("sw_ringing", "ring")),
+                (self.soft_zeta, "The least damping ratio ζ of the soft edge: the one "
+                                 "the inductor current carries across into the other "
+                                 "switch's conducting body diode (a buck's falling "
+                                 "edge, a boost's rising one). The diode's clamp takes "
+                                 "the ringing's energy, so it overshoots once and "
+                                 "settles: ζ about 0.5. The hard edge, where the "
+                                 "control switch turns on against a conducting diode, "
+                                 "keeps the least ringing damping. Set it to "
+                                 "that to ring both edges alike.",
+                 ("sw_edges", "soft")),
                 (self.probes, "The AC mode's probes to show this aggressor's ripple at: "
                               "the voltage between each probe's rail and ground pins, "
                               "from the board model (Settings tab), which carries the "
@@ -129,7 +151,7 @@ class AggressorEditor(_Editor):
                  ("board_model", "probe"))):
             tip(f, w, text, art)
         self._watch(self.name, self.vrm, self.topology, self.vin, self.load_a, self.fsw,
-                    self.rise, self.fall, self.duty)
+                    self.rise, self.fall, self.duty, self.zeta, self.soft_zeta)
 
         # Phases: one shown at a time, chosen above its fields.
         row = QHBoxLayout()
@@ -342,6 +364,8 @@ class AggressorEditor(_Editor):
         self.rise.setValue(a.rise_s * 1e9)
         self.fall.setValue(a.fall_s * 1e9)
         _set_optional(self.duty, a.duty * 100 if a.duty is not None else None)
+        self.zeta.setValue(a.min_ring_zeta)
+        self.soft_zeta.setValue(a.soft_edge_zeta)
         self._fill_probes(a.ripple_probes)
         self.phase = min(self.phase, max(len(a.phases) - 1, 0))
         self._fill_phase_combo()
@@ -411,6 +435,8 @@ class AggressorEditor(_Editor):
         a.fall_s = self.fall.value() * 1e-9
         duty = _get_optional(self.duty)
         a.duty = duty / 100 if duty is not None else None
+        a.min_ring_zeta = self.zeta.value()
+        a.soft_edge_zeta = self.soft_zeta.value()
         a.ripple_probes = self._ticked(self.probes)
         if a.phases and 0 <= self.phase < len(a.phases):
             ph = a.phases[self.phase]
@@ -905,8 +931,6 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_periods = QSpinBox()
         self.spin_periods.setRange(1, 20)
         self.spin_periods.setValue(s.periods_shown)
-        self.spin_zeta = _spin(0, 1, s.min_ring_zeta, 3, "", 0.01)
-        self.spin_soft_zeta = _spin(0, 5, s.soft_edge_zeta, 2, "", 0.05)
         self.spin_dead = _spin(0, 1000, s.dead_time_ns, 1, " ns", 5)
         self.spin_segment = _spin(0.05, 10, s.segment_mm, 2, " mm", 0.1)
         self.spin_window = _spin(0.2, 50, s.window_mm, 1, " mm", 0.5)
@@ -917,8 +941,6 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_fpd.setValue(s.field_per_decade)
         f.addRow("Highest frequency", self.spin_fmax)
         f.addRow("Harmonic limit", self.spin_harm)
-        f.addRow("Least ringing damping", self.spin_zeta)
-        f.addRow("Soft edge damping", self.spin_soft_zeta)
         f.addRow("Dead time", self.spin_dead)
         f.addRow("Periods shown", self.spin_periods)
         f.addRow("Victim segment", self.spin_segment)
@@ -971,22 +993,6 @@ class NoisePanel(QWidget, PartSelection):
                                "whichever is higher, at most 3 GHz.", ("spectrum", "fmax"))
         tip(f, self.spin_harm, "The most harmonics of the switching frequency kept; a slow "
                                "switcher with fast edges needs many", ("spectrum", "harm"))
-        tip(f, self.spin_zeta, "The least damping ratio ζ of the switch node's ringing. The "
-                               "hot loop's resistance (on-resistance, capacitor ESR, copper) "
-                               "alone damps it far less than a real switch node: the "
-                               "switches' output capacitance, reverse recovery and radiation "
-                               "take energy too, and measured ringing usually dies within "
-                               "five to ten cycles (ζ about 0.05 to 0.1). 0 uses the loop's "
-                               "resistance alone.", ("sw_ringing", "ring"))
-        tip(f, self.spin_soft_zeta, "The least damping ratio ζ of the soft edge: the one "
-                                    "the inductor current carries across into the other "
-                                    "switch's conducting body diode (a buck's falling "
-                                    "edge, a boost's rising one). The diode's clamp takes "
-                                    "the ringing's energy, so it overshoots once and "
-                                    "settles: ζ about 0.5. The hard edge, where the "
-                                    "control switch turns on against a conducting diode, "
-                                    "keeps the least ringing damping above. Set it to "
-                                    "that to ring both edges alike.", ("sw_edges", "soft"))
         tip(f, self.spin_dead, "The controller's dead time: how long the inductor current "
                                "has to carry a soft edge across, C_sw·V/I, before the next "
                                "switch turns on. At light load, or a valley current just "
@@ -1018,9 +1024,8 @@ class NoisePanel(QWidget, PartSelection):
             ("interp", "solve"))
         self.chk_board.toggled.connect(self._settings_changed)
         self.chk_board.toggled.connect(self.spin_fpd.setEnabled)
-        for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta,
-                    self.spin_soft_zeta, self.spin_dead, self.spin_segment, self.spin_window,
-                    self.spin_fpd):
+        for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_dead,
+                    self.spin_segment, self.spin_window, self.spin_fpd):
             wdg.valueChanged.connect(self._settings_changed)
         return w
 
@@ -1030,8 +1035,6 @@ class NoisePanel(QWidget, PartSelection):
         s.f_max_hz = fmax * 1e6 if fmax is not None else None
         s.max_harmonics = self.spin_harm.value()
         s.periods_shown = self.spin_periods.value()
-        s.min_ring_zeta = self.spin_zeta.value()
-        s.soft_edge_zeta = self.spin_soft_zeta.value()
         s.dead_time_ns = self.spin_dead.value()
         s.segment_mm = self.spin_segment.value()
         s.window_mm = self.spin_window.value()
@@ -1048,8 +1051,7 @@ class NoisePanel(QWidget, PartSelection):
     def _load_settings(self):
         s = self.setup.noise
         for wdg, v in ((self.spin_harm, s.max_harmonics), (self.spin_periods, s.periods_shown),
-                       (self.spin_zeta, s.min_ring_zeta),
-                       (self.spin_soft_zeta, s.soft_edge_zeta), (self.spin_dead, s.dead_time_ns),
+                       (self.spin_dead, s.dead_time_ns),
                        (self.spin_segment, s.segment_mm),
                        (self.spin_window, s.window_mm), (self.spin_fpd, s.field_per_decade),
                        (self.spin_radius, s.scan_radius_mm), (self.spin_top, s.scan_top_n),

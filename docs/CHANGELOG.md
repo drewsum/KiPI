@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **Ringing damping per aggressor.** **Least ringing damping** and **Soft edge damping**
+  moved from Coupled Noise's Settings tab to each aggressor, next to its edges, so two
+  switchers can be damped differently. Setups saved before keep their values: every
+  aggressor takes the old solve-wide ones.
 - **Mesh remote sense** (#93). A VRM's new **Mesh sense** tickbox (DC, off by default)
   takes any number of sense points, each with its own sense and optional ground sense
   pins, picked one at a time like a multi-phase VRM's phases. Every point's sense pins

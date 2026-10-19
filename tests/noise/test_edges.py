@@ -7,8 +7,8 @@ import math
 import numpy as np
 import pytest
 
-from kipi.noise.model import (DEFAULT_QRR_C, AggressorPhase, NoiseSettings, phase_from_dict,
-                              settings_from_dict)
+from kipi.noise.model import (DEFAULT_QRR_C, Aggressor, AggressorPhase, NoiseSettings,
+                              aggressor_from_dict, phase_from_dict, settings_from_dict)
 from kipi.noise.waveforms import CapBranch, PhaseParts, describe_edges, edge_shapes, synthesize
 
 FSW = 500e3
@@ -83,12 +83,18 @@ def test_the_recovery_current_carries_qrr():
 
 
 def test_qrr_and_the_soft_edge_damping_are_kept_and_defaulted():
-    assert NoiseSettings().soft_edge_zeta == 0.5
+    assert Aggressor("a").soft_edge_zeta == 0.5 and Aggressor("a").min_ring_zeta == 0.05
     assert AggressorPhase().qrr_c is None and DEFAULT_QRR_C > 0
     ph = phase_from_dict({"qrr_c": 0.0}, lambda d: None)
     assert ph.qrr_c == 0.0                       # a Schottky low side: none, not default
     assert phase_from_dict({}, lambda d: None).qrr_c is None
-    assert math.isclose(NoiseSettings(soft_edge_zeta=0.7).soft_edge_zeta, 0.7)
+    # Setups from before the dampings were per aggressor give every aggressor theirs.
+    a = aggressor_from_dict({"name": "a"}, lambda d: None,
+                            {"soft_edge_zeta": 0.7, "min_ring_zeta": 0.1})
+    assert math.isclose(a.soft_edge_zeta, 0.7) and math.isclose(a.min_ring_zeta, 0.1)
+    a = aggressor_from_dict({"name": "a", "soft_edge_zeta": 0.3}, lambda d: None,
+                            {"soft_edge_zeta": 0.7})
+    assert math.isclose(a.soft_edge_zeta, 0.3)
 
 
 def test_a_solve_reports_its_edges_and_the_assumed_qrr():

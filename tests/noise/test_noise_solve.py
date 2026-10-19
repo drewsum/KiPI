@@ -159,6 +159,6 @@ def test_the_ringing_is_damped_at_least_as_set():
     assert h.zeta_loop < 0.05 and h.zeta == pytest.approx(0.05)
     assert any("least damping" in line
                for line in solve_noise(snap, setup, "U1 buck").summary_lines())
-    setup.noise.min_ring_zeta = 0.0
+    setup.aggressors[0].min_ring_zeta = 0.0
     h0 = solve_noise(snap, setup, "U1 buck").hot_loops[0]
     assert h0.zeta == pytest.approx(h0.zeta_loop) == pytest.approx(h.zeta_loop)

@@ -75,8 +75,9 @@ def test_edits_reach_the_setup(panel):
     assert a.phases[0].qrr_c == pytest.approx(12e-9)
     ed.qrr.setValue(0)                                   # a Schottky: none at all
     assert a.phases[0].qrr_c == 0.0
-    panel.spin_soft_zeta.setValue(0.3)
-    assert panel.setup.noise.soft_edge_zeta == pytest.approx(0.3)
+    ed.soft_zeta.setValue(0.3)
+    ed.zeta.setValue(0.08)
+    assert a.soft_edge_zeta == pytest.approx(0.3) and a.min_ring_zeta == pytest.approx(0.08)
     panel.spin_dead.setValue(35)
     assert panel.setup.noise.dead_time_ns == pytest.approx(35)
     ed.input_caps.item(0).setCheckState(Qt.Unchecked)

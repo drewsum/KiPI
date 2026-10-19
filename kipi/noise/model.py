@@ -71,6 +71,15 @@ class Aggressor:
     # AC probes (by name) to show this aggressor's ripple at (#157): the board model's
     # voltage between each probe's rail and ground pins.
     ripple_probes: List[str] = field(default_factory=list)
+    # The least damping of the switch node's ringing. The loop's resistance alone (on-
+    # resistance, ESR, copper) damps it far less than measured: the switches' output
+    # capacitance, reverse recovery and radiation take energy too, and a switch node's
+    # ringing usually dies within five to ten cycles (ζ ≈ 0.05-0.1).
+    min_ring_zeta: float = 0.05
+    # The least damping of a soft edge: the one the inductor current carries across into
+    # a conducting body diode's clamp (a buck's falling edge, a boost's rising one).
+    # The clamp takes the ringing's energy, so the edge overshoots once and settles.
+    soft_edge_zeta: float = 0.5
 
 
 # JESD8 logic levels: supply volts -> (VIL, VIH, VOL, VOH), typical CMOS families. Off
@@ -220,15 +229,6 @@ class NoiseSettings:
     f_max_hz: Optional[float] = None
     max_harmonics: int = 4000
     periods_shown: int = 2
-    # The least damping of the switch node's ringing. The loop's resistance alone (on-
-    # resistance, ESR, copper) damps it far less than measured: the switches' output
-    # capacitance, reverse recovery and radiation take energy too, and a switch node's
-    # ringing usually dies within five to ten cycles (ζ ≈ 0.05-0.1).
-    min_ring_zeta: float = 0.05
-    # The least damping of a soft edge: the one the inductor current carries across into
-    # a conducting body diode's clamp (a buck's falling edge, a boost's rising one).
-    # The clamp takes the ringing's energy, so the edge overshoots once and settles.
-    soft_edge_zeta: float = 0.5
     # The controller's dead time: a soft edge the inductor current cannot carry across in
     # it (light load, a valley just below zero) is finished hard by the next switch.
     dead_time_ns: float = 20.0
@@ -282,9 +282,12 @@ def phase_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]
         package_l_h=float(d.get("package_l_h") or 0.0))
 
 
-def aggressor_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]
-                        ) -> Aggressor:
+def aggressor_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]],
+                        legacy: Optional[dict] = None) -> Aggressor:
+    """``legacy``: the setup's noise settings, whose solve-wide dampings (before they were
+    per aggressor) an aggressor saved without its own takes."""
     topo = d.get("topology", "auto")
+    legacy = legacy or {}
     return Aggressor(
         name=d["name"], vrm=d.get("vrm", ""),
         topology=topo if topo in TOPOLOGIES else "auto",
@@ -292,7 +295,9 @@ def aggressor_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef
         rise_s=float(d.get("rise_s", 2e-9)), fall_s=float(d.get("fall_s", 2e-9)),
         duty=d.get("duty"), load_a=d.get("load_a"),
         phases=[phase_from_dict(p, pin) for p in d.get("phases", [])],
-        ripple_probes=[str(x) for x in d.get("ripple_probes", [])])
+        ripple_probes=[str(x) for x in d.get("ripple_probes", [])],
+        min_ring_zeta=float(d.get("min_ring_zeta", legacy.get("min_ring_zeta", 0.05))),
+        soft_edge_zeta=float(d.get("soft_edge_zeta", legacy.get("soft_edge_zeta", 0.5))))
 
 
 def victim_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]) -> Victim:
