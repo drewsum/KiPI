@@ -6,6 +6,14 @@ milestones rather than versions that were ever set.
 
 ## 0.9.1 (in development)
 
+### Fixed
+- **A KiCad file's vias now match what the KiCad API reads** (#139, from Tomachie). A via
+  with no `(filling)` in a KiCad 9 file is unfilled, as KiCad 9 reports it; only a KiCad 10
+  file leaves the fill to the design rules. A via set to remove unused layers keeps its
+  pad on every layer that a connected via of its net spans, as KiCad does. On a 12-layer
+  board with overlapping via pairs, the vias that differed from KiCad 10's own read went
+  from 52 of 4374 to 0.
+
 ### Changed
 - **The main window fits the screen; the setup file is written only by Save** (#142, from
   Tomachie). The board and setup docks scroll, so the window opens above the taskbar on a
