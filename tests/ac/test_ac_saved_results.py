@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """AC results files: every solved rail is saved and opens again without solving."""
 
 import os
@@ -82,7 +83,7 @@ def panel(app):
     from kipi.ac.gui.panel import ACPanel
     snap, s = _setup()
     p = ACPanel()
-    p.set_board(snap, s, "test")
+    p.set_board(snap, s)
     p.set_nets(["+3V3", "GND"])
     yield p
     p.close()
@@ -156,7 +157,7 @@ def window(app, no_3d):
 def test_open_results_in_ac_mode_opens_ac_results(window, tmp_path, monkeypatch):
     snap, s = _setup()
     window.snapshot = snap
-    window.ac_panel.set_board(snap, s, "test")
+    window.ac_panel.set_board(snap, s)
     window.ac_panel.set_nets(["+3V3", "GND"])
     window.set_mode("ac")
     path = save_results(tmp_path / f"x{RESULTS_SUFFIX}", {"VRM1": _result("VRM1", 0.001)},

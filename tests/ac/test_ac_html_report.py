@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC HTML report: written from a real solve, self-contained, with every section; and
 the AC panel's HTML report option."""
 
@@ -78,7 +79,7 @@ def test_panel_option_and_report_button(solved, tmp_path):
     snap, setup, result = solved
     setup.ac.html_report = True
     p = ACPanel()
-    p.set_board(snap, setup, "test")
+    p.set_board(snap, setup)
     p.set_nets(["+3V3", "GND"])
     assert p.chk_report.isChecked()
     p.chk_report.setChecked(False)

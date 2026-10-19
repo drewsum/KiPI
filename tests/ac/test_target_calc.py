@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The Target Impedance/Frequency Calculator: Z = V_ac / I_step up to f = 1 / (pi t_rise),
 with t_rise = I_step / slew, and its result lands in the probe's target fields."""
 
@@ -293,7 +294,7 @@ def test_the_calculator_gets_the_panels_dc_result(app, monkeypatch):
     panel.set_dc_result(_tree(("SoC", 1.0, 0.94)))
     panel.probe_list.editor.btn_calc.click()
     assert seen[-1][0].v == pytest.approx(0.06) and seen[-1][1] is None
-    panel.set_board(panel.snapshot, panel.setup, "")   # a new board forgets it
+    panel.set_board(panel.snapshot, panel.setup)   # a new board forgets it
     assert panel.dc_result is None
 
 

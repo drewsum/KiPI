@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The analysis mode switch at the right end of the toolbar: DC by default, AC shows its
 own (placeholder) setup panel and keeps the DC setup for when DC comes back."""
 
@@ -66,6 +67,25 @@ def test_mode_does_not_change_while_a_task_runs(window, monkeypatch):
     assert window.mode == "dc"
     assert _mode(window, "dc").isChecked() and not _mode(window, "ac").isChecked()
     assert window.setup_stack.currentWidget() is window.solve_panel
+
+
+def test_mode_import_and_save_are_greyed_out_while_a_task_runs(app, window):
+    import threading
+    from tree_boards import board
+    assert not window.setup_bar.isEnabled()                  # no board yet
+    window.snapshot = board()
+    release = threading.Event()
+    task = window._run(lambda progress: release.wait(10), lambda _r: None, "Test task")
+    try:
+        assert not _mode(window, "ac").isEnabled() and not _mode(window, "dc").isEnabled()
+        assert not window.setup_bar.isEnabled()
+    finally:
+        release.set()
+        task.wait(5000)
+        app.processEvents()
+    assert _mode(window, "ac").isEnabled() and _mode(window, "dc").isEnabled()
+    assert window.setup_bar.isEnabled()
+    assert window.progress_bar.value() == 0          # idle shows an empty bar, not a full one
 
 
 def _plot_tab_shown(w) -> bool:

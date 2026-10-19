@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Capacitor manufacturing tolerance: a model with one is solved at the low end of it,
 the worst case for a PDN, when Capacitor manufacturing tolerance is ticked in the sweep
 settings, on top of any DC bias, aging and temperature."""
@@ -93,7 +94,7 @@ def panel():
     from kipi.ac.gui.panel import ACPanel
     app = QApplication.instance() or QApplication([])   # noqa: F841
     p = ACPanel()
-    p.set_board(plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0))]), PISetup(), "test")
+    p.set_board(plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0))]), PISetup())
     p.set_nets(["+3V3", "GND"])
     yield p
     p.close()

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The Coupled Noise setup panel (#69), shown in place of the DC panel in Coupled Noise
 mode.
 
@@ -649,7 +650,6 @@ def describe_aggressor(setup: PISetup):
 
 class NoisePanel(QWidget, PartSelection):
     solve_requested = Signal(object, str)          # PISetup, aggressor name
-    save_requested = Signal()
     result_selected = Signal(object)               # NoiseResult shown in the plot; None clears
     victim_selected = Signal(str)                  # the victim picked in the results table
     setup_changed = Signal()
@@ -665,17 +665,6 @@ class NoisePanel(QWidget, PartSelection):
         self._results: Dict[str, object] = {}     # the last NoiseResult of each aggressor
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
-
-        row = QHBoxLayout()
-        self.lbl_file = QLabel("No board", self)
-        self.lbl_file.setStyleSheet("color: #999;")
-        self.lbl_file.setWordWrap(True)
-        b_save = QPushButton("Save", self)
-        b_save.setToolTip("Save the setup next to the board (every mode shares one file)")
-        b_save.clicked.connect(self.save_requested.emit)
-        row.addWidget(self.lbl_file, 1)
-        row.addWidget(b_save)
-        lay.addLayout(row)
 
         self.tabs = QTabWidget(self)
         self.agg_list = ItemList(lambda: self.setup.aggressors, AggressorEditor(self),
@@ -934,17 +923,13 @@ class NoisePanel(QWidget, PartSelection):
     def nets(self) -> List[str]:
         return list(self._nets)
 
-    def set_board(self, snap: BoardSnapshot, setup: PISetup, file_label: str):
+    def set_board(self, snap: BoardSnapshot, setup: PISetup):
         self.snapshot = snap
         self.setup = setup
-        self.lbl_file.setText(file_label)
         self._load_settings()
         self.clear_results()
         self.setEnabled(True)
         self.reload()
-
-    def set_label(self, text: str):
-        self.lbl_file.setText(text)
 
     def set_nets(self, nets: List[str]):
         """Nets offered in the pin pickers (the ones ticked in the Board panel)."""

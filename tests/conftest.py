@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Shared test fixtures."""
 
 import pytest
@@ -50,8 +51,15 @@ def no_3d(monkeypatch):
     no interactor there (CI). Tests of the window's own logic do not need it.
     """
     from qtpy.QtCore import Signal
-    from qtpy.QtWidgets import QWidget
+    from qtpy.QtWidgets import QMessageBox, QWidget
     from kipi.gui import main_window
+
+    # A window closed with setup edits not saved asks whether to save them; no one is
+    # there to answer, so they are dropped (a test of the question patches it itself).
+    ask = QMessageBox.question
+    monkeypatch.setattr(QMessageBox, "question", lambda parent, title, text, *a, **k:
+                        QMessageBox.Discard if "not saved" in text
+                        else ask(parent, title, text, *a, **k))
 
     class StubViewer(QWidget):
         result = None

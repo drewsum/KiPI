@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Capacitor DC bias (#74): models with a voltage rating can be derated by the DC voltage
 across each part, from the last DC solve or else the rail's VRM set point, with a switch
 in the sweep settings to turn it off."""
@@ -128,7 +129,7 @@ def panel():
     p = ACPanel()
     snap = plane_pair(caps=[("C1", "10uF 6.3V X5R", (25.0, 25.0)),
                             ("C2", "100n 50V C0G", (30.0, 30.0))])
-    p.set_board(snap, PISetup(), "test")
+    p.set_board(snap, PISetup())
     p.set_nets(["+3V3", "GND"])
     yield p
     p.close()

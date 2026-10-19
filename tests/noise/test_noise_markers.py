@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Coupled Noise mode's 3D markers (#69): each victim's driver and receiver pins."""
 
 import os
@@ -51,7 +52,7 @@ def test_the_panel_names_the_selected_victim():
     from kipi.noise.gui.panel import NoisePanel
     snap, setup = open_board("coupled_noise")
     p = NoisePanel()
-    p.set_board(snap, setup, "test")
+    p.set_board(snap, setup)
     got = []
     p.part_selected.connect(lambda *a: got.append(a))
     assert p.select_part("victim", "SIG_LOOP")

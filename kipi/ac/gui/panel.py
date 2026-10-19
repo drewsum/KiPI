@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC setup panel, shown in place of the DC power-tree panel in AC mode.
 
 It edits the same :class:`~kipi.dc.pi.model.PISetup` as the DC panel. The VRMs and series
@@ -543,7 +544,6 @@ class ProbeEditor(_Editor):
 
 class ACPanel(QWidget, PartSelection):
     solve_requested = Signal(object, str, str)     # PISetup, VRM name, ground net
-    save_requested = Signal()
     result_selected = Signal(object)               # ACResult shown in the plot; None clears it
     setup_changed = Signal()                       # any edit to the setup
     results_saved = Signal(str)                    # path of a saved results file
@@ -563,17 +563,6 @@ class ACPanel(QWidget, PartSelection):
         self.dc_result = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
-
-        row = QHBoxLayout()
-        self.lbl_file = QLabel("No board", self)
-        self.lbl_file.setStyleSheet("color: #999;")
-        self.lbl_file.setWordWrap(True)
-        b_save = QPushButton("Save", self)
-        b_save.setToolTip("Save the setup next to the board (DC and AC share one file)")
-        b_save.clicked.connect(self.save_requested.emit)
-        row.addWidget(self.lbl_file, 1)
-        row.addWidget(b_save)
-        lay.addLayout(row)
 
         self.tabs = QTabWidget(self)
         self.vrm_list = ItemList(lambda: self.setup.vrms, VrmEditor(self, mode="ac"),
@@ -911,18 +900,14 @@ class ACPanel(QWidget, PartSelection):
         """The power-tree result the target calculator reads its DC drops from, or None."""
         self.dc_result = tree
 
-    def set_board(self, snap: BoardSnapshot, setup: PISetup, file_label: str):
+    def set_board(self, snap: BoardSnapshot, setup: PISetup):
         self.snapshot = snap
         self.setup = setup
         self.dc_result = None
-        self.lbl_file.setText(file_label)
         self._load_ac_settings()
         self.clear_results()
         self.setEnabled(True)
         self.reload()
-
-    def set_label(self, text: str):
-        self.lbl_file.setText(text)
 
     def set_nets(self, nets: List[str]):
         """Nets offered in the pin pickers (the ones ticked in the Board panel)."""

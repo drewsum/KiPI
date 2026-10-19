@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Copper temperature limits after an electro-thermal solve: the hottest solved copper on
 each layer, graded against a maximum temperature and a maximum rise above ambient, in the
 setup file, the CSV export and the Thermal results tab."""
@@ -93,7 +94,7 @@ def test_thermal_results_tab(app, hot):
     from kipi.dc.pi.tree import solve_tree
     snap, s, tree = hot
     panel = PIPanel()
-    panel.set_board(snap, s, "test")
+    panel.set_board(snap, s)
     tabs = panel.res_tabs
     titles = lambda: [tabs.tabText(i) for i in range(tabs.count())]
     assert "Thermal" not in titles()

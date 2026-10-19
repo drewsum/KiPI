@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The Coupled Noise mode's setup panel and its place in the window (#69)."""
 
 import os
@@ -27,7 +28,7 @@ def panel(app):
     setup = buck_setup()
     setup.caps = [CapModel("10u", 10e-6, 0.4e-9, 0.003, ["C1"]),
                   CapModel("47u", 47e-6, 0.6e-9, 0.002, ["C2"])]
-    p.set_board(buck_board(), setup, "test")
+    p.set_board(buck_board(), setup)
     p.set_nets(["VIN", "GND", "SW", "VOUT"])
     yield p
     p.close()
@@ -134,7 +135,7 @@ def test_a_result_is_plotted(window):
     from noise_boards import buck_board as board
     snap = board()
     setup = buck_setup()
-    window.noise_panel.set_board(snap, setup, "test")
+    window.noise_panel.set_board(snap, setup)
     window.noise_panel.agg_list._add()
     window.findChild(QRadioButton, "mode_noise").setChecked(True)
     r = solve_noise(snap, setup, setup.aggressors[0].name)
@@ -154,7 +155,7 @@ def vpanel(app):
     setup = buck_setup()
     setup.caps = [CapModel("10u", 10e-6, 0.4e-9, 0.003, ["C1"]),
                   CapModel("47u", 47e-6, 0.6e-9, 0.002, ["C2"])]
-    p.set_board(buck_board(victim_gap=0.2), setup, "test")
+    p.set_board(buck_board(victim_gap=0.2), setup)
     p.set_nets(["VIN", "GND", "SW", "VOUT", "SIG"])
     p.agg_list._add()
     p.setup.aggressors[0].phases[0].coss_f = 300e-12

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC mesh is graded only at plated holes near the rail (#123)."""
 
 import os
@@ -79,7 +80,7 @@ def test_the_checkbox_is_ticked_by_default_and_for_older_setups():
     assert older.ac.grade_near_rail_only
     p = ACPanel()
     assert p.chk_near.isChecked()                               # a new panel
-    p.set_board(snap, older, "board")
+    p.set_board(snap, older)
     assert p.chk_near.isChecked()
     p.chk_near.setChecked(False)                                # unticking is kept
     assert not p.setup.ac.grade_near_rail_only

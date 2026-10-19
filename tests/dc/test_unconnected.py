@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Loads not connected by copper (#88): before solving, each load pin is checked for a path
 through copper or series links to its VRM. Unconnected pins draw nothing; a load with no
 supply pin (or no ground pin) connected is left out and shown as disconnected; a rail with
@@ -121,7 +122,7 @@ def test_results_table_shows_a_disconnected_load(qapp):
     snap = island_board()
     tree = solve_tree(snap, s)
     panel = PIPanel()
-    panel.set_board(snap, s, "test")
+    panel.set_board(snap, s)
     panel.show_results(tree, next(iter(tree.groups)))
     t = panel.tbl_loads
     row = next(r for r in range(t.rowCount()) if t.item(r, 0).text() == "U3")

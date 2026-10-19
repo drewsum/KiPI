@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Tables sort by a clicked column header, alternating ascending and descending (#85):
 results tables, the setup tables and the HTML reports' tables."""
 
@@ -78,7 +79,7 @@ def test_capacitor_parts_sort_and_keep_their_order_when_ticked(app):
     from kipi.dc.pi.model import PISetup
     setup = PISetup()
     panel = ACPanel()
-    panel.set_board(_cap_board(), setup, "test")
+    panel.set_board(_cap_board(), setup)
     panel.set_nets(["+3V3", "GND"])
     panel.cap_list._add()
     t, h = panel.cap_list.editor.table, panel.cap_list.editor.table.horizontalHeader()
@@ -130,7 +131,7 @@ def test_load_pin_groups_sort(app):
     setup.loads.append(Load("U9", PinRef("U9", "VOUT"), 0.0, groups=[
         PinGroup(["12"], 0.2, "io"), PinGroup(["3"], 1.5, "core"), PinGroup(["7"], 0.5, "")]))
     panel = PIPanel()
-    panel.set_board(board(), setup, "test")
+    panel.set_board(board(), setup)
     panel.load_list.lst.setCurrentRow(0)
     h = panel.load_list.editor.groups.horizontalHeader()
     names = lambda: [g.name for g in setup.loads[0].groups]      # noqa: E731

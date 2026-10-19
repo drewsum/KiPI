@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Power-integrity setup panel: VRMs, loads and series links, all user-defined.
 
 Each tab is a list of items with an editor form. Edits go straight into the
@@ -1216,8 +1217,6 @@ class PIPanel(QWidget, PartSelection):
     scale_changed = Signal(object)         # (min, max) of the color scale, or None: auto
     group_changed = Signal(str)
     show_geometry = Signal()
-    save_requested = Signal()
-    import_requested = Signal()            # fill the setup from a power-tree file
     arrows_toggled = Signal(bool)
     via_selected = Signal(str, str)        # group name, via / PTH pad id
     # The VRM, load or series link selected in the setup: kind ("vrm", "load", "link"),
@@ -1233,23 +1232,6 @@ class PIPanel(QWidget, PartSelection):
         self._nets: List[str] = []
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
-
-        row = QHBoxLayout()
-        self.lbl_file = QLabel("No board", self)
-        self.lbl_file.setStyleSheet("color: #999;")
-        self.lbl_file.setWordWrap(True)
-        b_save = QPushButton("Save", self)
-        b_save.setToolTip("Save the setup next to the board")
-        b_save.clicked.connect(self.save_requested.emit)
-        b_import = QPushButton("Import…", self)
-        b_import.setToolTip("Fill the power tree (VRMs, loads and DC connections) from a "
-                            "Tomachie power-tree file (.pdn.json). Settings, thermal and the "
-                            "AC setup are kept; the log lists what did not map.")
-        b_import.clicked.connect(self.import_requested.emit)
-        row.addWidget(self.lbl_file, 1)
-        row.addWidget(b_import)
-        row.addWidget(b_save)
-        lay.addLayout(row)
 
         self.tabs = QTabWidget(self)
         self.vrm_list = ItemList(lambda: self.setup.vrms, VrmEditor(self), self._new_vrm,
@@ -1846,10 +1828,9 @@ class PIPanel(QWidget, PartSelection):
         self._on_changed()
 
     # ------------------------------------------------------------------ data
-    def set_board(self, snap: BoardSnapshot, setup: PISetup, file_label: str):
+    def set_board(self, snap: BoardSnapshot, setup: PISetup):
         self.snapshot = snap
         self.setup = setup
-        self.lbl_file.setText(file_label)
         self._scale_limits.clear()
         self._scale_key = None
         self._enable_scale(False)

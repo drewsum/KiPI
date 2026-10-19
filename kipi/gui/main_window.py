@@ -1,7 +1,9 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """KiPI main window: board browser, 3D copper view and live log."""
 
 from __future__ import annotations
 
+import copy
 import html
 import logging
 import math
@@ -17,8 +19,8 @@ from qtpy.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QSizePolicy, QSlider,
-    QSplitter, QStackedWidget, QTabWidget, QTextBrowser, QToolBar, QToolButton, QVBoxLayout,
-    QWidget,
+    QScrollArea, QSplitter, QStackedWidget, QTabWidget, QTextBrowser, QToolBar, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from kipi import __version__
@@ -63,6 +65,43 @@ def with_keys(tip: str, keys: str) -> str:
 VIA_PICK_PX = 10      # a click this close to a via barrel on screen selects it
 
 
+#: The size the window opens at when the screen has room for it.
+PREFERRED_SIZE = (1500, 950)
+
+
+def _scrolling(widget: QWidget) -> QScrollArea:
+    """``widget`` in a scroll area: a dock that is shorter than its contents scrolls
+    instead of making the whole window taller than the screen."""
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QScrollArea.NoFrame)
+    area.setWidget(widget)
+    return area
+
+
+def fit_to_screen(window: QMainWindow) -> None:
+    """Keep the window, frame and title bar included, inside its screen's work area (the
+    area the taskbar leaves): no larger than it, and moved onto it. A 2560 x 1600 laptop at
+    175 % has 1463 x 874 logical pixels above the taskbar, less than the preferred size."""
+    screen = window.screen() if hasattr(window, "screen") else None
+    if screen is None:
+        from qtpy.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen()
+    if screen is None:
+        return
+    area = screen.availableGeometry()
+    frame = window.frameGeometry()
+    extra_w = frame.width() - window.width()
+    extra_h = frame.height() - window.height()
+    w = min(window.width(), area.width() - extra_w)
+    h = min(window.height(), area.height() - extra_h)
+    window.resize(max(w, 1), max(h, 1))
+    frame = window.frameGeometry()
+    x = min(max(frame.x(), area.left()), area.right() - frame.width() + 1)
+    y = min(max(frame.y(), area.top()), area.bottom() - frame.height() + 1)
+    window.move(max(x, area.left()), max(y, area.top()))
+
+
 def write_report_file(write, path, progress):
     """``write(path)`` a solve's report; where a PDF cannot be made, the HTML report next to
     where it would have been (#119). The path written is returned."""
@@ -86,7 +125,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.host = host or current_host()
         self._set_title("Power Integrity")
-        self.resize(1500, 950)
+        self.resize(*PREFERRED_SIZE)
+        self._fitted = False
         self._source = source
         self._tool = tool or InstalledTool()
         self.snapshot: Optional[BoardSnapshot] = None
@@ -261,6 +301,14 @@ class MainWindow(QMainWindow):
             rb.toggled.connect(lambda on, k=key: on and self.set_mode(k))
             self.mode_buttons.addButton(rb)
             tb.addWidget(rb)
+
+    def _set_controls_enabled(self, on: bool):
+        """The DC / AC switch, Import and Save are greyed out while a task runs (reading
+        the board, building nets, a solve) and come back when it finishes or is
+        cancelled; Import and Save also wait for a board."""
+        for rb in self.mode_buttons.buttons():
+            rb.setEnabled(on)
+        self.setup_bar.setEnabled(on and self.snapshot is not None)
 
     def _build_shortcuts(self):
         """Keys with no toolbar button: Solve and Cancel."""
@@ -571,7 +619,7 @@ class MainWindow(QMainWindow):
         dock = QDockWidget("Board", self)
         dock.setObjectName("board_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        dock.setWidget(panel)
+        dock.setWidget(_scrolling(panel))
         dock.setMinimumWidth(300)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
 
@@ -585,8 +633,6 @@ class MainWindow(QMainWindow):
         # that pick is how the results come back.
         self.solve_panel.cmb_group.activated.connect(self._group_activated)
         self.solve_panel.show_geometry.connect(self._show_geometry)
-        self.solve_panel.save_requested.connect(self._save_setup)
-        self.solve_panel.import_requested.connect(self.import_pdn)
         self.solve_panel.arrows_toggled.connect(self.viewer.set_arrows_visible)
         self.solve_panel.via_selected.connect(self._show_via)
         # Each panel marks its own selection, while its mode is showing.
@@ -597,8 +643,8 @@ class MainWindow(QMainWindow):
         self._scenes = {}
         self._shown_group = ""
         self._setup_path = None
+        self._saved = None              # the setup as its file has it
         self.ac_panel = ACPanel(self)
-        self.ac_panel.save_requested.connect(self._save_setup)
         self.ac_panel.solve_requested.connect(self.run_ac_solve)
         self.ac_panel.result_selected.connect(self._show_ac_result)
         self.ac_panel.results_saved.connect(lambda path: self.log(f"Saved AC results to {path}"))
@@ -606,7 +652,6 @@ class MainWindow(QMainWindow):
             lambda *a: self._pi_part_selected(*a) if self.mode == "ac" else None)
         from kipi.noise.gui.panel import NoisePanel
         self.noise_panel = NoisePanel(self)
-        self.noise_panel.save_requested.connect(self._save_setup)
         self.noise_panel.solve_requested.connect(self.run_noise_solve)
         self.noise_panel.result_selected.connect(self._show_noise_result)
         self.noise_panel.victim_selected.connect(self._show_victim)
@@ -617,14 +662,26 @@ class MainWindow(QMainWindow):
         for panel in self._panels().values():
             panel.setup_changed.connect(self._model_timer.start)
             panel.setup_changed.connect(self._refresh_power_tree)
-        # One setup dock; it shows the panel of the current analysis mode.
+            panel.setup_changed.connect(self._show_unsaved)
+        # One setup dock: the setup file's bar, then the panel of the current analysis mode.
+        # The bar stays outside the scrolling, so Import and Save are always in view.
+        from kipi.gui.setup_file_bar import SetupFileBar
+        self.setup_bar = SetupFileBar(self)
+        self.setup_bar.import_requested.connect(self.import_pdn)
+        self.setup_bar.save_requested.connect(self._save_setup)
+        self.setup_bar.setEnabled(False)                       # until a board is read
         self.setup_stack = QStackedWidget(self)
         for panel in self._panels().values():
             self.setup_stack.addWidget(panel)
+        holder = QWidget(self)
+        col = QVBoxLayout(holder)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.addWidget(self.setup_bar)
+        col.addWidget(_scrolling(self.setup_stack), 1)
         dock = QDockWidget(MODES[0][2], self)
         dock.setObjectName("solve_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
-        dock.setWidget(self.setup_stack)
+        dock.setWidget(holder)
         self.solve_dock = dock
         dock.setMinimumWidth(420)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
@@ -652,6 +709,9 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(20000)
         self.log_view.setStyleSheet("font-family: Consolas, 'Courier New', monospace;")
+        # A few lines always show: on a short screen the dock otherwise shrinks to its
+        # progress bar and what an import or solve said cannot be seen.
+        self.log_view.setMinimumHeight(self.log_view.fontMetrics().lineSpacing() * 4 + 8)
         lay.addLayout(row)
         lay.addWidget(self.log_view)
         dock = QDockWidget("Log", self)
@@ -665,6 +725,12 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.heartbeat)
 
     # ============================================================ logging
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._fitted:
+            self._fitted = True
+            fit_to_screen(self)
+
     def log(self, text: str, level: int = logging.INFO):
         color = {logging.WARNING: "#e0b050", logging.ERROR: "#ff6060"}.get(level)
         if text.startswith("== "):
@@ -723,6 +789,7 @@ class MainWindow(QMainWindow):
         self.btn_cancel.setEnabled(True)
         self.act_cancel.setEnabled(True)
         self.act_reload.setEnabled(False)
+        self._set_controls_enabled(False)      # offered only when they can be taken
         from kipi.gui import app as kipi_app
         kipi_app.watchdog_start()
         log.info("Task started: %s", name)
@@ -754,8 +821,9 @@ class MainWindow(QMainWindow):
         self.btn_cancel.setEnabled(False)
         self.act_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
+        self._set_controls_enabled(True)
         self.progress_bar.setRange(0, 1000)
-        self.progress_bar.setValue(1000)
+        self.progress_bar.setValue(0)          # empty when idle: a full bar reads as busy
         self.lbl_stage.setText("Idle")
         self.statusBar().showMessage("Ready")
         if self._pending_stackup is not None:
@@ -865,6 +933,8 @@ class MainWindow(QMainWindow):
 
     def open_path(self, path):
         """Read the board file ``path``; it becomes the source once it has been read."""
+        if not self._keep_or_drop_changes():
+            return
         try:
             source = registry.open_board(path)
         except ValueError as e:
@@ -883,13 +953,15 @@ class MainWindow(QMainWindow):
     def reload_board(self):
         """Read the board from the source again (Load from KiCad)."""
         source = self._source
-        if source is None:
+        if source is None or not self._keep_or_drop_changes():
             return
         refill = source.caps.refill_zones and self.chk_refill.isChecked()
         self._run(lambda progress: source.load(progress, refill_zones=refill),
                   self._set_snapshot, "Loading board")
 
     def open_snapshot(self):
+        if not self._keep_or_drop_changes():
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Open board snapshot", "",
                                               "KiPI snapshot (*.json *.json.gz)")
         if not path:
@@ -950,6 +1022,12 @@ class MainWindow(QMainWindow):
         self._apply_setup_stackup(setup)
         self._populate_layers()
         self._populate_nets(keep if keep is not None else setup.nets, setup)
+        # The setup as loaded, with the nets ticked by default on a new board: what Save
+        # would write now, so only later edits count as not saved.
+        setup.nets = self._checked_nets()
+        self._saved = copy.deepcopy(setup)
+        self._show_unsaved()
+        self.setup_bar.setEnabled(not self._busy())
         self._show_board_summary()
         from kipi.core.viz.meshes import board_body, board_coatings
         self.viewer.set_board(*board_body(snap))
@@ -1067,6 +1145,7 @@ class MainWindow(QMainWindow):
     def _on_net_item_changed(self, item):
         self._checked_cache = None
         self._sync_timer.start()
+        self._show_unsaved()
 
     def _on_layer_item_changed(self, item):
         self.viewer.set_layer_visible(item.data(Qt.UserRole), item.checkState() == Qt.Checked)
@@ -1335,9 +1414,10 @@ class MainWindow(QMainWindow):
                 self.log(f"Could not read {found}: {e}", logging.WARNING)
                 label = f"Could not read {found.name}; starting empty"
         self._setup_path = path
-        self.solve_panel.set_board(snap, setup, label)
-        self.ac_panel.set_board(snap, setup, label)
-        self.noise_panel.set_board(snap, setup, label)
+        self._saved = copy.deepcopy(setup)
+        for panel in self._panels().values():
+            panel.set_board(snap, setup)
+        self.setup_bar.set_label(label)
         self._refresh_power_tree()
         self.plot.clear()
         self.board_map.clear()
@@ -1351,8 +1431,10 @@ class MainWindow(QMainWindow):
             return
         current = self.solve_panel.setup
         if (current.vrms or current.loads or current.links) and QMessageBox.question(
-                self, "KiPI", "Replace the VRMs, loads and DC connections with the ones in "
-                              "the file? Settings, thermal and the AC setup are kept."
+                self, "KiPI", f"This board already has a power tree: {len(current.vrms)} "
+                              f"VRM(s), {len(current.loads)} load(s) and {len(current.links)} "
+                              "DC connection(s). Replace it with the one in the file?\n\n"
+                              "Mesh, via plating, thermal and AC settings stay as they are."
         ) != QMessageBox.Yes:
             return
         start = str(self._setup_path.parent) if self._setup_path else ""
@@ -1368,20 +1450,27 @@ class MainWindow(QMainWindow):
         except (PdnImportError, ValueError, KeyError, TypeError, OSError) as e:
             QMessageBox.critical(self, "KiPI", f"Could not import {name}:\n\n{e}")
             return
-        self.log(f"Imported {name}: {len(setup.vrms)} VRM(s), {len(setup.loads)} load(s), "
-                 f"{len(setup.links)} DC connection(s)"
-                 + (f"; {len(notes)} note(s) on what did not map cleanly:" if notes else ""))
+        from kipi.dc.pi.importers.import_summary import counts, group_notes, setup_changes
+        notes = group_notes(notes)
+        if notes:
+            self.log(f"Notes on {name}:")
         for note in notes:
             self.log(f"  {note}", logging.WARNING)
         used = setup.pin_nets()
         self._set_checked(lambda it: it.checkState() == Qt.Checked
                           or it.data(Qt.UserRole) in used)
         label = f"Imported from {name}"
-        self.solve_panel.set_board(self.snapshot, setup, label)
-        self.ac_panel.set_board(self.snapshot, setup, label)
-        self.noise_panel.set_board(self.snapshot, setup, label)
+        for panel in self._panels().values():
+            panel.set_board(self.snapshot, setup)
         self._refresh_power_tree()
-        self._save_setup()
+        self.setup_bar.set_label(f"{label} - not saved")
+        # Last in the Log, under the notes, so it is the line in view.
+        self.log(f"== Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
+                 + (f"; {len(notes)} note(s) above" if notes else "")
+                 + ". Not saved: Save keeps it, the setup file is as it was")
+        self.log_dock.show()
+        self.log_dock.raise_()
+        self._show_unsaved()
 
     def _save_setup(self):
         if self._setup_path is None:
@@ -1390,9 +1479,9 @@ class MainWindow(QMainWindow):
             self.solve_panel.setup.nets = self._checked_nets()
         try:
             self._setup_path = self.solve_panel.setup.save(self._setup_path)
-            self.solve_panel.lbl_file.setText(f"Setup: {self._setup_path}")
-            self.ac_panel.set_label(f"Setup: {self._setup_path}")
-            self.noise_panel.set_label(f"Setup: {self._setup_path}")
+            self._saved = copy.deepcopy(self.solve_panel.setup)
+            self._show_unsaved()
+            self.setup_bar.set_label(f"Setup: {self._setup_path}")
             self.log(f"Saved PI setup to {self._setup_path}")
         except OSError as e:
             self.log(f"Could not save the setup: {e}", logging.WARNING)
@@ -1415,8 +1504,6 @@ class MainWindow(QMainWindow):
             self.solve_panel.set_busy(True, queued=True)
             self.log("Solve queued until the current task finishes")
             return
-        self._save_setup()
-        import copy
         frozen = copy.deepcopy(setup)     # edits during the solve don't affect it
         report_path = None
         if frozen.html_report and self._setup_path is not None:
@@ -1488,8 +1575,6 @@ class MainWindow(QMainWindow):
             self.ac_panel.set_busy(True, queued=True)
             self.log("AC solve queued until the current task finishes")
             return
-        self._save_setup()
-        import copy
         frozen = copy.deepcopy(setup)
         dc_result = self._tree       # the last DC solve gives the capacitors' DC bias (#74)
         report_path = None
@@ -2134,8 +2219,41 @@ class MainWindow(QMainWindow):
         except Exception as e:  # noqa: BLE001
             self.log(f"Could not select in {source.name}: {e}", logging.WARNING)
 
+    def _unsaved(self) -> bool:
+        if self.snapshot is None or self._saved is None:
+            return False
+        now = copy.copy(self.solve_panel.setup)       # compared, not changed: the net
+        now.nets = self._checked_nets()                # list may still be filling in
+        saved = self._saved
+        # An AC rail or ground left empty follows the VRM's; the AC panel filling it in
+        # once the nets are known is not an edit.
+        if not saved.ac.rail or not saved.ac.ground:
+            saved = copy.deepcopy(saved)
+            saved.ac.rail = saved.ac.rail or now.ac.rail
+            saved.ac.ground = saved.ac.ground or now.ac.ground
+        return now != saved
+
+    def _show_unsaved(self):
+        """Outline the Save buttons while the setup has changes not saved."""
+        self.setup_bar.set_unsaved(self._unsaved())
+
+    def _keep_or_drop_changes(self) -> bool:
+        """The setup file is written only by Save. Before the setup is left (closing, or
+        reading a board again), ask about changes not saved; False means stay."""
+        if not self._unsaved():
+            return True
+        answer = QMessageBox.question(
+            self, "KiPI", "The PI setup has changes that are not saved. Save them?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+        if answer == QMessageBox.Save:
+            self._save_setup()
+        return answer != QMessageBox.Cancel
+
     # ============================================================ close
     def closeEvent(self, event):
+        if not self._keep_or_drop_changes():
+            event.ignore()
+            return
         self._model_timer.stop()            # start no kicad-cli for a closed window
         self._changed_timer.stop()
         self._models_pending = False

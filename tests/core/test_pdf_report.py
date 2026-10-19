@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """PDF reports (#119): the DC and AC reports printed without what needs a browser, the
 setting that picks the format, the panels' option, and HTML where a PDF cannot be made. The
 DC report's 3D views go in it as an attached web page (#133)."""
@@ -263,14 +264,14 @@ def test_panel_report_option(mode, ac, dc):
         tree, scenes, snap, s = dc
         s.html_report, s.report_format = True, "pdf"
         p = PIPanel()
-        p.set_board(snap, s, "test")
+        p.set_board(snap, s)
         settings = s
     else:
         from kipi.ac.gui.panel import ACPanel
         result, snap, s = ac
         s.ac.html_report, s.ac.report_format = True, "pdf"
         p = ACPanel()
-        p.set_board(snap, s, "test")
+        p.set_board(snap, s)
         p.set_nets(["+3V3", "GND"])
         settings = s.ac
     opt = p.report_option
