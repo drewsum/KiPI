@@ -9,7 +9,7 @@ capacitance. Each mechanism is solved on its own, then added up as phasors.
 from __future__ import annotations
 
 import math
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import numpy as np
 
@@ -20,13 +20,17 @@ from kipi.noise.extract.capacitive import extract
 from kipi.noise.extract.xsection import Cache
 from kipi.noise.model import Aggressor, Victim
 from kipi.noise.network import Termination, VictimNetwork
-from kipi.noise.result import TOTAL, VictimResult
+from kipi.noise.extract.inductive import loop_sources, victim_emf
+from kipi.noise.result import MECHANISMS, TOTAL, VictimResult
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
 
 def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
            wf: SmpsWaveforms, cache: Optional[Cache] = None,
-           check_cancel=None) -> VictimResult:
+           check_cancel=None, layouts: Sequence = ()) -> VictimResult:
+    """The victim's noise from each mechanism: capacitive from the switch nodes,
+    inductive from the capacitor loops in ``layouts`` (each phase's
+    :class:`~kipi.noise.parasitics.PhaseLayout`)."""
     s = setup.noise
     warnings: List[str] = []
     driver, receiver = victim.driver, victim.receiver
@@ -81,11 +85,19 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
         q = net.node_injection(np.array([x.cm.get(ph.switch_net, 0.0) for x in segs]))
         if q.any():
             src += (1j * omega * phase_wf.switch_node.c)[:, None] * q[None, :]
-    v = net.solve(freqs, terms, src, obs)
+    sources = loop_sources(layouts, wf)
+    if not sources:
+        warnings.append("No capacitor loops (set the switching device's pins and the "
+                        "capacitors): no inductive coupling")
+    emf, res.m_h = victim_emf(snap, sources, segs, freqs)
+    out = net.solve_many(freqs, terms, obs, {"capacitive": src}, {"inductive": emf})
     n_t = wf.samples_per_period()
-    for key, col, store in (("capacitive", 0, res.receiver_v), ("capacitive", 1, res.driver_v)):
-        store[key] = Spectrum(f"{victim.name} {key}", "V", 0.0, v[:, col])
-        store[TOTAL] = Spectrum(f"{victim.name} total", "V", 0.0, v[:, col])
+    for col, store in ((0, res.receiver_v), (1, res.driver_v)):
+        total = np.zeros(len(freqs), complex)
+        for key in MECHANISMS:
+            store[key] = Spectrum(f"{victim.name} {key}", "V", 0.0, out[key][:, col])
+            total += out[key][:, col]
+        store[TOTAL] = Spectrum(f"{victim.name} total", "V", 0.0, total)
     res.peak_by = {k: float(np.max(np.abs(sp.samples(n_t)))) for k, sp in res.receiver_v.items()
                    if k != TOTAL}
     res.peak_v = float(np.max(np.abs(res.receiver_v[TOTAL].samples(n_t))))

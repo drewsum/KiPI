@@ -7,6 +7,17 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Coupled Noise mode, part 3: inductive coupling** (#69). Each input and output
+  capacitor's current loop (through the switching device, or through the inductor) now
+  induces a voltage along each victim's traces: the partial mutual inductance from every
+  loop segment to every victim segment, with the plane under the loops mirroring their
+  field as its eddy currents build up with frequency, and shielding victims on its far
+  side. The EMF drives the victim's line in series, so an open receiver sees nearly all
+  of it. Each victim's noise is now split into capacitive and inductive parts and their
+  total: the results table names the dominant one, the plot shows each, and the log gives
+  the victim's mutual inductance to each loop. A ground return with no ground copper on
+  the loop's own layer now runs through the plane under it, as it does at high frequency,
+  which also gives a truer hot-loop inductance.
 - **Coupled Noise mode, part 2: capacitive coupling onto victims** (#69). A **Victims**
   tab names the signal nets to check, each with its driver and receiver pins (guessed as
   the net's two farthest pads), a type that fills in their terminations (CMOS push-pull,

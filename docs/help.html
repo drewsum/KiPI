@@ -1686,9 +1686,10 @@ way.</p>
 converter's waveforms (the switch node, the inductor currents, each capacitor's ripple
 current and the rails' ripple voltage), then couples them onto the signal nets you name, the
 <b>victims</b>, and compares the noise at each victim's receiver with its noise margin.
-This version models <b>capacitive</b> coupling: the switch node's copper charging the
-victim's traces through their mutual capacitance. Inductive and shared-ground coupling
-come later.</p>
+Two coupling paths are modeled: <b>capacitive</b>, the switch node's copper charging the
+victim's traces through their mutual capacitance, and <b>inductive</b>, the current loops
+through each input and output capacitor inducing a voltage along the victim's traces
+through their mutual inductance. Shared-ground (common-impedance) coupling comes later.</p>
 <p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
 Its input rail and set voltage give the input and output voltages, and from them the
 topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
@@ -1815,9 +1816,15 @@ resistance, and the ringing's frequency and damping.</p>
 <p>The <b>results table</b> lists each victim: its receiver's peak noise over a switching
 period, its noise margin, the share of the margin used, the coupling mechanism that
 dominates, and <b>PASS</b> or <b>FAIL</b>. The worst victim is selected; select one to plot
-its noise under <b>Victim noise</b> in the Waveforms tab, at the receiver and the driver,
-against its margin (in time, or as a spectrum). The log gives each victim's mutual
-capacitance to the switch node and the length of trace beside it.</p>
+its noise under <b>Victim noise</b> in the Waveforms tab: the receiver's total, each
+mechanism's share of it and the driver's, against its margin (in time, or as a
+spectrum). The log gives each victim's mutual capacitance to the switch node, the length
+of trace beside it, and its mutual inductance to the capacitor loops.</p>
+<p>The two mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
+node's dV/dt: keep victims away from the switch node's copper (or behind a plane), and
+drive them harder. <b>Inductive</b> noise comes from the hot loop's dI/dt: make the loop
+small and keep it over a solid plane, and route victims away from it, or on the far side
+of the plane.</p>
 </div>
 </details>
 

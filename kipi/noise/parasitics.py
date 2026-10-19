@@ -74,6 +74,12 @@ class PhaseLayout:
     report: HotLoopReport
     input_caps: List[CapBranch]
     output_caps: List[CapBranch]
+    # Each capacitor's current loop (it carries that capacitor's ripple current, from its
+    # positive pad around the loop), and the plane under the device taking image
+    # currents: the z of its facing surface and its layer id (None without one).
+    loops: Dict[str, List[peec.Segment]] = field(default_factory=dict)
+    image_z: Optional[float] = None
+    image_layer: Optional[int] = None
 
 
 class _Board:
@@ -152,8 +158,19 @@ class _Board:
         w = cu.intersection(corridor).area / length
         return float(min(max(w, MIN_WIDTH_MM), MAX_WIDTH_MM))
 
-    def plane_under(self, layer: int, xy) -> Tuple[Optional[float], str]:
-        """The facing surface's z of the nearest solid plane inward of ``layer`` at ``xy``."""
+    def coverage(self, net: str, layer: int, a, b) -> float:
+        """The share of the straight line a→b that runs over ``net``'s copper on
+        ``layer``."""
+        from shapely.geometry import LineString
+        length = math.hypot(b[0] - a[0], b[1] - a[1])
+        cu = self.copper(net, layer) if net else None
+        if length < 1e-6 or cu is None or cu.is_empty:
+            return 0.0 if length >= 1e-6 else 1.0
+        return float(LineString([a[:2], b[:2]]).intersection(cu).length / length)
+
+    def plane_under(self, layer: int, xy) -> Tuple[Optional[float], str, Optional[int]]:
+        """The facing surface's z, name and id of the nearest solid plane inward of
+        ``layer`` at ``xy``."""
         from shapely.geometry import Point
         i = self.order.index(layer)
         step = 1 if i < len(self.order) / 2 else -1
@@ -163,9 +180,9 @@ class _Board:
             g = self.planes(lid)
             if g is not None and g.contains(Point(xy[0], xy[1])):
                 lay = self.stack.layer(lid)
-                return (lay.z_top_mm if step > 0 else lay.z_bottom_mm), lay.name
+                return (lay.z_top_mm if step > 0 else lay.z_bottom_mm), lay.name, lid
             j += step
-        return None, ""
+        return None, "", None
 
 
 def _centroid(pads: List[Pad]) -> Optional[Tuple[float, float]]:
@@ -206,13 +223,15 @@ def _cap_branch(board: _Board, setup: PISetup, ref: str, volts: float,
     return CapBranch(ref, c, FALLBACK_ESR_OHM, FALLBACK_ESL_H)
 
 
-def _cap_loop(board: _Board, ref: str, plus_net: str, gnd_net: str, hops, dev_layer: int
-              ) -> Tuple[List[peec.Segment], float]:
+def _cap_loop(board: _Board, ref: str, plus_net: str, gnd_net: str, hops, dev_layer: int,
+              plane_z: Optional[float] = None) -> Tuple[List[peec.Segment], float]:
     """The loop from capacitor ``ref``'s positive pad through ``hops`` to its ground pad
     and back across the capacitor, on ``dev_layer`` (with via drops at the capacitor when
     it is on the other side). Each hop is (point, net, width, label) for the segment
     arriving at the point: as wide as ``net``'s copper along it, or ``width`` when no net
-    is given. Returns the segments and their DC resistance."""
+    is given. A ground hop with no ground copper under most of it on ``dev_layer`` returns
+    through the plane at ``plane_z`` instead, with via drops at its ends: the return current
+    flows in the plane under the loop. Returns the segments and their DC resistance."""
     plus = _centroid(board.pads(ref, plus_net))
     minus = _centroid(board.pads(ref, gnd_net))
     if plus is None or minus is None or any(h[0] is None for h in hops):
@@ -221,29 +240,36 @@ def _cap_loop(board: _Board, ref: str, plus_net: str, gnd_net: str, hops, dev_la
     zc, zd = board.z(cap_layer), board.z(dev_layer)
     t = board.thickness(dev_layer)
     body = _pad_short_side(board.pads(ref))
+    segs: List[peec.Segment] = []
+    r = 0.0
+
+    def go(a, b, w, label, resist=True):
+        nonlocal r
+        if math.dist(a, b) > 1e-9:
+            segs.append(peec.segment(a, b, w, t, label))
+            if resist:
+                r += RHO_CU_OHM_MM * math.dist(a, b) / (w * t)
+
+    here = (*plus, zc)
+    if cap_layer != dev_layer:
+        go(here, (*plus, zd), VIA_MM, f"{ref}+ via")
+        here = (*plus, zd)
     path = [*hops, (minus, gnd_net, None, f"{gnd_net} to {ref}-")]
-    pts, widths, labels = [], [], []
-    if cap_layer != dev_layer:
-        pts.append((*plus, zc))
-        widths.append(VIA_MM)
-        labels.append(f"{ref}+ via")
-    prev = plus
     for pt, net, w, label in path:
-        pts.append((*prev, zd))
-        widths.append(board.width(net, dev_layer, prev, pt) if net else w)
-        labels.append(label)
-        prev = pt
+        prev = here[:2]
+        in_plane = (plane_z is not None and net == gnd_net
+                    and board.coverage(net, dev_layer, prev, pt) < 0.5)
+        if in_plane:
+            go(here, (*prev, plane_z), VIA_MM, f"{label} via")
+            go((*prev, plane_z), (*pt, plane_z), MAX_WIDTH_MM, f"{label} (plane)")
+            go((*pt, plane_z), (*pt, zd), VIA_MM, f"{label} via")
+        else:
+            go(here, (*pt, zd), board.width(net, dev_layer, prev, pt) if net else w, label)
+        here = (*pt, zd)
     if cap_layer != dev_layer:
-        pts.append((*minus, zd))
-        widths.append(VIA_MM)
-        labels.append(f"{ref}- via")
-        pts.append((*minus, zc))
-    else:
-        pts.append((*minus, zd))
-    widths.append(body)
-    labels.append(f"{ref} body")
-    segs = peec.polyline(pts, widths, t, labels)
-    r = sum(RHO_CU_OHM_MM * s.length / (s.w * s.t) for s in segs if "body" not in s.label)
+        go(here, (*minus, zc), VIA_MM, f"{ref}- via")
+        here = (*minus, zc)
+    go(here, (*plus, zc), body, f"{ref} body", resist=False)
     return segs, r
 
 
@@ -290,10 +316,11 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
     rail_net = vout_net if topology == "buck" else vin_net
     l_rail = _centroid([p for p in ind_pads if p.net == rail_net])
 
-    z_plane, plane_name = (None, "")
+    z_plane, plane_name, plane_id = (None, "", None)
     if a_pt is not None and b_pt is not None:
         mid = ((a_pt[0] + b_pt[0]) / 2, (a_pt[1] + b_pt[1]) / 2)
-        z_plane, plane_name = board.plane_under(dev_layer, mid)
+        z_plane, plane_name, plane_id = board.plane_under(dev_layer, mid)
+    cap_loops: Dict[str, List[peec.Segment]] = {}
 
     def branches(refs: List[str], hot: bool, volts: float, plus_net: str):
         out, loops = [], {}
@@ -307,8 +334,9 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
                 hops = [(l_rail, plus_net, None, f"{ref}+ to {phase.inductor}"),
                         (l_sw, None, ind_w, f"through {phase.inductor}"),
                         (b_pt, phase.switch_net, None, f"switch node to {dev_ref}")]
-            segs, r = _cap_loop(board, ref, plus_net, gnd, hops, dev_layer)
+            segs, r = _cap_loop(board, ref, plus_net, gnd, hops, dev_layer, z_plane)
             if segs:
+                cap_loops[ref] = segs
                 br.path_l_h = max(peec.loop_inductance(segs, z_plane), 0.0)
                 br.path_r_ohm = r
             loops[ref] = br.path_l_h
@@ -358,4 +386,4 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
         notes.append("No hot-loop inductance: the switch node's edges do not ring")
     report = HotLoopReport(index, loop_l, pkg, hot_loops, c_sw, coss, coss_default, c_cu,
                            r_loop, f_ring, zeta, plane_name, notes, zeta_loop)
-    return PhaseLayout(report, in_caps, out_caps)
+    return PhaseLayout(report, in_caps, out_caps, cap_loops, z_plane, plane_id)

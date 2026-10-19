@@ -11,9 +11,11 @@ is one network. The driver is its output impedance to ground, the receiver its i
 resistance and capacitance in parallel with any termination; other ends are open.
 
 Weak coupling: the victim does not load the aggressor, so the switch node's voltage is a
-source. Its charge enters each segment as a current jω·Cm′·l·V_sw, half at each end. The
-nodal equations Y·V = I are solved at every harmonic; the receiver's and driver's
-voltages are the coupled noise.
+source. Its charge enters each segment as a current jω·Cm′·l·V_sw, half at each end. A
+current loop's flux induces an EMF E along a segment instead: half of it in series at
+each end, which is the Norton current ∓(y11 − y12)·E/2 into the segment's two nodes. The
+nodal equations Y·V = I are solved at every harmonic, once per mechanism with the same
+factorization; the receiver's and driver's voltages are the coupled noise.
 """
 
 from __future__ import annotations
@@ -87,9 +89,19 @@ class VictimNetwork:
               sources: np.ndarray, observe: Sequence[int]) -> np.ndarray:
         """Node voltages at ``observe`` for each frequency: ``sources`` (F, n) are the
         currents injected at every node."""
+        return self.solve_many(freqs, terminations, observe, {"": sources})[""]
+
+    def solve_many(self, freqs: np.ndarray, terminations: Sequence[Termination],
+                   observe: Sequence[int], currents: Optional[Dict[str, np.ndarray]] = None,
+                   emfs: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, np.ndarray]:
+        """Node voltages at ``observe`` (F, len(observe)) for each named set of sources:
+        ``currents`` (F, nodes) injected at the nodes, or ``emfs`` (F, segments) induced
+        along the segments from end a to end b."""
         from scipy.sparse import coo_matrix
         from scipy.sparse.linalg import splu
-        out = np.zeros((len(freqs), len(observe)), complex)
+        currents, emfs = currents or {}, emfs or {}
+        names = list(dict.fromkeys([*currents, *emfs]))
+        out = {n: np.zeros((len(freqs), len(observe)), complex) for n in names}
         term_nodes = np.array([self.nearest(t.node_xy) for t in terminations], dtype=int)
         a, b = self.ends[:, 0], self.ends[:, 1]
         idx = np.arange(self.n)
@@ -107,7 +119,14 @@ class VictimNetwork:
             yt = np.array([complex(t.admittance(np.array(w))) for t in terminations],
                           dtype=complex)
             data = np.concatenate([y11, y11, y12, y12, np.full(self.n, LEAK_S + 0j), yt])
-            y = coo_matrix((data, (rows, cols)), shape=(self.n, self.n)).tocsc()
-            v = splu(y).solve(sources[k].astype(complex))
-            out[k] = v[observe]
+            lu = splu(coo_matrix((data, (rows, cols)), shape=(self.n, self.n)).tocsc())
+            for name in names:
+                rhs = np.zeros(self.n, complex)
+                if name in currents:
+                    rhs += currents[name][k]
+                if name in emfs:
+                    i = 0.5 * (y11 - y12) * emfs[name][k]
+                    np.add.at(rhs, a, -i)
+                    np.add.at(rhs, b, i)
+                out[name][k] = lu.solve(rhs)[observe]
         return out

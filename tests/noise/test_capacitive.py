@@ -102,7 +102,7 @@ def test_coupling_falls_with_distance():
         snap = buck_board(victim_gap=gap)
         r = solve_noise(snap, _setup(snap, [Victim("SIG")]), "U1 buck")
         peaks.append(r.victims[0].peak_v)
-        assert r.victims[0].length_mm == pytest.approx(16.0)
+        assert r.victims[0].length_mm == pytest.approx(12.5)
     assert peaks[0] > 2 * peaks[1] > 4 * peaks[2] > 0
 
 
@@ -173,5 +173,5 @@ def test_ends_are_guessed_farthest_apart():
 def test_extraction_reuses_cuts_along_a_straight_run():
     snap = buck_board(victim_gap=2.5)
     ext = extract(snap, "SIG", ["SW"], 0.5, 3.0)
-    assert len(ext.segments) == 32
+    assert len(ext.segments) == 25
     assert ext.solves < 12 and ext.cached > 20

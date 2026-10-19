@@ -12,12 +12,14 @@ from synthetic import F, IN1, make_board, rect, square  # noqa: F401
 
 
 def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
-               victim_layer: int = F):
+               victim_layer: int = F, victim_by: str = "switch"):
     """``sw_area``: the side of the switch node's square pour at U1's SW pad, mm.
 
-    With ``victim_gap``, a 0.2 mm signal trace SIG runs from U3 (x = 8) to U4 (x = 24)
+    With ``victim_gap``, a 0.2 mm signal trace SIG runs from U3 (x = 11.5) to U4 (x = 24)
     beside the switch node's pour (x 11-15), ``victim_gap`` from its top edge, on
-    ``victim_layer``.
+    ``victim_layer``. With ``victim_by="hot_loop"`` it runs instead from U3 (x = 3) to U4
+    (x = 9.5) beside the hot loop's VIN track (y = 10, 1 mm wide), ``victim_gap`` below
+    its edge.
     """
     snap = make_board()
     snap.board_name = "buck.kicad_pcb"
@@ -49,14 +51,17 @@ def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
                          ("GND", (24, 15), (28, 15), 1.0)):
         tracks.append(Track(net, F, w, a, b))
     if victim_gap is not None:
-        y = 12.0 + sw_area / 2 + victim_gap + 0.1
-        for ref, x in (("U3", 8.0), ("U4", 24.0)):
+        if victim_by == "hot_loop":
+            y, x0, x1 = 10.0 - 0.5 - victim_gap - 0.1, 3.0, 9.5
+        else:
+            y, x0, x1 = 12.0 + sw_area / 2 + victim_gap + 0.1, 11.5, 24.0
+        for ref, x in (("U3", x0), ("U4", x1)):
             pid = f"{ref}.1"
             pads.append(Pad(pid, "SIG", ref, "1", (x, y), "smd",
                             shapes={victim_layer: [Poly(square(x, y, 0.3))]}))
             fps.append(Footprint(f"f{ref}", ref, "IC", (x, y),
                                  "top" if victim_layer == F else "bottom", [pid]))
-        tracks.append(Track("SIG", victim_layer, 0.2, (8.0, y), (24.0, y)))
+        tracks.append(Track("SIG", victim_layer, 0.2, (x0, y), (x1, y)))
     snap.pads, snap.footprints, snap.vias, snap.tracks = pads, fps, vias, tracks
     snap.zones = [Zone("zgnd", "GND", "", 0, filled={IN1: [Poly(rect(0, 0, 32, 20))]}),
                   Zone("zsw", "SW", "", 0,

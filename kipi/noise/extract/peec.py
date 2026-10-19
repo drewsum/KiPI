@@ -78,6 +78,59 @@ def mutual(si: Segment, sj: Segment) -> float:
     return MU0_4PI_H_PER_MM * dot * 0.5 * li * float(_GL_W @ vals)
 
 
+def mutual_matrix(sources: Sequence[Segment], targets: Sequence[Segment]) -> np.ndarray:
+    """Partial mutual inductances M[i, j] of every source segment with every target
+    segment, henries: :func:`mutual` vectorized over the targets."""
+    out = np.zeros((len(sources), len(targets)))
+    if not len(sources) or not len(targets):
+        return out
+    a = np.array([t.a for t in targets])
+    b = np.array([t.b for t in targets])
+    d = b - a
+    lt = np.linalg.norm(d, axis=1)
+    ok = lt > 0
+    ut = np.zeros_like(d)
+    ut[ok] = d[ok] / lt[ok, None]
+    rt = np.array([t.radius for t in targets])
+    for i, s in enumerate(sources):
+        ls = s.length
+        if ls <= 0:
+            continue
+        us = (s.b - s.a) / ls
+        dots = ut @ us
+        pts = s.a + np.outer(0.5 * (_GL_X + 1.0) * ls, us)         # (G, 3)
+        rel = pts[None, :, :] - a[:, None, :]                      # (T, G, 3)
+        along = np.einsum("tgk,tk->tg", rel, ut)
+        r0 = 0.5 * (s.radius + rt)[:, None]
+        rho = np.sqrt(np.maximum(np.einsum("tgk,tgk->tg", rel, rel) - along ** 2, 0.0)
+                      + r0 ** 2)
+        vals = np.arcsinh((lt[:, None] - along) / rho) + np.arcsinh(along / rho)
+        out[i] = MU0_4PI_H_PER_MM * dots * 0.5 * ls * (vals @ _GL_W)
+    out[:, ~ok] = 0.0
+    return out
+
+
+def plane_shielding(f: np.ndarray, thickness_mm: float,
+                    rho_ohm_mm: float = 1.724e-5) -> np.ndarray:
+    """The share of a magnetic field a solid copper plane lets through at ``f`` once it
+    mirrors it fully: 1/cosh((1+j)·t/δ), t its thickness and δ the skin depth."""
+    delta = np.sqrt(2.0 * rho_ohm_mm / (2 * np.pi * np.asarray(f) * 4e-10 * np.pi))
+    return 1.0 / np.cosh((1 + 1j) * thickness_mm / delta)
+
+
+def plane_response(f: np.ndarray, thickness_mm: float, size_mm: float,
+                   rho_ohm_mm: float = 1.724e-5):
+    """How a copper plane answers the field of a loop ``size_mm`` across near it:
+    (Γ, T), the share it mirrors (the image current's strength) and the share it lets
+    through. A thin sheet's eddy currents build up with α = ω·μ0·(t/ρ)·ℓ/2: it is
+    transparent while α ≪ 1 and a mirror once α ≫ 1, Γ = jα/(1 + jα); what it lets through,
+    1 − Γ, is further cut by the skin effect in thick copper."""
+    w = 2 * np.pi * np.asarray(f, float)
+    alpha = w * MU0_4PI_H_PER_MM * 4 * np.pi * (thickness_mm / rho_ohm_mm) * size_mm / 2
+    gamma = 1j * alpha / (1 + 1j * alpha)
+    return gamma, (1 - gamma) * plane_shielding(f, thickness_mm, rho_ohm_mm)
+
+
 def mirror(seg: Segment, z_plane: float) -> Segment:
     """``seg`` reflected in the plane z = z_plane (endpoints only; see loop_inductance)."""
     a, b = seg.a.copy(), seg.b.copy()

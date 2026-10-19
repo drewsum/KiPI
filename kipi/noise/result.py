@@ -9,7 +9,7 @@ from kipi.noise.checks import OperatingPoint
 from kipi.noise.parasitics import HotLoopReport
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
-MECHANISMS = ("capacitive",)
+MECHANISMS = ("capacitive", "inductive")
 TOTAL = "total"
 
 
@@ -26,6 +26,7 @@ class VictimResult:
     peak_v: float = 0.0                 # the receiver's largest |v| over a period
     peak_by: Dict[str, float] = field(default_factory=dict)          # per mechanism
     cm_f: Dict[str, float] = field(default_factory=dict)             # switch net -> Cm
+    m_h: Dict[str, float] = field(default_factory=dict)              # loop -> M (at fsw)
     length_mm: float = 0.0
     coupled_mm: float = 0.0             # of it, the length beside a switch node
     z0_ohm: float = 0.0                 # length-weighted
@@ -78,8 +79,11 @@ class NoiseResult:
                 f"{h.c_copper_f * 1e12:.3g} pF), R {h.r_loop_ohm * 1e3:.3g} mΩ; {ring}")
         for v in self.victims:
             cm = sum(v.cm_f.values())
+            m = sum(abs(x) for x in v.m_h.values())
+            by = ", ".join(f"{k} {p * 1e3:.3g}" for k, p in v.peak_by.items())
             lines.append(f"Victim {v.name}: {v.peak_v * 1e3:.4g} mV peak at {v.receiver} "
                          f"({v.ratio * 100:.3g} % of its {v.margin_v * 1e3:.4g} mV margin, "
-                         f"{'PASS' if v.passed else 'FAIL'}); {cm * 1e15:.4g} fF to the "
-                         f"switch node over {v.coupled_mm:.3g} of {v.length_mm:.3g} mm")
+                         f"{'PASS' if v.passed else 'FAIL'}; {by} mV); {cm * 1e15:.4g} fF "
+                         f"to the switch node over {v.coupled_mm:.3g} of {v.length_mm:.3g} "
+                         f"mm, {m * 1e12:.4g} pH to the capacitor loops")
         return lines

@@ -159,6 +159,7 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
         <li><a href="#noise-waveforms">The aggressor's waveforms</a></li>
         <li><a href="#noise-hotloop">Hot loop and ringing</a></li>
         <li><a href="#noise-capacitive">Capacitive coupling</a></li>
+        <li><a href="#noise-inductive">Inductive coupling</a></li>
         <li><a href="#noise-victim">The victim's line</a></li>
       </ol></li>
     <li><a href="#solvers">Linear solvers and PARDISO</a></li>
@@ -562,12 +563,36 @@ L′ = μ₀ε₀/C<sub>0</sub>′. Cuts that see the same copper are solved onc
 forms the cut gives microstrip and stripline impedance within 2 % (Hammerstad–Jensen,
 Wheeler) and two wires' mutual capacitance within 1 %.</p>
 
+<h3 id="noise-inductive">Inductive coupling</h3>
+<p>Each input and output capacitor closes a current loop: in a buck the input capacitors'
+loops through the switching device carry the pulsed input current, with edges as fast as
+the switch's, and the output capacitors' loops through the inductor carry its ripple. Each
+loop carries its capacitor's share of the current. A ground return with no ground copper
+under it on the loop's layer is taken through the plane, under the loop, as the return
+current flows at high frequency.</p>
+<p>A victim segment and its return current, in the plane under it, link the loops'
+flux. The partial mutual inductance from each loop segment to each victim segment is
+Neumann's integral, as for the hot loop. The plane answers the loops' field with eddy
+currents, an image of the loop: a thin copper sheet is transparent to a loop ℓ across at
+low frequency and a mirror at high, reflecting Γ = jα/(1 + jα) of it with
+α = ω·μ₀·(t/ρ)·ℓ/2 (about 0.3 at 10 MHz for a 4 mm loop over 35 µm of copper). So a
+victim on the loops' side picks up −jω·I·(M − Γ·M<sub>image</sub>) along each segment, and
+one on the far side of the plane (1 − Γ)/cosh((1+j)·t/δ) of what it would link there:
+very little once the plane mirrors the field and the skin effect stops what is left. The
+EMF is a series source in the victim's line: an open receiver sees nearly all of it, as
+V = E·Z<sub>R</sub>/(Z<sub>D</sub> + Z<sub>R</sub>).</p>
+<p>Checked against closed forms: two lines over a plane (μ₀/4π·ln(1 + 4h²/s²) per length)
+within 5 %, far loops as dipoles (−μ₀A₁A₂/4πd³) within 5 %, and a strip's inductance over
+a plane within 10 % of μ₀ε₀/C₀′ from the field solve (PEEC spreads the current across
+the strip, the field solve puts it on the surface).</p>
+
 <h3 id="noise-victim">The victim's line</h3>
 <p>Each segment is a lossy transmission line, Z<sub>0</sub> = √((R′ + jωL′)/(G′ + jωC′))
 and γ = √((R′ + jωL′)(G′ + jωC′)), joined where their ends meet into the victim's whole
 net. The driver is its output impedance to ground; the receiver its input resistance and
 capacitance, with any termination. The switch node's charge enters each segment as a
-current jω·C<sub>m</sub>′·l·V<sub>sw</sub>, and the network is solved at every harmonic.
+current jω·C<sub>m</sub>′·l·V<sub>sw</sub>, a loop's flux as an EMF in series with each
+segment, and the network is solved at every harmonic, once for each mechanism.
 For a short line this is the lumped weak-coupling result,
 V = jω·C<sub>m</sub>·(Z<sub>D</sub> ∥ Z<sub>R</sub>)·V<sub>sw</sub> (Paul): a strong driver
 holds the line down, and an open-drain line released high, held only by its pull-up,
@@ -654,9 +679,10 @@ way. Because PARDISO utilizes all cores, the machine running the simulation will
     to signal nets are not modeled.</li>
   <li><b>Coupled Noise</b>: the converter is ideal switches with set edges, not a
     transistor-level model, and its hot loop is drawn straight between pads. Coupling is
-    quasi-static (no radiation; long lines are transmission lines, but each cut is 2D),
-    and so far only capacitive: the inductive and shared-ground paths come in a later
-    version.</li>
+    quasi-static (no radiation; long lines are transmission lines, but each cut is 2D).
+    Capacitive and inductive paths are modeled; the shared-ground path comes in a later
+    version. The capacitor loops' current is their capacitor's; the inductor's own field
+    (a shielded inductor's leakage) is not modeled.</li>
 </ul>
 <p>Like any simulation, the results are only as good as the setup. Check that the load
 currents are worst case, the capacitor values effective, and the stackup right. The tool is incredibly powerful with thoughtful and complete inputs.</p>
