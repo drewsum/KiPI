@@ -122,7 +122,7 @@ def is_panel(job: Job, step: str) -> bool:
 
 def panel_placements(job: Job) -> Dict[str, int]:
     """How many times the job's panels place each step: its stephdr's STEP-REPEAT
-    blocks, one ``NAME=`` each (SMPC5's panel: PCB1 three times, PCB2 once)."""
+    blocks, one ``NAME=`` each (e.g. a panel placing pcb1 three times and pcb2 once)."""
     counts: Dict[str, int] = {}
     for s in job.list("steps"):
         hdr = job.read(f"steps/{s}/stephdr") or ""

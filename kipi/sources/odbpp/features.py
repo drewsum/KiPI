@@ -338,7 +338,7 @@ def geometry(f: Feature, units: Units, max_error: float = DEFAULT_MAX_ERROR_MM,
     if f.kind == "S":
         # Each island and the holes that follow it. The holes are cut out together, in one
         # difference: one at a time, each cut reworks the whole plane again, which made a
-        # plane with thousands of antipads take minutes (Kria carrier: 188 s of 208 s).
+        # plane with thousands of antipads take minutes (an 18-layer job: 188 s of a 208 s read).
         islands = []
         for is_hole, pts in f.contours:
             if not is_hole:
