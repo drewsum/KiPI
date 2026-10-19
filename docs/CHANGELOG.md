@@ -26,6 +26,9 @@ milestones rather than versions that were ever set.
   link joins to one, and the board model must be on.
 
 ### Fixed
+- **The Coupled Noise PDF report's plots fit the page.** Qt's PDF layout ignores the
+  report's max-width, so each waveform plot kept its own width, wider than the page, and
+  its right side was cut off. In a PDF the plots are now sized to the page's width.
 - **A soft edge the inductor current cannot carry within the dead time is hard.** At
   light load, with the valley current just below zero, the turn-on was taken as zero-
   voltage switching however small the current: 0.08 A took a buck's rising edge 30 ns

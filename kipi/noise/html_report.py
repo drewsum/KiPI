@@ -58,7 +58,14 @@ def _time_png(curves, wf, title: str, unit: str, margin: Optional[float] = None)
     return _png(fig)
 
 
-def _img(src: str) -> str:
+PDF_IMAGE_PX = 680             # within an A4 or Letter page's margins (96 dpi pixels)
+
+
+def _img(pdf: bool, src: str) -> str:
+    # Qt's rich text (the PDF) takes no max-width: the image keeps its own size, wider
+    # than the page, and is cut off, so it is given the page's width.
+    if pdf:
+        return f"<p><img src='{src}' width='{PDF_IMAGE_PX}'></p>"
     return f"<p><img src='{src}' style='max-width:100%'></p>"
 
 
@@ -119,23 +126,23 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     if progress is not None:
         progress.info("Report: waveforms")
     parts.append("<h2 id='waveforms'>Waveforms</h2>")
-    parts.append(_img(_time_png([(p.switch_node.name, p.switch_node) for p in wf.phases], wf,
-                                "Switch node", "V")))
-    parts.append(_img(_time_png([(p.inductor.name, p.inductor) for p in wf.phases], wf,
-                                "Inductor currents", "A")))
+
+    def plot(curves, title, unit, margin=None):
+        parts.append(_img(pdf, _time_png(curves, wf, title, unit, margin)))
+
+    plot([(p.switch_node.name, p.switch_node) for p in wf.phases], "Switch node", "V")
+    plot([(p.inductor.name, p.inductor) for p in wf.phases], "Inductor currents", "A")
     for caps, title in ((wf.input_caps, "Input capacitor currents"),
                         (wf.output_caps, "Output capacitor currents")):
         if caps:
             top = sorted(caps.items(), key=lambda kv: -kv[1].ac_rms())[:6]
-            parts.append(_img(_time_png([(f"{r} ({s.ac_rms():.3g} A rms)", s) for r, s in top],
-                                        wf, title, "A")))
+            plot([(f"{r} ({s.ac_rms():.3g} A rms)", s) for r, s in top], title, "A")
     ripple = [(s.name, s) for s in (wf.input_ripple, wf.output_ripple) if s is not None]
     if ripple:
-        parts.append(_img(_time_png(ripple, wf, "Rail ripple", "V")))
+        plot(ripple, "Rail ripple", "V")
     probes = getattr(wf, "probe_ripple", {})
     if probes:
-        parts.append(_img(_time_png([(f"{n} (AC probe)", s) for n, s in probes.items()], wf,
-                                    "Ripple at AC probes", "V")))
+        plot([(f"{n} (AC probe)", s) for n, s in probes.items()], "Ripple at AC probes", "V")
         n = wf.samples_per_period()
         parts.append(_table(["AC probe", "Ripple (mV p-p)", "Ripple (mV rms)"],
                             [[_e(name), f"{np.ptp(s.samples(n)) * 1e3:.4g}",
@@ -149,8 +156,8 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
             [(k, sp) for k, sp in v.receiver_v.items() if k != "total"]
         margin = v.margin_v if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
         parts.append(f"<h3>{_e(v.name)}</h3>")
-        parts.append(_img(_time_png(curves, wf, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, "
-                                    f"{v.ratio * 100:.3g} % of its margin", "V", margin)))
+        plot(curves, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of its "
+                     "margin", "V", margin)
     if len(result.victims) > len(worst):
         parts.append(f"<p class='note'>The {len(worst)} victims nearest their margin are "
                      "plotted.</p>")
