@@ -202,6 +202,10 @@ milestones rather than versions that were ever set.
   Importing a STEP file of the whole board is not done yet.
 
 ### Changed
+- **Mask and Silkscreen start off over results** (#144). Like 3D Models, the copper and
+  result views each remember their own Mask and Silkscreen settings, so ticking them to
+  look at the board no longer hides the result's colors when a solve is shown. Over
+  results they start off; the checkboxes follow the view shown.
 - **Each copper layer has its own temperature** (#34). The electro-thermal solve took the
   board as one temperature through its thickness; now every copper layer is solved as its
   own sheet. Heat goes onto the layer it is made on (copper loss on its own layer, a via's

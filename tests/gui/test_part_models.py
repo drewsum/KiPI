@@ -38,7 +38,8 @@ def _view(zscale=1.0):
            _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
-           _coating_actors=[], _show_mask=False, _show_silk=False)
+           _coating_actors=[], _show_mask=False, _show_silk=False,
+           _show_mask_result=False, _show_silk_result=False)
     for name in ("set_models", "_remove_model_actors", "_place_models", "_apply_visibility",
                  "set_zscale"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
@@ -119,6 +120,41 @@ def test_the_checkbox_follows_the_view(app, no_3d, monkeypatch):
     w.viewer.models_shown = True                          # back to the copper view's
     w.viewer.result_shown.emit(False)
     assert w.chk_models.isChecked()
+    w.close()
+
+
+def test_mask_and_silk_are_off_over_results_until_asked_for():
+    """#144: the copper view's Mask and Silkscreen settings do not carry over results."""
+    v = _view()
+    v.set_feature_visible = MethodType(Viewer3D.set_feature_visible, v)
+    v.feature_shown = MethodType(Viewer3D.feature_shown, v)
+    mask, silk = pv.Plotter(off_screen=True).add_mesh(_part()), \
+        pv.Plotter(off_screen=True).add_mesh(_part())
+    v._coating_actors = [("mask", mask), ("silk", silk)]
+    v.set_feature_visible("mask", True)
+    v.set_feature_visible("silk", True)
+    assert mask.GetVisibility() and silk.GetVisibility()
+    v._result = object()                                  # a result is shown
+    v._apply_visibility()
+    assert not mask.GetVisibility() and not silk.GetVisibility()
+    assert not v.feature_shown("mask") and not v.feature_shown("silk")
+    v.set_feature_visible("silk", True)
+    assert silk.GetVisibility() and not mask.GetVisibility()
+    v._result = None                                      # the copper view's are kept
+    v._apply_visibility()
+    assert mask.GetVisibility() and silk.GetVisibility() and v.feature_shown("mask")
+
+
+def test_mask_and_silk_checkboxes_follow_the_view(app, no_3d, monkeypatch):
+    w, *_ = _window(no_3d, monkeypatch)
+    w.chk_mask.setChecked(True)
+    w.chk_silk.setChecked(True)
+    w.viewer.feature_shown = lambda f: False              # the result view's settings
+    w.viewer.result_shown.emit(True)
+    assert not w.chk_mask.isChecked() and not w.chk_silk.isChecked()
+    w.viewer.feature_shown = lambda f: True               # back to the copper view's
+    w.viewer.result_shown.emit(False)
+    assert w.chk_mask.isChecked() and w.chk_silk.isChecked()
     w.close()
 
 

@@ -254,6 +254,10 @@ def _pi_labels_actor(pts: np.ndarray, names: List[str], color) -> vtkActor2D:
     return actor
 
 
+# Features the copper and result views each keep their own setting of: over results they
+# start off, as they hide the result's colors.
+PER_VIEW = ("models", "mask", "silk")
+
 class Viewer3D(QWidget):
     """3D view of the board body plus individually added nets, with visibility controls.
 
@@ -287,6 +291,8 @@ class Viewer3D(QWidget):
         self._show_board = True
         self._show_mask = False             # solder masks and silkscreens (#82): off until
         self._show_silk = False             # asked for, as they hide the copper
+        self._show_mask_result = False      # over results they keep their own settings,
+        self._show_silk_result = False      # off until asked for (#144)
         self._coating_actors: List[Tuple[str, object]] = []      # (kind, actor)
         self._show_models = True            # in the copper (geometry) view
         self._show_models_result = False    # over results: off until asked for
@@ -646,10 +652,16 @@ class Viewer3D(QWidget):
         self._apply_visibility()
 
     def set_feature_visible(self, feature: str, visible: bool):
-        if feature == "models" and self._result is not None:
-            feature = "models_result"       # the result view keeps its own setting
+        if feature in PER_VIEW and self._result is not None:
+            feature += "_result"            # the result view keeps its own setting
         setattr(self, f"_show_{feature}", visible)
         self._apply_visibility()
+
+    def feature_shown(self, feature: str) -> bool:
+        """Whether ``feature`` is shown in the current view (copper or results)."""
+        if feature in PER_VIEW and self._result is not None:
+            feature += "_result"
+        return getattr(self, f"_show_{feature}")
 
     @property
     def models_shown(self) -> bool:
@@ -688,8 +700,10 @@ class Viewer3D(QWidget):
                                                  or self._result_field == "via_current")
         for a in self._board_actors:
             a.SetVisibility(self._show_board)
+        mask = self._show_mask_result if showing_result else self._show_mask
+        silk = self._show_silk_result if showing_result else self._show_silk
         for kind, a in self._coating_actors:
-            a.SetVisibility(self._show_mask if kind == "mask" else self._show_silk)
+            a.SetVisibility(mask if kind == "mask" else silk)
         models = self._show_models_result if showing_result else self._show_models
         for a in self._model_actors.values():
             a.SetVisibility(models)

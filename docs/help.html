@@ -609,7 +609,9 @@ Hiding layers does not change the result colors; set the
     color and open over the pads, and what the silkscreens print: the board's drawings
     and text on F.SilkS and B.SilkS, off the pads. Text read from a board file is drawn in
     a font like KiCad's, in the same place; the running KiCad and ODB++ give KiCad's own.
-    Both start off, since they hide the copper.</td></tr>
+    Both start off, since they hide the copper. The copper and result views each
+    remember these settings, like 3D Models: over results they start off, whatever the
+    copper view shows.</td></tr>
   <tr><td id="pi-models"><b>PI Models</b></td><td class="wrap">Marks the parts the current
     analysis uses on the copper: a dot on each of their pads, larger on the rail's pins and
     smaller on ground, with the part's name above. In DC mode those are the setup's

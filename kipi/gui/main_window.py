@@ -477,9 +477,12 @@ class MainWindow(QMainWindow):
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate",
                      "mask": "Show the solder masks, open over the pads. They hide the "
-                             "copper, so they start off.",
+                             "copper, so they start off. The copper and result views "
+                             "each remember this; over results it starts off.",
                      "silk": "Show what the silkscreens print, as read from the board: "
-                             "its drawings and text, off the pads. Off to start with.",
+                             "its drawings and text, off the pads. Off to start with. The "
+                             "copper and result views each remember this; over results "
+                             "it starts off.",
                      "pi": "Mark the parts of the current analysis on the nets shown: a "
                            "dot on each of their pads, larger on the rail and smaller on "
                            "ground, and the part's name. In DC mode its VRMs (green), "
@@ -507,6 +510,8 @@ class MainWindow(QMainWindow):
             feat_rows[k].addWidget(cb)
             if name == "pi":
                 self.chk_pi = cb
+            elif name in ("mask", "silk"):
+                setattr(self, f"chk_{name}", cb)
         self.chk_models = cb
         self.chk_models.setVisible(self._tool.offers_part_models)
         # Only on request: a guessed model may be the wrong part (#130).
@@ -536,9 +541,9 @@ class MainWindow(QMainWindow):
         self.chk_snap.setEnabled(self.chk_pi.isChecked())   # it snaps to the markers
         self.chk_pi.toggled.connect(self.chk_snap.setEnabled)
         self.chk_models.toggled.connect(lambda _: self._model_timer.start())
-        # The copper and result views each keep their own Models setting.
-        self.viewer.result_shown.connect(
-            lambda _: self.chk_models.setChecked(self.viewer.models_shown))
+        # The copper and result views each keep their own Models, Mask and Silkscreen
+        # settings (#144).
+        self.viewer.result_shown.connect(self._sync_view_features)
         fv.addRow("Color", self.cmb_color)
         fv.addRow("Z scale", self.spin_z)
         fv.addRow("Opacity", opac)
@@ -1188,6 +1193,13 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{name} has no pads on the nets shown", 5000)
             return
         self.viewer.focus_on(np.vstack([p for m in marks for p in (m.power, m.ground)]))
+
+    def _sync_view_features(self, _=None):
+        """Tick the features each view keeps its own setting of as the view now shown has
+        them."""
+        self.chk_models.setChecked(self.viewer.models_shown)
+        self.chk_mask.setChecked(self.viewer.feature_shown("mask"))
+        self.chk_silk.setChecked(self.viewer.feature_shown("silk"))
 
     # ============================================================ part models
     def _wanted_models(self) -> List[str]:
