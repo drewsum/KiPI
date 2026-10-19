@@ -80,18 +80,49 @@ def _png(fig) -> str:
 # ---------------------------------------------------------------------------
 
 def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
-               clip_pct: Optional[float] = None, outline=None) -> str:
-    """Top-down tripcolor of one layer (KiCad y down, drawn the same way as in KiCad)."""
+               clip_pct: Optional[float] = None, outline=None,
+               v_ref: Optional[float] = None) -> str:
+    """Top-down tripcolor of one layer (KiCad y down, drawn the same way as in KiCad).
+
+    A voltage map passes its set point ``v_ref``. When its spread is so narrow that the
+    colorbar would label ticks against an offset ("1e-5+3.2999", #145), it is redrawn as
+    the drop from ``v_ref`` in V, mV or µV, the absolute range moving into the title.
+    Maps whose colorbar reads plainly are left as they are."""
+    vals = np.asarray(values, dtype=float)
+    finite = vals[np.isfinite(vals)]
+    if len(finite) == 0:
+        return ""
+    fig, cb = _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline)
+    if v_ref is not None and _has_offset(fig, cb):
+        lo, hi = float(finite.min()), float(finite.max())
+        rail = v_ref != 0
+        shift = (v_ref - vals) if rail else vals
+        big = float(np.abs(shift[np.isfinite(shift)]).max())
+        scale, prefix = (1.0, "") if big >= 1 else (1e3, "m") if big >= 1e-3 else (1e6, "µ")
+        shift = shift * scale
+        label = (f"Drop from {v_ref:g} V ({prefix}V)" if rail
+                 else f"Offset from 0 V ({prefix}V)")
+        fig, cb = _draw_map(lr, shift, shift[np.isfinite(shift)], cell,
+                            f"{title}, {lo:.6f} to {hi:.6f} V", cmap, label, clip_pct, outline)
+        cb.formatter.set_useOffset(False)
+    return _png(fig)
+
+
+def _has_offset(fig, cb) -> bool:
+    """Whether the colorbar's ticks are labelled against an offset or a multiplier."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    FigureCanvasAgg(fig).draw()
+    fmt = cb.ax.yaxis.get_major_formatter()
+    return bool(getattr(fmt, "get_offset", lambda: "")())
+
+
+def _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline):
     from matplotlib.figure import Figure
     from matplotlib.tri import Triangulation
     pts, tris = lr.pts2, lr.tris
     fig = Figure(figsize=(5.2, 4.2))
     ax = fig.add_subplot(111)
     tri = Triangulation(pts[:, 0], pts[:, 1], tris)
-    vals = np.asarray(values, dtype=float)
-    finite = vals[np.isfinite(vals)]
-    if len(finite) == 0:
-        return ""
     vmin, vmax = float(finite.min()), float(finite.max())
     if clip_pct is not None:
         vmax = float(np.percentile(finite, clip_pct))
@@ -116,7 +147,7 @@ def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
     cb = fig.colorbar(m, ax=ax, shrink=0.85)
     cb.set_label(unit, fontsize=8)
     cb.ax.tick_params(labelsize=7)
-    return _png(fig)
+    return fig, cb
 
 
 def _thermal_maps(th, snap: BoardSnapshot, outline) -> List[str]:
@@ -686,7 +717,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         for lid, lr in scene.layers.items():
             lname = names.get(lid, str(lid))
             maps.append(_layer_map(lr, lr.node_v, False, f"{lname}: voltage", "turbo", "V",
-                                   outline=outline))
+                                   outline=outline, v_ref=scene.v_ref))
             maps.append(_layer_map(lr, lr.tri_j, True, f"{lname}: current density", "inferno",
                                    "A/mm²", clip_pct=99.5, outline=outline))
         parts.append(maps_html(maps, pdf))

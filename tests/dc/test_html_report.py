@@ -71,3 +71,25 @@ def test_report_mesh_keeps_copper(tmp_path):
     t = out.faces.reshape(-1, 4)[:, 1:]
     area = 0.5 * np.abs(np.cross(p[t[:, 1]] - p[t[:, 0]], p[t[:, 2]] - p[t[:, 0]])[:, 2]).sum()
     assert area == pytest.approx(poly.area, rel=1e-6)           # nothing across holes
+
+
+@pytest.mark.parametrize("drop, label", [(20e-6, "Drop from 3.3 V (µV)"), (0.15, "V")])
+def test_narrow_voltage_maps_show_the_drop(monkeypatch, drop, label):
+    """A rail that sags by µV would label its colorbar against an offset ("1e-5+3.2999"),
+    so it is drawn as the drop from the set point; a plainly labelled map is left (#145)."""
+    import numpy as np
+    from types import SimpleNamespace
+    from matplotlib.tri import Triangulation
+
+    from kipi.dc.report import html
+    from kipi.dc.report.html import _has_offset, _layer_map
+
+    monkeypatch.setattr(html, "_png", lambda fig: fig)
+    g = np.mgrid[0:20:21j, 0:10:11j].reshape(2, -1).T
+    lr = SimpleNamespace(pts2=g, tris=Triangulation(g[:, 0], g[:, 1]).triangles)
+    fig = _layer_map(lr, 3.3 - drop * g[:, 0] / 20, False, "F.Cu: voltage", "turbo", "V",
+                     v_ref=3.3)
+    ax, bar = fig.axes
+    assert bar.get_ylabel() == label
+    assert not _has_offset(fig, SimpleNamespace(ax=bar))
+    assert ("3.299980 to 3.300000 V" in ax.get_title()) == (label != "V")

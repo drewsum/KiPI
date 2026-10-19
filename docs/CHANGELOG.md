@@ -261,6 +261,14 @@ milestones rather than versions that were ever set.
   - Standalone: the launcher's first setup has PARDISO ticked; later setups keep what was
     chosen.
 
+### Fixed
+- **Report voltage maps of rails that barely sag** read plainly (#145). A low-current rail
+  whose copper spans only µV labelled its colorbar against an offset ("1e−5+3.2999"),
+  ticks 8 to 10 standing for 3.29998 to 3.30000 V. Such maps are now drawn as the drop from
+  the set point in V, mV or µV ("Drop from 3.3 V (µV)"; ground groups as the offset from
+  0 V), with the absolute range in the map's title. Maps whose colorbar already read
+  plainly are unchanged.
+
 ## 0.8.0: plugin and standalone modes
 
 First milestone of running KiPI on its own, outside KiCad (#45). The plugin works as before.
