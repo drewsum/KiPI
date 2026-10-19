@@ -6,6 +6,18 @@ milestones rather than versions that were ever set.
 
 ## 0.9.1 (in development)
 
+### Added
+- **Estimate a series link's ESL** (#159). Two buttons under the link's ESL:
+  - **From package** reads the size of the part on side A from its footprint's name
+    (`R_0603_1608Metric`, `RESC2012X65N`, `0805`). If the name gives no size, it uses
+    how far apart the part's two pads are. The ESL is 0.1 nH + 0.3 nH for each mm between
+    the terminals, a line through Vishay's measured 0402 and 0603 chip resistors
+    (0.4 and 0.6 nH). That gives 0.7 nH for an 0805, 1.1 nH for a 1206 and 2 nH for a
+    2512. A wide-terminal part (0612) counts its short side.
+  - **Ferrite bead…** works out a bead's inductance from its impedance at one frequency,
+    read off its datasheet's curve: L = √(|Z|² − DCR²) / 2πf. The dialog asks for a point
+    well below the peak, where the bead is still an inductor.
+
 ### Fixed
 - **The hot-loop capacitors carry the switch node's ringing** (#151). The ringing on the
   switch node is its capacitance trading charge with the hot loop's inductance, so the

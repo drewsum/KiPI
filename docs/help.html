@@ -1000,6 +1000,21 @@ on its other net, and when both sides are on the same resistor, the resistance i
 value field (<code>10m</code>, <code>4k7</code>, <code>0R1</code>, <code>5 mΩ</code>…).
 <b>ESL</b> is used by AC only. A new link starts on a part that bridges the first two ticked
 nets that are not grounds, if there is one.</p>
+<p><b>Estimate ESL</b> fills in the ESL for you:</p>
+<ul>
+  <li><b>From package</b> uses the size of the part on side A. It reads the size from the
+    footprint's name (<code>R_0603_1608Metric</code>, <code>RESC2012X65N</code>,
+    <code>0805</code>), or else from how far apart the part's two pads are. The estimate is
+    0.1 nH + 0.3 nH for each mm between the terminals. That line runs through Vishay's
+    measured 0402 and 0603 chip resistors (0.4 and 0.6 nH), and gives 0.7 nH for an 0805,
+    1.1 nH for a 1206 and 2 nH for a 2512. It suits a chip resistor, fuse or jumper. A
+    ferrite bead's ferrite makes its inductance far larger, so use its impedance instead.</li>
+  <li><b>Ferrite bead…</b> asks for the bead's impedance |Z| at one frequency, read off its
+    datasheet's curve, and works out L = √(|Z|² − DCR²) / 2πf. Choose a point well below
+    the curve's peak, where |Z| still climbs in a straight line. At and above the peak the
+    bead acts as a resistor, so a point there (such as the 100 MHz headline figure of many
+    beads) overstates the inductance.</li>
+</ul>
 <p>The nets a link joins are solved together as one group, so a group can only hold one
 VRM. A load pin with no copper path to its VRM is reported, not guessed at (see
 <a href="#ts-no-path">Loads not connected by copper</a>).</p>

@@ -23,7 +23,8 @@ from typing import Callable, Dict, List, Optional
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDoubleSpinBox, QFormLayout, QGroupBox,
+    QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDialog, QDialogButtonBox,
+    QDoubleSpinBox, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTabWidget,
     QTextBrowser, QToolButton, QVBoxLayout, QWidget,
@@ -31,7 +32,7 @@ from qtpy.QtWidgets import (
 
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import guess_voltage, sorted_nets, voltage_from_name
-from kipi.core.model.parts import is_capacitor_ref, resistor_ohms
+from kipi.core.model.parts import bead_esl_h, is_capacitor_ref, part_esl, resistor_ohms
 from kipi.dc.pi.autofill import (
     guess_ground_pins, guess_input_pins, guess_other_side, looks_like_ground,
     next_phase_refs, other_net, part_nets, setup_grounds,
@@ -1002,9 +1003,27 @@ class LinkEditor(_Editor):
         f.addRow("Side B pins", self.b)
         f.addRow("Resistance (DCR)", self.r)
         f.addRow("ESL", self.esl)
+        # Estimates of the ESL (#159): from the part's package, or a ferrite bead's
+        # impedance.
+        self.btn_esl_package = QPushButton("From package", self)
+        self.btn_esl_package.clicked.connect(self._esl_from_package)
+        self.btn_esl_bead = QPushButton("Ferrite bead…", self)
+        self.btn_esl_bead.clicked.connect(self._esl_from_bead)
+        est = QWidget(self)
+        row = QHBoxLayout(est)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.btn_esl_package)
+        row.addWidget(self.btn_esl_bead)
+        f.addRow("Estimate ESL", est)
+        self.lbl_esl = QLabel()                     # where the last estimate came from
+        self.lbl_esl.setWordWrap(True)
+        self.lbl_esl.setStyleSheet("color: #999;")
+        self.lbl_esl.setVisible(False)
+        f.addRow(self.lbl_esl)
         # Drawings under the tooltips (#116): the part as a DCR and an ESL in series.
         art = {self.a: ("series_link", "a"), self.b: ("series_link", "b"),
-               self.r: ("series_link", "r"), self.esl: ("series_link", "l")}
+               self.r: ("series_link", "r"), self.esl: ("series_link", "l"),
+               self.btn_esl_package: ("series_link", "l"), self.btn_esl_bead: ("bead_z", "l")}
         for w, text in (
                 (self.name, "A name for this part, used in the results tables"),
                 (self.a, "The part's pins on one net"),
@@ -1012,7 +1031,19 @@ class LinkEditor(_Editor):
                          "part with pins on just two nets (a resistor, ferrite, fuse...)."),
                 (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
                          "read from the part's value when both sides are on it."),
-                (self.esl, "Series inductance (ESL) of the part")):
+                (self.esl, "Series inductance (ESL) of the part"),
+                (self.btn_esl_package,
+                 "Estimate the ESL from the size of the part on side A: its footprint's "
+                 "name (R_0603_1608Metric), else how far apart its two pads are. About "
+                 "0.1 nH + 0.3 nH per mm between the terminals, a line through Vishay's "
+                 "measured 0402 and 0603 chip resistors (0.4 and 0.6 nH): 0805 0.7 nH, "
+                 "1206 1.1 nH, 2512 2 nH. For a chip resistor, fuse or jumper; a ferrite "
+                 "bead's ferrite makes it far more, so use its impedance."),
+                (self.btn_esl_bead,
+                 "Work out the ESL of a ferrite bead from its impedance at one frequency, "
+                 "read off its datasheet's curve. Below its peak a bead is an inductor, "
+                 "|Z| = √(DCR² + (2πf·L)²); at and above the peak it is a resistor, so a "
+                 "point well below the peak gives the inductance best.")):
             tip(f, w, text, art.get(w))
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
                       "load switch…). The nets it joins are simulated together.")
@@ -1020,12 +1051,44 @@ class LinkEditor(_Editor):
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
         self._watch(self.name, self.r, self.esl)
-        _gray((self.esl,), mode == "ac", "Used by the AC analysis only")
+        _gray((self.esl, self.btn_esl_package, self.btn_esl_bead), mode == "ac",
+              "Used by the AC analysis only")
         self._legend(unused=mode == "dc")
         self._mark({self.name: REQUIRED, self.a: REQUIRED, self.b: REQUIRED, self.r: REQUIRED,
                     self.esl: OPTIONAL if mode == "ac" else UNUSED})
 
+    def _esl_from_package(self):
+        k = self.obj
+        if k is None:
+            return
+        est = part_esl(self.panel.snapshot, k.side_a.ref)
+        if est is None:
+            QMessageBox.information(
+                self, "Estimate ESL",
+                f"The size of {k.side_a.ref or 'the part on side A'} cannot be told: its "
+                "footprint's name gives no chip size (such as 0603) and it has not two "
+                "pads. Enter the ESL from its datasheet.")
+            return
+        henries, how = est
+        self.esl.setValue(henries * 1e9)            # saved through valueChanged
+        self._estimated(f"ESL estimated from {k.side_a.ref}'s {how}: {henries * 1e9:.2g} nH")
+
+    def _esl_from_bead(self):
+        k = self.obj
+        if k is None:
+            return
+        dlg = BeadDialog(k.resistance, self)
+        if dlg.exec() == QDialog.Accepted and dlg.esl_h is not None:
+            self.esl.setValue(dlg.esl_h * 1e9)
+            self._estimated(f"ESL from the bead's {dlg.z.value():g} Ω at "
+                            f"{dlg.freq.value():g} MHz: {dlg.esl_h * 1e9:.3g} nH")
+
+    def _estimated(self, text: str):
+        self.lbl_esl.setText(text)
+        self.lbl_esl.setVisible(True)
+
     def _load(self, k: DcLink):
+        self.lbl_esl.setVisible(False)
         self.name.setText(k.name)
         self.a.set_value(k.side_a)
         self.b.set_value(k.side_b)
@@ -1060,6 +1123,50 @@ class LinkEditor(_Editor):
                 self.r.blockSignals(True)
                 self.r.setValue(ohms * 1e3)
                 self.r.blockSignals(False)
+
+
+class BeadDialog(QDialog):
+    """A ferrite bead's ESL from its impedance at one frequency (#159)."""
+
+    def __init__(self, dcr_ohm: float, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Ferrite bead ESL")
+        self.dcr = dcr_ohm
+        self.esl_h: Optional[float] = None
+        lay = QVBoxLayout(self)
+        hint = QLabel("Read the bead's impedance at one frequency off its datasheet's |Z| "
+                      "curve. Pick a point well below the curve's peak, where it still "
+                      "climbs in a straight line: there the bead is an inductor. At and "
+                      "above the peak its ferrite is lossy and the bead a resistor, so a "
+                      "point there (such as the 100 MHz headline value of many beads) "
+                      "overstates the inductance.")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        f = QFormLayout()
+        self.z = _spin(0.001, 1e5, 120, 3, " Ω", 10)
+        self.freq = _spin(0.001, 1e4, 10, 3, " MHz", 1)
+        self.lbl = QLabel()
+        f.addRow("Impedance |Z|", self.z)
+        f.addRow("At frequency", self.freq)
+        f.addRow("ESL", self.lbl)
+        lay.addLayout(f)
+        art = art_tip("The bead's |Z| on its inductive slope: L = √(|Z|² − DCR²) / 2πf, "
+                      f"with the link's DCR ({dcr_ohm * 1e3:.3g} mΩ).", "bead_z", "l")
+        for w in (self.z, self.freq):
+            w.setToolTip(art)
+            w.valueChanged.connect(self._update)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        lay.addWidget(self.buttons)
+        self._update()
+
+    def _update(self, *_):
+        self.esl_h = bead_esl_h(self.z.value(), self.freq.value() * 1e6, self.dcr)
+        ok = self.esl_h is not None
+        self.lbl.setText(f"{self.esl_h * 1e9:.4g} nH" if ok
+                         else "|Z| must be more than the DCR")
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(ok)
 
 
 class ItemList(QWidget):
