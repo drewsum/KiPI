@@ -4,6 +4,9 @@ Every waveform is periodic and piecewise linear over one switching period, so it
 series is exact in closed form (:func:`pwl_spectrum`); nothing is time-stepped. A phase's
 waveforms are shifted by n·T/N to interleave N phases, and the switch node's edges are
 passed through the hot loop's ringing (a second-order response at f_ring with damping ζ).
+The ringing is the switch node's capacitance trading charge with the hot loop's
+inductance, so its current, C_sw·d(v_sw − v_ideal)/dt, flows around the hot loop and is
+part of the pulsed current the hot-loop capacitors carry (#151).
 
 Spectra are two-sided Fourier coefficients c_k for k = 1..K (x(t) = dc + Σ 2·Re(c_k·e^{jω_k t})),
 so the amplitude of harmonic k is 2|c_k|. Capacitor currents carry no DC.
@@ -174,6 +177,7 @@ class PhaseParts:
     inductance_h: float
     f_ring: Optional[float] = None
     zeta: float = 1.0
+    c_sw_f: float = 0.0             # the switch node's capacitance, which carries the ringing
 
 
 def synthesize(topology: str, vin: float, vout: float, iout: float, iin: float, duty: float,
@@ -186,7 +190,9 @@ def synthesize(topology: str, vin: float, vout: float, iout: float, iin: float, 
     a boost's switch node is low during D·T), its inductor current a triangle around the
     phase's share of the current, and its pulsed current the inductor current while the
     hot-loop switch conducts (buck: the high side during D·T; boost: the rectifier for the
-    rest of the period), with the switch node's edge times.
+    rest of the period), with the switch node's edge times, plus the ringing's current.
+    By KCL at the switch node, with the inductor current steady over an edge, a buck's
+    high side carries C_sw·dv/dt more and a boost's rectifier C_sw·dv/dt less.
     """
     T = 1.0 / fsw
     n = len(phases)
@@ -228,7 +234,9 @@ def synthesize(topology: str, vin: float, vout: float, iout: float, iin: float, 
         v_mean, v_c = pwl_spectrum(_wrap(vt, T), _order(vt, vy, T), T, k)
         l_mean, l_c = pwl_spectrum(il_t, il_y, T, k)
         p_mean, p_c = pwl_spectrum(_wrap(pt, T), _order(pt, py, T), T, k)
-        v_c = v_c * ringing_response(f, ph.f_ring, ph.zeta)
+        ring = v_c * (ringing_response(f, ph.f_ring, ph.zeta) - 1.0)
+        v_c = v_c + ring
+        p_c = p_c + (1.0 if topology == "buck" else -1.0) * 1j * omega * ph.c_sw_f * ring
         sw = Spectrum(f"SW{i + 1}", "V", v_mean, v_c * shift)
         ind = Spectrum(f"I(L{i + 1})", "A", l_mean, l_c * shift)
         pul = Spectrum(f"Pulsed {i + 1}", "A", p_mean, p_c * shift)

@@ -7,6 +7,13 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Fixed
+- **The hot-loop capacitors carry the switch node's ringing** (#151). The ringing on the
+  switch node is its capacitance trading charge with the hot loop's inductance, so the
+  same ringing current, C_sw·dv/dt (about V/Z0 at its peak), now flows through a buck's
+  input capacitors and a boost's output capacitors, and into the inductive coupling and
+  the board model. Before, the switch node rang but the capacitor currents feeding the
+  hot loop did not. On the coupled_noise example the input capacitor rings at 179 MHz,
+  about ±3 A on each edge.
 - **A KiCad file's vias now match what the KiCad API reads** (#139, from Tomachie). A via
   with no `(filling)` in a KiCad 9 file is unfilled, as KiCad 9 reports it; only a KiCad 10
   file leaves the fill to the design rules. A via set to remove unused layers keeps its

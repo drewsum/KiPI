@@ -132,6 +132,38 @@ def test_ringing_overshoots_the_edge():
     assert x.min() < -1.0
 
 
+@pytest.mark.parametrize("topology, rail", [("buck", "input_caps"), ("boost", "output_caps")])
+def test_the_hot_loop_capacitors_carry_the_ringing(topology, rail):
+    """The switch node's ringing is its capacitance trading charge with the hot loop's
+    inductance (#151): the hot-loop capacitors carry C_sw·dv/dt, about V/Z0 at its peak,
+    a buck's high side drawing more as the node rises and a boost's rectifier less."""
+    c_sw, f_ring, fsw = 300e-12, 150e6, 500e3
+    vin, vout = (12.0, 1.2) if topology == "buck" else (5.0, 12.0)
+    duty = vout / vin if topology == "buck" else 1 - vin / vout
+
+    def run(c, f=f_ring):
+        return synthesize(topology, vin, vout, 2.0, 2.0 * vout / vin, duty, fsw, 1e-9, 1e-9,
+                          [PhaseParts(2.2e-6, f, 0.05, c)], 4000, [_ideal()],
+                          [_ideal()], 4000 * fsw)
+
+    wf, bare, ideal = run(c_sw), run(0.0), run(c_sw, None)
+    n = wf.samples_per_period()
+    ring = getattr(wf, rail)["C"].samples(n) - getattr(bare, rail)["C"].samples(n)
+    z0 = 1 / (2 * math.pi * f_ring * c_sw)
+    swing = vin if topology == "buck" else vout
+    assert 0.7 * swing / z0 < np.abs(ring).max() < 1.25 * swing / z0
+    # The ringing's charge comes back each cycle: no net current.
+    assert abs(ring.mean()) < 1e-6
+    sw = wf.phases[0].switch_node.samples(n) - bare.phases[0].switch_node.samples(n)
+    assert np.allclose(sw, 0.0)                     # the node's waveform is unchanged
+    assert np.allclose(getattr(ideal, rail)["C"].samples(n), getattr(bare, rail)["C"].samples(n))
+    dev = wf.phases[0].switch_node.samples(n) - ideal.phases[0].switch_node.samples(n)
+    i_node = c_sw * np.gradient(dev, 1 / (n * fsw))
+    # A buck's input capacitors give the high side's extra; a boost's output capacitors
+    # take the rectifier's shortfall: either way C_sw·dv/dt out of them.
+    assert np.corrcoef(ring, -i_node)[0, 1] > 0.95
+
+
 def test_harmonic_count():
     k, fmax, capped = harmonic_count(1e6, 2e-9, 3e-9, None, None, 100000)
     assert fmax == pytest.approx(math.ceil(10 / (math.pi * 2e-9) / 1e6) * 1e6)
