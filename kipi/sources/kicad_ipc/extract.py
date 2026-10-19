@@ -14,6 +14,7 @@ from kipi.core.geometry.arcs import arc_points
 from kipi.core.geometry.shapes import board_outline
 from kipi.sources.kicad_ipc.convert import mm, poly, pt
 from kipi.sources.kicad_ipc.copper_shapes import copper_shape_zones
+from kipi.sources.kicad_ipc.silkscreen import read_silkscreen
 from kipi.sources.kicad_ipc.vias import read_vias
 from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Zone,
@@ -449,10 +450,12 @@ def extract_board(board, refill_zones: bool = False,
 
     with progress.timed("Reading footprints and pads"):
         footprints: List[Footprint] = []
+        kfootprints = []
         kpads = []
         fp_shapes = []
         pad_ref: Dict[str, str] = {}
         for fp in board.get_footprints():
+            kfootprints.append(fp)
             ref = _field_text(fp.reference_field)
             fpads = list(fp.definition.pads)
             from kipy.proto.board.board_types_pb2 import BoardLayer
@@ -507,6 +510,10 @@ def extract_board(board, refill_zones: bool = False,
     with progress.timed("Reading board outline"):
         outline = _outline(board_shapes, progress)
 
+    with progress.timed("Reading silkscreen"):
+        silkscreen = read_silkscreen(board, board_shapes + fp_shapes, kfootprints, progress,
+                                     assumed)
+
     project_dir = ""
     try:
         project_dir = board.document.project.path
@@ -516,7 +523,8 @@ def extract_board(board, refill_zones: bool = False,
     snap = BoardSnapshot(
         board_name=board.name, project_dir=project_dir, stackup=stackup, nets=nets,
         tracks=tracks, vias=vias, pads=pads, footprints=footprints, zones=zones,
-        outline=outline, source="kicad", source_format="kicad-ipc", assumed=assumed)
+        outline=outline, source="kicad", source_format="kicad-ipc", assumed=assumed,
+        silkscreen=silkscreen)
     progress.info(f"Extraction complete in {time.perf_counter() - t0:.2f} s")
     return snap
 

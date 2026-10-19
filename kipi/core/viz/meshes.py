@@ -247,9 +247,9 @@ COATING_GAP_MM = 0.002     # coatings off the copper, so their faces do not z-fi
 
 def board_coatings(snap: BoardSnapshot) -> List[Tuple[str, pv.PolyData, Tuple[float, ...]]]:
     """The solder masks and silkscreens as slabs over the board (#82): ``(kind, mesh,
-    color)`` for each. A mask is open over the pads of the copper under it. KiPI does not
-    read the silkscreen's printing, so a silkscreen covers the whole face, as the thermal
-    model takes it."""
+    color)`` for each. A mask is open over the pads of the copper under it; a silkscreen
+    is what it prints (see :func:`~kipi.core.geometry.silkscreen.printed_silk`)."""
+    from kipi.core.geometry.silkscreen import mask_openings, printed_silk
     st = snap.stackup
     if not snap.outline or not st.coatings or not st.copper:
         return []
@@ -259,13 +259,15 @@ def board_coatings(snap: BoardSnapshot) -> List[Tuple[str, pv.PolyData, Tuple[fl
     for side in ("top", "bottom"):
         cu = st.copper[0] if side == "top" else st.copper[-1]
         z = cu.z_top_mm if side == "top" else cu.z_bottom_mm
-        openings = shapely.union_all([g for pad in snap.pads for p in pad.shapes.get(cu.id, [])
-                                      for g in [poly_to_shapely(p)] if g is not None])
+        openings = mask_openings(snap, side)
         z += COATING_GAP_MM if side == "top" else -COATING_GAP_MM
         for c in st.coatings_on(side):
-            geom = board.difference(openings) if c.kind == "mask" else board
+            if c.kind == "mask":
+                geom = board if openings is None else board.difference(openings)
+            else:
+                geom = printed_silk(snap, side, board)
             t = c.thickness_mm
-            m = slab(geom, z if side == "top" else z - t, t)
+            m = slab(geom, z if side == "top" else z - t, t) if geom is not None else None
             if m is not None:
                 out.append((c.kind, m, coating_rgb(c)))
             z += t if side == "top" else -t

@@ -627,7 +627,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         if th.dielectrics:
             from kipi.dc.thermal.materials import coating_k
             coat = [[_e(c.name), _num(c.thickness_mm, ".3f"),
-                     "solder mask" if c.kind == "mask" else "silkscreen, over the whole face",
+                     "solder mask" if c.kind == "mask" else "silkscreen, where it prints",
                      _num(coating_k(c), "g"), _num(coating_k(c), "g")]
                     for c in snap.stackup.coatings]
             n_top = sum(1 for c in snap.stackup.coatings if c.side == "top")

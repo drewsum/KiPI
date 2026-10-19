@@ -225,6 +225,13 @@ class BoardSnapshot:
     # The snapshot file this was read from; "" when read from the board's own source.
     # Never saved into a snapshot.
     file: str = ""
+    # What the silkscreens print (#82), by side ("top", "bottom"): graphics and text as
+    # polygons. Empty for a side with nothing printed, and in snapshots from before it.
+    silkscreen: Dict[str, List[Poly]] = field(default_factory=dict)
+
+    def __setstate__(self, state):      # results saved before the silkscreen was read
+        self.__dict__.update(state)
+        self.__dict__.setdefault("silkscreen", {})
 
     @property
     def format_name(self) -> str:

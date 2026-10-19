@@ -367,7 +367,7 @@ class StackupWindow(QDialog):
         what = "solder mask" if c.kind == MASK else "silkscreen"
         tip = (f"The {what} over the {c.side} copper. It holds a little heat in the copper "
                "in the electro-thermal solve" + ("" if c.kind == MASK else
-                                                 ", taken to cover the whole face")
+                                                 ", where it prints")
                + "; it does not add to the board's thickness.")
         item.setToolTip(art_tip(tip, "coatings", c.kind))
         self.table.setItem(i, C_NAME, item)

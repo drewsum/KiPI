@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 DEFAULT_K_W_MK = 0.8          # FR4 core, used when a name is not recognized
 DEFAULT_K_Z_W_MK = 0.3        # FR4 core through the thickness
@@ -166,16 +166,18 @@ def coating_k(coating) -> float:
     return MASK_K_W_MK if coating.kind == MASK else SILK_K_W_MK
 
 
-def coating_resistance(stackup, side: str) -> float:
-    """Thermal resistance (K mm²/W) of the solder mask and silkscreen on ``side`` ("top"
-    or "bottom"), in series between the outer copper and the air. The silkscreen is taken
-    to cover the whole face, the most it can hold heat in."""
+def coating_resistance(stackup, side: str, kind: Optional[str] = None) -> float:
+    """Thermal resistance (K mm²/W) of the coatings on ``side`` ("top" or "bottom"), in
+    series between the outer copper and the air: all of them, or those of ``kind``
+    ("mask", "silk") only. The silkscreen's applies only where it prints."""
     return sum(c.thickness_mm / (coating_k(c) * 1e-3)
-               for c in getattr(stackup, "coatings", []) if c.side == side)
+               for c in getattr(stackup, "coatings", [])
+               if c.side == side and kind in (None, c.kind))
 
 
-def coating_conductance(stackup, side: str) -> float:
-    """In-plane sheet conductance (W/K per square) the coatings on ``side`` add to the
-    outer copper layer under them."""
+def coating_conductance(stackup, side: str, kind: Optional[str] = None) -> float:
+    """In-plane sheet conductance (W/K per square) the coatings on ``side`` (those of
+    ``kind`` only, if given) add to the outer copper layer under them."""
     return sum(coating_k(c) * 1e-3 * c.thickness_mm
-               for c in getattr(stackup, "coatings", []) if c.side == side)
+               for c in getattr(stackup, "coatings", [])
+               if c.side == side and kind in (None, c.kind))

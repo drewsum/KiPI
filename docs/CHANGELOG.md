@@ -15,12 +15,15 @@ milestones rather than versions that were ever set.
   lists them above and below the copper, and their thicknesses can be changed while
   unlocked; they sit outside the board and do not change its thickness. In the
   electro-thermal solve, heat leaving the top and bottom copper for the air crosses them
-  (a mask at 0.25 W/m·K, a silkscreen at 0.2, the silkscreen over the whole face, since
-  KiPI does not read what is printed). At their usual thickness they hold heat in only
-  slightly: a 25 µm mask adds 0.1 K mm²/W against 100 for still air. The 3D view draws
-  them, the mask in its color and open over the pads, under **Mask** and **Silkscreen**
-  in Display, both off to start with. Snapshots and setups keep them; older snapshots
-  have none.
+  (a mask at 0.25 W/m·K over the whole face, a silkscreen at 0.2 where it prints). At
+  their usual thickness they hold heat in only slightly: a 25 µm mask adds 0.1 K mm²/W
+  against 100 for still air. What each silkscreen prints is read from the board: its
+  drawings and text on F.SilkS and B.SilkS, off the pads and the board's edge. The
+  running KiCad draws the text in its own font; from a board file KiPI draws it in a
+  similar one, in the same place and turned upright as KiCad turns it; ODB++ gives it as
+  strokes. The 3D view draws them, the mask in its color and open over the pads, the
+  silkscreen as printed, under **Mask** and **Silkscreen** in Display, both off to start
+  with. Snapshots and setups keep them; older snapshots have none.
 - **Drawings in tooltips** (#116). Tooltips on fields that are easier to see than to read
   show a small drawing under their text, coloured to match the window (on a background a
   shade darker), with the field's part picked out: the capacitor model (C, ESL and ESR in

@@ -63,7 +63,7 @@ def test_point_heat_spreads_and_total_balances():
     m.deposit(heat, np.array([[20.0, 20.0]]), np.array([0.5]), F)
     t = m.solve(heat)
     # Energy balance: all 0.5 W leaves by convection, from the top and bottom faces.
-    out = np.nansum((t - 20.0) * m.g_conv[:, None, None])
+    out = np.nansum((t - 20.0) * m.g_conv)
     assert out == pytest.approx(0.5, rel=1e-9)
     t = t[0]
     # Hottest at the source, falling off with distance; copper spreads it widely.
@@ -362,15 +362,24 @@ def test_the_solver_reads_each_layers_own_copper():
     assert 12.0 - hot.fields.terminals[1].v_mean == pytest.approx(R(8) * (1 + TCR * 100), rel=1e-9)
 
 
+def _coat(snap, silk_box=None):
+    """Mask and silkscreen on both faces; the silkscreen prints ``silk_box`` on each."""
+    from kipi.core.model.board import MASK, SILK, Coating
+    snap.stackup.coatings = [Coating(SILK, "top", 0.02), Coating(MASK, "top", 0.03),
+                             Coating(MASK, "bottom", 0.03), Coating(SILK, "bottom", 0.02)]
+    if silk_box is not None:
+        ink = [Poly(list(box(*silk_box).exterior.coords)[:-1])]
+        snap.silkscreen = {"top": ink, "bottom": ink}
+    return snap
+
+
 def test_solder_mask_and_silkscreen_hold_heat_in():
     """Uniform heat on a coated board: each face loses q_face / (1/h + sum t/k) (#82)."""
-    from kipi.core.model.board import MASK, SILK, Coating
     from kipi.dc.thermal.materials import MASK_K_W_MK, SILK_K_W_MK, coating_resistance
     s = ThermalSettings(enabled=True, ambient_c=25.0, grid_mm=1.0)
     snap = plate()
     bare = BoardThermalModel(snap, s)
-    snap.stackup.coatings = [Coating(SILK, "top", 0.02), Coating(MASK, "top", 0.03),
-                             Coating(MASK, "bottom", 0.03), Coating(SILK, "bottom", 0.02)]
+    _coat(snap, (-1, -1, 41, 41))                    # printed all over
     r = 0.02 / (SILK_K_W_MK * 1e-3) + 0.03 / (MASK_K_W_MK * 1e-3)
     assert coating_resistance(snap.stackup, "top") == pytest.approx(r)
     assert coating_resistance(snap.stackup, "bottom") == pytest.approx(r)
@@ -385,3 +394,19 @@ def test_solder_mask_and_silkscreen_hold_heat_in():
     hot = np.nanmax(t) - 25.0
     cold = np.nanmax(bare.solve(heat)) - 25.0
     assert cold < hot < cold * 1.01                  # thin coatings: a little warmer
+
+
+def test_the_silkscreen_holds_heat_in_only_where_it_prints():
+    """The mask covers the face; the silkscreen adds its t/k only in the cells it prints
+    on (here the left half), and nothing when it prints nothing (#82)."""
+    from kipi.dc.thermal.materials import MASK_K_W_MK, SILK_K_W_MK
+    s = ThermalSettings(enabled=True, ambient_c=25.0, grid_mm=1.0)
+    h = s.h_w_mm2_k()
+    r_mask, r_silk = 0.03 / (MASK_K_W_MK * 1e-3), 0.02 / (SILK_K_W_MK * 1e-3)
+    m = BoardThermalModel(_coat(plate(), (0, 0, 20, 40)), s)
+    x, _ = np.meshgrid(m.x, m.y)
+    for g in m.g_conv:
+        assert g[x < 20] == pytest.approx(m.d ** 2 / (1 / h + r_mask + r_silk))
+        assert g[x > 20] == pytest.approx(m.d ** 2 / (1 / h + r_mask))
+    blank = BoardThermalModel(_coat(plate()), s)
+    assert blank.g_conv[0][blank.inside] == pytest.approx(m.d ** 2 / (1 / h + r_mask))

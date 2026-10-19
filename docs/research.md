@@ -179,5 +179,9 @@ KiCad. What matters is whether that KiCad has a handler for each request.
   k·t to the outer layer's in-plane conductance. LPI epoxy mask k ≈ 0.25 W/m·K, silkscreen
   ink ≈ 0.2. A 25 µm mask is 1e-4 m²K/W against 0.1 for still air, so the effect is about
   0.1%: worth having for completeness, not a correction to earlier results. KiCad gives a
-  silkscreen no thickness (taken as 15 µm) and KiPI does not read the printed graphics, so
-  the silkscreen covers the whole face, an upper bound.
+  silkscreen no thickness (taken as 15 µm). The silkscreen counts only where it prints:
+  each source's F.SilkS/B.SilkS drawings and text (KiCad's GetTextAsShapes for the live
+  board, ODB++'s strokes, matplotlib's DejaVu Sans scaled to KiCad's cap height for a
+  board file, with KiCad's keep-upright rule), clipped to the outline and off the mask
+  openings. A first version covered the whole face; on a real 100 x 100 mm board the
+  silkscreen printed 6% of the top and 0.6% of the bottom.

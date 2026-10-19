@@ -16,8 +16,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from kipi.core.geometry import silkscreen as silk
 from kipi.core.geometry.copper import shapely_to_polys
 from kipi.core.geometry.shapes import board_outline
+from kipi.core.geometry.text import text_geometry
 from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Via, Zone,
 )
@@ -39,6 +41,9 @@ from kipi.sources.kicad_pcb.sexpr import (
 #: The oldest file format read: KiCad 7.0's. Older files store arcs and footprints in
 #: ways this reader does not handle.
 OLDEST_FORMAT = 20221018
+#: KiCad 8.0's: from it, board text reads upright unless ``unlocked``, as footprint
+#: text always has.
+UPRIGHT_BOARD_TEXT_FORMAT = 20240108
 
 _COPPER_TYPES = ("signal", "power", "mixed", "jumper")
 
@@ -385,6 +390,82 @@ def read_outline(root: Node, progress: ProgressReporter) -> List[Poly]:
 
 
 # ---------------------------------------------------------------------------
+# Silkscreen
+# ---------------------------------------------------------------------------
+
+def _text(node: Node, string: str, frame: Frame, fields: Dict[str, str], upright: bool):
+    """The ink of a text item (``gr_text``, ``fp_text``, ``property``) on the board, or
+    None if it is hidden or empty. Its position is in ``frame``; its angle is the
+    board's, as KiCad stores it. ``upright``: KiCad turns the text to read upright unless
+    it is ``unlocked``."""
+    effects = child(node, "effects")
+    if flag(node, "hide") or (effects is not None and flag(effects, "hide")):
+        return None
+    for name, v in fields.items():
+        string = string.replace("${" + name + "}", v)
+    font = child(effects, "font") if effects is not None else None
+    size = child(font, "size") if font is not None else None
+    h, w = (float(size[1]), float(size[2])) if size is not None and len(size) > 2 else (1.0, 1.0)
+    t = number(font, "thickness", 0.0) if font is not None else 0.0
+    if not t:
+        t = h * (0.2 if font is not None and flag(font, "bold") else 0.15)
+    just = atoms(child(effects, "justify")) if effects is not None and \
+        child(effects, "justify") is not None else []
+    local, angle = at(node)
+    h_just = next((j for j in just if j in ("left", "right")), "center")
+    v_just = next((j for j in just if j in ("top", "bottom")), "center")
+    if upright and "unlocked" not in atoms(child(node, "at") or ["at"]) \
+            and 90 < angle % 360 <= 270:
+        # Turned half round to read upright, the text keeps its place: its justification
+        # turns with it.
+        angle -= 180
+        flip = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
+        h_just, v_just = flip.get(h_just, h_just), flip.get(v_just, v_just)
+    geom = text_geometry(string, frame(local), h, w, t, angle, h_just, v_just,
+                         "mirror" in just)
+    layer = child(node, "layer")
+    if geom is not None and layer is not None and flag(layer, "knockout"):
+        # Knocked-out text: the ink is a box around the text, the text left bare.
+        geom = geom.minimum_rotated_rectangle.buffer(h * 0.25, join_style="mitre") \
+            .difference(geom)
+    return geom
+
+
+def read_silkscreen(root: Node, progress: ProgressReporter,
+                    version: int = UPRIGHT_BOARD_TEXT_FORMAT) -> Dict[str, List[Poly]]:
+    """What each side's silkscreen prints: the board's and footprints' drawings and text
+    on F.SilkS and B.SilkS."""
+    parts: Dict[str, list] = {"top": [], "bottom": []}
+
+    def add(node, frame, string=None, fields=None, upright=True):
+        side = silk.silk_side(value(node, "layer") or "")
+        if side is None:
+            return
+        parts[side].append(drawn_copper(node, frame) if string is None
+                           else _text(node, string, frame, fields or {}, upright))
+
+    for node in drawn_items(root, "gr_"):
+        add(node, BOARD)
+    for node in children(root, "gr_text"):
+        add(node, BOARD, node[1] if len(node) > 1 and type(node[1]) is str else "",
+            upright=version >= UPRIGHT_BOARD_TEXT_FORMAT)
+    for fp in children(root, "footprint"):
+        pos, angle = at(fp)
+        frame = Frame(pos, angle)
+        fields = {"REFERENCE": _field(fp, "Reference"), "VALUE": _field(fp, "Value")}
+        for node in drawn_items(fp, "fp_"):
+            add(node, frame)
+        for node in children(fp, "property"):       # KiCad 8 on
+            add(node, frame, node[2] if len(node) > 2 and type(node[2]) is str else "", fields)
+        for node in children(fp, "fp_text"):        # its fields before KiCad 8, and text
+            add(node, frame, node[2] if len(node) > 2 and type(node[2]) is str else "", fields)
+    out = silk.merge(parts)
+    for side, polys in out.items():
+        progress.debug(f"  {side} silkscreen: {len(polys)} polygons")
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Footprints and pads
 # ---------------------------------------------------------------------------
 
@@ -573,11 +654,14 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
     with progress.timed("Reading board outline"):
         outline = read_outline(root, progress)
 
+    with progress.timed("Reading silkscreen"):
+        silkscreen = read_silkscreen(root, progress, version)
+
     snap = BoardSnapshot(
         board_name=path.name, project_dir=str(path.parent), stackup=stackup,
         nets=nets.all(proj), tracks=tracks, vias=vias, pads=pads, footprints=footprints,
         zones=zones, outline=outline, source="kicad file", kicad_version=gen,
-        source_format="kicad-pcb", assumed=assumed)
+        source_format="kicad-pcb", assumed=assumed, silkscreen=silkscreen)
     progress.info(f"{len(snap.nets)} nets")
     progress.info(f"Read in {time.perf_counter() - t0:.2f} s")
     return snap

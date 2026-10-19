@@ -101,6 +101,9 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
         source_format=d.get("source_format") or ("kicad-ipc" if d.get("source") == "kicad"
                                                  else ""),
         assumed=list(d.get("assumed", [])),
+        # Snapshots from before #82 say nothing of the silkscreens.
+        silkscreen={side: [_poly(p) for p in polys]
+                    for side, polys in d.get("silkscreen", {}).items()},
     )
 
 

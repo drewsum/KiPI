@@ -595,9 +595,10 @@ Hiding layers does not change the result colors; set the
   <tr><td><b>Vias / Pads / Board</b></td><td class="wrap">Show or hide via barrels, pads and
     the board body.</td></tr>
   <tr><td><b>Mask / Silkscreen</b></td><td class="wrap">Show the solder masks, in their
-    color and open over the pads, and the silkscreens. KiPI does not read what a
-    silkscreen prints, so it is drawn over the whole face, as the electro-thermal solve
-    takes it. Both start off, since they hide the copper.</td></tr>
+    color and open over the pads, and what the silkscreens print: the board's drawings
+    and text on F.SilkS and B.SilkS, off the pads. Text read from a board file is drawn in
+    a font like KiCad's, in the same place; the running KiCad and ODB++ give KiCad's own.
+    Both start off, since they hide the copper.</td></tr>
   <tr><td id="pi-models"><b>PI Models</b></td><td class="wrap">Marks the parts the current
     analysis uses on the copper: a dot on each of their pads, larger on the rail's pins and
     smaller on ground, with the part's name above. In DC mode those are the setup's

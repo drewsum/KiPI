@@ -23,8 +23,8 @@ barrel's loss shared by the layers it spans, a part's heat on the layers of its 
 board with one copper layer loses heat from both faces of that layer.
 
 R_coat (K mm²/W) is the solder mask and silkscreen on that face in series, t / k for each
-(#82); the silkscreen is taken to cover the whole face. Both are thin and conduct about as
-well as the laminate, so they hold heat in only a little.
+(#82): the mask everywhere, the silkscreen in the cells where it prints. Both are thin
+and conduct about as well as the laminate, so they hold heat in only a little.
 
 Convection per face: h = 10 + 3.8 v W/(m^2 K), v the airflow speed in m/s (natural
 convection plus radiation at v = 0; a flat-plate forced-convection fit above that).
@@ -42,7 +42,8 @@ import shapely
 from scipy.interpolate import RegularGridInterpolator
 
 from kipi.core.geometry.copper import poly_to_shapely
-from kipi.core.model.board import BoardSnapshot
+from kipi.core.geometry.silkscreen import printed_silk
+from kipi.core.model.board import MASK, SILK, BoardSnapshot
 from kipi.core.model.conductors import K_CU_W_MK, layer_k_w_mk
 from kipi.core.progress import NULL, ProgressReporter
 
@@ -161,9 +162,20 @@ class BoardThermalModel:
                           f"k = {coating_k(c):g} W/m·K")
         g_lam, r_gap = laminate_layers(st)
         nl = len(g_lam)
-        g_lam[0] += coating_conductance(st, "top")
-        g_lam[-1] += coating_conductance(st, "bottom")
+        g_lam[0] += coating_conductance(st, "top", MASK)
+        g_lam[-1] += coating_conductance(st, "bottom", MASK)
         g = np.array([np.full(X.shape, gl) for gl in g_lam])
+        # Where each face's silkscreen prints: it conducts there, and holds heat in.
+        silk = {}
+        for side, li in (("top", 0), ("bottom", nl - 1)):
+            ink = printed_silk(snap, side, board) if coating_resistance(st, side, SILK) \
+                else None
+            silk[side] = shapely.contains_xy(ink, X, Y) if ink is not None \
+                else np.zeros(X.shape, dtype=bool)
+            g[li] += silk[side] * coating_conductance(st, side, SILK)
+            if ink is not None:
+                progress.debug(f"  thermal: {side} silkscreen prints on "
+                               f"{silk[side][self.inside].mean():.0%} of the board")
         progress.info(f"  Mapping the copper of {len(st.copper)} layers onto a {nx} x {ny} "
                       "grid...")
         for li, cu in enumerate(st.copper):
@@ -210,13 +222,15 @@ class BoardThermalModel:
         cells = idx[self.inside]
         for li in range(nl - 1):
             couple(cells * nl + li, cells * nl + li + 1, gv[li][self.inside])
-        # W/K per cell leaving each layer by convection: the top and bottom faces, each
-        # through its coatings.
+        # W/K per layer and cell leaving by convection: the top and bottom faces, each
+        # through its mask and, where it prints, its silkscreen.
         h = settings.h_w_mm2_k()
-        self.g_conv = np.zeros(nl)
-        self.g_conv[0] += d * d / (1 / h + coating_resistance(st, "top"))
-        self.g_conv[-1] += d * d / (1 / h + coating_resistance(st, "bottom"))
-        diag += np.tile(self.g_conv, n_cells)
+        self.g_conv = np.zeros((nl, ny, nx))
+        for side, li in (("top", 0), ("bottom", nl - 1)):
+            r = 1 / h + coating_resistance(st, side, MASK)
+            self.g_conv[li] += d * d / (r + silk[side] * coating_resistance(st, side, SILK))
+        self.g_conv[:, ~self.inside] = 0.0
+        diag += self.g_conv[:, self.inside].T.ravel()
         A = sp.coo_matrix((np.concatenate(vals + [diag]),
                            (np.concatenate(rows + [np.arange(n)]),
                             np.concatenate(cols + [np.arange(n)]))), shape=(n, n)).tocsc()

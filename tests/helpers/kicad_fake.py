@@ -13,6 +13,8 @@ The board is a 4-layer test board (all coordinates in mm):
 * ``GND``: pad U1.2, a plated slot (2.0 x 0.8 mm drill, pad turned 90 degrees), and a
   filled zone on In1.Cu. In1.Cu is named "GND_PLANE" by the user.
 * A rule area (not copper), and a 30 x 20 mm Edge.Cuts outline.
+* Silkscreen: a line on F.SilkS, U1's reference on F.SilkS, and the text "KiPI" on
+  B.SilkS. KiCad draws each text as one 2 mm stroke through its position.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from kipy.proto.board import board_commands_pb2 as bc
 from kipy.proto.board import board_pb2 as bp
 from kipy.proto.board import board_types_pb2 as bt
 from kipy.proto.board.board_types_pb2 import BoardLayer as L
-from kipy.proto.common.commands import editor_commands_pb2 as ec
+from kipy.proto.common.commands import base_commands_pb2 as base, editor_commands_pb2 as ec
 from kipy.proto.common.envelope_pb2 import ApiStatusCode
 from kipy.proto.common.types import DocumentSpecifier, KiCadObjectType as T
 
@@ -94,6 +96,7 @@ class FakeBoardData:
         self.footprints: List[AnyMsg] = []
         self.zones: List[AnyMsg] = []
         self.shapes: List[AnyMsg] = []
+        self.texts: List[AnyMsg] = []
         self.pad_shapes: Dict[str, List] = {}     # pad id -> [(layers, outline)]
         self.pad_present: Dict[str, List] = {}    # pad id -> layers with copper
         self._build()
@@ -139,6 +142,9 @@ class FakeBoardData:
         _v(fp.position, 20, 5)
         fp.layer = L.BL_F_Cu
         fp.reference_field.text.text.text = "U1"
+        fp.reference_field.text.layer = L.BL_F_SilkS
+        fp.reference_field.visible = True
+        _v(fp.reference_field.text.text.position, 20, 2)
         fp.value_field.text.text.text = "TPS62130"
         fp.definition.id.library_nickname = "Package_SON"
         fp.definition.id.entry_name = "Texas_VSON-HR-16"
@@ -196,6 +202,20 @@ class FakeBoardData:
             _v(s.shape.segment.end, x1, y1)
             self.shapes.append(_pack(s))
 
+        s = bt.BoardGraphicShape()
+        s.id.value = "silk-line"
+        s.layer = L.BL_F_SilkS
+        _v(s.shape.segment.start, 2, 12)
+        _v(s.shape.segment.end, 12, 12)
+        s.shape.attributes.stroke.width.value_nm = int(0.2 * NM)
+        self.shapes.append(_pack(s))
+        t = bt.BoardText()
+        t.id.value = "silk-text"
+        t.layer = L.BL_B_SilkS
+        t.text.text = "KiPI"
+        _v(t.text.position, 15, 10)
+        self.texts.append(_pack(t))
+
 
 class FakeKiCad:
     """kipy's client, replaced: answers commands as KiCad ``version`` would."""
@@ -236,7 +256,7 @@ class FakeKiCad:
         groups = {T.KOT_PCB_TRACE: self.data.tracks, T.KOT_PCB_ARC: [],
                   T.KOT_PCB_VIA: self.data.vias, T.KOT_PCB_FOOTPRINT: self.data.footprints,
                   T.KOT_PCB_ZONE: self.data.zones, T.KOT_PCB_SHAPE: self.data.shapes,
-                  T.KOT_PCB_TEXT: [], T.KOT_PCB_TEXTBOX: []}
+                  T.KOT_PCB_TEXT: self.data.texts, T.KOT_PCB_TEXTBOX: []}
         if self.version >= GROUPS_ADDED:
             groups[T.KOT_PCB_GROUP] = []
         known = [t for t in cmd.types if t in groups]
@@ -246,6 +266,19 @@ class FakeKiCad:
         r = ec.GetItemsResponse()
         for t in known:
             r.items.extend(groups[t])
+        return r
+
+    def _GetTextAsShapes(self, cmd):
+        """Each text as one 2 mm, 0.15 mm wide stroke through its position."""
+        r = base.GetTextAsShapesResponse()
+        for t in cmd.text:
+            out = r.text_with_shapes.add()
+            out.text.CopyFrom(t)
+            s = out.shapes.shapes.add()
+            x, y = t.text.position.x_nm / NM, t.text.position.y_nm / NM
+            _v(s.segment.start, x - 1, y)
+            _v(s.segment.end, x + 1, y)
+            s.attributes.stroke.width.value_nm = int(0.15 * NM)
         return r
 
     def _GetBoardStackup(self, cmd):

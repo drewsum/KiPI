@@ -465,9 +465,8 @@ class MainWindow(QMainWindow):
                      "pads": "Show pads", "board": "Show the board outline and laminate",
                      "mask": "Show the solder masks, open over the pads. They hide the "
                              "copper, so they start off.",
-                     "silk": "Show the silkscreens. KiPI does not read what is printed, so "
-                             "each covers its whole face, as the electro-thermal solve "
-                             "takes it. Off to start with.",
+                     "silk": "Show what the silkscreens print, as read from the board: "
+                             "its drawings and text, off the pads. Off to start with.",
                      "pi": "Mark the parts of the current analysis on the nets shown: a "
                            "dot on each of their pads, larger on the rail and smaller on "
                            "ground, and the part's name. In DC mode its VRMs (green), "

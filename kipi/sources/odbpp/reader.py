@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from kipi.core.geometry import silkscreen as silk
 from kipi.core.geometry.copper import shapely_to_polys
 from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Via, Zone,
@@ -383,12 +384,16 @@ def _read(job: Job, path: Path, progress: ProgressReporter, t0: float) -> BoardS
     with progress.timed("Reading board outline"):
         outline = _outline(job, step, units)
 
+    with progress.timed("Reading silkscreen"):
+        silkscreen = _silkscreen(board, layers)
+
     names = sorted(set(eda.nets) | {""})
     nets = [Net(code=i, name=n) for i, n in enumerate(names)]
     snap = BoardSnapshot(
         board_name=job_name(path), project_dir=str(path.parent), stackup=stackup,
         nets=nets, tracks=tracks, vias=vias, pads=pads, footprints=footprints, zones=zones,
-        outline=outline, source="odb++", source_format="odbpp", assumed=assumed)
+        outline=outline, source="odb++", source_format="odbpp", assumed=assumed,
+        silkscreen=silkscreen)
     progress.info(f"{len(nets)} nets")
     progress.info(f"Read in {time.perf_counter() - t0:.2f} s")
     return snap
@@ -571,6 +576,24 @@ def _loose_copper(board: _Board, cu_ids, used, tracks, vias, pads, zones,
         board.progress.warn(f"{no_net} pieces of copper have no net and carry no current in "
                             "the model")
     return out
+
+
+def _silkscreen(board: _Board, layers: List[Layer]) -> Dict[str, List[Poly]]:
+    """What each side's silkscreen prints: its layer's features (text comes as strokes).
+    A silkscreen above the first copper layer is on top, one below it on the bottom."""
+    parts: Dict[str, list] = {"top": [], "bottom": []}
+    started = False
+    for l in layers:
+        if l.context != "BOARD":
+            continue
+        if l.type in _COPPER_TYPES:
+            started = True
+        elif l.type == "SILK_SCREEN":
+            lf = board.features(l.folder)
+            if lf is not None:
+                parts["bottom" if started else "top"].extend(
+                    board.geometry(f, l.folder) for f in lf.features)
+    return silk.merge(parts)
 
 
 def _outline(job: Job, step: str, units: feat.Units) -> List[Poly]:
