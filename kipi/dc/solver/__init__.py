@@ -49,6 +49,11 @@ def pads_for(snap: BoardSnapshot, net: str, reference: str,
     _, _, pads, _ = snap.items_on_net(net)
     wanted = set(numbers) if numbers is not None else None
     out = [p for p in pads if p.footprint == reference and (wanted is None or p.number in wanted)]
+    # A pin may be several pads (a microphone's ground ring in four parts). One with no
+    # copper shape at all carries nothing; it is left out while another pad of the pin
+    # has copper, so the mesh is not asked for copper that is not there.
+    shaped = {p.number for p in out if p.shapes}
+    out = [p for p in out if p.shapes or p.number not in shaped]
     if not out:
         which = f" pins {sorted(wanted)}" if wanted else ""
         raise SolveError(f"{reference}{which} has no pads on net {net}")

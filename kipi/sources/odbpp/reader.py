@@ -36,6 +36,8 @@ from kipi.sources.odbpp.archive import Job, OdbError, job_name
 
 #: KiCad's ODB++ export, and most others, give copper weight in oz per square foot.
 MM_PER_OZ = 0.035
+# A written copper thickness this far from the copper weight is not the copper's.
+COPPER_WEIGHT_TOLERANCE = 0.25
 _COPPER_TYPES = ("SIGNAL", "POWER_GROUND", "MIXED")
 # Where a pad and the hole drilled through it are taken to be the same place.
 SAME_PLACE_MM = 0.002
@@ -113,35 +115,83 @@ def read_matrix(job: Job, step: str) -> List[Layer]:
     return layers
 
 
-def pick_step(job: Job, progress: ProgressReporter) -> str:
-    """The step holding the board: the only one, else one called pcb, else the first with
-    a netlist."""
+def is_panel(job: Job, step: str) -> bool:
+    """A step that places other steps (a manufacturing panel), not a board of its own."""
+    return "STEP-REPEAT" in (job.read(f"steps/{step}/stephdr") or "").upper()
+
+
+def panel_placements(job: Job) -> Dict[str, int]:
+    """How many times the job's panels place each step: its stephdr's STEP-REPEAT
+    blocks, one ``NAME=`` each (SMPC5's panel: PCB1 three times, PCB2 once)."""
+    counts: Dict[str, int] = {}
+    for s in job.list("steps"):
+        hdr = job.read(f"steps/{s}/stephdr") or ""
+        if "STEP-REPEAT" not in hdr.upper():
+            continue
+        for line in hdr.splitlines():
+            key, _, val = line.strip().partition("=")
+            if key.upper() == "NAME" and val.strip():
+                name = val.strip().lower()
+                counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def board_steps(job: Job) -> List[str]:
+    """The steps that are boards, best first: not panels, and with a netlist where any has
+    one. The step a panel places most comes first (the board the panel is made of); a
+    step whose name says panel (Valor's "pcb+panel": the panel flattened into one step,
+    with no step-and-repeat to show it) comes after the plain board steps."""
+    steps = [s for s in job.list("steps") if not is_panel(job, s)]
+    with_eda = [s for s in steps if job.exists(f"steps/{s}/eda/data")] or steps
+    placed = panel_placements(job)
+    return sorted(with_eda, key=lambda s: ("panel" in s, -placed.get(s, 0)))
+
+
+def pick_step(job: Job, progress: ProgressReporter, wanted: Optional[str] = None,
+              assumed: Optional[List[str]] = None) -> str:
+    """The step holding the board: ``wanted`` if given, else the only board step, else
+    one called pcb or board, else the first board step (and the others are said). A panel
+    step, which places boards rather than being one, is never read for a board."""
     steps = job.list("steps")
     if not steps:
         raise OdbError("the job has no steps (no board in it)")
+    if wanted:
+        match = [s for s in steps if s == wanted.lower()]
+        if not match:
+            raise OdbError(f"the job has no step {wanted!r}; it has {', '.join(steps)}")
+        return match[0]
+    boards = board_steps(job) or steps
+    named = [s for s in boards if s in ("pcb", "board")]
+    step = (named or boards)[0]
     if len(steps) > 1:
-        named = [s for s in steps if s in ("pcb", "board")]
-        with_eda = [s for s in steps if job.exists(f"steps/{s}/eda/data")]
-        step = (named or with_eda or steps)[0]
         progress.info(f"The job has steps {', '.join(steps)}; reading {step}")
-        return step
-    return steps[0]
+    others = [s for s in boards if s != step]
+    if others and assumed is not None:
+        placed = panel_placements(job)
+        layout = ", ".join(f"{s} x{n}" for s, n in placed.items())
+        assumed.append(f"Board: the job holds {len(boards)} board steps ({', '.join(boards)})"
+                       + (f"; its panel places {layout}" if layout else "")
+                       + f"; {step} is read. Open another by its step name")
+    return step
 
 
-def _copper_thickness(attrs: Dict[str, str]) -> Optional[float]:
-    """A copper layer's thickness: its own if written precisely enough, else its weight."""
-    t_text = attrs.get(".layer_dielectric") or attrs.get(".copper_thickness") or ""
-    weight = attrs.get(".copper_weight")
+def _copper_thickness(attrs: Dict[str, str], mm_per_unit: float) -> Optional[float]:
+    """A copper layer's thickness in mm: its own if written precisely enough and in line
+    with its weight, else its weight. Altium writes the neighbouring dielectric's thickness
+    in a copper layer's .layer_dielectric (an inner layer read 1.33 mm), so a thickness
+    far from the weight is not the copper's."""
+    t_text = attrs.get(".copper_thickness") or attrs.get(".layer_dielectric") or ""
     try:
-        t = float(t_text) if t_text else None
+        t = float(t_text) * mm_per_unit if t_text else None
     except ValueError:
         t = None
+    try:
+        w = float(attrs.get(".copper_weight") or "") * MM_PER_OZ
+    except ValueError:
+        w = None
     # At the default precision (2 decimals) 35 um is written 0.03: the weight says more.
-    if weight and (t is None or _decimals(t_text) <= 2):
-        try:
-            return float(weight) * MM_PER_OZ
-        except ValueError:
-            pass
+    if w and (t is None or _decimals(t_text) <= 2 or abs(t - w) > COPPER_WEIGHT_TOLERANCE * w):
+        return w
     return t
 
 
@@ -182,12 +232,10 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
             attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
             lid = ids[l.folder]
             outer = lid in (F_CU, B_CU)
-            t = _copper_thickness(attrs)
+            t = _copper_thickness(attrs, units.coord)
             if t is None or t <= 0:
                 missing_cu.append(l.name)
                 t = DEFAULT_OUTER_CU_MM if outer else DEFAULT_INNER_CU_MM
-            else:
-                t *= units.coord
             entries.append(("cu", lid, t, "", 0.0))
         elif l.type == "DIELECTRIC" and started:
             attrs = _dielectric_attrs(job, step, l)
@@ -275,23 +323,28 @@ def _hole_size(f: feat.Feature, lf: feat.LayerFeatures, pad_angle: float) -> Tup
     return (size[1], size[0]) if turned else size
 
 
-def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
-    """Read the ODB++ job at ``path``. Raises :class:`OdbError` for a job KiPI cannot read."""
+def read_board(path, progress: ProgressReporter = NULL,
+               step: Optional[str] = None) -> BoardSnapshot:
+    """Read the ODB++ job at ``path`` (its board ``step``, else the one picked by
+    :func:`pick_step`). Raises :class:`OdbError` for a job KiPI cannot read."""
     path = Path(path).resolve()
     t0 = time.perf_counter()
     with Job(path) as job:
-        return _read(job, path, progress, t0)
+        return _read(job, path, progress, t0, step)
 
 
-def _read(job: Job, path: Path, progress: ProgressReporter, t0: float) -> BoardSnapshot:
+def _read(job: Job, path: Path, progress: ProgressReporter, t0: float,
+          wanted_step: Optional[str] = None) -> BoardSnapshot:
     info = parse_attrs(job.read("misc/info"))
     units = feat.Units(info.get("units", "INCH"))
     app = info.get("save_app", "") or info.get("odb_source", "")
     progress.info(f"ODB++ {info.get('odb_version_major', '?')}.{info.get('odb_version_minor', '?')}"
                   + (f" from {app}" if app else ""))
-    step = pick_step(job, progress)
-    layers = read_matrix(job, step)
     assumed: List[str] = []
+    step = pick_step(job, progress, wanted_step, assumed)
+    with progress.timed("Reading the job"):
+        job.focus(step)
+    layers = read_matrix(job, step)
     board = _Board(job, step, units, progress)
     board.kicad = "kicad" in app.lower()
     board.mirror = not board.kicad
@@ -499,13 +552,17 @@ def _vias(board: _Board, eda, stackup: Stackup, cu_ids: Dict[str, int],
             b = by_folder.get(layer.end.lower())
             span = stackup.layers_between(a, b) if a is not None and b is not None else []
             span = span or list(all_cu)
-            diameter = 0.0
+            # The via's pad on each copper layer: a layer with none has its pad removed.
+            pad_mm: Dict[int, float] = {}
             for ref in sn.copper:
                 cf = board.feature(ref)
-                if cf is not None and cf.kind == "P" and math.dist(cf.at, f.at) <= SAME_PLACE_MM:
+                lid = cu_ids.get(ref[0])
+                if (cf is not None and lid in span and cf.kind == "P"
+                        and math.dist(cf.at, f.at) <= SAME_PLACE_MM):
                     size = feat.symbol_size(cf.symbol, board.layers[ref[0]].units)
                     if size:
-                        diameter = max(diameter, size[0])
+                        pad_mm[lid] = max(pad_mm.get(lid, 0.0), size[0])
+            diameter = max(pad_mm.values(), default=0.0)
             if span == all_cu:
                 vtype = "through"
             elif span[0] in outer or span[-1] in outer:
@@ -514,7 +571,7 @@ def _vias(board: _Board, eda, stackup: Stackup, cu_ids: Dict[str, int],
                 vtype = "buried"
             vias.append(Via(id=f"via@{f.at[0]:.4f},{f.at[1]:.4f}/{layer.folder}", net=sn.net,
                             position=f.at, drill_mm=drill, diameter_mm=diameter or drill * 2,
-                            layers=span, via_type=vtype))
+                            layers=span, via_type=vtype, pad_mm=pad_mm))
     return vias
 
 
@@ -558,17 +615,30 @@ def _loose_copper(board: _Board, cu_ids, used, tracks, vias, pads, zones,
     guessed = no_net = 0
     for lid, items in loose.items():
         pieces = [(g, n) for g, n in known.get(lid, []) if g is not None and n]
-        tree = STRtree([g for g, _ in pieces]) if pieces else None
-        for zid, g in items:
-            nets = set()
-            if tree is not None:
-                for i in tree.query(g, predicate="intersects"):
-                    nets.add(pieces[int(i)][1])
-            if len(nets) == 1:
+        # Pass after pass, each piece touching one net takes it, and the next pass sees
+        # it as known: a drawing's outline stroke touches only its own fill, itself
+        # loose, and takes the net once the fill has it.
+        left = list(items)
+        while left:
+            tree = STRtree([g for g, _ in pieces]) if pieces else None
+            netted, still = [], []
+            for zid, g in left:
+                nets = set()
+                if tree is not None:
+                    for i in tree.query(g, predicate="intersects"):
+                        nets.add(pieces[int(i)][1])
+                if len(nets) == 1:
+                    netted.append((zid, g, nets.pop()))
+                else:
+                    still.append((zid, g))
+            if not netted:
+                break
+            for zid, g, net in netted:
                 guessed += 1
-                out.append(_zone(zid, nets.pop(), {lid: [g]}, "graphic shape"))
-            else:
-                no_net += 1
+                out.append(_zone(zid, net, {lid: [g]}, "graphic shape"))
+                pieces.append((g, net))
+            left = still
+        no_net += len(left)
     if guessed:
         assumed.append(f"Copper drawings: {guessed} pieces of copper have no net in the file "
                        "and take the net of the copper they touch")

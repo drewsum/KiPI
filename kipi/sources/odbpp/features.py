@@ -336,17 +336,17 @@ def geometry(f: Feature, units: Units, max_error: float = DEFAULT_MAX_ERROR_MM,
             return None
         return LineString(path).buffer(size[0] / 2.0, cap_style="square")
     if f.kind == "S":
-        parts, current = [], None
+        # Each island and the holes that follow it. The holes are cut out together, in one
+        # difference: one at a time, each cut reworks the whole plane again, which made a
+        # plane with thousands of antipads take minutes (Kria carrier: 188 s of 208 s).
+        islands = []
         for is_hole, pts in f.contours:
             if not is_hole:
-                if current is not None:
-                    parts.append(current)
-                current = SPolygon(pts)
-                if not current.is_valid:
-                    current = current.buffer(0)
-            elif current is not None:
-                current = current.difference(SPolygon(pts).buffer(0))
-        if current is not None:
-            parts.append(current)
+                shell = SPolygon(pts)
+                islands.append((shell if shell.is_valid else shell.buffer(0), []))
+            elif islands:
+                islands[-1][1].append(SPolygon(pts).buffer(0))
+        parts = [shell.difference(unary_union(holes)) if holes else shell
+                 for shell, holes in islands]
         return unary_union(parts) if parts else None
     return None
