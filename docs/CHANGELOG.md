@@ -7,6 +7,11 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **A 20 MHz bandwidth limit for the noise waveforms.** A **20 MHz limit** tickbox in the
+  waveform viewer plots every view (the switch node, the currents, the ripple, the victim
+  noise and its high and low states, and their spectra) as an oscilloscope with its
+  20 MHz bandwidth limit on shows it: through a single pole, 3 dB down at 20 MHz. The
+  titles, the results table and the notes keep the full bandwidth's figures.
 - **Show or hide each waveform.** In Coupled Noise mode's waveform viewer, every view with
   several curves (all except the victim's, which has its own) has a tickbox for each curve
   beside the plot, in the curve's colour. Untick one to hide it, in the time plot and the

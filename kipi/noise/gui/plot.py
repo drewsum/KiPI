@@ -12,9 +12,11 @@ from qtpy.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLab
                             QVBoxLayout, QWidget)
 
 from kipi.ac.gui.plot import COLORS, _eng, _eng_hz
+from kipi.noise.waveforms import bandwidth_limited
 
 EMPTY = "Solve an aggressor in Coupled Noise mode to see its waveforms here."
 MAX_CAP_CURVES = 12             # more capacitors than this: the largest currents only
+BW_LIMIT_HZ = 20e6              # the bandwidth limit, as an oscilloscope's
 
 VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("cin", "Input capacitor currents"), ("cout", "Output capacitor currents"),
@@ -67,6 +69,13 @@ class NoisePlot(QWidget):
         top = QHBoxLayout()
         top.addWidget(self.cmb_view, 1)
         top.addWidget(self.chk_spectrum)
+        self.chk_bw = QCheckBox("20 MHz limit", self)
+        self.chk_bw.setToolTip("Plot every waveform as an oscilloscope with its 20 MHz "
+                               "bandwidth limit on shows it: through a single-pole low-pass "
+                               "filter, 3 dB down at 20 MHz. The edges' ringing and fast "
+                               "spikes shrink to what such a measurement would see. The "
+                               "results table and notes are unchanged.")
+        top.addWidget(self.chk_bw)
         top.addStretch(1)
         lay.addLayout(top)
         self.victim_row = QWidget(self)
@@ -105,6 +114,7 @@ class NoisePlot(QWidget):
         self._ticks_for = (None, [])    # the view and curves the tickboxes are for
         self.cmb_view.currentIndexChanged.connect(lambda _: self._draw())
         self.chk_spectrum.toggled.connect(lambda _: self._draw())
+        self.chk_bw.toggled.connect(lambda _: self._draw())
         self.canvas.mpl_connect("motion_notify_event", self._hover)
         self.result = None
         self.periods = 2                # switching periods shown (NoiseSettings.periods_shown)
@@ -214,6 +224,7 @@ class NoisePlot(QWidget):
         spectrum = self.chk_spectrum.isChecked()
         self.victim_row.setVisible(key == "victim")
         spectra = self._spectra() if self.result is not None else []
+        spectra = [(label, self._limited(s)) for label, s in spectra]
         states = key == "states" and not spectrum and len(spectra) > 1
         if states or key == "victim" or not spectra:     # the victim view has its own
             self.curve_scroll.setVisible(False)
@@ -298,8 +309,18 @@ class NoisePlot(QWidget):
         if (v is not None and key == "victim" and not spectrum
                 and v.margin_v > 4 * max(v.peak_v, 1e-15)):
             hint += f" (the ±{v.margin_v * 1e3:.4g} mV noise margin is off the scale)"
-        self.lbl.setText(hint)
+        self.lbl.setText(hint + self._bw_note())
         self.canvas.draw_idle()
+
+    def _bw_note(self) -> str:
+        return (". 20 MHz bandwidth limit: the title's figures are the full bandwidth's"
+                if self.chk_bw.isChecked() else "")
+
+    def _limited(self, sp):
+        """``sp`` through the 20 MHz bandwidth limit when it is ticked."""
+        if not self.chk_bw.isChecked() or self.result is None:
+            return sp
+        return bandwidth_limited(sp, self.result.waveforms.fsw_hz, BW_LIMIT_HZ)
 
     def _curve_ticks(self, key, spectra):
         """A tickbox per curve of ``spectra`` beside the plot (several curves; not the
@@ -349,7 +370,7 @@ class NoisePlot(QWidget):
         off = []
         names = {"high": ("VOH", "VIH"), "low": ("VOL", "VIL")}
         for i, (ax, st) in enumerate(zip(self.axes, v.states)):
-            noise = st.receiver_v.samples(n, periods)
+            noise = self._limited(st.receiver_v).samples(n, periods)
             label = f"{v.receiver} held {st.name}"
             ax.plot(t * 1e6, st.level_v + noise, color=COLORS[i % len(COLORS)], lw=1.0,
                     label=label)
@@ -380,7 +401,7 @@ class NoisePlot(QWidget):
         hint = "Hover to read the curves"
         if off:
             hint += f" ({' and '.join(off)} off the scale)"
-        self.lbl.setText(hint)
+        self.lbl.setText(hint + self._bw_note())
         self.canvas.draw_idle()
 
     def _hover(self, event):

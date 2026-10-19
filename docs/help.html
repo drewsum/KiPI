@@ -1897,7 +1897,11 @@ capacitor's ripple current (the largest twelve), the input and output rails' rip
 voltage, and the ripple at each AC probe ticked for the aggressor (<b>Ripple at AC
 probes</b>). Tick <b>Spectrum</b> to see each waveform's harmonics instead; hover to read the
 curves. With several curves in a view, a tickbox for each, in its colour, sits beside the
-plot: untick one to hide it. It stays hidden when you change views or solve again.</p>
+plot: untick one to hide it. It stays hidden when you change views or solve again. Tick
+<b>20 MHz limit</b> to see every view as an oscilloscope with its 20 MHz bandwidth limit
+on would: each waveform passes through a single-pole low-pass filter, 3 dB down at
+20 MHz, so the ringing and fast spikes shrink to what such a measurement shows. The plot
+titles, the results table and the notes keep the full bandwidth's figures.</p>
 <p>The results notes give the operating point and, for each phase, the hot loop's
 inductance, the switch node's capacitance to ground (Coss and copper), the loop's
 resistance, and the ringing's frequency and damping. They also give the peak-to-peak and

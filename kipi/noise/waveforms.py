@@ -123,6 +123,13 @@ class Spectrum:
         return ifft_periodic(self.mean, self.c, n, periods)
 
 
+def bandwidth_limited(sp: Spectrum, fsw: float, f_bw: float = 20e6) -> Spectrum:
+    """``sp`` as an oscilloscope's bandwidth limit shows it: through a single pole at
+    ``f_bw`` (−3 dB there), as a scope's 20 MHz limit is."""
+    f = fsw * np.arange(1, len(sp.c) + 1)
+    return Spectrum(sp.name, sp.unit, sp.mean, sp.c / (1 + 1j * f / f_bw))
+
+
 @dataclass
 class PhaseWaveforms:
     switch_node: Spectrum           # with ringing

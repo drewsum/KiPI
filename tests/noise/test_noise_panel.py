@@ -3,6 +3,7 @@
 
 import os
 
+import numpy as np
 import pytest
 
 pytest.importorskip("qtpy")
@@ -262,6 +263,35 @@ def test_a_curve_is_hidden_by_its_tickbox(vpanel, window):
     # The victim view has its own tickboxes.
     plot.set_view("victim")
     assert plot.curve_scroll.isHidden()
+
+
+def test_the_bandwidth_limit_filters_every_view(vpanel, window):
+    from kipi.noise.solver import solve_noise
+    vpanel.victim_list._add()
+    r = solve_noise(vpanel.snapshot, vpanel.setup, vpanel.setup.aggressors[0].name)
+    plot = window.noise_plot
+    plot.set_result(r)
+    for key in ("sw", "il", "cin", "ripple", "victim", "states"):
+        plot.set_view(key)
+        plot.chk_bw.setChecked(False)
+        full = [np.ptp(c[2]) for c in plot._curves]
+        plot.chk_bw.setChecked(True)
+        limited = [np.ptp(c[2]) for c in plot._curves]
+        assert full and len(limited) == len(full), key
+        assert all(b <= a * 1.001 for a, b in zip(full, limited)), key
+        assert "20 MHz bandwidth limit" in plot.lbl.text()
+    plot.set_view("sw")
+    sw = r.waveforms.phases[0].switch_node
+    assert np.ptp(plot._curves[0][2]) < np.ptp(sw.samples(r.waveforms.samples_per_period()))
+    plot.chk_bw.setChecked(False)
+
+
+def test_a_20mhz_limit_is_a_single_pole():
+    from kipi.noise.waveforms import Spectrum, bandwidth_limited
+    sp = Spectrum("x", "V", 1.0, np.ones(40, complex))
+    out = bandwidth_limited(sp, 1e6, 20e6)
+    assert out.mean == 1.0 and abs(out.c[19]) == pytest.approx(1 / np.sqrt(2))
+    assert abs(out.c[0]) == pytest.approx(1.0, abs=2e-3)
 
 
 def test_the_ac_probes_to_show_ripple_at_are_ticked(app):
