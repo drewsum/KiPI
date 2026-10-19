@@ -173,7 +173,16 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     cap_currents = {ports[e].name: -flows[:, j] for j, e in enumerate(E)
                     if ports[e].kind == "cap"}
     obs = src + [len(ports) - len(obs_victims) + j for j in range(len(obs_victims))]
-    v = np.einsum("fos,fs->fo", terminate_transfer(z, freqs, ports, src, obs), i_src)
+    zt = terminate_transfer(z, freqs, ports, src, obs)
+    # Between a victim's grounds only the copper's resistance (skin effect included) is
+    # shared impedance. The inductive part of a ground's potential depends on the path
+    # it is measured along: the victim's own loop (its trace over the plane) links that
+    # flux, which the inductive coupling counts. (The 2.5D model would also overstate it
+    # where a plane faces no rail copper: its current spreads wider than a real return.)
+    nv = len(obs_victims)
+    if nv:
+        zt[:, len(src):, :] = zt[:, len(src):, :].real
+    v = np.einsum("fos,fs->fo", zt, i_src)
     # The rails at phase 1's device: buck VIN = −V(I_HS1), VOUT = V(I_L1); boost VOUT =
     # V(I_HS1), VIN = −V(I_L1).
     input_ripple = -v[:, 0] if buck else -v[:, 1]

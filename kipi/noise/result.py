@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 from kipi.noise.checks import OperatingPoint
 from kipi.noise.parasitics import HotLoopReport
+from kipi.noise.scan import ScanRow
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
 MECHANISMS = ("capacitive", "inductive", "common")
@@ -32,6 +33,7 @@ class VictimResult:
     z0_ohm: float = 0.0                 # length-weighted
     solves: int = 0                     # cross-sections solved (the rest were cached)
     warnings: List[str] = field(default_factory=list)
+    scanned: bool = False               # found by the scan (default terminations)
 
     @property
     def ratio(self) -> float:
@@ -57,6 +59,7 @@ class NoiseResult:
     report_path: str = ""
     victims: List[VictimResult] = field(default_factory=list)
     board_note: str = ""                # what the board model did, "" without one
+    scan: List["ScanRow"] = field(default_factory=list)              # every net estimated
 
     def victim(self, name: str) -> Optional[VictimResult]:
         return next((v for v in self.victims if v.name == name), None)
@@ -80,6 +83,10 @@ class NoiseResult:
                 f"{h.c_copper_f * 1e12:.3g} pF), R {h.r_loop_ohm * 1e3:.3g} mΩ; {ring}")
         if self.board_note:
             lines.append(self.board_note)
+        if self.scan:
+            solved = sum(r.solved for r in self.scan)
+            lines.append(f"Scan: {len(self.scan)} net(s) near the aggressor estimated, the "
+                         f"worst {solved} solved in full")
         for v in self.victims:
             cm = sum(v.cm_f.values())
             m = sum(abs(x) for x in v.m_h.values())

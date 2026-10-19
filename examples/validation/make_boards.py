@@ -33,6 +33,12 @@ AC (εr 4.5, 0.2 mm between the rail and ground planes):
   resonance, and the anti-resonance of the mounted inductance with the plane capacitance.
 * ac_ferrite: a filtered rail behind a ferrite (R + L series link): the probe sees the
   ferrite in series with the bulk capacitor.
+
+Coupled Noise (a 12 V to 1.8 V buck over a ground plane):
+
+* coupled_noise: three victims: one beside the switch node's pour (capacitive coupling
+  dominates), one beside the hot loop (inductive dominates) and the same route on In2.Cu
+  behind the plane (shielded). The ranking, and a scan finding all three, are checked.
 """
 
 from __future__ import annotations
@@ -441,8 +447,82 @@ def ac_ferrite():
     return b.snapshot(), setup
 
 
+# ---------------------------------------------------------------- Coupled Noise
+
+class CoupledNoise:
+    """A 12 V to 1.8 V buck (U1, power stage) on F.Cu over a GND plane on In1.Cu, with
+    three 0.2 mm victims, each between two ICs with a ground pin:
+
+    * SIG_SW beside the switch node's pour (capacitive coupling dominates),
+    * SIG_LOOP beside the hot loop's VIN track (inductive coupling dominates),
+    * SIG_BURIED on In2.Cu under SIG_LOOP, behind the plane (shielded: far less noise).
+    """
+    FSW, RISE = 1e6, 2e-9
+    VIN, VOUT, LOAD = 12.0, 1.8, 5.0
+    L, COSS = 1e-6, 300e-12
+    GAP = 0.2                        # victim to aggressor copper
+    SW_POUR = 4.0
+
+
+def coupled_noise():
+    from kipi.noise.model import Aggressor, AggressorPhase, Victim
+    g = CoupledNoise
+    b = Board("coupled_noise", stackup())
+
+    def sq(x, y, s):
+        return box(x - s / 2, y - s / 2, x + s / 2, y + s / 2)
+
+    def part(ref, value, pins, size=1.0):
+        for num, net, (x, y) in pins:
+            b.pad(ref, num, net, sq(x, y, size), value=value)
+            if net == "GND":
+                b.via("GND", x, y + size / 2, 0.3, 0.6, layers=(F, IN1))
+
+    part("J1", "CONN", [("1", "VIN", (2, 10)), ("2", "GND", (2, 14))])
+    part("C1", "10uF", [("1", "VIN", (6, 10)), ("2", "GND", (6, 14))])
+    part("U1", "Power stage", [("1", "VIN", (10, 10)), ("2", "GND", (10, 14)),
+                               ("3", "SW", (12, 12))])
+    part("L1", "1uH", [("1", "SW", (16, 12)), ("2", "VOUT", (20, 12))])
+    part("C2", "47uF", [("1", "VOUT", (24, 12)), ("2", "GND", (24, 15))])
+    part("U2", "Load", [("1", "VOUT", (28, 12)), ("2", "GND", (28, 15))])
+    for net, a, c in (("VIN", (2, 10), (10, 10)), ("GND", (2, 14), (10, 14)),
+                      ("SW", (12, 12), (16, 12)), ("VOUT", (20, 12), (28, 12)),
+                      ("GND", (24, 15), (28, 15))):
+        b.track(net, F, 1.0, a, c)
+    b.zone("SW", F, sq(13.0, 12.0, g.SW_POUR))
+    b.zone("GND", IN1, box(0, 0, 32, 20))
+    y_sw = 12.0 + g.SW_POUR / 2 + g.GAP + 0.1
+    y_loop = 10.0 - 0.5 - g.GAP - 0.1
+    for net, layer, y, x0, x1, refs, dy in (
+            ("SIG_SW", F, y_sw, 11.5, 24.0, ("U3", "U4"), 0.6),
+            ("SIG_LOOP", F, y_loop, 3.0, 9.5, ("U5", "U6"), -0.6),
+            ("SIG_BURIED", IN2, y_loop, 3.0, 9.5, ("U7", "U8"), -1.2)):
+        for ref, x in zip(refs, (x0, x1)):
+            b.pad(ref, "1", net, sq(x, y, 0.3), layers=(layer,), value="IC")
+            b.pad(ref, "2", "GND", sq(x, y + dy, 0.3), layers=(layer,), value="IC")
+            b.via("GND", x, y + dy, 0.2, 0.3, layers=(F, IN1, IN2) if layer == IN2 else (F, IN1))
+        b.track(net, layer, 0.2, (x0, y), (x1, y))
+    snap = b.snapshot()
+    vrms = [source("J1", "J1", "VIN", ["1"], g.VIN, ground=PinRef("J1", "GND", ["2"])),
+            Vrm("U1", PinRef("L1", "VOUT", ["2"]), g.VOUT, "smps", input=PinRef("U1", "VIN", ["1"]),
+                ground=PinRef("U1", "GND", ["2"]))]
+    setup = PISetup(vrms, [load("U2", "VOUT", ["1"], g.LOAD, ground=PinRef("U2", "GND", ["2"]))],
+                    [], SolveSettings())
+    setup.caps = [CapModel("10u", 10e-6, 0.4e-9, 0.003, ["C1"]),
+                  CapModel("47u", 47e-6, 0.6e-9, 0.002, ["C2"])]
+    setup.aggressors = [Aggressor(
+        "U1", "U1", fsw_hz=g.FSW, rise_s=g.RISE, fall_s=g.RISE,
+        phases=[AggressorPhase("L1", g.L, 0.0, "SW", PinRef("U1", "VIN", ["1"]),
+                               PinRef("U1", "GND", ["2"]), ["C1"], ["C2"], coss_f=g.COSS)])]
+    setup.victims = [Victim(n, driver=PinRef(d, n, ["1"]), receiver=PinRef(r, n, ["1"]))
+                     for n, d, r in (("SIG_SW", "U3", "U4"), ("SIG_LOOP", "U5", "U6"),
+                                     ("SIG_BURIED", "U7", "U8"))]
+    setup.noise.aggressor = "U1"
+    return snap, setup
+
+
 BOARDS = {f.__name__: f for f in (skinny_traces, right_angle, layer_change, planes,
-                                  power_chain, ac_plane, ac_decap, ac_ferrite)}
+                                  power_chain, ac_plane, ac_decap, ac_ferrite, coupled_noise)}
 
 
 def paths(name: str):

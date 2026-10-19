@@ -1690,7 +1690,9 @@ Three coupling paths are modeled: <b>capacitive</b>, the switch node's copper ch
 the victim's traces through their mutual capacitance; <b>inductive</b>, the current loops
 through each input and output capacitor inducing a voltage along the victim's traces
 through their mutual inductance; and <b>common</b> (shared-ground) coupling, the switching
-currents' return lifting the ground under the victim's driver against its receiver's.</p>
+currents' return through shared copper leaving the ground under the victim's driver at
+another voltage than its receiver's (the copper's resistance: the inductive part of that is
+the victim's own loop picking up the field, which the inductive path counts).</p>
 <p>The <b>board model</b> solves the converter's input and output rails and their ground
 with AC mode's field model: the switching currents divide among all the capacitors on the
 rails through the copper's own impedance, the rails' ripple is taken at the switching
@@ -1797,6 +1799,11 @@ and the results say so.</p>
     share the current by their own impedances and there is no shared-ground coupling.</li>
   <li><b>Field solves per decade</b>: copper solves per decade of the harmonics; the board's
     response in between is interpolated (default 10).</li>
+  <li><b>Scan radius</b>: the scan looks at signal nets with a trace this close to the
+    aggressor's parts (default 10 mm). <b>Scan: solve in full</b>: how many of the worst
+    estimates are solved in full (default 10). <b>Scan: driver resistance</b> and
+    <b>logic level</b>: what scanned nets are solved and judged with, as their real
+    drivers are not known.</li>
 </ul>
 </div>
 </details>
@@ -1807,7 +1814,18 @@ and the results say so.</p>
 <div class="body">
 <p>Below the tabs, pick the <b>Aggressor</b> and click <b>Solve</b>; problems that stop it
 are listed in red above. Only one aggressor is solved at a time, and each keeps its last
-result. <b>Save results…</b> writes every solved aggressor to a
+result. <b>Victims</b> picks which victims a solve covers: all of them, one by name (quicker
+while you work on one route), or none (the aggressor's waveforms only).</p>
+<p>Tick <b>Scan nearby nets</b> to also look for victims you have not named: every signal net
+with a trace within the scan radius of the aggressor's parts gets a quick estimate of its
+noise (capacitive from its distance to the switch-node copper, inductive from the full
+model), and the worst are solved in full with the scan's default driver and logic level
+(Settings). They are marked <b>(scan)</b> in the results table. Scan and a chosen victim
+work together: name the nets you know, scan for the ones you do not.</p>
+<p>Tick <b>Report</b> to write <code>&lt;board&gt;_&lt;aggressor&gt;_noise_report_&lt;date&gt;_&lt;time&gt;.html</code>
+(or <code>.pdf</code>) next to the board after each solve: the victims against their
+margins, the aggressor's parasitics, its waveforms, each victim's noise by mechanism, the
+scan's estimates and the notes. <b>Open report</b> opens it again. <b>Save results…</b> writes every solved aggressor to a
 <code>.kipi-noise-results</code> file that <b>Open results…</b> reopens in this mode.</p>
 </div>
 </details>
@@ -2003,6 +2021,8 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>*.kipi-results</code></td><td class="wrap">DC results saved by KiPI 0.7 and
     earlier, as Python pickles, which can run code; KiPI asks before it opens one, and they
     are deprecated.</td></tr>
+  <tr><td><code>*_noise_report_*.html</code>, <code>.pdf</code></td><td class="wrap">Coupled
+    Noise report, written after a solve with Report ticked</td></tr>
   <tr><td><code>*.kipi-noise-results</code></td><td class="wrap">Saved Coupled Noise results,
     every solved aggressor (Save results… / Open results… in Coupled Noise mode)</td></tr>
   <tr><td><code>*.kipi-ac-results</code></td><td class="wrap">Saved AC results, every rail

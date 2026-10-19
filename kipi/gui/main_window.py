@@ -1544,15 +1544,29 @@ class MainWindow(QMainWindow):
         self._save_setup()
         import copy
         frozen = copy.deepcopy(setup)
+        report_path = None
+        if frozen.noise.html_report and self._setup_path is not None:
+            from kipi.noise.html_report import report_name
+            report_path = self._setup_path.parent / report_name(
+                self._results_stem(), aggressor, fmt=frozen.noise.report_format)
 
         def work(progress):
             from kipi.noise.checks import NoiseError
             from kipi.noise.solver import solve_noise
             try:
-                return solve_noise(snap, frozen, aggressor, progress), None
+                result = solve_noise(snap, frozen, aggressor, progress)
             except NoiseError as e:
                 progress.warn(str(e))
                 return None, str(e)
+            if report_path is not None:
+                from kipi.noise.html_report import write_noise_report
+                try:
+                    result.report_path = str(write_report_file(
+                        lambda p: write_noise_report(p, result, snap, frozen, progress),
+                        report_path, progress))
+                except Exception as e:        # the solve's results stand without it
+                    progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+            return result, None
 
         def done(out):
             result, error = out
@@ -1560,6 +1574,7 @@ class MainWindow(QMainWindow):
                 self.noise_panel.show_error(error)
                 return
             self.noise_panel.show_result(result)
+            self._open_new_report(getattr(result, "report_path", "") or None)
 
         def partial(result):
             """The waveforms, shown while the coupling solves."""

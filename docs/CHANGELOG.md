@@ -7,6 +7,19 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Coupled Noise mode, part 5: scanning, reports and a validation board** (#69).
+  **Victims** below the Solve button picks which victims a solve covers: all, one by
+  name, or none (the waveforms only). **Scan nearby nets** looks for victims too: every
+  signal net near the aggressor gets a quick estimate of its noise, and the worst are
+  solved in full with default terminations (Settings: scan radius, how many, driver and
+  logic level), marked "(scan)" in the results. **Report** writes an HTML or PDF report
+  of each solve: victims against their margins, the aggressor's parasitics and
+  waveforms, each victim's noise by mechanism, the scan and the notes. A new validation
+  board, `examples/validation/coupled_noise`, has a victim beside the switch node, one
+  beside the hot loop and one behind the ground plane; the tests check each is coupled the
+  way its route says, their ranking, and that a scan finds them. Shared-ground coupling
+  now takes only the copper's resistance between a victim's grounds: its inductive part
+  is the victim's own loop picking up the field, which the inductive coupling counts.
 - **Coupled Noise mode, part 4: the board model and shared-ground coupling** (#69). The
   converter's input and output rails and their ground are solved with AC mode's field
   model, with the switching currents as sources: they now divide among every capacitor

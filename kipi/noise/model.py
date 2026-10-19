@@ -174,6 +174,18 @@ class NoiseSettings:
     # ground coupling.
     board_model: bool = True
     field_per_decade: int = 10
+    # Which victims a solve covers: "all", "none" (the waveforms only) or one's name.
+    victims: str = "all"
+    # Scan the signal nets near the aggressor (kipi.noise.scan): those within scan_radius_mm
+    # of its parts are estimated, and the scan_top_n worst solved in full with these
+    # defaults.
+    scan: bool = False
+    scan_radius_mm: float = 10.0
+    scan_top_n: int = 10
+    scan_driver_ohm: float = 33.0
+    scan_logic_v: float = 3.3
+    html_report: bool = False           # write a report after each solve
+    report_format: str = "html"         # "html" or "pdf"
 
 
 def phase_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]

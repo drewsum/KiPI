@@ -24,7 +24,43 @@ def _unique(branches: List[CapBranch]) -> List[CapBranch]:
     return list(seen.values())
 
 
-def _board_model(snap, setup, agg, op, wf, result, progress):
+def _victims(snap, setup, agg, wf, layouts, result, progress):
+    """The victims this solve covers: the setup's (all, one or none, by the settings) and
+    the worst nets the scan finds."""
+    from kipi.noise.model import Victim
+    s = setup.noise
+    if s.victims == "all":
+        chosen = list(setup.victims)
+    elif s.victims == "none":
+        chosen = []
+    else:
+        chosen = [v for v in setup.victims if v.name == s.victims]
+        if not chosen:
+            progress.warn(f"No victim named {s.victims}: solving them all")
+            chosen = list(setup.victims)
+    if not s.scan:
+        return chosen
+    from kipi.noise.checks import guess_ends
+    from kipi.noise.scan import candidates, estimate
+    progress.stage("Scan")
+    exclude = [ph.switch_net for ph in agg.phases] + [v.net for v in setup.victims]
+    with progress.timed("scan"):
+        rows = estimate(snap, setup, agg, wf, layouts,
+                        candidates(snap, agg, s.scan_radius_mm, exclude))
+    for row in rows[:max(s.scan_top_n, 0)]:
+        drv, rcv = guess_ends(snap, row.net)
+        if drv is None or rcv is None:
+            continue
+        row.solved = True
+        chosen.append(Victim(row.net, driver=drv, receiver=rcv, driver_ohm=s.scan_driver_ohm,
+                             logic_v=s.scan_logic_v))
+    result.scan = rows
+    progress.info(f"Scan: {len(rows)} net(s) within {s.scan_radius_mm:g} mm, the worst "
+                  f"{sum(r.solved for r in rows)} solved in full")
+    return chosen
+
+
+def _board_model(snap, setup, agg, op, wf, result, progress, victims=None):
     """Run the board model and put its capacitor currents and ripple into the waveforms;
     None (with a warning) where it cannot be built."""
     from kipi.ac.solver.fem import ACError
@@ -37,7 +73,7 @@ def _board_model(snap, setup, agg, op, wf, result, progress):
     gnd = vrm.ground.net if vrm.ground else next(
         (ph.low_side.net for ph in agg.phases if ph.low_side), "")
     grounds = {}
-    for v in setup.victims:
+    for v in (setup.victims if victims is None else victims):
         d, r, _ = ends(snap, v)
         grounds[v.name] = (ground_pads(snap, d.ref, gnd) if d else [],
                            ground_pads(snap, r.ref, gnd) if r else [])
@@ -122,23 +158,27 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
         progress.warn(w)
     progress.partial(result)
 
+    victims = _victims(snap, setup, agg, wf, layouts, result, progress)
+
     board = None
     if setup.noise.board_model:
-        board = _board_model(snap, setup, agg, op, wf, result, progress)
+        board = _board_model(snap, setup, agg, op, wf, result, progress, victims)
         if board is not None:
             progress.partial(result)
 
-    if setup.victims:
+    if victims:
         from kipi.noise.extract.xsection import Cache
         from kipi.noise.victims import couple
         progress.stage("Victims")
         cache = Cache()
-        for i, victim in enumerate(setup.victims):
-            progress.fraction(i / len(setup.victims))
+        scanned = {r.net for r in result.scan if r.solved}
+        for i, victim in enumerate(victims):
+            progress.fraction(i / len(victims))
             with progress.timed(f"victim {victim.name}"):
                 vr = couple(snap, setup, victim, agg, wf, cache, progress.check_cancel,
                             layouts, board.ground_diff.get(victim.name)
                             if board is not None else None)
+            vr.scanned = victim.name in scanned and victim not in setup.victims
             result.victims.append(vr)
             ok = "PASS" if vr.passed else "FAIL"
             progress.info(f"Victim {vr.name}: {vr.peak_v * 1e3:.4g} mV peak "

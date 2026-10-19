@@ -32,6 +32,7 @@ from kipi.dc.gui.pi_panel import (
     _spin, _unique, make_searchable, tip,
 )
 from kipi.dc.pi.model import PISetup
+from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
 from kipi.noise.checks import (
     NoiseError, guess_ends, operating_point, seed_phases, smps_vrms, validate_noise,
@@ -725,7 +726,32 @@ class NoisePanel(QWidget, PartSelection):
         self.btn_solve.clicked.connect(self._solve)
         row.addWidget(QLabel("Aggressor"))
         row.addWidget(self.cmb_agg, 2)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        self.cmb_victims = QComboBox(self)
+        self.cmb_victims.setToolTip("The victims to solve: all of them, one, or none (the "
+                                    "aggressor's waveforms only)")
+        self.cmb_victims.currentIndexChanged.connect(self._victims_changed)
+        self.chk_scan = QCheckBox("Scan nearby nets", self)
+        self.chk_scan.setToolTip("Also look for victims: estimate the noise on every signal "
+                                 "net with a trace near the aggressor and solve the worst in "
+                                 "full, with the scan's default driver and logic level (see "
+                                 "Settings)")
+        self.chk_scan.toggled.connect(self._scan_toggled)
+        row.addWidget(QLabel("Victims"))
+        row.addWidget(self.cmb_victims, 2)
+        row.addWidget(self.chk_scan)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        self.report_option = ReportOption("waveforms, victims and scan, after each solve",
+                                          self._report_changed, self)
+        self.btn_report = QPushButton("Open report", self)
+        self.btn_report.setToolTip("Open the shown aggressor's report")
+        self.btn_report.setVisible(False)
+        self.btn_report.clicked.connect(self._open_report)
         row.addWidget(self.btn_solve, 1)
+        row.addWidget(self.report_option)
+        row.addWidget(self.btn_report)
         lay.addLayout(row)
 
         g_res = QGroupBox("Results", self)
@@ -799,6 +825,29 @@ class NoisePanel(QWidget, PartSelection):
         f.addRow("Coupling window", self.spin_window)
         f.addRow(self.chk_board)
         f.addRow("Field solves per decade", self.spin_fpd)
+        self.spin_radius = _spin(0.5, 500, s.scan_radius_mm, 1, " mm", 1)
+        self.spin_top = QSpinBox()
+        self.spin_top.setRange(1, 1000)
+        self.spin_top.setValue(s.scan_top_n)
+        self.spin_scan_drv = _spin(0.01, 1e9, s.scan_driver_ohm, 2, " Ω", 1)
+        self.cmb_scan_logic = QComboBox()
+        for v in LOGIC_LEVELS:
+            self.cmb_scan_logic.addItem(f"{v:g} V", v)
+        self.cmb_scan_logic.setCurrentIndex(max(self.cmb_scan_logic.findData(s.scan_logic_v), 0))
+        f.addRow("Scan radius", self.spin_radius)
+        f.addRow("Scan: solve in full", self.spin_top)
+        f.addRow("Scan: driver resistance", self.spin_scan_drv)
+        f.addRow("Scan: logic level", self.cmb_scan_logic)
+        tip(f, self.spin_radius, "The scan looks at signal nets with a trace this close to the "
+                                 "aggressor's parts")
+        tip(f, self.spin_top, "How many of the scanned nets with the highest estimates are "
+                              "solved in full (every mechanism)")
+        tip(f, self.spin_scan_drv, "The driver resistance a scanned net is solved with: its "
+                                   "real driver is not known", ("victim_terms", "drv"))
+        tip(f, self.cmb_scan_logic, "The logic level a scanned net is judged against")
+        for wdg in (self.spin_radius, self.spin_top, self.spin_scan_drv):
+            wdg.valueChanged.connect(self._settings_changed)
+        self.cmb_scan_logic.currentIndexChanged.connect(self._settings_changed)
         tip(f, self.spin_fmax, "The highest harmonic frequency the waveforms keep. From the "
                                "edges: ten times the faster edge's corner frequency "
                                "(1/(π·rise time)) or three times the ringing frequency, "
@@ -849,13 +898,19 @@ class NoisePanel(QWidget, PartSelection):
         s.window_mm = self.spin_window.value()
         s.board_model = self.chk_board.isChecked()
         s.field_per_decade = self.spin_fpd.value()
+        s.scan_radius_mm = self.spin_radius.value()
+        s.scan_top_n = self.spin_top.value()
+        s.scan_driver_ohm = self.spin_scan_drv.value()
+        s.scan_logic_v = self.cmb_scan_logic.currentData() or s.scan_logic_v
         self._on_changed()
 
     def _load_settings(self):
         s = self.setup.noise
         for wdg, v in ((self.spin_harm, s.max_harmonics), (self.spin_periods, s.periods_shown),
                        (self.spin_zeta, s.min_ring_zeta), (self.spin_segment, s.segment_mm),
-                       (self.spin_window, s.window_mm), (self.spin_fpd, s.field_per_decade)):
+                       (self.spin_window, s.window_mm), (self.spin_fpd, s.field_per_decade),
+                       (self.spin_radius, s.scan_radius_mm), (self.spin_top, s.scan_top_n),
+                       (self.spin_scan_drv, s.scan_driver_ohm)):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
@@ -866,6 +921,14 @@ class NoisePanel(QWidget, PartSelection):
         self.chk_board.setChecked(s.board_model)
         self.chk_board.blockSignals(False)
         self.spin_fpd.setEnabled(s.board_model)
+        for w, on in ((self.chk_scan, s.scan),):
+            w.blockSignals(True)
+            w.setChecked(on)
+            w.blockSignals(False)
+        self.cmb_scan_logic.blockSignals(True)
+        self.cmb_scan_logic.setCurrentIndex(max(self.cmb_scan_logic.findData(s.scan_logic_v), 0))
+        self.cmb_scan_logic.blockSignals(False)
+        self.report_option.set_value(s.html_report, s.report_format)
 
     # ------------------------------------------------------------------ data
     def nets(self) -> List[str]:
@@ -914,11 +977,42 @@ class NoisePanel(QWidget, PartSelection):
         self.cmb_agg.setCurrentIndex(i if i >= 0 else (0 if self.setup.aggressors else -1))
         self.cmb_agg.blockSignals(False)
         self.setup.noise.aggressor = self.cmb_agg.currentData() or ""
+        self._fill_victim_choice()
         names = {a.name for a in self.setup.aggressors}
         for gone in set(self._results) - names:
             del self._results[gone]
         self.btn_save.setEnabled(bool(self._results))
         self._show_aggressor_result()
+
+    def _fill_victim_choice(self):
+        want = self.setup.noise.victims
+        self.cmb_victims.blockSignals(True)
+        self.cmb_victims.clear()
+        self.cmb_victims.addItem("All victims", "all")
+        for v in self.setup.victims:
+            self.cmb_victims.addItem(v.name, v.name)
+        self.cmb_victims.addItem("None (waveforms only)", "none")
+        i = self.cmb_victims.findData(want)
+        self.cmb_victims.setCurrentIndex(i if i >= 0 else 0)
+        self.cmb_victims.blockSignals(False)
+        self.setup.noise.victims = self.cmb_victims.currentData() or "all"
+
+    def _victims_changed(self, _i):
+        self.setup.noise.victims = self.cmb_victims.currentData() or "all"
+        self.setup_changed.emit()
+
+    def _scan_toggled(self, on: bool):
+        self.setup.noise.scan = on
+        self.setup_changed.emit()
+
+    def _report_changed(self, on: bool, fmt: str):
+        self.setup.noise.html_report, self.setup.noise.report_format = on, fmt
+
+    def _open_report(self):
+        path = getattr(self.result, "report_path", "")
+        if path:
+            from kipi.gui.browser import open_in_browser
+            open_in_browser(path)
 
     def _aggressor(self) -> Optional[Aggressor]:
         name = self.cmb_agg.currentData()
@@ -935,6 +1029,10 @@ class NoisePanel(QWidget, PartSelection):
                 self.cmb_agg.itemData(i) != a.name
                 for i, a in enumerate(self.setup.aggressors)):
             self._fill_aggressors()             # an aggressor was added, removed or renamed
+        elif self.cmb_victims.count() != len(self.setup.victims) + 2 or any(
+                self.cmb_victims.itemData(i + 1) != v.name
+                for i, v in enumerate(self.setup.victims)):
+            self._fill_victim_choice()          # a victim was added, removed or renamed
         agg = self._aggressor()
         if agg is None:
             errors = (["Add a VRM of type Switcher (in DC or AC mode), then an aggressor "
@@ -1051,6 +1149,7 @@ class NoisePanel(QWidget, PartSelection):
                   for v in getattr(result, "victims", []) for w in v.warnings]
         self.txt_notes.setText("<br>".join(lines))
         self._fill_victims(result)
+        self.btn_report.setVisible(bool(getattr(result, "report_path", "")))
         self.result_selected.emit(result)
 
     def _fill_victims(self, result):
@@ -1060,7 +1159,8 @@ class NoisePanel(QWidget, PartSelection):
         reset_sort(t)
         t.setRowCount(len(victims))
         for r, v in enumerate(victims):
-            set_row(t, r, [v.name, (f"{v.peak_v * 1e3:.4g}", v.peak_v),
+            set_row(t, r, [v.name + (" (scan)" if getattr(v, "scanned", False) else ""),
+                           (f"{v.peak_v * 1e3:.4g}", v.peak_v),
                            (f"{v.margin_v * 1e3:.4g}", v.margin_v),
                            (f"{v.ratio * 100:.3g} %", v.ratio), v.dominant,
                            "PASS" if v.passed else "FAIL"])
@@ -1075,7 +1175,7 @@ class NoisePanel(QWidget, PartSelection):
         rows = self.tbl_victims.selectionModel().selectedRows()
         if rows:
             item = self.tbl_victims.item(rows[0].row(), 0)
-            self.victim_selected.emit(item.text())
+            self.victim_selected.emit(item.text().removesuffix(" (scan)"))
 
     def _save_results(self):
         if not self._results or self.snapshot is None:

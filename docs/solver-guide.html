@@ -161,6 +161,7 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
         <li><a href="#noise-capacitive">Capacitive coupling</a></li>
         <li><a href="#noise-inductive">Inductive coupling</a></li>
         <li><a href="#noise-common">The board model and shared-ground coupling</a></li>
+        <li><a href="#noise-scan">Scanning for victims</a></li>
         <li><a href="#noise-victim">The victim's line</a></li>
       </ol></li>
     <li><a href="#solvers">Linear solvers and PARDISO</a></li>
@@ -601,12 +602,28 @@ voltage at an observing port is the terminated transfer impedance
 Z<sub>os</sub> − Z<sub>oE</sub>(Z<sub>EE</sub> + Z<sub>e</sub>)⁻¹Z<sub>Es</sub> times the
 source currents. That gives each capacitor's ripple current (which the inductive coupling
 then uses), the rails' ripple at the device, and ΔV between a victim's grounds.</p>
+<p>Only the transfer impedance's resistive part is taken between a victim's grounds. The
+inductive part of a ground's potential depends on the path it is measured along: the
+victim's own loop, its trace over the plane, links that flux, which the inductive coupling
+already counts. (The 2.5D model would also overstate it where a ground plane faces no rail
+copper: its current spreads wider than a real return, which stays under its forward path.)
+What is left is the copper's IR drop, skin effect included, between the two grounds.</p>
 <p>The receiver judges the signal against its own ground; the driver drives it from its
 own. So a ground difference ΔV drives the victim's line through the driver's output
 resistance, a current ΔV/Z<sub>D</sub> at the driver: a high-impedance receiver sees
 nearly all of ΔV. With a single capacitor on each rail the board model's split matches
 the lumped one at the low harmonics, as it must: there is nowhere else for the current to
 go.</p>
+
+<h3 id="noise-scan">Scanning for victims</h3>
+<p>A scan estimates every signal net with a trace near the aggressor's parts, then solves
+the worst in full. The estimate's capacitive part uses Maxwell's potential coefficients for
+two wires a distance d apart at height h over a plane, C<sub>m</sub>′ = 2πε·p₁₂/(p₁₁² − p₁₂²)
+with p₁₁ = ln(2h/a), p₁₂ = ½·ln(1 + 4h²/d²) and a = w/4, from each trace segment to the
+nearest switch-node copper, times the switch node's steepest dV/dt across the scan's driver
+resistance; its inductive part is the full inductive model, which is cheap. The estimate
+only ranks the nets (its capacitive part errs high, on the safe side); the results are the
+full solves.</p>
 
 <h3 id="noise-victim">The victim's line</h3>
 <p>Each segment is a lossy transmission line, Z<sub>0</sub> = √((R′ + jωL′)/(G′ + jωC′))
