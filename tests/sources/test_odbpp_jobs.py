@@ -134,10 +134,22 @@ def test_z_streams_decode(data, bits, clear):
     assert lzw.decompress(_compress(data, bits, clear)) == data
 
 
-@pytest.mark.skipif(shutil.which("gzip") is None, reason="needs gzip to check the encoder")
+def _gnu_gzip() -> bool:
+    """GNU gzip, whose .Z decoder follows ncompress. macOS ships BSD gzip, whose decoder
+    reads an empty stream and a table filled at under 16 bits differently."""
+    if shutil.which("gzip") is None:
+        return False
+    try:
+        out = subprocess.run(["gzip", "--version"], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return b"GNU" in out.stdout + out.stderr or b"Free Software" in out.stdout
+
+
+@pytest.mark.skipif(not _gnu_gzip(), reason="needs GNU gzip to check the encoder")
 @pytest.mark.parametrize("data,bits,clear", _samples(), ids=_IDS)
 def test_the_test_encoder_writes_what_gzip_reads(data, bits, clear):
-    """gzip reads .Z files with its own decoder: the streams above are real ones."""
+    """GNU gzip reads .Z files with its own decoder: the streams above are real ones."""
     z = _compress(data, bits, clear)
     got = subprocess.run(["gzip", "-dc"], input=z, capture_output=True, check=True).stdout
     assert got == data
