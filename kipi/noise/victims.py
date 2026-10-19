@@ -21,7 +21,7 @@ from kipi.noise.extract.xsection import Cache
 from kipi.noise.model import Aggressor, Victim
 from kipi.noise.network import Termination, VictimNetwork
 from kipi.noise.extract.inductive import loop_sources, victim_emf
-from kipi.noise.result import MECHANISMS, TOTAL, VictimResult
+from kipi.noise.result import MECHANISMS, TOTAL, StateResult, VictimResult
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
 
@@ -82,9 +82,6 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     if d_xy is None or r_xy is None:
         res.warnings = warnings + ["Its driver or receiver pins are not on the board"]
         return res
-    terms = [Termination(d_xy, victim.driver_ohm),
-             Termination(r_xy, victim.receiver_ohm, victim.receiver_pf * 1e-12,
-                         victim.termination_ohm)]
     obs = [net.nearest(r_xy), net.nearest(d_xy)]
     for xy, label in ((d_xy, res.driver), (r_xy, res.receiver)):
         if math.dist(xy, net.xy[net.nearest(xy)]) > 1.0:
@@ -103,14 +100,21 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
         warnings.append("No capacitor loops (set the switching device's pins and the "
                         "capacitors): no inductive coupling")
     emf, res.m_h = victim_emf(snap, sources, segs, freqs)
-    currents = {"capacitive": src}
-    if ground_diff is not None:
-        # The driver's ground sits ground_diff above the receiver's (the reference): its
-        # output resistance drives the line from there.
-        gsrc = np.zeros((len(freqs), net.n), complex)
-        gsrc[:, net.nearest(d_xy)] = ground_diff / victim.driver_ohm
-        currents["common"] = gsrc
-    out = net.solve_many(freqs, terms, obs, currents, {"inductive": emf})
+
+    def solve(driver_ohm: float):
+        terms = [Termination(d_xy, driver_ohm),
+                 Termination(r_xy, victim.receiver_ohm, victim.receiver_pf * 1e-12,
+                             victim.termination_ohm)]
+        currents = {"capacitive": src}
+        if ground_diff is not None:
+            # The driver's ground sits ground_diff above the receiver's (the reference):
+            # its output resistance drives the line from there.
+            gsrc = np.zeros((len(freqs), net.n), complex)
+            gsrc[:, net.nearest(d_xy)] = ground_diff / driver_ohm
+            currents["common"] = gsrc
+        return net.solve_many(freqs, terms, obs, currents, {"inductive": emf})
+
+    out = solve(victim.driver_ohm)
     n_t = wf.samples_per_period()
     for col, store in ((0, res.receiver_v), (1, res.driver_v)):
         total = np.zeros(len(freqs), complex)
@@ -123,5 +127,18 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     res.peak_by = {k: float(np.max(np.abs(sp.samples(n_t)))) for k, sp in res.receiver_v.items()
                    if k != TOTAL}
     res.peak_v = float(np.max(np.abs(res.receiver_v[TOTAL].samples(n_t))))
+    # Held high and held low (#156): a driver whose resistance differs between them (an
+    # open drain) is solved again. Each state is judged on the noise toward its threshold.
+    totals = {victim.driver_ohm: res.receiver_v[TOTAL]}
+    for st in victim.states():
+        if st.driver_ohm not in totals:
+            o = solve(st.driver_ohm)
+            totals[st.driver_ohm] = Spectrum(f"{victim.name} {st.name}", "V", 0.0,
+                                             sum(o[k][:, 0] for k in MECHANISMS if k in o))
+        sp = totals[st.driver_ohm]
+        y = sp.samples(n_t)
+        res.states.append(StateResult(st.name, st.level_v, st.threshold_v, st.driver_ohm, sp,
+                                      max(0.0, float(np.max(st.toward * y)))))
+        res.peak_v = max(res.peak_v, float(np.max(np.abs(y))))
     res.warnings = warnings
     return res

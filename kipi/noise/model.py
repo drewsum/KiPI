@@ -66,7 +66,7 @@ class Aggressor:
 
 
 # JESD8 logic levels: supply volts -> (VIL, VIH, VOL, VOH), typical CMOS families. Off
-# the table the noise margin is 15 % of the supply.
+# the table the levels are 35/65 % and 20/80 % of the supply, a noise margin of 15 %.
 LOGIC_LEVELS = {
     5.0: (1.5, 3.5, 0.5, 4.4),          # 5 V CMOS
     3.3: (0.8, 2.0, 0.4, 2.4),          # LVTTL / LVCMOS, JESD8C
@@ -76,14 +76,40 @@ LOGIC_LEVELS = {
     1.2: (0.42, 0.78, 0.3, 0.9),        # JESD8-12
 }
 OTHER_MARGIN = 0.15
+OTHER_LEVELS = (0.35, 0.65, 0.2, 0.8)
+
+
+def logic_levels(volts: float):
+    """(VIL, VIH, VOL, VOH) of a logic family on ``volts``."""
+    for v, levels in LOGIC_LEVELS.items():
+        if abs(v - volts) < 1e-3:
+            return levels
+    return tuple(x * volts for x in OTHER_LEVELS)
 
 
 def logic_margin(volts: float) -> float:
     """The noise margin of a logic family on ``volts``: min(VIL − VOL, VOH − VIH)."""
-    for v, (vil, vih, vol, voh) in LOGIC_LEVELS.items():
-        if abs(v - volts) < 1e-3:
-            return min(vil - vol, voh - vih)
-    return OTHER_MARGIN * volts
+    vil, vih, vol, voh = logic_levels(volts)
+    return min(vil - vol, voh - vih)
+
+
+@dataclass(frozen=True)
+class LogicState:
+    """The victim held high or low (#156): the driver's level, the receiver's threshold
+    that noise must not cross, and the driver's resistance in that state."""
+    name: str                       # "high" or "low"
+    level_v: float                  # VOH or VOL
+    threshold_v: float              # VIH or VIL
+    driver_ohm: float
+
+    @property
+    def margin_v(self) -> float:
+        return abs(self.level_v - self.threshold_v)
+
+    @property
+    def toward(self) -> int:
+        """The sign of the noise that moves the line toward the threshold."""
+        return -1 if self.threshold_v < self.level_v else 1
 
 
 @dataclass(frozen=True)
@@ -95,13 +121,15 @@ class VictimPreset:
     termination_ohm: Optional[float]    # parallel termination at the receiver
     margin_v: Optional[float] = None    # None: from the logic levels
     note: str = ""
+    driver_low_ohm: Optional[float] = None  # pulling low, where it differs from driver_ohm
 
 
 VICTIM_PRESETS = {
     "cmos": VictimPreset("CMOS push-pull", 33.0, 1e6, 3.0, None,
                          note="a logic output driving a CMOS input"),
     "open_drain": VictimPreset("Open drain, pulled up", 4700.0, 1e6, 5.0, None,
-                               note="released: only the pull-up holds the line"),
+                               note="released: only the pull-up holds the line",
+                               driver_low_ohm=20.0),
     "series": VictimPreset("Series terminated", 50.0, 1e6, 3.0, None,
                            note="driver plus series resistor matched to the trace"),
     "parallel": VictimPreset("Parallel terminated (50 Ω)", 25.0, 1e6, 3.0, 50.0,
@@ -123,23 +151,41 @@ class Victim:
     preset: str = "cmos"            # a VICTIM_PRESETS key, or "custom"
     driver: Optional[PinRef] = None     # None: one end of the net, guessed
     receiver: Optional[PinRef] = None
-    driver_ohm: float = 33.0
+    driver_ohm: float = 33.0            # driving high (an open drain: the pull-up)
     receiver_ohm: float = 1e6
     receiver_pf: float = 3.0
     termination_ohm: Optional[float] = None
     logic_v: float = 3.3
     noise_margin_v: Optional[float] = None   # None: from the preset or the logic levels
+    driver_low_ohm: Optional[float] = None   # driving low; None: driver_ohm
 
     def __post_init__(self):
         self.name = self.name or self.net
 
-    def margin(self) -> float:
+    def _set_margin(self) -> Optional[float]:
+        """The margin set by hand or by the type, None where the logic levels give it."""
         if self.noise_margin_v is not None:
             return self.noise_margin_v
         preset = VICTIM_PRESETS.get(self.preset)
         if preset is not None and preset.margin_v is not None:
             return preset.margin_v
-        return logic_margin(self.logic_v)
+        return None
+
+    def margin(self) -> float:
+        m = self._set_margin()
+        return logic_margin(self.logic_v) if m is None else m
+
+    def states(self) -> List[LogicState]:
+        """The line held high and held low: the logic family's output level, the input
+        threshold on the far side of the margin (a margin set by hand or by the type
+        moves the threshold) and the driver's resistance in that state."""
+        vil, vih, vol, voh = logic_levels(self.logic_v)
+        m = self._set_margin()
+        if m is not None:
+            vih, vil = voh - m, vol + m
+        low = self.driver_ohm if self.driver_low_ohm is None else self.driver_low_ohm
+        return [LogicState("high", voh, vih, self.driver_ohm),
+                LogicState("low", vol, vil, low)]
 
     def apply_preset(self, key: str):
         """Take a preset's terminations (custom keeps the values)."""
@@ -149,6 +195,7 @@ class Victim:
             return
         self.driver_ohm, self.receiver_ohm = p.driver_ohm, p.receiver_ohm
         self.receiver_pf, self.termination_ohm = p.receiver_pf, p.termination_ohm
+        self.driver_low_ohm = p.driver_low_ohm
 
 
 @dataclass
@@ -221,7 +268,7 @@ def victim_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]])
         receiver_ohm=float(d.get("receiver_ohm", 1e6)),
         receiver_pf=float(d.get("receiver_pf", 3.0)),
         termination_ohm=d.get("termination_ohm"), logic_v=float(d.get("logic_v", 3.3)),
-        noise_margin_v=d.get("noise_margin_v"))
+        noise_margin_v=d.get("noise_margin_v"), driver_low_ohm=d.get("driver_low_ohm"))
 
 
 def settings_from_dict(d: dict) -> NoiseSettings:

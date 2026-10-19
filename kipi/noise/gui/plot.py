@@ -15,7 +15,8 @@ MAX_CAP_CURVES = 12             # more capacitors than this: the largest current
 
 VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("cin", "Input capacitor currents"), ("cout", "Output capacitor currents"),
-         ("ripple", "Input and output ripple voltage"), ("victim", "Victim noise"))
+         ("ripple", "Input and output ripple voltage"), ("victim", "Victim noise"),
+         ("states", "Victim held high and low"))
 
 # The victim view's curves (#154): the superposition of the mechanisms is shown, each
 # mechanism on its own only when ticked.
@@ -40,6 +41,7 @@ class NoisePlot(QWidget):
         self.figure.patch.set_facecolor("#1e1e1e")
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.ax = self.figure.add_subplot(111)
+        self.axes = [self.ax]
         self.cmb_view = QComboBox(self)
         for key, text in VIEWS:
             self.cmb_view.addItem(text, key)
@@ -85,26 +87,36 @@ class NoisePlot(QWidget):
         self.result = None
         self.periods = 2                # switching periods shown (NoiseSettings.periods_shown)
         self.victim = ""                # the victim shown in the victim view
-        self._curves: List[Tuple[str, np.ndarray, np.ndarray, str]] = []
+        self._curves: List[Tuple[str, np.ndarray, np.ndarray, str, object]] = []
         self._style()
         self.canvas.draw_idle()
 
     def _style(self):
-        ax = self.ax
-        ax.set_facecolor("#1e1e1e")
-        for s in ax.spines.values():
-            s.set_color("#888")
-        ax.tick_params(colors="#ccc", which="both")
-        ax.xaxis.label.set_color("#ccc")
-        ax.yaxis.label.set_color("#ccc")
-        ax.title.set_color("#ddd")
+        for ax in self.axes:
+            ax.set_facecolor("#1e1e1e")
+            for s in ax.spines.values():
+                s.set_color("#888")
+            ax.tick_params(colors="#ccc", which="both")
+            ax.xaxis.label.set_color("#ccc")
+            ax.yaxis.label.set_color("#ccc")
+            ax.title.set_color("#ddd")
+
+    def _layout(self, n: int):
+        """``n`` axes stacked, sharing the time axis; cleared and styled."""
+        if len(self.axes) != n:
+            self.figure.clear()
+            self.ax = self.figure.add_subplot(n, 1, 1)
+            self.axes = [self.ax] + [self.figure.add_subplot(n, 1, i + 1, sharex=self.ax)
+                                     for i in range(1, n)]
+        for ax in self.axes:
+            ax.clear()
+        self._style()
 
     def clear(self):
         self.result = None
         self._curves = []
         self.lbl.setText(EMPTY)
-        self.ax.clear()
-        self._style()
+        self._layout(1)
         self.canvas.draw_idle()
 
     def set_result(self, result):
@@ -115,7 +127,7 @@ class NoisePlot(QWidget):
     def set_victim(self, name: str):
         """Show victim ``name``'s noise."""
         self.victim = name
-        if self.cmb_view.currentData() == "victim":
+        if self.cmb_view.currentData() in ("victim", "states"):
             self._draw()
         else:
             self.set_view("victim")
@@ -141,6 +153,10 @@ class NoisePlot(QWidget):
             caps = wf.input_caps if key == "cin" else wf.output_caps
             ranked = sorted(caps.items(), key=lambda kv: -kv[1].ac_rms())[:MAX_CAP_CURVES]
             return [(f"{ref} ({kv.ac_rms():.3g} A rms)", kv) for ref, kv in ranked]
+        if key == "states":
+            v = self._victim()
+            return [] if v is None else [(f"{v.receiver} held {st.name}", st.receiver_v)
+                                         for st in v.states if st.receiver_v is not None]
         if key == "victim":
             v = self._victim()
             if v is None:
@@ -167,18 +183,21 @@ class NoisePlot(QWidget):
 
     def _draw(self):
         from matplotlib.ticker import FuncFormatter
-        ax = self.ax
-        ax.clear()
-        self._style()
         self._curves = []
         key = self.cmb_view.currentData()
+        spectrum = self.chk_spectrum.isChecked()
         self.victim_row.setVisible(key == "victim")
+        spectra = self._spectra() if self.result is not None else []
+        states = key == "states" and not spectrum and len(spectra) > 1
+        self._layout(len(spectra) if states else 1)
+        ax = self.ax
         if self.result is None:
             self.canvas.draw_idle()
             return
         wf = self.result.waveforms
-        spectra = self._spectra()
-        spectrum = self.chk_spectrum.isChecked()
+        if states:
+            self._draw_states(self._victim(), wf)
+            return
         if key == "victim":
             v = self._victim()
             for k, chk in self.chk_curves.items():       # mechanisms this victim lacks
@@ -186,7 +205,9 @@ class NoisePlot(QWidget):
         if not spectra:
             victim = ("No victims were solved: add them in the Victims tab"
                       if self._victim() is None else "Tick a curve to plot")
-            self.lbl.setText({"victim": victim,
+            if key == "states" and self._victim() is not None:
+                victim = "This result has no high and low states: solve it again"
+            self.lbl.setText({"victim": victim, "states": victim,
                               "sw": EMPTY}.get(key, "Nothing to plot: no capacitors are set "
                                                     "for this rail"))
             self.canvas.draw_idle()
@@ -198,7 +219,7 @@ class NoisePlot(QWidget):
                 amp = s.amplitude()
                 ax.loglog(f, np.maximum(amp, 1e-15), color=COLORS[i % len(COLORS)], lw=1.0,
                           label=label)
-                self._curves.append((label, f, amp, unit))
+                self._curves.append((label, f, amp, unit, ax))
             peak = max(float(np.max(c[2])) for c in self._curves)
             if peak > 0:                      # the nulls between harmonics' lobes go far down
                 ax.set_ylim(peak * 1e-8, peak * 3)
@@ -213,7 +234,7 @@ class NoisePlot(QWidget):
             for i, (label, s) in enumerate(spectra):
                 y = s.samples(n, periods)
                 ax.plot(t * 1e6, y, color=COLORS[i % len(COLORS)], lw=1.0, label=label)
-                self._curves.append((label, t, y, unit))
+                self._curves.append((label, t, y, unit, ax))
             ax.set_xlim(0, t[-1] * 1e6)
             v = self._victim() if self.cmb_view.currentData() == "victim" else None
             # The margin lines are drawn where they fit; far above small noise they would
@@ -228,7 +249,7 @@ class NoisePlot(QWidget):
             ax.set_ylabel(unit)
             ax.grid(True, color="#444", lw=0.5)
         op = self.result.operating
-        v = self._victim() if self.cmb_view.currentData() == "victim" else None
+        v = self._victim() if self.cmb_view.currentData() in ("victim", "states") else None
         if v is not None:
             ax.set_title(f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of "
                          f"its margin, from {self.result.aggressor}", fontsize=10)
@@ -240,18 +261,64 @@ class NoisePlot(QWidget):
         for txt in leg.get_texts():
             txt.set_color("#ddd")
         hint = "Hover to read the curves"
-        if v is not None and not spectrum and v.margin_v > 4 * max(v.peak_v, 1e-15):
+        if (v is not None and key == "victim" and not spectrum
+                and v.margin_v > 4 * max(v.peak_v, 1e-15)):
             hint += f" (the ±{v.margin_v * 1e3:.4g} mV noise margin is off the scale)"
         self.lbl.setText(hint)
         self.canvas.draw_idle()
 
+    def _draw_states(self, v, wf):
+        """The victim's line held high (top) and low (#156): the driver's level with the
+        receiver's noise on it, against the input threshold it must not cross."""
+        periods = max(1, int(self.periods))
+        t = wf.time(periods)
+        n = wf.samples_per_period()
+        off = []
+        names = {"high": ("VOH", "VIH"), "low": ("VOL", "VIL")}
+        for i, (ax, st) in enumerate(zip(self.axes, v.states)):
+            noise = st.receiver_v.samples(n, periods)
+            label = f"{v.receiver} held {st.name}"
+            ax.plot(t * 1e6, st.level_v + noise, color=COLORS[i % len(COLORS)], lw=1.0,
+                    label=label)
+            self._curves.append((label, t, st.level_v + noise, "V", ax))
+            out_name, in_name = names.get(st.name, ("level", "threshold"))
+            ax.axhline(st.level_v, color="#999", lw=0.8, ls=":",
+                       label=f"{out_name} {st.level_v:.3g} V")
+            peak = max(float(np.max(np.abs(noise))), 1e-15)
+            # As in the noise view: the threshold is drawn where it fits beside the noise.
+            if st.margin_v <= 4 * peak:
+                ax.axhline(st.threshold_v, color="#ff6060", lw=1.0, ls="--",
+                           label=f"{in_name} {st.threshold_v:.3g} V")
+            else:
+                ax.set_ylim(st.level_v - 1.3 * peak, st.level_v + 1.3 * peak)
+                off.append(f"{in_name} {st.threshold_v:.3g} V")
+            ax.ticklabel_format(axis="y", useOffset=False)
+            ax.set_ylabel("V")
+            ax.set_xlim(0, t[-1] * 1e6)
+            ax.grid(True, color="#444", lw=0.5)
+            ax.set_title(f"{v.name} held {st.name} (driver {st.driver_ohm:.4g} Ω): "
+                         f"{st.excursion_v * 1e3:.4g} mV toward {in_name}, "
+                         f"{st.ratio * 100:.3g} % of its {st.margin_v * 1e3:.4g} mV margin",
+                         fontsize=9)
+            leg = ax.legend(loc="best", fontsize=8, facecolor="#2a2a2a", edgecolor="#555")
+            for txt in leg.get_texts():
+                txt.set_color("#ddd")
+        self.axes[-1].set_xlabel("Time (µs)")
+        hint = "Hover to read the curves"
+        if off:
+            hint += f" ({' and '.join(off)} off the scale)"
+        self.lbl.setText(hint)
+        self.canvas.draw_idle()
+
     def _hover(self, event):
-        if not self._curves or event.inaxes is not self.ax or event.xdata is None:
+        if not self._curves or event.inaxes not in self.axes or event.xdata is None:
             return
         spectrum = self.chk_spectrum.isChecked()
         x = event.xdata if spectrum else event.xdata * 1e-6
         parts = []
-        for label, xs, ys, unit in self._curves:
+        for label, xs, ys, unit, ax in self._curves:
+            if ax is not event.inaxes:
+                continue
             k = int(np.argmin(np.abs(xs - x)))
             if not parts:
                 parts.append(_eng_hz(xs[k]) if spectrum else _eng(xs[k], "s"))

@@ -15,6 +15,26 @@ TOTAL = "total"
 
 
 @dataclass
+class StateResult:
+    """The victim held high or low (#156): its receiver's noise in that state, around the
+    driver's level, against the threshold the noise must not cross."""
+    name: str                           # "high" or "low"
+    level_v: float                      # VOH or VOL
+    threshold_v: float                  # VIH or VIL
+    driver_ohm: float
+    receiver_v: Optional[Spectrum] = None   # the superposition, about the level
+    excursion_v: float = 0.0            # the noise's largest step toward the threshold
+
+    @property
+    def margin_v(self) -> float:
+        return abs(self.level_v - self.threshold_v)
+
+    @property
+    def ratio(self) -> float:
+        return self.excursion_v / self.margin_v if self.margin_v > 0 else float("inf")
+
+
+@dataclass
 class VictimResult:
     """The noise coupled onto one victim net, at its receiver and driver."""
     name: str
@@ -34,6 +54,9 @@ class VictimResult:
     solves: int = 0                     # cross-sections solved (the rest were cached)
     warnings: List[str] = field(default_factory=list)
     scanned: bool = False               # found by the scan (default terminations)
+    # The line held high and held low, each with the driver's resistance in that state;
+    # receiver_v and driver_v above are the high state's.
+    states: List[StateResult] = field(default_factory=list)
 
     @property
     def ratio(self) -> float:
@@ -96,4 +119,9 @@ class NoiseResult:
                          f"{'PASS' if v.passed else 'FAIL'}; {by} mV); {cm * 1e15:.4g} fF "
                          f"to the switch node over {v.coupled_mm:.3g} of {v.length_mm:.3g} "
                          f"mm, {m * 1e12:.4g} pH to the capacitor loops")
+            for st in v.states:
+                lines.append(f"Victim {v.name} held {st.name} ({st.level_v:.3g} V, driver "
+                             f"{st.driver_ohm:.4g} Ω): {st.excursion_v * 1e3:.4g} mV toward "
+                             f"its {st.threshold_v:.3g} V threshold, {st.ratio * 100:.3g} % "
+                             f"of {st.margin_v * 1e3:.4g} mV")
         return lines

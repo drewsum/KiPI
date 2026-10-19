@@ -474,6 +474,8 @@ class VictimEditor(_Editor):
         self.driver = self._picker(optional=True)
         self.receiver = self._picker(optional=True)
         self.driver_ohm = _spin(0.01, 1e9, 33, 2, " Ω", 1)
+        self.driver_low_ohm = _optional_spin(0.1, 1e9, 2, " Ω", 1)
+        self.driver_low_ohm.setSpecialValueText("as driving high")
         self.receiver_ohm = _spin(1, 1e12, 1e6, 0, " Ω", 1000)
         self.receiver_pf = _spin(0, 1e5, 3, 2, " pF", 0.5)
         self.termination = _optional_spin(1, 1e6, 1, " Ω", 1)
@@ -484,12 +486,14 @@ class VictimEditor(_Editor):
         self.margin = _optional_spin(0, 100, 1, " mV", 1)
         self.lbl_margin = QLabel()
         self.lbl_margin.setStyleSheet("color: #aaa;")
+        self.lbl_margin.setWordWrap(True)
         f.addRow("Net", self.net)
         f.addRow("Name", self.name)
         f.addRow("Type", self.preset)
         f.addRow("Driver pins", self.driver)
         f.addRow("Receiver pins", self.receiver)
         f.addRow("Driver resistance", self.driver_ohm)
+        f.addRow("Driving low", self.driver_low_ohm)
         f.addRow("Receiver resistance", self.receiver_ohm)
         f.addRow("Receiver capacitance", self.receiver_pf)
         f.addRow("Termination", self.termination)
@@ -509,9 +513,15 @@ class VictimEditor(_Editor):
                 (self.receiver, "The receiver's pin: where the coupled noise is judged "
                                 "against the noise margin. Blank: the other end of the net.",
                  ("victim_terms", "rcv")),
-                (self.driver_ohm, "The driver's output impedance (or a pull-up's resistance "
-                                  "for an open-drain line released high). Lower holds the "
-                                  "line harder against capacitive coupling.",
+                (self.driver_ohm, "The driver's output impedance while it holds the line "
+                                  "high (or a pull-up's resistance for an open-drain line "
+                                  "released high). Lower holds the line harder against "
+                                  "capacitive coupling.",
+                 ("victim_terms", "drv")),
+                (self.driver_low_ohm, "The driver's output impedance while it pulls the line "
+                                      "low, where it differs from driving high: an open "
+                                      "drain's switch on-resistance. The noise is solved for "
+                                      "the line held high and held low.",
                  ("victim_terms", "drv")),
                 (self.receiver_ohm, "The receiver's input resistance to ground",
                  ("victim_terms", "rcv")),
@@ -524,11 +534,12 @@ class VictimEditor(_Editor):
                               "logic level (or the type). A victim fails when its peak "
                               "coupled noise exceeds it.", None)):
             tip(f, w, text, art)
-        self._watch(self.name, self.driver_ohm, self.receiver_ohm, self.receiver_pf,
-                    self.termination, self.logic, self.margin)
+        self._watch(self.name, self.driver_ohm, self.driver_low_ohm, self.receiver_ohm,
+                    self.receiver_pf, self.termination, self.logic, self.margin)
         self.net.currentIndexChanged.connect(self._net_changed)
         self.preset.currentIndexChanged.connect(self._preset_changed)
-        for w in (self.driver_ohm, self.receiver_ohm, self.receiver_pf, self.termination):
+        for w in (self.driver_ohm, self.driver_low_ohm, self.receiver_ohm, self.receiver_pf,
+                  self.termination):
             w.valueChanged.connect(self._custom)
 
     def refresh_choices(self):
@@ -557,6 +568,7 @@ class VictimEditor(_Editor):
         self.driver.set_value(v.driver)
         self.receiver.set_value(v.receiver)
         self.driver_ohm.setValue(v.driver_ohm)
+        _set_optional(self.driver_low_ohm, v.driver_low_ohm)
         self.receiver_ohm.setValue(v.receiver_ohm)
         self.receiver_pf.setValue(v.receiver_pf)
         _set_optional(self.termination, v.termination_ohm)
@@ -576,6 +588,7 @@ class VictimEditor(_Editor):
         v.driver = self.driver.value()
         v.receiver = self.receiver.value()
         v.driver_ohm = self.driver_ohm.value()
+        v.driver_low_ohm = _get_optional(self.driver_low_ohm)
         v.receiver_ohm = self.receiver_ohm.value()
         v.receiver_pf = self.receiver_pf.value()
         v.termination_ohm = _get_optional(self.termination)
@@ -585,7 +598,10 @@ class VictimEditor(_Editor):
         self._show_margin(v)
 
     def _show_margin(self, v: Victim):
-        self.lbl_margin.setText(f"Margin used: {v.margin() * 1e3:.4g} mV")
+        hi, lo = v.states()
+        self.lbl_margin.setText(f"Margin used: {v.margin() * 1e3:.4g} mV (high: "
+                                f"{hi.level_v:.3g} V against {hi.threshold_v:.3g} V; low: "
+                                f"{lo.level_v:.3g} V against {lo.threshold_v:.3g} V)")
 
     def _net_changed(self, _i):
         """Another net: its pins are guessed afresh."""
@@ -616,9 +632,11 @@ class VictimEditor(_Editor):
         if self._loading or self.obj is None:
             return
         p = VICTIM_PRESETS.get(self.preset.currentData() or "")
-        if p is not None and (self.driver_ohm.value(), self.receiver_ohm.value(),
-                              self.receiver_pf.value(), _get_optional(self.termination)) \
-                != (p.driver_ohm, p.receiver_ohm, p.receiver_pf, p.termination_ohm):
+        if p is not None and (self.driver_ohm.value(), _get_optional(self.driver_low_ohm),
+                              self.receiver_ohm.value(), self.receiver_pf.value(),
+                              _get_optional(self.termination)) \
+                != (p.driver_ohm, p.driver_low_ohm, p.receiver_ohm, p.receiver_pf,
+                    p.termination_ohm):
             self.preset.blockSignals(True)
             self.preset.setCurrentIndex(self.preset.findData(CUSTOM))
             self.preset.blockSignals(False)

@@ -38,6 +38,14 @@ milestones rather than versions that were ever set.
   box** (#154). By default the plot shows the receiver's noise from every mechanism added
   up, and the driver end's. Tick Capacitive, Inductive or Common ground to add that
   mechanism's own curve, or untick Superposition or Driver end to hide those curves.
+- **Coupled noise is shown with the victim held high and held low** (#156). A new plot
+  view, **Victim held high and low**, draws the receiver's line at the logic family's VOH
+  with VIH below it, and at VOL with VIL above it, with the noise on each. Each state's
+  title gives how far the noise goes toward that threshold and what share of the margin
+  it uses. A victim has a new **Driving low** resistance: the open-drain type sets it to
+  20 Ω, the switch's on-resistance, while the 4.7 kΩ pull-up holds the line high. Where
+  the two differ, the solve runs once per state. The pass/fail verdict is unchanged: the
+  largest noise in either state against the smaller margin.
 
 ## 0.9.0
 
