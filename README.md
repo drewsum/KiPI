@@ -34,7 +34,7 @@ control in KiPI has a tooltip.
 
 ![KiPI main window: nets and layers on the left, the board in 3D, the PI setup on the right](docs/images/overview.png)
 
-**Status: 0.8.0 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). Added a standalone mode. This tool can now run on its own, has an app launcher that handles dependencies, and can import data from arbitrary layouts. The author wants to add support for a variety of PCB file formats to be able to import. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there. 
+**Status: 0.9.1 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). Added a standalone mode. This tool can now run on its own, has an app launcher that handles dependencies, and can import data from arbitrary layouts. The author wants to add support for a variety of PCB file formats to be able to import. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there. 
 
 ## Install
 

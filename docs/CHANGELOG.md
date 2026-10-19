@@ -4,7 +4,20 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.0 (in development)
+## 0.9.1 (in development)
+
+### Changed
+- **The main window fits the screen; the setup file is written only by Save** (#142, from
+  Tomachie). The board and setup docks scroll, so the window opens above the taskbar on a
+  short laptop screen, and the Log always shows a few lines. One bar above the setup pages
+  holds the setup name, **Import…** and **Save** in every mode. Importing a pdn.json and
+  running a DC, AC or Coupled Noise solve no longer overwrite the setup file. While there
+  are unsaved changes, Save is outlined in orange, and closing the window or opening a board
+  asks Save / Discard / Cancel. The mode switch, Import and Save are greyed out while a task
+  runs. A pdn.json import asks before replacing a power tree, and the Log's last line says
+  what it read and how that differs from the tree it replaced.
+
+## 0.9.0
 
 ### Added
 - **Victim markers in the 3D view** (#69). In Coupled Noise mode, PI Models marks each

@@ -1642,8 +1642,6 @@ class MainWindow(QMainWindow):
             self.noise_panel.set_busy(True, queued=True)
             self.log("Coupled Noise solve queued until the current task finishes")
             return
-        self._save_setup()
-        import copy
         frozen = copy.deepcopy(setup)
         report_path = None
         if frozen.noise.html_report and self._setup_path is not None:

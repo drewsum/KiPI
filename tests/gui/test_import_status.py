@@ -58,3 +58,22 @@ def test_import_says_what_it_read_and_what_changed(app, no_3d, tmp_path, monkeyp
         assert setup_file.read_text(encoding="utf-8") == "the user's own setup"
     finally:
         w.close()
+
+
+def test_a_solve_does_not_write_the_setup_file(app, no_3d, tmp_path, monkeypatch):
+    from kipi.gui.main_window import MainWindow
+    sys.path.insert(0, str(Path(__file__).parents[1] / "dc"))
+    from tree_boards import board
+    w = MainWindow()
+    try:
+        w.snapshot = board()
+        w._load_setup(w.snapshot)
+        setup_file = tmp_path / "kept.kipi-setup.yml"
+        setup_file.write_text("the user's own setup", encoding="utf-8")
+        w._setup_path = setup_file
+        monkeypatch.setattr(w, "_run", lambda *a, **k: None)     # the solve itself is not run
+        w.run_solve(w.solve_panel.setup)
+        w.run_noise_solve(w.noise_panel.setup, "")
+        assert setup_file.read_text(encoding="utf-8") == "the user's own setup"
+    finally:
+        w.close()
