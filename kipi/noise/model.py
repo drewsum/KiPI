@@ -23,6 +23,10 @@ TOPOLOGIES = ("auto", "buck", "boost")
 # Used where a phase leaves them blank; the ringing they give is a typical one.
 DEFAULT_COSS_F = 200e-12                # switch-node capacitance of the switching device
 DEFAULT_RDS_ON_OHM = 0.01
+# The reverse-recovery charge the hard edge sweeps out of the other switch's body diode: a
+# low-voltage MOSFET's of about the default Coss's size, after a short dead time. A
+# Schottky or GaN low side has none (enter 0).
+DEFAULT_QRR_C = 5e-9
 
 
 @dataclass
@@ -44,6 +48,7 @@ class AggressorPhase:
     output_caps: List[str] = field(default_factory=list)
     # Optional device data (datasheet); blank uses the defaults above, with a warning.
     coss_f: Optional[float] = None      # device capacitance at the switch node
+    qrr_c: Optional[float] = None       # the other switch's body diode's reverse recovery
     rds_on_hs_ohm: Optional[float] = None
     rds_on_ls_ohm: Optional[float] = None
     package_l_h: float = 0.0            # loop inductance inside the device's package
@@ -217,6 +222,10 @@ class NoiseSettings:
     # capacitance, reverse recovery and radiation take energy too, and a switch node's
     # ringing usually dies within five to ten cycles (ζ ≈ 0.05-0.1).
     min_ring_zeta: float = 0.05
+    # The least damping of a soft edge: the one the inductor current carries across into
+    # a conducting body diode's clamp (a buck's falling edge, a boost's rising one).
+    # The clamp takes the ringing's energy, so the edge overshoots once and settles.
+    soft_edge_zeta: float = 0.5
     # Capacitive coupling (cross-sections of the victim): its traces are cut every
     # segment_mm, and copper within window_mm of the cut counts.
     segment_mm: float = 0.5
@@ -262,7 +271,7 @@ def phase_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]
         dcr_ohm=float(d.get("dcr_ohm") or 0.0), switch_net=d.get("switch_net", ""),
         high_side=pin(d.get("high_side")), low_side=pin(d.get("low_side")),
         input_caps=list(d.get("input_caps", [])), output_caps=list(d.get("output_caps", [])),
-        coss_f=d.get("coss_f"), rds_on_hs_ohm=d.get("rds_on_hs_ohm"),
+        coss_f=d.get("coss_f"), qrr_c=d.get("qrr_c"), rds_on_hs_ohm=d.get("rds_on_hs_ohm"),
         rds_on_ls_ohm=d.get("rds_on_ls_ohm"),
         package_l_h=float(d.get("package_l_h") or 0.0))
 

@@ -34,7 +34,7 @@ from kipi.core.model.parts import parse_capacitance
 from kipi.core.model.stackup import combined_epsilon_r
 from kipi.dc.pi.model import PinRef, PISetup
 from kipi.noise.extract import peec
-from kipi.noise.model import DEFAULT_COSS_F, DEFAULT_RDS_ON_OHM, AggressorPhase
+from kipi.noise.model import DEFAULT_COSS_F, DEFAULT_QRR_C, DEFAULT_RDS_ON_OHM, AggressorPhase
 from kipi.noise.waveforms import CapBranch
 
 RHO_CU_OHM_MM = 1.724e-5                # annealed copper, 20 °C
@@ -67,6 +67,8 @@ class HotLoopReport:
     # The damping the loop's resistance alone gives; ``zeta`` is at least the settings'
     # least damping (NoiseSettings.min_ring_zeta).
     zeta_loop: float = 1.0
+    qrr_c: float = DEFAULT_QRR_C    # swept out on the hard edge
+    qrr_default: bool = True
 
 
 @dataclass
@@ -363,6 +365,11 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
     if coss_default:
         notes.append(f"No Coss entered: {coss * 1e12:g} pF assumed; the ringing is "
                      "approximate")
+    qrr_default = phase.qrr_c is None
+    qrr = DEFAULT_QRR_C if qrr_default else float(phase.qrr_c)
+    if qrr_default:
+        notes.append(f"No Qrr entered: {qrr * 1e9:g} nC assumed for the hard edge's "
+                     "reverse recovery (0 for a Schottky or GaN low side)")
     c_cu = switch_node_copper_f(board, phase.switch_net)
     c_sw = coss + c_cu
     rds = phase.rds_on_hs_ohm if phase.rds_on_hs_ohm is not None else DEFAULT_RDS_ON_OHM
@@ -385,5 +392,6 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
     elif loop_l <= 0:
         notes.append("No hot-loop inductance: the switch node's edges do not ring")
     report = HotLoopReport(index, loop_l, pkg, hot_loops, c_sw, coss, coss_default, c_cu,
-                           r_loop, f_ring, zeta, plane_name, notes, zeta_loop)
+                           r_loop, f_ring, zeta, plane_name, notes, zeta_loop, qrr,
+                           qrr_default)
     return PhaseLayout(report, in_caps, out_caps, cap_loops, z_plane, plane_id)

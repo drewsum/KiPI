@@ -32,6 +32,25 @@ milestones rather than versions that were ever set.
   holes are cut in one step per island: an 18-layer job reads in 13 s instead of 200 s.
 
 ### Changed
+- **The switch node's falling edge no longer rings like its rising edge; the rising edge
+  includes reverse recovery.** In a real buck the high side's turn-on is a hard edge: it
+  takes the inductor current from the low side's conducting body diode and must sweep out
+  its reverse-recovery charge, and the diode's snap-off rings the node. The turn-off is
+  soft: the inductor current itself carries the node down into the body diode's clamp,
+  which takes the ringing's energy (TI SLPA010). A boost is the other way round. Each edge
+  now rings with its own damping:
+  - The hard edge keeps the least ringing damping (ζ = 0.05).
+  - The soft edge is damped at least **Soft edge damping** (Settings, default ζ = 0.5:
+    one overshoot, then settled), and is no faster than C_sw·V/I.
+  - A phase has a new optional **Qrr**, the body diode's reverse-recovery charge (default
+    5 nC, 0 for a Schottky or GaN switch). It flows through the hot loop as a recovery
+    current, up to Irr from Qrr = ½·Irr·(Irr/(di/dt) + t), and its snap-off rings the
+    hard edge about Irr·Z0 higher.
+  - A valley current below zero makes the turn-on soft too (zero-voltage switching).
+
+  The notes say which edge is which, and the report gives each phase's Qrr. On the
+  coupled_noise example the rising edge peaks at 22 V on the 12 V input, and the falling
+  edge undershoots to −1.6 V instead of ringing to −8.2 V.
 - **The main window fits the screen; the setup file is written only by Save** (#142, from
   Tomachie). The board and setup docks scroll, so the window opens above the taskbar on a
   short laptop screen, and the Log always shows a few lines. One bar above the setup pages

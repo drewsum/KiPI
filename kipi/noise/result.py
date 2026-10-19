@@ -117,6 +117,8 @@ class NoiseResult:
                 f"{h.c_sw_f * 1e12:.4g} pF to ground (Coss {h.coss_f * 1e12:.4g} pF"
                 f"{' assumed' if h.coss_default else ''} + copper "
                 f"{h.c_copper_f * 1e12:.3g} pF), R {h.r_loop_ohm * 1e3:.3g} mΩ; {ring}")
+            if 0 < h.phase <= len(wf.phases) and wf.phases[h.phase - 1].edges:
+                lines.append(f"Phase {h.phase}: {wf.phases[h.phase - 1].edges}")
         if self.board_note:
             lines.append(self.board_note)
         if self.scan:

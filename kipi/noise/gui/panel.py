@@ -39,7 +39,7 @@ from kipi.noise.checks import (
     NoiseError, guess_ends, operating_point, seed_phases, smps_vrms, validate_noise,
 )
 from kipi.noise.model import (
-    CUSTOM, DEFAULT_COSS_F, DEFAULT_RDS_ON_OHM, LOGIC_LEVELS, VICTIM_PRESETS, Aggressor,
+    CUSTOM, DEFAULT_COSS_F, DEFAULT_QRR_C, DEFAULT_RDS_ON_OHM, LOGIC_LEVELS, VICTIM_PRESETS, Aggressor,
     AggressorPhase, Victim,
 )
 
@@ -149,6 +149,8 @@ class AggressorEditor(_Editor):
         self.output_caps = self._cap_list()
         self.coss = _optional_spin(0, 1e6, 1, " pF", 10)
         self.coss.setSpecialValueText(f"not set ({DEFAULT_COSS_F * 1e12:g} pF)")
+        self.qrr = _optional_spin(0, 1e4, 1, " nC", 1)
+        self.qrr.setSpecialValueText(f"not set ({DEFAULT_QRR_C * 1e9:g} nC)")
         self.rds_hs = _optional_spin(0, 1e5, 3, " mΩ", 0.5)
         self.rds_hs.setSpecialValueText(f"not set ({DEFAULT_RDS_ON_OHM * 1e3:g} mΩ)")
         self.rds_ls = _optional_spin(0, 1e5, 3, " mΩ", 0.5)
@@ -163,6 +165,7 @@ class AggressorEditor(_Editor):
         pf.addRow("Input capacitors", self.input_caps)
         pf.addRow("Output capacitors", self.output_caps)
         pf.addRow("Coss", self.coss)
+        pf.addRow("Qrr", self.qrr)
         pf.addRow("High-side Rds(on)", self.rds_hs)
         pf.addRow("Low-side Rds(on)", self.rds_ls)
         pf.addRow("Package inductance", self.package_l)
@@ -196,6 +199,13 @@ class AggressorEditor(_Editor):
                             "the hot loop's inductance it sets the ringing on the switch "
                             "node's edges. Not set: a typical value, and the ringing is "
                             "approximate.", ("sw_ringing", "ring")),
+                (self.qrr, "The reverse-recovery charge of the body diode the hard edge "
+                           "switches off (a buck's low-side FET, a boost's rectifier), from "
+                           "its datasheet. The control switch's turn-on must sweep it out "
+                           "before the node can move, and the diode's snap-off rings the "
+                           "node higher. 0 for a Schottky or GaN switch, which has none. "
+                           f"Not set: {DEFAULT_QRR_C * 1e9:g} nC, a low-voltage MOSFET's "
+                           "after a short dead time.", ("sw_edges", "hard")),
                 (self.rds_hs, "The high-side switch's on-resistance; it damps the ringing "
                               "and raises a buck's duty cycle", ("sw_ringing", "ring")),
                 (self.rds_ls, "The low-side switch's on-resistance; it raises a buck's duty "
@@ -204,7 +214,8 @@ class AggressorEditor(_Editor):
                                  "from its datasheet (0 if not given); added to the loop "
                                  "simulated on the board", ("hot_loop", "loop"))):
             tip(pf, w, text, art)
-        self._watch(self.inductance, self.dcr, self.switch_net, self.coss, self.rds_hs,
+        self._watch(self.inductance, self.dcr, self.switch_net, self.coss, self.qrr,
+                    self.rds_hs,
                     self.rds_ls, self.package_l)
         self.inductor.currentIndexChanged.connect(self._inductor_changed)
         f.addRow(g)
@@ -335,6 +346,7 @@ class AggressorEditor(_Editor):
             self._fill_caps(self.input_caps, vin_net, ph.input_caps)
             self._fill_caps(self.output_caps, vout_net, ph.output_caps)
             _set_optional(self.coss, ph.coss_f * 1e12 if ph.coss_f is not None else None)
+            _set_optional(self.qrr, ph.qrr_c * 1e9 if ph.qrr_c is not None else None)
             _set_optional(self.rds_hs, ph.rds_on_hs_ohm * 1e3
                           if ph.rds_on_hs_ohm is not None else None)
             _set_optional(self.rds_ls, ph.rds_on_ls_ohm * 1e3
@@ -345,7 +357,8 @@ class AggressorEditor(_Editor):
 
     def _phase_widgets(self):
         return (self.inductor, self.inductance, self.dcr, self.switch_net, self.high_side,
-                self.low_side, self.input_caps, self.output_caps, self.coss, self.rds_hs,
+                self.low_side, self.input_caps, self.output_caps, self.coss, self.qrr,
+                self.rds_hs,
                 self.rds_ls, self.package_l)
 
     def _save(self, a: Aggressor):
@@ -372,6 +385,8 @@ class AggressorEditor(_Editor):
             ph.output_caps = self._ticked(self.output_caps)
             coss = _get_optional(self.coss)
             ph.coss_f = coss * 1e-12 if coss is not None else None
+            qrr = _get_optional(self.qrr)
+            ph.qrr_c = qrr * 1e-9 if qrr is not None else None
             hs, ls = _get_optional(self.rds_hs), _get_optional(self.rds_ls)
             ph.rds_on_hs_ohm = hs * 1e-3 if hs is not None else None
             ph.rds_on_ls_ohm = ls * 1e-3 if ls is not None else None
@@ -845,6 +860,7 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_periods.setRange(1, 20)
         self.spin_periods.setValue(s.periods_shown)
         self.spin_zeta = _spin(0, 1, s.min_ring_zeta, 3, "", 0.01)
+        self.spin_soft_zeta = _spin(0, 5, s.soft_edge_zeta, 2, "", 0.05)
         self.spin_segment = _spin(0.05, 10, s.segment_mm, 2, " mm", 0.1)
         self.spin_window = _spin(0.2, 50, s.window_mm, 1, " mm", 0.5)
         self.chk_board = QCheckBox("Board model")
@@ -855,6 +871,7 @@ class NoisePanel(QWidget, PartSelection):
         f.addRow("Highest frequency", self.spin_fmax)
         f.addRow("Harmonic limit", self.spin_harm)
         f.addRow("Least ringing damping", self.spin_zeta)
+        f.addRow("Soft edge damping", self.spin_soft_zeta)
         f.addRow("Periods shown", self.spin_periods)
         f.addRow("Victim segment", self.spin_segment)
         f.addRow("Coupling window", self.spin_window)
@@ -912,6 +929,15 @@ class NoisePanel(QWidget, PartSelection):
                                "take energy too, and measured ringing usually dies within "
                                "five to ten cycles (ζ about 0.05 to 0.1). 0 uses the loop's "
                                "resistance alone.", ("sw_ringing", "ring"))
+        tip(f, self.spin_soft_zeta, "The least damping ratio ζ of the soft edge: the one "
+                                    "the inductor current carries across into the other "
+                                    "switch's conducting body diode (a buck's falling "
+                                    "edge, a boost's rising one). The diode's clamp takes "
+                                    "the ringing's energy, so it overshoots once and "
+                                    "settles: ζ about 0.5. The hard edge, where the "
+                                    "control switch turns on against a conducting diode, "
+                                    "keeps the least ringing damping above. Set it to "
+                                    "that to ring both edges alike.", ("sw_edges", "soft"))
         tip(f, self.spin_periods, "Switching periods shown in the waveform plot")
         tip(f, self.spin_segment, "Victim traces are cut into pieces this long; each is a "
                                   "short transmission line with its own cross-section. "
@@ -934,7 +960,7 @@ class NoisePanel(QWidget, PartSelection):
         self.chk_board.toggled.connect(self._settings_changed)
         self.chk_board.toggled.connect(self.spin_fpd.setEnabled)
         for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta,
-                    self.spin_segment, self.spin_window, self.spin_fpd):
+                    self.spin_soft_zeta, self.spin_segment, self.spin_window, self.spin_fpd):
             wdg.valueChanged.connect(self._settings_changed)
         return w
 
@@ -945,6 +971,7 @@ class NoisePanel(QWidget, PartSelection):
         s.max_harmonics = self.spin_harm.value()
         s.periods_shown = self.spin_periods.value()
         s.min_ring_zeta = self.spin_zeta.value()
+        s.soft_edge_zeta = self.spin_soft_zeta.value()
         s.segment_mm = self.spin_segment.value()
         s.window_mm = self.spin_window.value()
         s.board_model = self.chk_board.isChecked()
@@ -960,7 +987,8 @@ class NoisePanel(QWidget, PartSelection):
     def _load_settings(self):
         s = self.setup.noise
         for wdg, v in ((self.spin_harm, s.max_harmonics), (self.spin_periods, s.periods_shown),
-                       (self.spin_zeta, s.min_ring_zeta), (self.spin_segment, s.segment_mm),
+                       (self.spin_zeta, s.min_ring_zeta),
+                       (self.spin_soft_zeta, s.soft_edge_zeta), (self.spin_segment, s.segment_mm),
                        (self.spin_window, s.window_mm), (self.spin_fpd, s.field_per_decade),
                        (self.spin_radius, s.scan_radius_mm), (self.spin_top, s.scan_top_n),
                        (self.spin_scan_drv, s.scan_driver_ohm)):

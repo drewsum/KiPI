@@ -69,6 +69,13 @@ def test_edits_reach_the_setup(panel):
     assert a.fsw_hz == pytest.approx(800e3) and a.rise_s == pytest.approx(3.5e-9)
     assert a.phases[0].coss_f == pytest.approx(450e-12)
     assert a.phases[0].package_l_h == pytest.approx(0.3e-9)
+    assert a.phases[0].qrr_c is None                     # not set: the default
+    ed.qrr.setValue(12)
+    assert a.phases[0].qrr_c == pytest.approx(12e-9)
+    ed.qrr.setValue(0)                                   # a Schottky: none at all
+    assert a.phases[0].qrr_c == 0.0
+    panel.spin_soft_zeta.setValue(0.3)
+    assert panel.setup.noise.soft_edge_zeta == pytest.approx(0.3)
     ed.input_caps.item(0).setCheckState(Qt.Unchecked)
     assert a.phases[0].input_caps == []
     ed.inductance.setValue(0)

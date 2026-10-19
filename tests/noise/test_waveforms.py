@@ -142,7 +142,9 @@ def test_the_hot_loop_capacitors_carry_the_ringing(topology, rail):
     duty = vout / vin if topology == "buck" else 1 - vin / vout
 
     def run(c, f=f_ring):
-        return synthesize(topology, vin, vout, 2.0, 2.0 * vout / vin, duty, fsw, 1e-9, 1e-9,
+        # The soft edge slow enough (3 ns) that C_sw·V/I does not stretch it.
+        rise, fall = (1e-9, 3e-9) if topology == "buck" else (3e-9, 1e-9)
+        return synthesize(topology, vin, vout, 2.0, 2.0 * vout / vin, duty, fsw, rise, fall,
                           [PhaseParts(2.2e-6, f, 0.05, c)], 4000, [_ideal()],
                           [_ideal()], 4000 * fsw)
 

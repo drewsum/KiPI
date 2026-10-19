@@ -106,10 +106,12 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     rows = [[str(h.phase), f"{h.loop_l_h * 1e9:.3g}", f"{h.c_sw_f * 1e12:.4g}",
              f"{h.coss_f * 1e12:.4g}" + (" (assumed)" if h.coss_default else ""),
              f"{h.c_copper_f * 1e12:.3g}", f"{h.r_loop_ohm * 1e3:.3g}",
-             f"{h.f_ring_hz / 1e6:.4g}" if h.f_ring_hz else "", f"{h.zeta:.3g}"]
+             f"{h.f_ring_hz / 1e6:.4g}" if h.f_ring_hz else "", f"{h.zeta:.3g}",
+             f"{h.qrr_c * 1e9:.3g}" + (" (assumed)" if h.qrr_default else "")]
             for h in result.hot_loops]
     parts.append(_table(["Phase", "Hot loop (nH)", "Switch node C (pF)", "Coss (pF)",
-                         "Copper C (pF)", "Loop R (mΩ)", "Ringing (MHz)", "ζ"], rows))
+                         "Copper C (pF)", "Loop R (mΩ)", "Ringing (MHz)", "ζ (hard edge)",
+                         "Qrr (nC)"], rows))
 
     # ---------------- waveforms
     if progress is not None:

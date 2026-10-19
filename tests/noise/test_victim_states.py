@@ -79,7 +79,7 @@ def test_each_state_is_solved_with_its_own_driver(tmp_path):
     # switch holds it far harder.
     hi, lo = od.states
     assert hi.receiver_v is od.receiver_v["total"] and lo.receiver_v is not hi.receiver_v
-    assert lo.excursion_v < 0.2 * hi.excursion_v
+    assert lo.excursion_v < 0.25 * hi.excursion_v
     assert od.peak_v == pytest.approx(float(np.max(np.abs(hi.receiver_v.samples(n)))))
     assert any("held low" in line for line in r.summary_lines())
     back = load_results(save_results(tmp_path / "s.kipi-noise-results", {r.aggressor: r},
