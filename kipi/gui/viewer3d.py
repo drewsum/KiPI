@@ -598,6 +598,7 @@ class Viewer3D(QWidget):
         if shown_bar and ov.title in p.scalar_bars:
             b = p.scalar_bars[ov.title]
             b.SetTextPositionToPrecedeScalarBar()
+            b.SetVerticalTitleSeparation(12)
             b.SetTextPad(-2)
             b.GetTitleTextProperty().SetOpacity(0.0)
             self._coupling_bar = ov.title

@@ -2,7 +2,7 @@
   <img src="resources/kipi.gif" alt="KiPI logo" width="128">
 </p>
 
-# KiPI — DC and AC Power Integrity Simulator (Standalone or KiCad Plugin)
+# KiPI — DC, AC and Coupled Noise Power Integrity Simulator (Standalone or KiCad Plugin)
 
 [![CI](https://github.com/drewsum/KiPI/actions/workflows/ci.yml/badge.svg)](https://github.com/drewsum/KiPI/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -12,9 +12,9 @@
 
 **New to power integrity? Read the [Solver Guide](https://drewsum.github.io/KiPI/solver-guide.html)**
 ([source](docs/solver-guide.html)): what PI analysis is, why it matters, and how KiPI's mesh
-and its DC, thermal and AC solvers work.
+and its DC, thermal, AC and coupled noise solvers work.
 
-KiPI is a power integrity analyzer that runs standalone or as a KiCad 9 and 10 IPC plugin. It has two
+KiPI is a power integrity analyzer that runs standalone or as a KiCad 9 and 10 IPC plugin. It has three
 analysis modes:
 
 * **DC: Voltage Drop.** Define voltage regulators (VRMs), loads (current into pins) and series
@@ -27,6 +27,12 @@ analysis modes:
   device's power pins, then sweep the impedance of the power distribution network (planes,
   vias, mounting and capacitors) over frequency. Check it against a flat or custom target
   impedance, with a calculator that determines the target from the load's transient spec.
+* **Coupled Noise: Switcher Noise on Signal Nets.** Treat a buck or boost regulator as an
+  aggressor: KiPI builds its switch node, inductor and capacitor ripple waveforms from the
+  layout, then works out the noise they couple onto the signal nets you name (the victims)
+  through capacitance, mutual inductance and shared ground. Each victim's receiver is
+  checked against its logic family's noise margin, with the line held high and held low, and
+  the 3D view shows where along its traces the noise couples in.
 
 New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
 **F1**) walks through every button, the workflows and what the results mean. Every
@@ -241,9 +247,11 @@ with two or more it lists them and asks you to close the others.
   analyzes filled copper only.
 * **Save snapshot… / Open snapshot…** store the extracted board as a file that KiPI can open
   later without KiCad. See example snapshots in the repo to experiment!
-* **Mode: DC / AC** (right end of the toolbar) picks the analysis mode. Readme sections 2 to 5 are DC,
-  the default; [section 6](#6-ac-pdn-impedance) covers AC. The DC setup and results are kept
-  while you are in AC mode and come back when you switch.
+* **Mode: DC / AC / Noise** (right end of the toolbar, or **Ctrl+1** / **Ctrl+2** / **Ctrl+3**)
+  picks the analysis mode. Readme sections 2 to 5 are DC, the default;
+  [section 6](#6-ac-pdn-impedance) covers AC and [section 7](#7-coupled-noise) Coupled Noise.
+  Each mode's setup and results are kept while you are in another and come back when you
+  switch; the VRMs, series links and capacitor models are shared by all three.
 * **Help** (or **F1**) opens the [user guide](docs/help.html) in your browser.
 
 ### 2. Pick Power Nets from Netlist
@@ -697,6 +705,79 @@ details, and the same User notes box as the DC report.
 
 ![The impedance plot of the example's 0.9 V core rail against its custom target, with the cursor on the anti-resonance and its values in the Info box](docs/images/ac_impedance.png)
 
+### 7. Coupled Noise
+
+Switch **Mode** to **Noise**. The **Coupled Noise setup** treats one of the setup's
+**Switcher** VRMs as an *aggressor* and the signal nets you name as *victims*. The
+screenshots below are the `examples/validation/coupled_noise` example: a 12 V to 1.8 V,
+1 MHz buck over a ground plane, with three victims. SIG_SW runs beside the switch node's
+pour, SIG_LOOP beside the hot loop's input track, and SIG_BURIED under SIG_LOOP on an inner
+layer, behind the ground plane. Open its snapshot to try it.
+
+* **Aggressors tab**: **Add** makes an aggressor from a switcher VRM and fills each phase
+  from the board: the switching device's pins, the inductor and its value, the switch node
+  and the input and output capacitors. Give the switching frequency and edge times; the
+  input and output voltages and the load current come from the DC setup unless you enter
+  them. **Coss**, **Rds(on)** and **package inductance** from the datasheet are optional.
+  KiPI draws the hot loop through the copper and computes its inductance, which with the
+  switch node's capacitance sets the ringing on every edge.
+* **Victims tab**: each victim is a net with its driver and receiver pins (guessed as the
+  net's farthest-apart pads when left blank) and a **Type**: CMOS push-pull, open drain,
+  series or parallel terminated, an LVDS leg or an analog input. The type fills in the
+  driver and receiver resistances, the receiver capacitance and any termination. An open
+  drain has a separate **Driving low** resistance: the line is held by its 4.7 kΩ pull-up
+  when high, and by the switch when low. The **Logic level** gives the JESD8 levels and so
+  the noise margin (400 mV for 3.3 V CMOS), unless you enter one.
+* **Capacitors tab**: the same capacitor models as AC mode.
+* **Settings tab**: the harmonics kept, the ringing's least damping, how finely victim
+  traces are cut into cross-sections, and the **Board model**: AC mode's field model of the
+  converter's rails and ground. It splits the ripple current among the capacitors through
+  the copper's own impedance and gives the shared-ground noise. It is the slow part of a
+  solve; untick it for a quick look.
+
+Pick the **Aggressor** and click **Solve**. The waveforms are exact Fourier series of the
+converter's piecewise-linear shapes, so they appear in well under a second, and the victims
+follow. Tick **Scan nearby nets** to also estimate every signal net near the aggressor and
+solve the worst in full. The **Waveforms** tab plots the switch node of every phase with its
+ringing, the inductor currents, each capacitor's ripple current and the rails' ripple
+voltage, in time or, with **Spectrum**, as harmonics. The notes give the hot loop's
+inductance, the switch node's capacitance and the ringing's frequency and damping.
+
+![The Waveforms tab: the buck's switch node over two periods, ringing at 179 MHz on each edge](docs/images/noise_waveforms.png)
+
+The **Results** table lists each victim's peak noise at its receiver, its margin, the share
+of the margin used, the dominant mechanism and PASS or FAIL. Select a victim to plot its
+noise under **Victim noise**. By default the plot shows the superposition of every
+mechanism; tick **Capacitive**, **Inductive** or **Common ground** to add each mechanism's
+own curve, and **Driver end** for the noise at the other end of the line.
+
+![Victim noise for SIG_SW: the superposition at the receiver with its capacitive and inductive parts, and the results table](docs/images/noise_victim.png)
+
+**Victim held high and low** draws the receiver's line as it really sits: at VOH with VIH
+below it, and at VOL with VIL above it, with the noise on each. Each plot gives how far the
+noise reaches toward its threshold and what share of that state's margin it uses. An
+open-drain line is solved once per state, as its driver holds it far harder low than high.
+
+![SIG_SW held high at 2.4 V and low at 0.4 V, with the noise riding on each level](docs/images/noise_states.png)
+
+**Coupling in 3D**, under the results table, shows where the selected victim's peak noise
+couples in. Each piece of its traces is colored by its share of the receiver's peak: red
+adds to it, blue takes from it. Pick the superposition or one mechanism. The common-ground
+share is a dot at the driver, and the capacitor loops that induce the inductive noise are
+drawn in magenta. The shares add up exactly to the peak, so the brightest pieces are the
+ones to move. Below, SIG_LOOP picks up most of its noise near the switching device, where it
+runs closest to the hot loop.
+
+![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 256 mV peak, beside the magenta capacitor loops](docs/images/noise_coupling_3d.png)
+
+The mechanisms point to different fixes. Capacitive noise comes from the switch node's
+dV/dt: keep victims away from its copper or behind a plane, and drive them harder.
+Inductive noise comes from the hot loop's dI/dt: keep the loop small and over a solid plane,
+and route victims away from it. Common noise comes from the switching current's return:
+give the hot loop its own short ground return and keep the victim's driver and receiver
+grounds out of it. Tick **Report** for an HTML or PDF report after each solve; **Save
+results…** writes a `.kipi-noise-results` file that **Open results…** reopens in this mode.
+
 ### Tips and troubleshooting
 
 * **A load shows DISCONNECTED, or "no load on this rail is connected"** usually means unrouted copper, an unfilled
@@ -749,7 +830,9 @@ it cannot check with PyPI (a test fails until you do).
 
 The tests follow the package: `tests/core` (geometry, meshing, solvers, KiCad I/O),
 `tests/dc` (power tree, thermal, DC reports and panel), `tests/ac` (impedance solve, targets,
-AC panel and report), `tests/gui` (main window and app) and `tests/scripts` (CI scripts).
+AC panel and report), `tests/noise` (waveforms, coupling extraction, victim solves, Coupled
+Noise panel and report), `tests/sources` (board file readers), `tests/gui` (main window and
+app) and `tests/scripts` (CI scripts).
 Shared test boards and the fake KiCad live in `tests/helpers`, which pytest puts on the
 import path; each folder also runs on its own (`pytest tests/dc`). CI runs each folder in
 its own log group.
@@ -829,7 +912,8 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
 | `kipi/dc/gui/` | The PI setup and results panel |
 | `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the board map data (`board_map.py`), the AC setup panel, impedance plot and Board map tab (`gui/`) |
-| `kipi/gui/` | PySide6 application shell shared by both modes: main window, mode switch, 3D viewer, worker threads, About and Help |
+| `kipi/noise/` | Coupled Noise analysis: the aggressor and victim model, the converter's waveforms as Fourier series (`waveforms.py`), the hot loop's parasitics (`parasitics.py`), capacitive and inductive coupling extraction (`extract/`), the victim's line network (`network.py`) and solve (`victims.py`), the nearby-net scan, the 3D coupling overlay (`viz.py`), the HTML report, the setup panel and Waveforms tab (`gui/`) |
+| `kipi/gui/` | PySide6 application shell shared by every mode: main window, mode switch, 3D viewer, worker threads, About and Help |
 | `docs/help.html` | The user guide opened by **Help**; a single offline HTML file |
 | `kipi/compat.py` | Opens results files saved by earlier versions, from before modules moved |
 | `examples/` | Example boards as snapshots with their PI setups, and the scripts that generate them |
