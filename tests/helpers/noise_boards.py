@@ -35,7 +35,7 @@ def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
                             shapes={F: [Poly(square(x, y, 1.0))]}))
             ids.append(pid)
             if net == "GND":
-                vias.append(Via(f"v{pid}", "GND", (x, y + 0.9), 0.3, 0.6, [F, IN1]))
+                vias.append(Via(f"v{pid}", "GND", (x, y + 0.6), 0.3, 0.6, [F, IN1]))
         x0, y0 = pins[0][2]
         fps.append(Footprint(f"f{ref}", ref, value, (x0, y0), "top", ids))
 
@@ -55,12 +55,18 @@ def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
             y, x0, x1 = 10.0 - 0.5 - victim_gap - 0.1, 3.0, 9.5
         else:
             y, x0, x1 = 12.0 + sw_area / 2 + victim_gap + 0.1, 11.5, 24.0
+        # Each end's IC has a ground pin beside its signal pin, away from the aggressor,
+        # with a via to the plane.
+        gy = y + (0.6 if victim_by != "hot_loop" else -0.6)
         for ref, x in (("U3", x0), ("U4", x1)):
-            pid = f"{ref}.1"
+            pid, gid = f"{ref}.1", f"{ref}.2"
             pads.append(Pad(pid, "SIG", ref, "1", (x, y), "smd",
                             shapes={victim_layer: [Poly(square(x, y, 0.3))]}))
+            pads.append(Pad(gid, "GND", ref, "2", (x, gy), "smd",
+                            shapes={victim_layer: [Poly(square(x, gy, 0.3))]}))
+            vias.append(Via(f"v{gid}", "GND", (x, gy), 0.2, 0.3, [F, IN1]))
             fps.append(Footprint(f"f{ref}", ref, "IC", (x, y),
-                                 "top" if victim_layer == F else "bottom", [pid]))
+                                 "top" if victim_layer == F else "bottom", [pid, gid]))
         tracks.append(Track("SIG", victim_layer, 0.2, (x0, y), (x1, y)))
     snap.pads, snap.footprints, snap.vias, snap.tracks = pads, fps, vias, tracks
     snap.zones = [Zone("zgnd", "GND", "", 0, filled={IN1: [Poly(rect(0, 0, 32, 20))]}),
@@ -71,9 +77,12 @@ def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
     return snap
 
 
-def buck_setup(load_a: float = 5.0):
+def buck_setup(load_a: float = 5.0, board_model: bool = False):
+    """The buck's VRMs and load. The board model is off unless asked for: it takes about
+    a second per solve, and most tests are about something else."""
     from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm
     setup = PISetup()
+    setup.noise.board_model = board_model
     setup.vrms.append(Vrm("J1", PinRef("J1", "VIN", ["1"]), 12.0,
                           ground=PinRef("J1", "GND", ["2"])))
     setup.vrms.append(Vrm("U1", PinRef("L1", "VOUT", ["2"]), 1.8, kind="smps",

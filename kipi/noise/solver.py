@@ -24,6 +24,53 @@ def _unique(branches: List[CapBranch]) -> List[CapBranch]:
     return list(seen.values())
 
 
+def _board_model(snap, setup, agg, op, wf, result, progress):
+    """Run the board model and put its capacitor currents and ripple into the waveforms;
+    None (with a warning) where it cannot be built."""
+    from kipi.ac.solver.fem import ACError
+    from kipi.core.mesh.mesher import MeshError
+    from kipi.dc.solver import SolveError
+    from kipi.noise.extract.common import ground_pads, solve_board
+    from kipi.noise.victims import ends
+    from kipi.noise.waveforms import Spectrum
+    vrm = find_vrm(setup, agg)
+    gnd = vrm.ground.net if vrm.ground else next(
+        (ph.low_side.net for ph in agg.phases if ph.low_side), "")
+    grounds = {}
+    for v in setup.victims:
+        d, r, _ = ends(snap, v)
+        grounds[v.name] = (ground_pads(snap, d.ref, gnd) if d else [],
+                           ground_pads(snap, r.ref, gnd) if r else [])
+    progress.stage("Board model")
+    try:
+        with progress.timed("board model"):
+            bm = solve_board(snap, setup, agg, op, wf, grounds, progress)
+    except (ACError, MeshError, SolveError) as e:
+        msg = f"Board model left out ({e}); the capacitors share the current by their own " \
+              "impedance and there is no shared-ground coupling"
+        result.warnings.append(msg)
+        progress.warn(msg)
+        return None
+    wf.input_caps = {r: Spectrum(f"I({r})", "A", 0.0, c) for r, c in bm.cap_currents.items()
+                     if bm.cap_rail[r] == "in"}
+    wf.output_caps = {r: Spectrum(f"I({r})", "A", 0.0, c) for r, c in bm.cap_currents.items()
+                      if bm.cap_rail[r] == "out"}
+    wf.input_ripple = Spectrum("Vin ripple", "V", 0.0, bm.input_ripple)
+    wf.output_ripple = Spectrum("Vout ripple", "V", 0.0, bm.output_ripple)
+    result.board_note = (f"Board model: {len(bm.cap_currents)} capacitor(s) on the rails, "
+                         f"{bm.unknowns} unknowns, {len(bm.field_freqs)} field solves, plane "
+                         f"capacitance {bm.plane_capacitance_f * 1e9:.3g} nF")
+    if bm.missing_caps:
+        bm.notes.append(f"{len(bm.missing_caps)} capacitor(s) on the rails have no model: "
+                        f"taken at their value from the board with typical ESR and ESL "
+                        f"({', '.join(bm.missing_caps[:12])})")
+    for n in bm.notes:
+        result.warnings.append(n)
+        progress.warn(n)
+    progress.info(result.board_note)
+    return bm
+
+
 def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
                 progress: Optional[ProgressReporter] = None) -> NoiseResult:
     progress = progress or ProgressReporter()
@@ -75,6 +122,12 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
         progress.warn(w)
     progress.partial(result)
 
+    board = None
+    if setup.noise.board_model:
+        board = _board_model(snap, setup, agg, op, wf, result, progress)
+        if board is not None:
+            progress.partial(result)
+
     if setup.victims:
         from kipi.noise.extract.xsection import Cache
         from kipi.noise.victims import couple
@@ -84,7 +137,8 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
             progress.fraction(i / len(setup.victims))
             with progress.timed(f"victim {victim.name}"):
                 vr = couple(snap, setup, victim, agg, wf, cache, progress.check_cancel,
-                            layouts)
+                            layouts, board.ground_diff.get(victim.name)
+                            if board is not None else None)
             result.victims.append(vr)
             ok = "PASS" if vr.passed else "FAIL"
             progress.info(f"Victim {vr.name}: {vr.peak_v * 1e3:.4g} mV peak "

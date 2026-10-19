@@ -136,6 +136,7 @@ def test_the_example_multiphase_buck():
     ex = ROOT / "examples" / "multiphase_buck"
     snap = snapshot_io.load(ex / "multiphase_buck.kipi.json.gz")
     setup = PISetup.load(ex / "multiphase_buck.kipi-setup.yml")
+    setup.noise.board_model = False                 # ~40 s on this board; tested apart
     vrm = next(v for v in setup.vrms if v.name == "U1")
     a = Aggressor("U1", "U1", fsw_hz=600e3)
     a.phases = seed_phases(snap, setup, vrm, "buck")

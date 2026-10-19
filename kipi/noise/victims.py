@@ -25,26 +25,39 @@ from kipi.noise.result import MECHANISMS, TOTAL, VictimResult
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
 
+def ends(snap: BoardSnapshot, victim: Victim):
+    """The victim's driver and receiver pins (guessed where not set), and a note when
+    they were guessed."""
+    driver, receiver = victim.driver, victim.receiver
+    if driver is not None and receiver is not None:
+        return driver, receiver, ""
+    g_drv, g_rcv = guess_ends(snap, victim.net)
+    if driver is None and receiver is None:
+        driver, receiver = g_drv, g_rcv
+    else:
+        known = driver or receiver
+        other = g_rcv if g_drv == known else g_drv
+        driver, receiver = (driver or other), (receiver or other)
+    if driver is None or receiver is None:
+        return driver, receiver, ""
+    return driver, receiver, (f"Driver and receiver not both set: taken as "
+                              f"{driver.label()} and {receiver.label()}")
+
+
 def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
            wf: SmpsWaveforms, cache: Optional[Cache] = None,
-           check_cancel=None, layouts: Sequence = ()) -> VictimResult:
+           check_cancel=None, layouts: Sequence = (),
+           ground_diff: Optional[np.ndarray] = None) -> VictimResult:
     """The victim's noise from each mechanism: capacitive from the switch nodes,
     inductive from the capacitor loops in ``layouts`` (each phase's
-    :class:`~kipi.noise.parasitics.PhaseLayout`)."""
+    :class:`~kipi.noise.parasitics.PhaseLayout`), and common-impedance from
+    ``ground_diff``, its driver's ground against its receiver's at each harmonic (from the
+    board model; None without one)."""
     s = setup.noise
     warnings: List[str] = []
-    driver, receiver = victim.driver, victim.receiver
-    if driver is None or receiver is None:
-        g_drv, g_rcv = guess_ends(snap, victim.net)
-        if driver is None and receiver is None:
-            driver, receiver = g_drv, g_rcv
-        else:
-            known = driver or receiver
-            other = g_rcv if g_drv == known else g_drv
-            driver, receiver = (driver or other), (receiver or other)
-        if driver is not None and receiver is not None:
-            warnings.append(f"Driver and receiver not both set: taken as {driver.label()} "
-                            f"and {receiver.label()}")
+    driver, receiver, guessed = ends(snap, victim)
+    if guessed:
+        warnings.append(guessed)
     res = VictimResult(victim.name, victim.net, driver.label() if driver else "",
                        receiver.label() if receiver else "", victim.margin())
     switch_nets = [ph.switch_net for ph in agg.phases]
@@ -90,11 +103,20 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
         warnings.append("No capacitor loops (set the switching device's pins and the "
                         "capacitors): no inductive coupling")
     emf, res.m_h = victim_emf(snap, sources, segs, freqs)
-    out = net.solve_many(freqs, terms, obs, {"capacitive": src}, {"inductive": emf})
+    currents = {"capacitive": src}
+    if ground_diff is not None:
+        # The driver's ground sits ground_diff above the receiver's (the reference): its
+        # output resistance drives the line from there.
+        gsrc = np.zeros((len(freqs), net.n), complex)
+        gsrc[:, net.nearest(d_xy)] = ground_diff / victim.driver_ohm
+        currents["common"] = gsrc
+    out = net.solve_many(freqs, terms, obs, currents, {"inductive": emf})
     n_t = wf.samples_per_period()
     for col, store in ((0, res.receiver_v), (1, res.driver_v)):
         total = np.zeros(len(freqs), complex)
         for key in MECHANISMS:
+            if key not in out:
+                continue
             store[key] = Spectrum(f"{victim.name} {key}", "V", 0.0, out[key][:, col])
             total += out[key][:, col]
         store[TOTAL] = Spectrum(f"{victim.name} total", "V", 0.0, total)

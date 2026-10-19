@@ -121,8 +121,8 @@ def test_a_victim_beside_the_hot_loop_is_coupled_inductively():
     assert v.dominant == "inductive"
     assert v.peak_by["inductive"] > 5 * v.peak_by["capacitive"]
     assert abs(v.m_h["C1 loop (phase 1)"]) > 10 * abs(v.m_h["C2 loop (phase 1)"])
-    assert set(v.receiver_v) == {"capacitive", "inductive", "total"}
-    total = v.receiver_v["capacitive"].c + v.receiver_v["inductive"].c
+    assert {"capacitive", "inductive", "total"} <= set(v.receiver_v)
+    total = sum(sp.c for k, sp in v.receiver_v.items() if k != "total")
     assert np.allclose(v.receiver_v["total"].c, total)
 
 

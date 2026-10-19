@@ -7,6 +7,16 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Coupled Noise mode, part 4: the board model and shared-ground coupling** (#69). The
+  converter's input and output rails and their ground are solved with AC mode's field
+  model, with the switching currents as sources: they now divide among every capacitor
+  on the rails through the copper's own impedance (capacitors without a model are taken
+  at their board value), the rails' ripple is read at the switching device's pins, and
+  the ground difference between each victim's driver and receiver gives a third coupling
+  mechanism, **common** (shared-ground) noise. New settings turn the board model off for
+  a quick solve and set its field solves per decade. AC's sweep gains the transfer
+  impedance between ports with the parts on, and how a source current divides among the
+  parts.
 - **Coupled Noise mode, part 3: inductive coupling** (#69). Each input and output
   capacitor's current loop (through the switching device, or through the inductor) now
   induces a voltage along each victim's traces: the partial mutual inductance from every

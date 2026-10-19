@@ -101,7 +101,7 @@ def test_coupling_falls_with_distance():
     for gap in (0.2, 0.5, 2.0):
         snap = buck_board(victim_gap=gap)
         r = solve_noise(snap, _setup(snap, [Victim("SIG")]), "U1 buck")
-        peaks.append(r.victims[0].peak_v)
+        peaks.append(r.victims[0].peak_by["capacitive"])
         assert r.victims[0].length_mm == pytest.approx(12.5)
     assert peaks[0] > 2 * peaks[1] > 4 * peaks[2] > 0
 

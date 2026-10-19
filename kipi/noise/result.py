@@ -9,7 +9,7 @@ from kipi.noise.checks import OperatingPoint
 from kipi.noise.parasitics import HotLoopReport
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
-MECHANISMS = ("capacitive", "inductive")
+MECHANISMS = ("capacitive", "inductive", "common")
 TOTAL = "total"
 
 
@@ -56,6 +56,7 @@ class NoiseResult:
     warnings: List[str] = field(default_factory=list)
     report_path: str = ""
     victims: List[VictimResult] = field(default_factory=list)
+    board_note: str = ""                # what the board model did, "" without one
 
     def victim(self, name: str) -> Optional[VictimResult]:
         return next((v for v in self.victims if v.name == name), None)
@@ -77,6 +78,8 @@ class NoiseResult:
                 f"{h.c_sw_f * 1e12:.4g} pF to ground (Coss {h.coss_f * 1e12:.4g} pF"
                 f"{' assumed' if h.coss_default else ''} + copper "
                 f"{h.c_copper_f * 1e12:.3g} pF), R {h.r_loop_ohm * 1e3:.3g} mΩ; {ring}")
+        if self.board_note:
+            lines.append(self.board_note)
         for v in self.victims:
             cm = sum(v.cm_f.values())
             m = sum(abs(x) for x in v.m_h.values())

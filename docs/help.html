@@ -1686,10 +1686,17 @@ way.</p>
 converter's waveforms (the switch node, the inductor currents, each capacitor's ripple
 current and the rails' ripple voltage), then couples them onto the signal nets you name, the
 <b>victims</b>, and compares the noise at each victim's receiver with its noise margin.
-Two coupling paths are modeled: <b>capacitive</b>, the switch node's copper charging the
-victim's traces through their mutual capacitance, and <b>inductive</b>, the current loops
+Three coupling paths are modeled: <b>capacitive</b>, the switch node's copper charging
+the victim's traces through their mutual capacitance; <b>inductive</b>, the current loops
 through each input and output capacitor inducing a voltage along the victim's traces
-through their mutual inductance. Shared-ground (common-impedance) coupling comes later.</p>
+through their mutual inductance; and <b>common</b> (shared-ground) coupling, the switching
+currents' return lifting the ground under the victim's driver against its receiver's.</p>
+<p>The <b>board model</b> solves the converter's input and output rails and their ground
+with AC mode's field model: the switching currents divide among all the capacitors on the
+rails through the copper's own impedance, the rails' ripple is taken at the switching
+device's pins, and the ground difference between each victim's ends gives its shared-
+ground coupling. It is the slow part of a solve (comparable to an AC solve of the rails);
+untick it in Settings for a quick look.</p>
 <p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
 Its input rail and set voltage give the input and output voltages, and from them the
 topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
@@ -1786,6 +1793,10 @@ and the results say so.</p>
     cross-section of the copper around it (default 0.5 mm).</li>
   <li><b>Coupling window</b>: how far either side of a victim trace copper is taken into its
     cross-section (default 3 mm). Switch-node copper further away does not couple.</li>
+  <li><b>Board model</b>: solve the rails and ground's copper (above). Off, the capacitors
+    share the current by their own impedances and there is no shared-ground coupling.</li>
+  <li><b>Field solves per decade</b>: copper solves per decade of the harmonics; the board's
+    response in between is interpolated (default 10).</li>
 </ul>
 </div>
 </details>
@@ -1820,11 +1831,17 @@ its noise under <b>Victim noise</b> in the Waveforms tab: the receiver's total, 
 mechanism's share of it and the driver's, against its margin (in time, or as a
 spectrum). The log gives each victim's mutual capacitance to the switch node, the length
 of trace beside it, and its mutual inductance to the capacitor loops.</p>
-<p>The two mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
+<p>The mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
 node's dV/dt: keep victims away from the switch node's copper (or behind a plane), and
 drive them harder. <b>Inductive</b> noise comes from the hot loop's dI/dt: make the loop
 small and keep it over a solid plane, and route victims away from it, or on the far side
-of the plane.</p>
+of the plane. <b>Common</b> noise comes from the switching current's return path: give the
+hot loop's ground its own short return (vias next to the switching device and its
+capacitors) and keep the victim's driver and receiver grounds out of that path.</p>
+<p>A capacitor on the rails without a model is taken at its value from the board with a
+typical ESR and ESL, and the results say so. Copper the board model reaches only through
+parts (a ground pad whose via misses it, say) is tied weakly for the solve and named in
+the results: check it, as its currents have nowhere real to go.</p>
 </div>
 </details>
 

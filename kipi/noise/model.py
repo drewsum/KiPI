@@ -168,6 +168,12 @@ class NoiseSettings:
     # segment_mm, and copper within window_mm of the cut counts.
     segment_mm: float = 0.5
     window_mm: float = 3.0
+    # The board model (AC mode's field model of the converter's rails and ground): the
+    # capacitor current split, the rails' ripple and shared-ground coupling. Off: the
+    # capacitors share the current by their own impedance only, and there is no shared-
+    # ground coupling.
+    board_model: bool = True
+    field_per_decade: int = 10
 
 
 def phase_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]

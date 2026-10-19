@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
-    QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
     QSpinBox, QTableWidget, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -786,12 +786,19 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_zeta = _spin(0, 1, s.min_ring_zeta, 3, "", 0.01)
         self.spin_segment = _spin(0.05, 10, s.segment_mm, 2, " mm", 0.1)
         self.spin_window = _spin(0.2, 50, s.window_mm, 1, " mm", 0.5)
+        self.chk_board = QCheckBox("Board model")
+        self.chk_board.setChecked(s.board_model)
+        self.spin_fpd = QSpinBox()
+        self.spin_fpd.setRange(2, 100)
+        self.spin_fpd.setValue(s.field_per_decade)
         f.addRow("Highest frequency", self.spin_fmax)
         f.addRow("Harmonic limit", self.spin_harm)
         f.addRow("Least ringing damping", self.spin_zeta)
         f.addRow("Periods shown", self.spin_periods)
         f.addRow("Victim segment", self.spin_segment)
         f.addRow("Coupling window", self.spin_window)
+        f.addRow(self.chk_board)
+        f.addRow("Field solves per decade", self.spin_fpd)
         tip(f, self.spin_fmax, "The highest harmonic frequency the waveforms keep. From the "
                                "edges: ten times the faster edge's corner frequency "
                                "(1/(π·rise time)) or three times the ringing frequency, "
@@ -814,8 +821,20 @@ class NoisePanel(QWidget, PartSelection):
                                  "into its cross-section: switch-node copper further away "
                                  "does not couple, and the planes within it are its "
                                  "references", ("xsection", "win"))
+        tip(f, self.chk_board, "Solve the converter's rails and ground with AC mode's field "
+                               "model: the switching currents divide among all the modelled "
+                               "capacitors on the rails through the copper's own impedance, "
+                               "the rails' ripple is taken at the device's pins, and the "
+                               "ground noise between each victim's driver and receiver is "
+                               "its shared-ground (common-impedance) coupling. Untick for a "
+                               "quick solve: the capacitors then share the current by their "
+                               "own impedance and there is no shared-ground coupling.")
+        tip(f, self.spin_fpd, "Copper (field) solves per decade of the harmonics; the board's "
+                              "response in between is interpolated, as in AC mode's sweep")
+        self.chk_board.toggled.connect(self._settings_changed)
+        self.chk_board.toggled.connect(self.spin_fpd.setEnabled)
         for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta,
-                    self.spin_segment, self.spin_window):
+                    self.spin_segment, self.spin_window, self.spin_fpd):
             wdg.valueChanged.connect(self._settings_changed)
         return w
 
@@ -828,19 +847,25 @@ class NoisePanel(QWidget, PartSelection):
         s.min_ring_zeta = self.spin_zeta.value()
         s.segment_mm = self.spin_segment.value()
         s.window_mm = self.spin_window.value()
+        s.board_model = self.chk_board.isChecked()
+        s.field_per_decade = self.spin_fpd.value()
         self._on_changed()
 
     def _load_settings(self):
         s = self.setup.noise
         for wdg, v in ((self.spin_harm, s.max_harmonics), (self.spin_periods, s.periods_shown),
                        (self.spin_zeta, s.min_ring_zeta), (self.spin_segment, s.segment_mm),
-                       (self.spin_window, s.window_mm)):
+                       (self.spin_window, s.window_mm), (self.spin_fpd, s.field_per_decade)):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
         self.spin_fmax.blockSignals(True)
         _set_optional(self.spin_fmax, s.f_max_hz / 1e6 if s.f_max_hz else None)
         self.spin_fmax.blockSignals(False)
+        self.chk_board.blockSignals(True)
+        self.chk_board.setChecked(s.board_model)
+        self.chk_board.blockSignals(False)
+        self.spin_fpd.setEnabled(s.board_model)
 
     # ------------------------------------------------------------------ data
     def nets(self) -> List[str]:
