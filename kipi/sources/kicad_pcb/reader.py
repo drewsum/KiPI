@@ -222,10 +222,19 @@ def _via_type(node: Node) -> str:
     return "through"
 
 
-def _via_filled(node: Node) -> Optional[bool]:
-    """``(filling yes|no)`` (KiCad 9+); None when the file leaves it to the design rules."""
+#: The last board format before KiCad 10, which added "filling from the design rules".
+KICAD9_FORMAT = 20241229
+
+
+def _via_filled(node: Node, file_format: int) -> Optional[bool]:
+    """``(filling yes|no)``. With no filling, a KiCad 9 file means unfilled; a KiCad 10
+    file writes ``(filling no)`` for an unfilled via, so there no filling means the design
+    rules decide (None). This is what the KiCad API reports for the same vias (checked on
+    KiCad 9 and 10 boards: yoshi, CM4S, PSU-EXT, MiniLabs)."""
     v = value(node, "filling", None)
-    return None if v is None else v not in ("no", "false")
+    if v is None:
+        return False if file_format <= KICAD9_FORMAT else None
+    return v not in ("no", "false")
 
 
 def _via_pads(node: Node, span: List[int], size: float) -> Dict[int, float]:
@@ -250,7 +259,8 @@ def _via_pads(node: Node, span: List[int], size: float) -> Dict[int, float]:
     return out
 
 
-def read_vias(root: Node, stackup: Stackup, nets: Nets) -> Tuple[List[Via], List[Via]]:
+def read_vias(root: Node, stackup: Stackup, nets: Nets,
+              file_format: int) -> Tuple[List[Via], List[Via]]:
     """The vias, and those set to remove their pads on unconnected layers."""
     all_cu = [c.id for c in stackup.copper]
     vias, trim = [], []
@@ -264,20 +274,72 @@ def read_vias(root: Node, stackup: Stackup, nets: Nets) -> Tuple[List[Via], List
         pads = _via_pads(node, span, size)
         via = Via(id=uuid(node), net=nets.of(node), position=xy(child(node, "at")),
                   drill_mm=drill, diameter_mm=max(pads.values(), default=size), layers=span,
-                  via_type=_via_type(node), filled=_via_filled(node), pad_mm=pads)
+                  via_type=_via_type(node), filled=_via_filled(node, file_format), pad_mm=pads)
         vias.append(via)
         if flag(node, "remove_unused_layers"):
             trim.append((via, flag(node, "keep_end_layers")))
     return vias, trim
 
 
+def _nm(mm: float) -> int:
+    return round(mm * 1e6)
+
+
+def _flashed_radius(via: Via, lid: int, conditional: Dict[str, bool], outer) -> float:
+    """The radius KiCad's connectivity gives `via` on layer `lid`: its pad where the pad is
+    always there, else only its drill (PCB_VIA::ConditionallyFlashed)."""
+    keep_ends = conditional.get(via.id)
+    if keep_ends is None or (keep_ends and lid in outer):
+        return via.pad_mm.get(lid, via.diameter_mm) / 2.0
+    return via.drill_mm / 2.0
+
+
+def via_neighbour_layers(trim, vias: List[Via], outer) -> Dict[str, set]:
+    """For each "remove unused layers" via, the layers spanned by the vias of its net that
+    KiCad counts as connected to it. KiCad keeps a pad on a layer that any connected via
+    spans (CONNECTIVITY_DATA::IsConnectedOnLayer), and two vias connect where their shapes
+    meet on a layer they share: the pad where it is always there, else the drill."""
+    conditional = {v.id: keep_ends for v, keep_ends in trim}
+    cell = max((v.diameter_mm for v in vias), default=1.0) or 1.0
+    grid = defaultdict(list)          # (net, cx, cy) -> vias
+    for v in vias:
+        if v.net:
+            grid[(v.net, int(v.position[0] // cell), int(v.position[1] // cell))].append(v)
+    out: Dict[str, set] = {}
+    for via, _ in trim:
+        if not via.net:
+            continue
+        x, y = via.position
+        cx, cy = int(x // cell), int(y // cell)
+        mine = set(via.layers)
+        keep = set()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for w in grid.get((via.net, cx + dx, cy + dy), ()):
+                    if w is via or set(w.layers) <= keep:
+                        continue
+                    # In nanometres, as KiCad does: shapes that only touch do not collide.
+                    d2 = (_nm(w.position[0] - x)) ** 2 + (_nm(w.position[1] - y)) ** 2
+                    for lid in mine & set(w.layers):
+                        r = _nm(_flashed_radius(via, lid, conditional, outer)
+                                + _flashed_radius(w, lid, conditional, outer))
+                        if d2 < r * r:
+                            keep |= set(w.layers)
+                            break
+        if keep:
+            out[via.id] = keep
+    return out
+
+
 def trim_unused_via_pads(trim, tracks: List[Track], pads: List[Pad], zones: List[Zone],
-                         outer: Tuple[int, int]) -> int:
+                         outer: Tuple[int, int], vias: Optional[List[Via]] = None) -> int:
     """Drop the pad of a "remove unused layers" via on each layer where nothing of its net
-    meets it (no track end in it, no pad or zone fill of the net touching it); the barrel
-    still runs through. Returns how many via pads were dropped."""
+    meets it (no track end in it, no pad or zone fill of the net touching it, no connected
+    via of its net spanning the layer); the barrel still runs through. Returns how many via
+    pads were dropped."""
     if not trim:
         return 0
+    by_via = via_neighbour_layers(trim, vias, outer) if vias else {}
     from shapely.geometry import Point as SPoint
     from kipi.core.geometry.copper import poly_to_shapely
     ends = defaultdict(list)          # (net, layer) -> track end points and widths
@@ -293,7 +355,7 @@ def trim_unused_via_pads(trim, tracks: List[Track], pads: List[Pad], zones: List
     dropped = 0
     for via, keep_ends in trim:
         for lid, d in list(via.pad_mm.items()):
-            if (keep_ends and lid in outer) or not via.net:
+            if (keep_ends and lid in outer) or not via.net or lid in by_via.get(via.id, ()):
                 continue
             key = (via.net, lid)
             disc = SPoint(via.position).buffer(d / 2.0)
@@ -623,7 +685,7 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
     progress.check_cancel()
 
     with progress.timed("Reading vias"):
-        vias, via_trim = read_vias(root, stackup, nets)
+        vias, via_trim = read_vias(root, stackup, nets, version)
         progress.info(f"{len(vias)} vias ({sum(1 for v in vias if v.filled)} filled)")
     progress.check_cancel()
 
@@ -647,7 +709,7 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
 
     if via_trim:
         with progress.timed("Removing unused via pads"):
-            n = trim_unused_via_pads(via_trim, tracks, pads, zones, (F_CU, B_CU))
+            n = trim_unused_via_pads(via_trim, tracks, pads, zones, (F_CU, B_CU), vias)
             progress.info(f"{n} unconnected via pads removed ({len(via_trim)} vias set to "
                           "remove unused layers)")
 
