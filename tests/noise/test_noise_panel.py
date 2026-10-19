@@ -316,3 +316,29 @@ def test_the_ac_probes_to_show_ripple_at_are_ticked(app):
     ed.load(a)
     assert "no such probe" in ed.probes.item(0).text()
     p.close()
+
+
+def test_the_visual_settings_show_a_drawing(panel):
+    """Every field whose meaning is easier to see than to read has a drawing under its
+    tooltip (#160)."""
+    from kipi.noise.gui.plot import NoisePlot
+    agg = panel.agg_list.editor
+    vic = panel.victim_list.editor
+    plot = NoisePlot()
+    drawn = {
+        "converter": (agg.vrm, agg.topology, agg.vin, agg.load_a),
+        "sw_period": (agg.fsw, agg.duty, panel.spin_periods),
+        "board_model": (agg.probes, panel.chk_board),
+        "hot_loop": (agg.rds_ls,),
+        "victim_terms": (vic.net,),
+        "noise_margin": (vic.logic, vic.margin, panel.cmb_scan_logic),
+        "scan_radius": (panel.spin_radius, panel.spin_top, panel.chk_scan),
+        "spectrum": (panel.spin_fmax, panel.spin_harm, plot.chk_spectrum),
+        "interp": (panel.spin_fpd,),
+        "coupling": (panel.cmb_coupling, *plot.chk_curves.values()),
+        "bw_limit": (plot.chk_bw,),
+    }
+    for name, widgets in drawn.items():
+        for w in widgets:
+            assert f"/{name}-" in w.toolTip(), (name, w)
+    plot.close()

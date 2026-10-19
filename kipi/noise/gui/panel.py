@@ -34,6 +34,7 @@ from kipi.dc.gui.pi_panel import (
 )
 from kipi.dc.pi.model import PISetup
 from kipi.gui.report_option import ReportOption
+from kipi.gui.tooltip_art import art_tip
 from kipi.gui.sortable import make_sortable, reset_sort, set_row
 from kipi.noise.checks import (
     NoiseError, guess_ends, operating_point, seed_phases, smps_vrms, validate_noise,
@@ -96,17 +97,19 @@ class AggressorEditor(_Editor):
                 (self.name, "A name for this aggressor", None),
                 (self.vrm, "The switching regulator (a VRM of type Switcher, set up in DC or "
                            "AC mode) this aggressor is. Its input rail and set voltage give "
-                           "the input and output voltages.", None),
+                           "the input and output voltages.", ("converter",)),
                 (self.topology, "Buck or boost. Auto takes it from the VRM's voltages: an "
-                                "input above the output is a buck, below it a boost.", None),
+                                "input above the output is a buck, below it a boost.",
+                 ("converter", "buck", "boost")),
                 (self.vin, "The input voltage. Blank uses the VRM's: the middle of its input "
                            "range if it has one, else the set voltage of the VRM feeding its "
-                           "input rail.", None),
+                           "input rail.", ("converter", "vin")),
                 (self.load_a, "The total output current, all phases. Blank uses the DC "
                               "setup's loads on the VRM's output rail, plus the input current "
-                              "of every regulator it feeds.", None),
+                              "of every regulator it feeds.", ("converter", "iout")),
                 (self.fsw, "Switching frequency of each phase. Phases are interleaved "
-                           "evenly: N phases are 360°/N apart.", None),
+                           "evenly: N phases are 360°/N apart.",
+                 ("sw_period", "period", "phase")),
                 (self.rise, "The switch node's rising edge, 0 to 100 %. Faster edges reach "
                             "higher harmonics: the spectrum falls at 40 dB/decade above "
                             "1/(π·rise time).", ("sw_ringing", "edge")),
@@ -115,14 +118,15 @@ class AggressorEditor(_Editor):
                 (self.duty, "The high side's (buck) or low side's (boost) on-time, as % of "
                             "the period. Blank computes it from the voltages, raised by the "
                             "inductor DCR and on-resistances entered for a buck, and by the "
-                            "VRM's efficiency for a boost.", None),
+                            "VRM's efficiency for a boost.", ("sw_period", "duty")),
                 (self.probes, "The AC mode's probes to show this aggressor's ripple at: "
                               "the voltage between each probe's rail and ground pins, "
                               "from the board model (Settings tab), which carries the "
                               "inductor's and the switch's currents through the rails' "
                               "copper and capacitors. A probe must be on the aggressor's "
                               "input or output rail, or a net a series link joins to one. "
-                              "Shown in the Ripple at AC probes plot.", None)):
+                              "Shown in the Ripple at AC probes plot.",
+                 ("board_model", "probe"))):
             tip(f, w, text, art)
         self._watch(self.name, self.vrm, self.topology, self.vin, self.load_a, self.fsw,
                     self.rise, self.fall, self.duty)
@@ -222,7 +226,7 @@ class AggressorEditor(_Editor):
                 (self.rds_hs, "The high-side switch's on-resistance; it damps the ringing "
                               "and raises a buck's duty cycle", ("sw_ringing", "ring")),
                 (self.rds_ls, "The low-side switch's on-resistance; it raises a buck's duty "
-                              "cycle", None),
+                              "cycle", ("hot_loop", "ls")),
                 (self.package_l, "Loop inductance inside the switching device's package, "
                                  "from its datasheet (0 if not given); added to the loop "
                                  "simulated on the board", ("hot_loop", "loop"))):
@@ -551,7 +555,8 @@ class VictimEditor(_Editor):
         f.addRow("Noise margin", self.margin)
         f.addRow(self.lbl_margin)
         for w, text, art in (
-                (self.net, "The signal net the noise couples onto (type to search)", None),
+                (self.net, "The signal net the noise couples onto (type to search)",
+                 ("victim_terms", "trace")),
                 (self.name, "A name for this victim; blank is the net's name", None),
                 (self.preset, "What drives and loads the net. Picking a type fills in the "
                               "resistances, capacitance and termination below (all still "
@@ -579,10 +584,11 @@ class VictimEditor(_Editor):
                 (self.termination, "A parallel termination at the receiver, if any",
                  ("victim_terms", "term")),
                 (self.logic, "The logic family's supply: its JESD8 input and output levels "
-                             "give the noise margin, min(VIL − VOL, VOH − VIH)", None),
+                             "give the noise margin, min(VIL − VOL, VOH − VIH)",
+                 ("noise_margin", "levels")),
                 (self.margin, "The noise the receiver tolerates; blank takes it from the "
                               "logic level (or the type). A victim fails when its peak "
-                              "coupled noise exceeds it.", None)):
+                              "coupled noise exceeds it.", ("noise_margin", "margin"))):
             tip(f, w, text, art)
         self._watch(self.name, self.driver_ohm, self.driver_low_ohm, self.receiver_ohm,
                     self.receiver_pf, self.termination, self.logic, self.margin)
@@ -783,7 +789,9 @@ class NoisePanel(QWidget, PartSelection):
                                   "its parameters and the board's hot loop. Problems that "
                                   "stop the solve are listed above in red.")
         self.btn_solve.clicked.connect(self._solve)
-        row.addWidget(QLabel("Aggressor"))
+        lbl = QLabel("Aggressor")
+        lbl.setToolTip(self.cmb_agg.toolTip())
+        row.addWidget(lbl)
         row.addWidget(self.cmb_agg, 2)
         lay.addLayout(row)
         row = QHBoxLayout()
@@ -792,12 +800,14 @@ class NoisePanel(QWidget, PartSelection):
                                     "aggressor's waveforms only)")
         self.cmb_victims.currentIndexChanged.connect(self._victims_changed)
         self.chk_scan = QCheckBox("Scan nearby nets", self)
-        self.chk_scan.setToolTip("Also look for victims: estimate the noise on every signal "
-                                 "net with a trace near the aggressor and solve the worst in "
-                                 "full, with the scan's default driver and logic level (see "
-                                 "Settings)")
+        self.chk_scan.setToolTip(art_tip(
+            "Also look for victims: estimate the noise on every signal net with a trace near "
+            "the aggressor and solve the worst in full, with the scan's default driver and "
+            "logic level (see Settings)", "scan_radius", "radius", "top"))
         self.chk_scan.toggled.connect(self._scan_toggled)
-        row.addWidget(QLabel("Victims"))
+        lbl = QLabel("Victims")
+        lbl.setToolTip(self.cmb_victims.toolTip())
+        row.addWidget(lbl)
         row.addWidget(self.cmb_victims, 2)
         row.addWidget(self.chk_scan)
         lay.addLayout(row)
@@ -843,6 +853,7 @@ class NoisePanel(QWidget, PartSelection):
                   "common-ground part is a dot at the driver; the capacitor loops that "
                   "induce the inductive part are drawn in magenta. Tick the switch node's net "
                   "in the Board panel to see the capacitive source.")
+        tip_3d = art_tip(tip_3d, "coupling", "cap", "ind", "gnd")
         self.cmb_coupling.setToolTip(tip_3d)
         self.cmb_coupling.currentIndexChanged.connect(self._coupling_view_changed)
         lbl = QLabel("Coupling in 3D", self.coupling_row)
@@ -935,9 +946,9 @@ class NoisePanel(QWidget, PartSelection):
         f.addRow("Scan: driver resistance", self.spin_scan_drv)
         f.addRow("Scan: logic level", self.cmb_scan_logic)
         tip(f, self.spin_radius, "The scan looks at signal nets with a trace this close to the "
-                                 "aggressor's parts")
+                                 "aggressor's parts", ("scan_radius", "radius"))
         tip(f, self.spin_top, "How many of the scanned nets with the highest estimates are "
-                              "solved in full (every mechanism)")
+                              "solved in full (every mechanism)", ("scan_radius", "top"))
         tip(f, self.cmb_scan_type, "The type a scanned net is solved as: its real driver "
                                    "is not known. High impedance (undriven), the default, is "
                                    "the worst case for capacitive coupling: nothing holds "
@@ -949,16 +960,17 @@ class NoisePanel(QWidget, PartSelection):
         tip(f, self.spin_scan_drv, "The driver resistance a scanned net is solved with, for "
                                    "a custom driver", ("victim_terms", "drv"))
         self.cmb_scan_type.currentIndexChanged.connect(self._settings_changed)
-        tip(f, self.cmb_scan_logic, "The logic level a scanned net is judged against")
+        tip(f, self.cmb_scan_logic, "The logic level a scanned net is judged against",
+            ("noise_margin", "levels", "margin"))
         for wdg in (self.spin_radius, self.spin_top, self.spin_scan_drv):
             wdg.valueChanged.connect(self._settings_changed)
         self.cmb_scan_logic.currentIndexChanged.connect(self._settings_changed)
         tip(f, self.spin_fmax, "The highest harmonic frequency the waveforms keep. From the "
                                "edges: ten times the faster edge's corner frequency "
                                "(1/(π·rise time)) or three times the ringing frequency, "
-                               "whichever is higher, at most 3 GHz.")
+                               "whichever is higher, at most 3 GHz.", ("spectrum", "fmax"))
         tip(f, self.spin_harm, "The most harmonics of the switching frequency kept; a slow "
-                               "switcher with fast edges needs many")
+                               "switcher with fast edges needs many", ("spectrum", "harm"))
         tip(f, self.spin_zeta, "The least damping ratio ζ of the switch node's ringing. The "
                                "hot loop's resistance (on-resistance, capacitor ESR, copper) "
                                "alone damps it far less than a real switch node: the "
@@ -982,7 +994,8 @@ class NoisePanel(QWidget, PartSelection):
                                "finishes the edge hard, at the entered edge time and the "
                                "least ringing damping. 0 lets the current take as long as "
                                "it needs.", ("sw_edges", "soft"))
-        tip(f, self.spin_periods, "Switching periods shown in the waveform plot")
+        tip(f, self.spin_periods, "Switching periods shown in the waveform plot",
+            ("sw_period", "period"))
         tip(f, self.spin_segment, "Victim traces are cut into pieces this long; each is a "
                                   "short transmission line with its own cross-section. "
                                   "Shorter follows the copper beside it more closely.",
@@ -998,9 +1011,11 @@ class NoisePanel(QWidget, PartSelection):
                                "ground noise between each victim's driver and receiver is "
                                "its shared-ground (common-impedance) coupling. Untick for a "
                                "quick solve: the capacitors then share the current by their "
-                               "own impedance and there is no shared-ground coupling.")
+                               "own impedance and there is no shared-ground coupling.",
+            ("board_model", "split", "gnd"))
         tip(f, self.spin_fpd, "Copper (field) solves per decade of the harmonics; the board's "
-                              "response in between is interpolated, as in AC mode's sweep")
+                              "response in between is interpolated, as in AC mode's sweep",
+            ("interp", "solve"))
         self.chk_board.toggled.connect(self._settings_changed)
         self.chk_board.toggled.connect(self.spin_fpd.setEnabled)
         for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta,

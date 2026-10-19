@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="156" viewBox="0 0 280 156">
+  <rect x="0" y="0" width="280" height="156" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <rect x="96" y="62" width="28" height="24" rx="3" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="110" y="78" fill="{fg}" text-anchor="middle" font-size="9">VRM</text>
+    <circle cx="110.0" cy="74.0" r="50.0" stroke="{radius}" stroke-width="1.6" stroke-dasharray="5 3" fill="none"/>
+    <path d="M126.0,78.0 L159.4,81.5 M153.8,83.5 L159.4,81.5 L154.3,78.3" stroke="{radius}" stroke-width="1.2" fill="none"/>
+    <text x="130" y="70" fill="{radius}" font-size="10">radius</text>
+    <path d="M14,30 H70 L84,44 H188" stroke="{top}" stroke-width="2" fill="none"/>
+    <path d="M14,108 H90 L100,98 H188" stroke="{top}" stroke-width="2" fill="none"/>
+    <path d="M66,14 V60 L74,68 V130" stroke="{near}" stroke-width="1.6" fill="none"/>
+    <path d="M206,14 V130" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <path d="M226,14 V130" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <text x="234" y="76" fill="{muted}" font-size="10">too far</text>
+    <text x="14" y="148" fill="{top}" font-size="10">worst N: solved in full</text>
+    <text x="170" y="148" fill="{near}" font-size="10">the rest: estimated</text>
+  </g>
+</svg>

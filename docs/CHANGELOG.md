@@ -33,6 +33,22 @@ milestones rather than versions that were ever set.
   view plots it. The results notes and the report give each probe's peak-to-peak and RMS
   ripple. A probe has to be on the aggressor's input or output rail, or on a net a series
   link joins to one, and the board model must be on.
+- **Drawings under the Coupled Noise tooltips** (#160). Nine new drawings explain the
+  fields that had text alone:
+  - buck against boost, with their input voltage and output current;
+  - the switching period, the duty cycle and the phases' interleaving;
+  - the harmonics under the edges' envelope, cut at the highest frequency;
+  - JESD8 levels and the noise margin;
+  - the scan radius and the worst nets solved in full;
+  - the board model: the current shared among the capacitors, the ripple at a probe, and
+    the ground voltage between a victim's ends;
+  - the field solves per decade and the response interpolated between them;
+  - the 20 MHz limit;
+  - the three coupling mechanisms, for the waveform plot's curve tickboxes and the 3D
+    coupling view.
+
+  The low-side Rds(on) and the victim's net now point at their parts of the existing
+  drawings.
 
 ### Fixed
 - **The Coupled Noise PDF report's plots fit the page.** Qt's PDF layout ignores the

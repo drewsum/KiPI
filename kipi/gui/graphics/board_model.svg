@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="164" viewBox="0 0 300 164">
+  <rect x="0" y="0" width="300" height="164" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <rect x="14" y="40" width="40" height="34" rx="4" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="34" y="61" fill="{fg}" text-anchor="middle" font-size="10">VRM</text>
+    <path d="M54,50 H286" stroke="{fg}" stroke-width="4"/>
+    <path d="M14,124 H286" stroke="{muted}" stroke-width="4"/>
+    <text x="290" y="46" fill="{fg}" text-anchor="end" font-size="10">rail</text>
+    <text x="290" y="140" fill="{muted}" text-anchor="end" font-size="10">ground</text>
+    <path d="M80,50 V82 M71,82 H89 M71,88 H89 M80,88 V124" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <path d="M132,50 V82 M123,82 H141 M123,88 H141 M132,88 V124" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <path d="M184,50 V82 M175,82 H193 M175,88 H193 M184,88 V124" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <path d="M92.0,60.0 L92.0,76.0 M89.4,70.6 L92.0,76.0 L94.6,70.6" stroke="{split}" stroke-width="2.6" fill="none"/>
+    <path d="M144.0,60.0 L144.0,76.0 M141.4,70.6 L144.0,76.0 L146.6,70.6" stroke="{split}" stroke-width="1.8" fill="none"/>
+    <path d="M196.0,60.0 L196.0,76.0 M193.4,70.6 L196.0,76.0 L198.6,70.6" stroke="{split}" stroke-width="1.1" fill="none"/>
+    <path d="M58.0,34.0 L270.0,34.0 M264.6,36.6 L270.0,34.0 L264.6,31.4" stroke="{split}" stroke-width="1.2" fill="none"/>
+    <text x="150" y="26" fill="{split}" text-anchor="middle" font-size="10">switching current, shared through the copper</text>
+    <rect x="252" y="70" width="24" height="34" rx="3" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <path d="M264,50 V70 M264,104 V124" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="264" y="91" fill="{fg}" text-anchor="middle" font-size="9">load</text>
+    <path d="M244,56 L236,66 M244,118 L236,108 M236,66 V108" stroke="{probe}" stroke-width="1.6" fill="none"/>
+    <circle cx="244" cy="56" r="2.5" fill="{probe}"/><circle cx="244" cy="118" r="2.5" fill="{probe}"/>
+    <text x="232" y="92" fill="{probe}" text-anchor="end" font-size="10">probe</text>
+    <circle cx="60" cy="124" r="3" fill="{gnd}"/><circle cx="212" cy="124" r="3" fill="{gnd}"/>
+    <path d="M62.0,140.0 L210.0,140.0 M204.6,142.6 L210.0,140.0 L204.6,137.4 M67.4,137.4 L62.0,140.0 L67.4,142.6" stroke="{gnd}" stroke-width="1.2" fill="none"/>
+    <text x="136" y="156" fill="{gnd}" text-anchor="middle" font-size="10">ΔV between a victim's grounds</text>
+  </g>
+</svg>

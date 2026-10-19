@@ -12,6 +12,7 @@ from qtpy.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLab
                             QVBoxLayout, QWidget)
 
 from kipi.ac.gui.plot import COLORS, _eng, _eng_hz
+from kipi.gui.tooltip_art import art_tip
 from kipi.noise.waveforms import bandwidth_limited
 
 EMPTY = "Solve an aggressor in Coupled Noise mode to see its waveforms here."
@@ -27,15 +28,20 @@ VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
 # The victim view's curves (#154): the superposition of the mechanisms is shown, each
 # mechanism on its own only when ticked.
 VICTIM_CURVES = (("total", "Superposition", True,
-                  "The noise at the receiver from every mechanism added up"),
+                  "The noise at the receiver from every mechanism added up",
+                  ("coupling", "cap", "ind", "gnd")),
                  ("capacitive", "Capacitive", False,
-                  "The noise coupled through the capacitance to the switch nodes"),
+                  "The noise coupled through the capacitance to the switch nodes",
+                  ("coupling", "cap")),
                  ("inductive", "Inductive", False,
-                  "The noise induced by the capacitor loops' changing current"),
+                  "The noise induced by the capacitor loops' changing current",
+                  ("coupling", "ind")),
                  ("common", "Common ground", False,
-                  "The noise from the ground voltage between the driver and the receiver"),
+                  "The noise from the ground voltage between the driver and the receiver",
+                  ("coupling", "gnd")),
                  ("driver", "Driver end", True,
-                  "The superposition at the driver's end of the net as well"))
+                  "The superposition at the driver's end of the net as well",
+                  ("coupling", "drv")))
 
 
 class NoisePlot(QWidget):
@@ -53,9 +59,9 @@ class NoisePlot(QWidget):
             self.cmb_view.addItem(text, key)
         self.cmb_view.setToolTip("The waveforms to plot")
         self.chk_spectrum = QCheckBox("Spectrum", self)
-        self.chk_spectrum.setToolTip("Plot each waveform's harmonics (peak amplitude at each "
-                                     "multiple of the switching frequency) instead of its "
-                                     "time waveform")
+        self.chk_spectrum.setToolTip(art_tip(
+            "Plot each waveform's harmonics (peak amplitude at each multiple of the switching "
+            "frequency) instead of its time waveform", "spectrum", "harm"))
         self.lbl = QLabel(EMPTY, self)
         self.lbl.setStyleSheet("color: #999;")
         self.lbl.setWordWrap(True)
@@ -70,11 +76,11 @@ class NoisePlot(QWidget):
         top.addWidget(self.cmb_view, 1)
         top.addWidget(self.chk_spectrum)
         self.chk_bw = QCheckBox("20 MHz limit", self)
-        self.chk_bw.setToolTip("Plot every waveform as an oscilloscope with its 20 MHz "
-                               "bandwidth limit on shows it: through a single-pole low-pass "
-                               "filter, 3 dB down at 20 MHz. The edges' ringing and fast "
-                               "spikes shrink to what such a measurement would see. The "
-                               "results table and notes are unchanged.")
+        self.chk_bw.setToolTip(art_tip(
+            "Plot every waveform as an oscilloscope with its 20 MHz bandwidth limit on shows "
+            "it: through a single-pole low-pass filter, 3 dB down at 20 MHz. The edges' "
+            "ringing and fast spikes shrink to what such a measurement would see. The results "
+            "table and notes are unchanged.", "bw_limit", "bw"))
         top.addWidget(self.chk_bw)
         top.addStretch(1)
         lay.addLayout(top)
@@ -82,10 +88,10 @@ class NoisePlot(QWidget):
         grid = QGridLayout(self.victim_row)            # three across, to fit a small screen
         grid.setContentsMargins(0, 0, 0, 0)
         self.chk_curves = {}
-        for i, (key, text, on, tip) in enumerate(VICTIM_CURVES):
+        for i, (key, text, on, tip, art) in enumerate(VICTIM_CURVES):
             chk = QCheckBox(text, self.victim_row)
             chk.setChecked(on)
-            chk.setToolTip(tip)
+            chk.setToolTip(art_tip(tip, *art))
             chk.toggled.connect(lambda _: self._draw())
             grid.addWidget(chk, i // 3, i % 3)
             self.chk_curves[key] = chk
