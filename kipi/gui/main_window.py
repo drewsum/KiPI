@@ -604,6 +604,7 @@ class MainWindow(QMainWindow):
         self.noise_panel.save_requested.connect(self._save_setup)
         self.noise_panel.solve_requested.connect(self.run_noise_solve)
         self.noise_panel.result_selected.connect(self._show_noise_result)
+        self.noise_panel.victim_selected.connect(self._show_victim)
         self.noise_panel.results_saved.connect(
             lambda path: self.log(f"Saved Coupled Noise results to {path}"))
         self.noise_panel.part_selected.connect(
@@ -1575,6 +1576,12 @@ class MainWindow(QMainWindow):
             return
         self.noise_plot.periods = self.noise_panel.setup.noise.periods_shown
         self.noise_plot.set_result(result)
+        if self.mode == "noise":
+            self.views.setCurrentWidget(self.noise_plot)
+
+    def _show_victim(self, name: str):
+        """A victim picked in the Coupled Noise results: plot its noise."""
+        self.noise_plot.set_victim(name)
         if self.mode == "noise":
             self.views.setCurrentWidget(self.noise_plot)
 

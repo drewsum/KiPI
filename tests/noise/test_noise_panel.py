@@ -145,3 +145,57 @@ def test_a_result_is_plotted(window):
         window.noise_plot.set_view(key)
         window.noise_plot.chk_spectrum.setChecked(key == "il")
         assert window.noise_plot._curves, key
+
+
+@pytest.fixture
+def vpanel(app):
+    from kipi.noise.gui.panel import NoisePanel
+    p = NoisePanel()
+    setup = buck_setup()
+    setup.caps = [CapModel("10u", 10e-6, 0.4e-9, 0.003, ["C1"]),
+                  CapModel("47u", 47e-6, 0.6e-9, 0.002, ["C2"])]
+    p.set_board(buck_board(victim_gap=0.2), setup, "test")
+    p.set_nets(["VIN", "GND", "SW", "VOUT", "SIG"])
+    p.agg_list._add()
+    p.setup.aggressors[0].phases[0].coss_f = 300e-12
+    yield p
+    p.close()
+
+
+def test_a_new_victim_is_a_signal_net_with_its_ends(vpanel):
+    vpanel.victim_list._add()
+    (v,) = vpanel.setup.victims
+    assert v.net == "SIG" and {v.driver.ref, v.receiver.ref} == {"U3", "U4"}
+    ed = vpanel.victim_list.editor
+    assert ed.preset.currentData() == "cmos" and "400 mV" in ed.lbl_margin.text()
+
+
+def test_a_preset_fills_the_terminations_and_edits_make_it_custom(vpanel):
+    vpanel.victim_list._add()
+    v = vpanel.setup.victims[0]
+    ed = vpanel.victim_list.editor
+    ed.preset.setCurrentIndex(ed.preset.findData("parallel"))
+    assert (v.preset, v.driver_ohm, v.termination_ohm) == ("parallel", 25.0, 50.0)
+    assert ed.termination.value() == 50.0
+    ed.driver_ohm.setValue(10.0)
+    assert ed.preset.currentData() == "custom" and v.driver_ohm == 10.0
+    ed.logic.setCurrentIndex(ed.logic.findData(1.8))
+    assert v.logic_v == 1.8 and v.margin() == pytest.approx(0.18)
+
+
+def test_victim_results_fill_the_table_and_plot(vpanel, window):
+    from kipi.noise.solver import solve_noise
+    vpanel.victim_list._add()
+    r = solve_noise(vpanel.snapshot, vpanel.setup, vpanel.setup.aggressors[0].name)
+    picked = []
+    vpanel.victim_selected.connect(picked.append)
+    vpanel.show_result(r)
+    t = vpanel.tbl_victims
+    assert t.rowCount() == 1 and t.item(0, 0).text() == "SIG"
+    assert t.item(0, 5).text() == "PASS"
+    assert picked == ["SIG"]                      # the worst victim is selected
+    plot = window.noise_plot
+    plot.set_result(r)
+    plot.set_victim("SIG")
+    assert plot.cmb_view.currentData() == "victim" and plot._curves
+    assert "off the scale" in plot.lbl.text()

@@ -154,6 +154,13 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
         <li><a href="#ac-model">How KiPI models it</a></li>
         <li><a href="#ac-capacitance">Effective capacitance</a></li>
       </ol></li>
+    <li><a href="#noise">Coupled Noise: a switcher as aggressor</a>
+      <ol>
+        <li><a href="#noise-waveforms">The aggressor's waveforms</a></li>
+        <li><a href="#noise-hotloop">Hot loop and ringing</a></li>
+        <li><a href="#noise-capacitive">Capacitive coupling</a></li>
+        <li><a href="#noise-victim">The victim's line</a></li>
+      </ol></li>
     <li><a href="#solvers">Linear solvers and PARDISO</a></li>
     <li class="group">In practice</li>
     <li><a href="#uses">What PI simulation finds</a></li>
@@ -500,6 +507,74 @@ the inductance above resonance does not change. Capacitor makers publish DC-bias
 temperature curves per part, and their online tools (Murata SimSurfing, TDK SEAT, KEMET
 K-SIM, Samsung's tool) give the capacitance, ESR and ESL at a chosen bias and temperature. Enter the manufacturer's delectric, tolerance, aging and DC bias factors. KiPI can work out how each impacts the PDN impedance.</p>
 
+<h2 id="noise">Coupled Noise: a switcher as aggressor</h2>
+<p>A buck or boost converter switches amps in nanoseconds. Its switch node swings the full
+input (buck) or output (boost) voltage on every edge, and its hot loop carries a pulsed
+current. Both reach nearby signal nets: the switch node's electric field through mutual
+capacitance (a current C<sub>m</sub>·dV/dt), its loop's magnetic field through mutual
+inductance (a voltage M·di/dt), and the shared ground through common impedance. The
+victim is far weaker than the aggressor, so the problem is solved one way (weak
+coupling): the converter's waveforms are built first, and each coupling path then acts on
+the victim as a source, harmonic by harmonic. The noise from each path is kept apart, so
+the dominant one shows.</p>
+
+<h3 id="noise-waveforms">The aggressor's waveforms</h3>
+<p>From the input and output voltages, the duty cycle is D = V<sub>out</sub>/V<sub>in</sub>
+for a buck (raised by its losses) and 1 − η·V<sub>in</sub>/V<sub>out</sub> for a boost. Each
+phase's switch node is a trapezoid with the entered rise and fall times, its inductor
+current a triangle of ripple ΔI = (V<sub>in</sub> − V<sub>out</sub>)·D/(L·f<sub>sw</sub>)
+(buck) or V<sub>in</sub>·D/(L·f<sub>sw</sub>) (boost), and its pulsed current the
+inductor current while the hot-loop switch conducts. These are piecewise linear, so their
+Fourier series is exact in closed form: the second derivative is a set of impulses at the
+corners, and c<sub>k</sub> = −1/(T·ω<sub>k</sub>²)·Σ Δs<sub>i</sub>·e<sup>−jω<sub>k</sub>t<sub>i</sub></sup>.
+N phases are interleaved by delaying phase n by n·T/N, which cancels every harmonic but
+each N-th in their sum. The harmonics run up to ten times the faster edge's corner
+frequency, 1/(π·t<sub>r</sub>), where the trapezoid's spectrum has fallen 40 dB/decade.</p>
+<p>The ripple current into each rail's capacitors is shared by their admittances, each
+capacitor's model plus its loop's inductance and resistance; the rail's ripple voltage is
+that current through the bank's impedance.</p>
+
+<h3 id="noise-hotloop">Hot loop and ringing</h3>
+<p>Each capacitor's loop through the switching device is drawn between their pads, as wide
+as the net's copper along each straight piece, and its inductance is the sum of the
+pieces' partial inductances (Ruehli's PEEC): Neumann's double integral
+M = μ₀/4π·∬ dl·dl′/R, with the inner integral in closed form and each bar's cross-section
+entering as its geometric mean radius 0.2235·(w + t). A solid plane under the loop is a
+perfect conductor by images: the mirrored loop, carrying the opposite current, takes away
+most of the inductance of a flat loop close over it. Against closed forms this gives a
+bar's self inductance within 0.5 % and a square loop's within 2 %.</p>
+<p>The loop's inductance L with the switch node's capacitance C (the device's Coss plus its
+copper over the neighbouring planes) rings at f = 1/(2π√(L·C)) on every edge, damped by
+ζ = R/2·√(C/L). The loop's resistance alone gives far less damping than real switch
+nodes show, so a least damping (ζ = 0.05 by default) stands in for the losses the model
+leaves out.</p>
+
+<h3 id="noise-capacitive">Capacitive coupling</h3>
+<p>A victim's traces are cut into short segments. Across the middle of each, a line through
+the board finds the copper on every layer within a window: the switch nodes, the planes
+and power and ground copper (AC ground), and the victim. That cut is a 2D electrostatic
+problem: ∇·(ε∇φ) = 0 in the stackup's dielectrics (the solder mask over the outer
+layers, air beyond), solved with triangles graded fine at the conductors' corners, where
+the field is singular. Holding the victim at 1 V and everything else at 0 gives its
+capacitance C′ and its mutual capacitance C<sub>m</sub>′ to each switch node per mm, from
+the charge on each; the same cut in vacuum gives C<sub>0</sub>′ and so its inductance
+L′ = μ₀ε₀/C<sub>0</sub>′. Cuts that see the same copper are solved once. Against closed
+forms the cut gives microstrip and stripline impedance within 2 % (Hammerstad–Jensen,
+Wheeler) and two wires' mutual capacitance within 1 %.</p>
+
+<h3 id="noise-victim">The victim's line</h3>
+<p>Each segment is a lossy transmission line, Z<sub>0</sub> = √((R′ + jωL′)/(G′ + jωC′))
+and γ = √((R′ + jωL′)(G′ + jωC′)), joined where their ends meet into the victim's whole
+net. The driver is its output impedance to ground; the receiver its input resistance and
+capacitance, with any termination. The switch node's charge enters each segment as a
+current jω·C<sub>m</sub>′·l·V<sub>sw</sub>, and the network is solved at every harmonic.
+For a short line this is the lumped weak-coupling result,
+V = jω·C<sub>m</sub>·(Z<sub>D</sub> ∥ Z<sub>R</sub>)·V<sub>sw</sub> (Paul): a strong driver
+holds the line down, and an open-drain line released high, held only by its pull-up,
+picks up far more. The receiver's noise over a period is compared with its noise margin,
+from its logic family's JESD8 levels: min(V<sub>IL</sub> − V<sub>OL</sub>,
+V<sub>OH</sub> − V<sub>IH</sub>).</p>
+
 <h2 id="solvers">Linear solvers and PARDISO</h2>
 <p>Every analysis ends in a large sparse system of equations, one unknown per mesh node. DC
 and thermal systems are symmetric positive definite; AC systems are complex. How KiPI
@@ -577,6 +652,11 @@ way. Because PARDISO utilizes all cores, the machine running the simulation will
     not in the model; probes sit on the board's pads. Capacitors are fixed RLC models, so
     DC bias and aging are for you to apply to the value you enter. Radiation and coupling
     to signal nets are not modeled.</li>
+  <li><b>Coupled Noise</b>: the converter is ideal switches with set edges, not a
+    transistor-level model, and its hot loop is drawn straight between pads. Coupling is
+    quasi-static (no radiation; long lines are transmission lines, but each cut is 2D),
+    and so far only capacitive: the inductive and shared-ground paths come in a later
+    version.</li>
 </ul>
 <p>Like any simulation, the results are only as good as the setup. Check that the load
 currents are worst case, the capacitor values effective, and the stackup right. The tool is incredibly powerful with thoughtful and complete inputs.</p>

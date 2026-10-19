@@ -5,15 +5,24 @@ inductor L1, output capacitor C2 and load U2, joined by tracks; a GND plane fill
 0.2 mm under them, with a via at every GND pad.
 """
 
+from typing import Optional
+
 from kipi.core.model.board import Footprint, Net, Pad, Poly, Track, Via, Zone
 from synthetic import F, IN1, make_board, rect, square  # noqa: F401
 
 
-def buck_board(sw_area: float = 4.0):
-    """``sw_area``: the side of the switch node's square pour at U1's SW pad, mm."""
+def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
+               victim_layer: int = F):
+    """``sw_area``: the side of the switch node's square pour at U1's SW pad, mm.
+
+    With ``victim_gap``, a 0.2 mm signal trace SIG runs from U3 (x = 8) to U4 (x = 24)
+    beside the switch node's pour (x 11-15), ``victim_gap`` from its top edge, on
+    ``victim_layer``.
+    """
     snap = make_board()
     snap.board_name = "buck.kicad_pcb"
-    snap.nets = [Net(0, ""), Net(1, "VIN"), Net(2, "GND"), Net(3, "SW"), Net(4, "VOUT")]
+    snap.nets = [Net(0, ""), Net(1, "VIN"), Net(2, "GND"), Net(3, "SW"), Net(4, "VOUT"),
+                 Net(5, "SIG")]
     pads, fps, vias, tracks = [], [], [], []
 
     def part(ref, value, pins):
@@ -39,6 +48,15 @@ def buck_board(sw_area: float = 4.0):
                          ("SW", (12, 12), (16, 12), 1.0), ("VOUT", (20, 12), (28, 12), 1.0),
                          ("GND", (24, 15), (28, 15), 1.0)):
         tracks.append(Track(net, F, w, a, b))
+    if victim_gap is not None:
+        y = 12.0 + sw_area / 2 + victim_gap + 0.1
+        for ref, x in (("U3", 8.0), ("U4", 24.0)):
+            pid = f"{ref}.1"
+            pads.append(Pad(pid, "SIG", ref, "1", (x, y), "smd",
+                            shapes={victim_layer: [Poly(square(x, y, 0.3))]}))
+            fps.append(Footprint(f"f{ref}", ref, "IC", (x, y),
+                                 "top" if victim_layer == F else "bottom", [pid]))
+        tracks.append(Track("SIG", victim_layer, 0.2, (8.0, y), (24.0, y)))
     snap.pads, snap.footprints, snap.vias, snap.tracks = pads, fps, vias, tracks
     snap.zones = [Zone("zgnd", "GND", "", 0, filled={IN1: [Poly(rect(0, 0, 32, 20))]}),
                   Zone("zsw", "SW", "", 0,

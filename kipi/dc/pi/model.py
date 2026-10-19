@@ -40,7 +40,8 @@ from kipi.ac.model import (
 from kipi.dc.solver.setup import SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
 from kipi.noise.model import (
-    Aggressor, NoiseSettings, aggressor_from_dict, settings_from_dict as noise_settings,
+    Aggressor, NoiseSettings, Victim, aggressor_from_dict, settings_from_dict as noise_settings,
+    victim_from_dict,
 )
 
 FORMAT_VERSION = 1
@@ -281,6 +282,7 @@ class PISetup:
     ac: ACSettings = field(default_factory=ACSettings)
     # Coupled Noise analysis (#69)
     aggressors: List[Aggressor] = field(default_factory=list)
+    victims: List[Victim] = field(default_factory=list)
     noise: NoiseSettings = field(default_factory=NoiseSettings)
 
     def pin_nets(self) -> set:
@@ -304,8 +306,9 @@ class PISetup:
         return out
 
     def _aggressor_pins(self) -> List[PinRef]:
-        return [r for a in self.aggressors for ph in a.phases
-                for r in (ph.high_side, ph.low_side) if r]
+        return ([r for a in self.aggressors for ph in a.phases
+                 for r in (ph.high_side, ph.low_side) if r]
+                + [r for v in self.victims for r in (v.driver, v.receiver) if r])
 
     # ------------------------------------------------------------------ file
     def to_dict(self) -> dict:
@@ -372,6 +375,7 @@ class PISetup:
             ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
                              if k in {f.name for f in dataclasses.fields(ACSettings)}}),
             aggressors=[aggressor_from_dict(a, pin) for a in d.get("aggressors", [])],
+            victims=[victim_from_dict(v, pin) for v in d.get("victims", [])],
             noise=noise_settings(d.get("noise", {})),
         )
 

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="170" viewBox="0 0 300 170">
+  <rect x="0" y="0" width="300" height="170" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <g stroke-width="1.6" fill="none">
+      <path d="M40,40 H260" stroke="{sw}"/>
+      <path d="M150,40 V58 M138,58 H162 M138,66 H162 M150,66 V88" stroke="{cm}"/>
+      <path d="M40,88 H260" stroke="{muted}" stroke-width="3"/>
+      <rect x="18" y="80" width="22" height="16" rx="3" stroke="{drv}"/>
+      <path d="M29,96 V142" stroke="{drv}"/>
+      <path d="M260,88 V104 M252,104 h16 v22 h-16 z M260,126 V142" stroke="{rcv}"/>
+      <path d="M260,96 H282 V104 M276,104 h12 v22 h-12 z M282,126 V142" stroke="{term}"/>
+      <path d="M230,88 V112 M222,112 H238 M222,118 H238 M230,118 V142" stroke="{rcv}"/>
+      <path d="M18,142 H288" stroke="{muted}"/>
+      <path d="M20,146 l-4,6 M34,146 l-4,6 M48,146 l-4,6" stroke="{muted}" stroke-width="1"/>
+    </g>
+    <text x="44" y="34" fill="{sw}">switch node</text>
+    <text x="166" y="66" fill="{cm}">Cm</text>
+    <text x="104" y="104" fill="{muted}">victim trace</text>
+    <text x="8" y="72" fill="{drv}">driver R</text>
+    <text x="190" y="138" fill="{rcv}">R in ∥ C in</text>
+    <text x="226" y="160" fill="{term}">termination</text>
+  </g>
+</svg>

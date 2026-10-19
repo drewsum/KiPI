@@ -15,27 +15,30 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from qtpy.QtCore import Qt, Signal
+from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
-    QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSpinBox, QTabWidget,
-    QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QSpinBox, QTableWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
 from kipi.ac.gui.panel import CapEditor
 from kipi.core.model.board import BoardSnapshot
-from kipi.core.model.nets import sorted_nets
+from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.core.model.parts import is_capacitor_ref, is_inductor_ref, parse_inductance
 from kipi.dc.gui.pi_panel import (
     NONE, ItemList, PartSelection, _Editor, _get_optional, _optional_spin, _set_optional,
     _spin, _unique, make_searchable, tip,
 )
 from kipi.dc.pi.model import PISetup
+from kipi.gui.sortable import make_sortable, reset_sort, set_row
 from kipi.noise.checks import (
-    NoiseError, operating_point, seed_phases, smps_vrms, validate_noise,
+    NoiseError, guess_ends, operating_point, seed_phases, smps_vrms, validate_noise,
 )
 from kipi.noise.model import (
-    DEFAULT_COSS_F, DEFAULT_RDS_ON_OHM, Aggressor, AggressorPhase,
+    CUSTOM, DEFAULT_COSS_F, DEFAULT_RDS_ON_OHM, LOGIC_LEVELS, VICTIM_PRESETS, Aggressor,
+    AggressorPhase, Victim,
 )
 
 TITLE = "Coupled Noise setup"
@@ -449,6 +452,176 @@ class AggressorEditor(_Editor):
         self._store()
 
 
+# ---------------------------------------------------------------------------
+# Victims
+# ---------------------------------------------------------------------------
+
+class VictimEditor(_Editor):
+    """A victim net, its driver and receiver, and its noise margin."""
+
+    def __init__(self, panel: "NoisePanel", parent=None):
+        super().__init__(panel, parent)
+        f = self.form
+        self.net = QComboBox()
+        make_searchable(self.net)
+        self.name = QLineEdit()
+        self.preset = QComboBox()
+        for key, p in VICTIM_PRESETS.items():
+            self.preset.addItem(p.label, key)
+        self.preset.addItem("Custom", CUSTOM)
+        self.driver = self._picker(optional=True)
+        self.receiver = self._picker(optional=True)
+        self.driver_ohm = _spin(0.01, 1e9, 33, 2, " Ω", 1)
+        self.receiver_ohm = _spin(1, 1e12, 1e6, 0, " Ω", 1000)
+        self.receiver_pf = _spin(0, 1e5, 3, 2, " pF", 0.5)
+        self.termination = _optional_spin(1, 1e6, 1, " Ω", 1)
+        self.termination.setSpecialValueText("none")
+        self.logic = QComboBox()
+        for v in LOGIC_LEVELS:
+            self.logic.addItem(f"{v:g} V", v)
+        self.margin = _optional_spin(0, 100, 1, " mV", 1)
+        self.lbl_margin = QLabel()
+        self.lbl_margin.setStyleSheet("color: #aaa;")
+        f.addRow("Net", self.net)
+        f.addRow("Name", self.name)
+        f.addRow("Type", self.preset)
+        f.addRow("Driver pins", self.driver)
+        f.addRow("Receiver pins", self.receiver)
+        f.addRow("Driver resistance", self.driver_ohm)
+        f.addRow("Receiver resistance", self.receiver_ohm)
+        f.addRow("Receiver capacitance", self.receiver_pf)
+        f.addRow("Termination", self.termination)
+        f.addRow("Logic level", self.logic)
+        f.addRow("Noise margin", self.margin)
+        f.addRow(self.lbl_margin)
+        for w, text, art in (
+                (self.net, "The signal net the noise couples onto (type to search)", None),
+                (self.name, "A name for this victim; blank is the net's name", None),
+                (self.preset, "What drives and loads the net. Picking a type fills in the "
+                              "resistances, capacitance and termination below (all still "
+                              "editable) and, for a differential leg or an analog input, the "
+                              "noise margin.", ("victim_terms", "drv", "rcv", "term")),
+                (self.driver, "The driver's pin on the net: where the trace's source "
+                              "impedance is. Blank: one end of the net, guessed.",
+                 ("victim_terms", "drv")),
+                (self.receiver, "The receiver's pin: where the coupled noise is judged "
+                                "against the noise margin. Blank: the other end of the net.",
+                 ("victim_terms", "rcv")),
+                (self.driver_ohm, "The driver's output impedance (or a pull-up's resistance "
+                                  "for an open-drain line released high). Lower holds the "
+                                  "line harder against capacitive coupling.",
+                 ("victim_terms", "drv")),
+                (self.receiver_ohm, "The receiver's input resistance to ground",
+                 ("victim_terms", "rcv")),
+                (self.receiver_pf, "The receiver's input capacitance", ("victim_terms", "rcv")),
+                (self.termination, "A parallel termination at the receiver, if any",
+                 ("victim_terms", "term")),
+                (self.logic, "The logic family's supply: its JESD8 input and output levels "
+                             "give the noise margin, min(VIL − VOL, VOH − VIH)", None),
+                (self.margin, "The noise the receiver tolerates; blank takes it from the "
+                              "logic level (or the type). A victim fails when its peak "
+                              "coupled noise exceeds it.", None)):
+            tip(f, w, text, art)
+        self._watch(self.name, self.driver_ohm, self.receiver_ohm, self.receiver_pf,
+                    self.termination, self.logic, self.margin)
+        self.net.currentIndexChanged.connect(self._net_changed)
+        self.preset.currentIndexChanged.connect(self._preset_changed)
+        for w in (self.driver_ohm, self.receiver_ohm, self.receiver_pf, self.termination):
+            w.valueChanged.connect(self._custom)
+
+    def refresh_choices(self):
+        p = self.panel
+        loading, self._loading = self._loading, True
+        try:
+            self.net.clear()
+            snap = p.snapshot
+            if snap is not None:
+                kinds = classify_nets(snap)
+                nets = sorted_nets(snap)
+                for n in sorted(nets, key=lambda n: kinds.get(n) != "signal"):
+                    self.net.addItem(n, n)
+        finally:
+            self._loading = loading
+
+    def _load(self, v: Victim):
+        self.refresh_choices()
+        i = self.net.findData(v.net)
+        if i < 0:
+            self.net.addItem(v.net, v.net)
+            i = self.net.count() - 1
+        self.net.setCurrentIndex(i)
+        self.name.setText(v.name if v.name != v.net else "")
+        self.preset.setCurrentIndex(max(self.preset.findData(v.preset), 0))
+        self.driver.set_value(v.driver)
+        self.receiver.set_value(v.receiver)
+        self.driver_ohm.setValue(v.driver_ohm)
+        self.receiver_ohm.setValue(v.receiver_ohm)
+        self.receiver_pf.setValue(v.receiver_pf)
+        _set_optional(self.termination, v.termination_ohm)
+        i = self.logic.findData(v.logic_v)
+        if i < 0:
+            self.logic.addItem(f"{v.logic_v:g} V", v.logic_v)
+            i = self.logic.count() - 1
+        self.logic.setCurrentIndex(i)
+        _set_optional(self.margin, v.noise_margin_v * 1e3
+                      if v.noise_margin_v is not None else None)
+        self._show_margin(v)
+
+    def _save(self, v: Victim):
+        v.net = self.net.currentData() or v.net
+        v.name = self.name.text().strip() or v.net
+        v.preset = self.preset.currentData() or CUSTOM
+        v.driver = self.driver.value()
+        v.receiver = self.receiver.value()
+        v.driver_ohm = self.driver_ohm.value()
+        v.receiver_ohm = self.receiver_ohm.value()
+        v.receiver_pf = self.receiver_pf.value()
+        v.termination_ohm = _get_optional(self.termination)
+        v.logic_v = self.logic.currentData() or v.logic_v
+        m = _get_optional(self.margin)
+        v.noise_margin_v = m * 1e-3 if m is not None else None
+        self._show_margin(v)
+
+    def _show_margin(self, v: Victim):
+        self.lbl_margin.setText(f"Margin used: {v.margin() * 1e3:.4g} mV")
+
+    def _net_changed(self, _i):
+        """Another net: its pins are guessed afresh."""
+        if self._loading or self.obj is None:
+            return
+        net = self.net.currentData() or ""
+        snap = self.panel.snapshot
+        if snap is not None and net:
+            drv, rcv = guess_ends(snap, net)
+            for picker, ref in ((self.driver, drv), (self.receiver, rcv)):
+                self._show(picker, ref)
+        self._store()
+
+    def _preset_changed(self, _i):
+        if self._loading or self.obj is None:
+            return
+        key = self.preset.currentData() or CUSTOM
+        self.obj.apply_preset(key)
+        loading, self._loading = self._loading, True
+        try:
+            self._load(self.obj)
+        finally:
+            self._loading = loading
+        self._store()
+
+    def _custom(self, *_):
+        """Values edited by hand no longer match the type."""
+        if self._loading or self.obj is None:
+            return
+        p = VICTIM_PRESETS.get(self.preset.currentData() or "")
+        if p is not None and (self.driver_ohm.value(), self.receiver_ohm.value(),
+                              self.receiver_pf.value(), _get_optional(self.termination)) \
+                != (p.driver_ohm, p.receiver_ohm, p.receiver_pf, p.termination_ohm):
+            self.preset.blockSignals(True)
+            self.preset.setCurrentIndex(self.preset.findData(CUSTOM))
+            self.preset.blockSignals(False)
+
+
 def _topology_or_buck(setup: PISetup, a: Aggressor) -> str:
     """The aggressor's topology, or a buck where its voltages do not say yet."""
     try:
@@ -477,6 +650,7 @@ class NoisePanel(QWidget, PartSelection):
     solve_requested = Signal(object, str)          # PISetup, aggressor name
     save_requested = Signal()
     result_selected = Signal(object)               # NoiseResult shown in the plot; None clears
+    victim_selected = Signal(str)                  # the victim picked in the results table
     setup_changed = Signal()
     results_saved = Signal(str)
     part_selected = Signal(str, str, bool)         # see ACPanel.part_selected
@@ -514,12 +688,17 @@ class NoisePanel(QWidget, PartSelection):
                             "none yet (capacitance read from the value; enter ESL and ESR)")
         b_values.clicked.connect(self._models_from_values)
         self.cap_list.layout().insertWidget(0, b_values)
+        self.victim_list = ItemList(lambda: self.setup.victims, VictimEditor(self),
+                                    self._new_victim, self._describe_victim, noun="victim")
         self.tabs.addTab(self.agg_list, "Aggressors")
+        self.tabs.addTab(self.victim_list, "Victims")
         self.tabs.addTab(self.cap_list, "Capacitors")
         self.tabs.addTab(self._settings_tab(), "Settings")
         for i, text in enumerate((
                 "Switching regulators as noise sources: their switching, edges and power "
                 "parts, per phase",
+                "Signal nets the noise couples onto, with their driver, receiver and "
+                "noise margin",
                 "RLC models for the capacitors, shared with AC mode; they split the "
                 "switching currents among the input and output capacitors",
                 "How far up in frequency the waveforms go, and how much of them is shown")):
@@ -551,6 +730,21 @@ class NoisePanel(QWidget, PartSelection):
 
         g_res = QGroupBox("Results", self)
         lr = QVBoxLayout(g_res)
+        self.tbl_victims = QTableWidget(0, 6, g_res)
+        self.tbl_victims.setHorizontalHeaderLabels(
+            ["Victim", "Peak (mV)", "Margin (mV)", "Of margin", "Mechanism", ""])
+        self.tbl_victims.verticalHeader().setVisible(False)
+        self.tbl_victims.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_victims.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl_victims.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tbl_victims.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.tbl_victims.setToolTip("The peak noise each victim's receiver sees over a "
+                                    "switching period, against its noise margin. Select a "
+                                    "victim to plot its noise.")
+        self.tbl_victims.itemSelectionChanged.connect(self._victim_row)
+        make_sortable(self.tbl_victims)
+        self.tbl_victims.setVisible(False)
+        lr.addWidget(self.tbl_victims)
         self.txt_notes = QLabel(g_res)
         self.txt_notes.setWordWrap(True)
         self.txt_notes.setTextFormat(Qt.RichText)
@@ -572,7 +766,7 @@ class NoisePanel(QWidget, PartSelection):
         self.setEnabled(False)
 
     def _lists(self):
-        return (self.agg_list, self.cap_list)
+        return (self.agg_list, self.victim_list, self.cap_list)
 
     def _part_lists(self):
         return {"cap": self.cap_list}
@@ -590,10 +784,14 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_periods.setRange(1, 20)
         self.spin_periods.setValue(s.periods_shown)
         self.spin_zeta = _spin(0, 1, s.min_ring_zeta, 3, "", 0.01)
+        self.spin_segment = _spin(0.05, 10, s.segment_mm, 2, " mm", 0.1)
+        self.spin_window = _spin(0.2, 50, s.window_mm, 1, " mm", 0.5)
         f.addRow("Highest frequency", self.spin_fmax)
         f.addRow("Harmonic limit", self.spin_harm)
         f.addRow("Least ringing damping", self.spin_zeta)
         f.addRow("Periods shown", self.spin_periods)
+        f.addRow("Victim segment", self.spin_segment)
+        f.addRow("Coupling window", self.spin_window)
         tip(f, self.spin_fmax, "The highest harmonic frequency the waveforms keep. From the "
                                "edges: ten times the faster edge's corner frequency "
                                "(1/(π·rise time)) or three times the ringing frequency, "
@@ -608,7 +806,16 @@ class NoisePanel(QWidget, PartSelection):
                                "five to ten cycles (ζ about 0.05 to 0.1). 0 uses the loop's "
                                "resistance alone.", ("sw_ringing", "ring"))
         tip(f, self.spin_periods, "Switching periods shown in the waveform plot")
-        for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta):
+        tip(f, self.spin_segment, "Victim traces are cut into pieces this long; each is a "
+                                  "short transmission line with its own cross-section. "
+                                  "Shorter follows the copper beside it more closely.",
+            ("xsection", "seg"))
+        tip(f, self.spin_window, "How far either side of a victim trace copper is taken "
+                                 "into its cross-section: switch-node copper further away "
+                                 "does not couple, and the planes within it are its "
+                                 "references", ("xsection", "win"))
+        for wdg in (self.spin_fmax, self.spin_harm, self.spin_periods, self.spin_zeta,
+                    self.spin_segment, self.spin_window):
             wdg.valueChanged.connect(self._settings_changed)
         return w
 
@@ -619,12 +826,15 @@ class NoisePanel(QWidget, PartSelection):
         s.max_harmonics = self.spin_harm.value()
         s.periods_shown = self.spin_periods.value()
         s.min_ring_zeta = self.spin_zeta.value()
+        s.segment_mm = self.spin_segment.value()
+        s.window_mm = self.spin_window.value()
         self._on_changed()
 
     def _load_settings(self):
         s = self.setup.noise
         for wdg, v in ((self.spin_harm, s.max_harmonics), (self.spin_periods, s.periods_shown),
-                       (self.spin_zeta, s.min_ring_zeta)):
+                       (self.spin_zeta, s.min_ring_zeta), (self.spin_segment, s.segment_mm),
+                       (self.spin_window, s.window_mm)):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
@@ -733,6 +943,26 @@ class NoisePanel(QWidget, PartSelection):
     def _describe_aggressor(self, a: Aggressor) -> str:
         return describe_aggressor(self.setup)(a)
 
+    def _new_victim(self) -> Optional[Victim]:
+        if self.snapshot is None:
+            return None
+        taken = {v.net for v in self.setup.victims}
+        kinds = classify_nets(self.snapshot)
+        sw = {ph.switch_net for a in self.setup.aggressors for ph in a.phases}
+        net = next((n for n in sorted_nets(self.snapshot)
+                    if kinds.get(n) == "signal" and n not in taken and n not in sw), None)
+        if net is None:
+            self.lbl_errors.setText("• No signal net is left to add")
+            return None
+        drv, rcv = guess_ends(self.snapshot, net)
+        return Victim(net, driver=drv, receiver=rcv)
+
+    @staticmethod
+    def _describe_victim(v: Victim) -> str:
+        label = VICTIM_PRESETS[v.preset].label if v.preset in VICTIM_PRESETS else "Custom"
+        name = f"{v.name} ({v.net})" if v.name != v.net else v.name
+        return f"{name}: {label}, {v.margin() * 1e3:.4g} mV margin"
+
     def _models_from_values(self):
         if self.snapshot is None:
             return
@@ -750,6 +980,8 @@ class NoisePanel(QWidget, PartSelection):
     def _clear_notes(self):
         self.result = None
         self.txt_notes.clear()
+        reset_sort(self.tbl_victims)
+        self.tbl_victims.setRowCount(0)
 
     def show_error(self, message: str):
         self.txt_notes.setText(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
@@ -787,10 +1019,38 @@ class NoisePanel(QWidget, PartSelection):
 
     def _display(self, result):
         self.result = result
-        lines = [html.escape(x) for x in result.summary_lines()]
+        lines = [html.escape(x) for x in result.summary_lines()
+                 if not x.startswith("Victim ")]
         lines += [f"⚠ {html.escape(w)}" for w in result.warnings]
+        lines += [f"⚠ {html.escape(v.name)}: {html.escape(w)}"
+                  for v in getattr(result, "victims", []) for w in v.warnings]
         self.txt_notes.setText("<br>".join(lines))
+        self._fill_victims(result)
         self.result_selected.emit(result)
+
+    def _fill_victims(self, result):
+        t = self.tbl_victims
+        victims = getattr(result, "victims", [])
+        t.blockSignals(True)
+        reset_sort(t)
+        t.setRowCount(len(victims))
+        for r, v in enumerate(victims):
+            set_row(t, r, [v.name, (f"{v.peak_v * 1e3:.4g}", v.peak_v),
+                           (f"{v.margin_v * 1e3:.4g}", v.margin_v),
+                           (f"{v.ratio * 100:.3g} %", v.ratio), v.dominant,
+                           "PASS" if v.passed else "FAIL"])
+            t.item(r, 5).setForeground(QColor("#60d060" if v.passed else "#ff6060"))
+        t.blockSignals(False)
+        t.setVisible(bool(victims))
+        if victims:
+            worst = max(range(len(victims)), key=lambda i: victims[i].ratio)
+            t.selectRow(worst)
+
+    def _victim_row(self):
+        rows = self.tbl_victims.selectionModel().selectedRows()
+        if rows:
+            item = self.tbl_victims.item(rows[0].row(), 0)
+            self.victim_selected.emit(item.text())
 
     def _save_results(self):
         if not self._results or self.snapshot is None:

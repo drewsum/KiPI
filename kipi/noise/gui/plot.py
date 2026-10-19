@@ -15,7 +15,7 @@ MAX_CAP_CURVES = 12             # more capacitors than this: the largest current
 
 VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("cin", "Input capacitor currents"), ("cout", "Output capacitor currents"),
-         ("ripple", "Input and output ripple voltage"))
+         ("ripple", "Input and output ripple voltage"), ("victim", "Victim noise"))
 
 
 class NoisePlot(QWidget):
@@ -57,6 +57,7 @@ class NoisePlot(QWidget):
         self.canvas.mpl_connect("motion_notify_event", self._hover)
         self.result = None
         self.periods = 2                # switching periods shown (NoiseSettings.periods_shown)
+        self.victim = ""                # the victim shown in the victim view
         self._curves: List[Tuple[str, np.ndarray, np.ndarray, str]] = []
         self._style()
         self.canvas.draw_idle()
@@ -84,6 +85,14 @@ class NoisePlot(QWidget):
         self.result = result
         self._draw()
 
+    def set_victim(self, name: str):
+        """Show victim ``name``'s noise."""
+        self.victim = name
+        if self.cmb_view.currentData() == "victim":
+            self._draw()
+        else:
+            self.set_view("victim")
+
     def save_png(self, path: str):
         self.figure.savefig(path, dpi=150, facecolor=self.figure.get_facecolor())
 
@@ -105,12 +114,28 @@ class NoisePlot(QWidget):
             caps = wf.input_caps if key == "cin" else wf.output_caps
             ranked = sorted(caps.items(), key=lambda kv: -kv[1].ac_rms())[:MAX_CAP_CURVES]
             return [(f"{ref} ({kv.ac_rms():.3g} A rms)", kv) for ref, kv in ranked]
+        if key == "victim":
+            v = self._victim()
+            if v is None:
+                return []
+            out = [(f"{v.receiver} {k}", sp) for k, sp in v.receiver_v.items()
+                   if k != "total" and len(v.receiver_v) > 2]
+            if "total" in v.receiver_v:
+                out.insert(0, (f"{v.receiver} (receiver)", v.receiver_v["total"]))
+            if "total" in v.driver_v:
+                out.append((f"{v.driver} (driver)", v.driver_v["total"]))
+            return out
         out = []
         if wf.input_ripple is not None:
             out.append(("Vin ripple", wf.input_ripple))
         if wf.output_ripple is not None:
             out.append(("Vout ripple", wf.output_ripple))
         return out
+
+    def _victim(self):
+        victims = getattr(self.result, "victims", []) if self.result is not None else []
+        return next((v for v in victims if v.name == self.victim),
+                    victims[0] if victims else None)
 
     def _draw(self):
         from matplotlib.ticker import FuncFormatter
@@ -125,8 +150,10 @@ class NoisePlot(QWidget):
         spectra = self._spectra()
         spectrum = self.chk_spectrum.isChecked()
         if not spectra:
-            self.lbl.setText("Nothing to plot: no capacitors are set for this rail"
-                             if self.cmb_view.currentData() != "sw" else EMPTY)
+            key = self.cmb_view.currentData()
+            self.lbl.setText({"victim": "No victims were solved: add them in the Victims tab",
+                              "sw": EMPTY}.get(key, "Nothing to plot: no capacitors are set "
+                                                    "for this rail"))
             self.canvas.draw_idle()
             return
         unit = spectra[0][1].unit
@@ -153,17 +180,34 @@ class NoisePlot(QWidget):
                 ax.plot(t * 1e6, y, color=COLORS[i % len(COLORS)], lw=1.0, label=label)
                 self._curves.append((label, t, y, unit))
             ax.set_xlim(0, t[-1] * 1e6)
+            v = self._victim() if self.cmb_view.currentData() == "victim" else None
+            # The margin lines are drawn where they fit; far above small noise they would
+            # flatten it, so the axis then follows the noise.
+            if v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
+                for sign in (1, -1):
+                    ax.axhline(sign * v.margin_v, color="#ff6060", lw=1.0, ls="--",
+                               label="noise margin" if sign > 0 else None)
+            elif v is not None:
+                ax.set_ylim(-1.3 * v.peak_v, 1.3 * v.peak_v)
             ax.set_xlabel("Time (µs)")
             ax.set_ylabel(unit)
             ax.grid(True, color="#444", lw=0.5)
         op = self.result.operating
-        ax.set_title(f"{self.result.aggressor} ({op.topology}, {op.vin:g} V → {op.vout:g} V, "
-                     f"{op.iout:.3g} A, {wf.fsw_hz / 1e3:g} kHz, D = {op.duty:.3f})",
-                     fontsize=10)
+        v = self._victim() if self.cmb_view.currentData() == "victim" else None
+        if v is not None:
+            ax.set_title(f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of "
+                         f"its margin, from {self.result.aggressor}", fontsize=10)
+        else:
+            ax.set_title(f"{self.result.aggressor} ({op.topology}, {op.vin:g} V → {op.vout:g} V, "
+                         f"{op.iout:.3g} A, {wf.fsw_hz / 1e3:g} kHz, D = {op.duty:.3f})",
+                         fontsize=10)
         leg = ax.legend(loc="best", fontsize=8, facecolor="#2a2a2a", edgecolor="#555")
         for txt in leg.get_texts():
             txt.set_color("#ddd")
-        self.lbl.setText("Hover to read the curves")
+        hint = "Hover to read the curves"
+        if v is not None and not spectrum and v.margin_v > 4 * max(v.peak_v, 1e-15):
+            hint += f" (the ±{v.margin_v * 1e3:.4g} mV noise margin is off the scale)"
+        self.lbl.setText(hint)
         self.canvas.draw_idle()
 
     def _hover(self, event):

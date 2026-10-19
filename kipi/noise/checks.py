@@ -249,3 +249,34 @@ def seed_phases(snap: BoardSnapshot, setup: PISetup, vrm: Vrm, topo: str
             for ref in _two_net_parts(by_ref, net, gnd, is_capacitor_ref):
                 getattr(nearest(ref), attr).append(ref)
     return phases
+
+
+def guess_ends(snap: BoardSnapshot, net: str) -> Tuple[Optional[PinRef], Optional[PinRef]]:
+    """A guess at a victim's driver and receiver pins: the net's two pads farthest apart,
+    the driver the one on an IC (U…) where only one of them is."""
+    _, _, pads, _ = snap.items_on_net(net)
+    pads = [p for p in pads if p.footprint]
+    if not pads:
+        return None, None
+    if len(pads) == 1:
+        p = pads[0]
+        return PinRef(p.footprint, net, [p.number]), None
+    best, pair = -1.0, (pads[0], pads[1])
+    for i, a in enumerate(pads):
+        for b in pads[i + 1:]:
+            d = (a.position[0] - b.position[0]) ** 2 + (a.position[1] - b.position[1]) ** 2
+            if d > best:
+                best, pair = d, (a, b)
+    a, b = pair
+    if b.footprint.startswith("U") and not a.footprint.startswith("U"):
+        a, b = b, a
+    return PinRef(a.footprint, net, [a.number]), PinRef(b.footprint, net, [b.number])
+
+
+def pin_position(snap: BoardSnapshot, pin: Optional[PinRef]) -> Optional[Tuple[float, float]]:
+    """The centre of a pin reference's pads."""
+    if pin is None:
+        return None
+    pads = [p for p in snap.pads if p.footprint == pin.ref and p.net == pin.net
+            and (not pin.pins or p.number in pin.pins)]
+    return _centroid(pads) if pads else None

@@ -183,6 +183,7 @@ ol.steps > li { margin-bottom: 6px; }
     <li><a href="#noise-setup">Coupled Noise setup tabs</a>
       <ol>
         <li><a href="#noise-aggressors">Aggressors</a></li>
+        <li><a href="#noise-victims">Victims</a></li>
         <li><a href="#noise-caps">Capacitors</a></li>
         <li><a href="#noise-settings">Settings</a></li>
       </ol></li>
@@ -1683,9 +1684,11 @@ way.</p>
 <p><b>Coupled Noise</b> mode (<b>Ctrl+3</b>) treats a buck or boost switching regulator as an
 <b>aggressor</b>: from a few of its parameters and the board's layout it builds the
 converter's waveforms (the switch node, the inductor currents, each capacitor's ripple
-current and the rails' ripple voltage). Later versions couple them onto signal nets, the
-<b>victims</b>; this version builds and shows the aggressor's waveforms and the layout
-parasitics that shape them.</p>
+current and the rails' ripple voltage), then couples them onto the signal nets you name, the
+<b>victims</b>, and compares the noise at each victim's receiver with its noise margin.
+This version models <b>capacitive</b> coupling: the switch node's copper charging the
+victim's traces through their mutual capacitance. Inductive and shared-ground coupling
+come later.</p>
 <p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
 Its input rail and set voltage give the input and output voltages, and from them the
 topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
@@ -1739,6 +1742,25 @@ given to the nearest phase. Each phase has:</p>
 </ul>
 </div>
 </details>
+<details open id="noise-victims">
+<summary>Victims</summary>
+<div class="body">
+<p><b>Add</b> makes a victim of the first signal net not yet one, with its driver and
+receiver guessed as the net's two pads farthest apart. For each victim:</p>
+<ul>
+  <li><b>Net</b> and an optional <b>Name</b>.</li>
+  <li><b>Type</b>: what drives and loads the net. CMOS push-pull, open drain (held only by its
+    pull-up), series or parallel terminated, a differential (LVDS) leg or a high-impedance
+    analog input. A type fills in the values below; editing them makes it Custom.</li>
+  <li><b>Driver pins</b> and <b>Receiver pins</b> (<a href="#pin-picker">pin pickers</a>):
+    where the trace is driven and where its noise is judged. Blank guesses them.</li>
+  <li><b>Driver resistance</b>, <b>Receiver resistance</b>, <b>Receiver capacitance</b> and
+    <b>Termination</b> (a parallel termination at the receiver).</li>
+  <li><b>Logic level</b>: the family's supply; its JESD8 levels give the noise margin,
+    min(VIL − VOL, VOH − VIH), 400 mV for 3.3 V CMOS. <b>Noise margin</b> overrides it.</li>
+</ul>
+</div>
+</details>
 <details open id="noise-caps">
 <summary>Capacitors</summary>
 <div class="body">
@@ -1759,6 +1781,10 @@ and the results say so.</p>
     energy too, and measured ringing usually dies within five to ten cycles. The ringing is
     damped at least this much (ζ, default 0.05); 0 uses the loop's resistance alone.</li>
   <li><b>Periods shown</b> in the waveform plot.</li>
+  <li><b>Victim segment</b>: victim traces are cut into pieces this long, each with its own
+    cross-section of the copper around it (default 0.5 mm).</li>
+  <li><b>Coupling window</b>: how far either side of a victim trace copper is taken into its
+    cross-section (default 3 mm). Switch-node copper further away does not couple.</li>
 </ul>
 </div>
 </details>
@@ -1786,6 +1812,12 @@ curves.</p>
 <p>The results notes give the operating point and, for each phase, the hot loop's
 inductance, the switch node's capacitance to ground (Coss and copper), the loop's
 resistance, and the ringing's frequency and damping.</p>
+<p>The <b>results table</b> lists each victim: its receiver's peak noise over a switching
+period, its noise margin, the share of the margin used, the coupling mechanism that
+dominates, and <b>PASS</b> or <b>FAIL</b>. The worst victim is selected; select one to plot
+its noise under <b>Victim noise</b> in the Waveforms tab, at the receiver and the driver,
+against its margin (in time, or as a spectrum). The log gives each victim's mutual
+capacitance to the switch node and the length of trace beside it.</p>
 </div>
 </details>
 

@@ -3,11 +3,46 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List, Optional
 
 from kipi.noise.checks import OperatingPoint
 from kipi.noise.parasitics import HotLoopReport
-from kipi.noise.waveforms import SmpsWaveforms
+from kipi.noise.waveforms import SmpsWaveforms, Spectrum
+
+MECHANISMS = ("capacitive",)
+TOTAL = "total"
+
+
+@dataclass
+class VictimResult:
+    """The noise coupled onto one victim net, at its receiver and driver."""
+    name: str
+    net: str
+    driver: str                         # pin labels, as shown
+    receiver: str
+    margin_v: float
+    receiver_v: Dict[str, Spectrum] = field(default_factory=dict)   # mechanism or TOTAL
+    driver_v: Dict[str, Spectrum] = field(default_factory=dict)
+    peak_v: float = 0.0                 # the receiver's largest |v| over a period
+    peak_by: Dict[str, float] = field(default_factory=dict)          # per mechanism
+    cm_f: Dict[str, float] = field(default_factory=dict)             # switch net -> Cm
+    length_mm: float = 0.0
+    coupled_mm: float = 0.0             # of it, the length beside a switch node
+    z0_ohm: float = 0.0                 # length-weighted
+    solves: int = 0                     # cross-sections solved (the rest were cached)
+    warnings: List[str] = field(default_factory=list)
+
+    @property
+    def ratio(self) -> float:
+        return self.peak_v / self.margin_v if self.margin_v > 0 else float("inf")
+
+    @property
+    def passed(self) -> bool:
+        return self.ratio <= 1.0
+
+    @property
+    def dominant(self) -> str:
+        return max(self.peak_by, key=self.peak_by.get) if self.peak_by else ""
 
 
 @dataclass
@@ -19,6 +54,10 @@ class NoiseResult:
     hot_loops: List[HotLoopReport] = field(default_factory=list)   # per phase
     warnings: List[str] = field(default_factory=list)
     report_path: str = ""
+    victims: List[VictimResult] = field(default_factory=list)
+
+    def victim(self, name: str) -> Optional[VictimResult]:
+        return next((v for v in self.victims if v.name == name), None)
 
     def summary_lines(self) -> List[str]:
         """The operating point and each phase's parasitics, for the log and the panel."""
@@ -37,4 +76,10 @@ class NoiseResult:
                 f"{h.c_sw_f * 1e12:.4g} pF to ground (Coss {h.coss_f * 1e12:.4g} pF"
                 f"{' assumed' if h.coss_default else ''} + copper "
                 f"{h.c_copper_f * 1e12:.3g} pF), R {h.r_loop_ohm * 1e3:.3g} mΩ; {ring}")
+        for v in self.victims:
+            cm = sum(v.cm_f.values())
+            lines.append(f"Victim {v.name}: {v.peak_v * 1e3:.4g} mV peak at {v.receiver} "
+                         f"({v.ratio * 100:.3g} % of its {v.margin_v * 1e3:.4g} mV margin, "
+                         f"{'PASS' if v.passed else 'FAIL'}); {cm * 1e15:.4g} fF to the "
+                         f"switch node over {v.coupled_mm:.3g} of {v.length_mm:.3g} mm")
         return lines

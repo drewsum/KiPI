@@ -7,6 +7,20 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Coupled Noise mode, part 2: capacitive coupling onto victims** (#69). A **Victims**
+  tab names the signal nets to check, each with its driver and receiver pins (guessed as
+  the net's two farthest pads), a type that fills in their terminations (CMOS push-pull,
+  open drain, series or parallel terminated, a differential leg, a high-impedance analog
+  input; every value editable) and its logic level, whose JESD8 levels give its noise
+  margin (or enter one). A solve cuts each victim's traces into short segments and solves
+  a 2D cross-section of the board's copper across each one: its capacitance, inductance
+  and mutual capacitance to every switch node, from the stackup's dielectrics and solder
+  mask with the planes as references (within 2 % of the microstrip and stripline
+  formulas). The segments make a network of transmission lines between the driver and
+  receiver, driven by the switch nodes' charge at every harmonic. A results table gives
+  each victim's peak noise at its receiver against its margin, PASS or FAIL; selecting one
+  plots its noise, at the receiver and driver, in time or as a spectrum. The Solver Guide
+  explains the models.
 - **Coupled Noise mode, part 1: the aggressor's waveforms** (#69). A third analysis
   mode (**Noise** in the toolbar, Ctrl+3) takes a buck or boost switcher as a noise
   source. Its **Aggressors** tab names a switching VRM, which gives the input and output

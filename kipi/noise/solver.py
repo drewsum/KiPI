@@ -74,4 +74,23 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
     for w in warnings:
         progress.warn(w)
     progress.partial(result)
+
+    if setup.victims:
+        from kipi.noise.extract.xsection import Cache
+        from kipi.noise.victims import couple
+        progress.stage("Victims")
+        cache = Cache()
+        for i, victim in enumerate(setup.victims):
+            progress.fraction(i / len(setup.victims))
+            with progress.timed(f"victim {victim.name}"):
+                vr = couple(snap, setup, victim, agg, wf, cache, progress.check_cancel)
+            result.victims.append(vr)
+            ok = "PASS" if vr.passed else "FAIL"
+            progress.info(f"Victim {vr.name}: {vr.peak_v * 1e3:.4g} mV peak "
+                          f"({vr.ratio * 100:.3g} % of its margin, {ok}); "
+                          f"{vr.solves} cross-section(s) solved")
+            for w in vr.warnings:
+                progress.warn(f"Victim {vr.name}: {w}")
+        progress.fraction(1.0)
+        progress.debug(f"Cross-sections: {cache.misses} solved, {cache.hits} reused")
     return result
