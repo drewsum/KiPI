@@ -60,6 +60,26 @@ class DielectricLayer:
     k_w_mk: float = 0.0
 
 
+#: Coating kinds, outermost last: a solder mask over the copper, a silkscreen over that.
+MASK, SILK = "mask", "silk"
+
+
+@dataclass
+class Coating:
+    """A solder mask or silkscreen over an outer copper layer (#82). Coatings sit outside
+    the board: they do not count in its thickness or move any z."""
+    kind: str               # MASK or SILK
+    side: str               # "top" or "bottom"
+    thickness_mm: float
+    material: str = ""
+    color: str = ""         # "#rrggbb", "" when the source does not say
+
+    @property
+    def name(self) -> str:
+        what = "Solder mask" if self.kind == MASK else "Silkscreen"
+        return f"{'Top' if self.side == 'top' else 'Bottom'} {what.lower()}"
+
+
 @dataclass
 class Stackup:
     copper: List[CopperLayer]
@@ -67,6 +87,18 @@ class Stackup:
     board_thickness_mm: float
     from_board: bool = True  # False when a default stackup had to be synthesized
     edited: bool = False     # thicknesses changed in KiPI (see kipi.core.model.stackup)
+    # Solder masks and silkscreens, top to bottom: the top silkscreen first, then the top
+    # mask, the bottom mask and the bottom silkscreen; any of them may be missing.
+    coatings: List[Coating] = field(default_factory=list)
+
+    def __setstate__(self, state):      # results saved before #82 have no coatings
+        self.__dict__.update(state)
+        self.__dict__.setdefault("coatings", [])
+
+    def coatings_on(self, side: str) -> List[Coating]:
+        """The coatings on ``side`` ("top" or "bottom"), from the copper outward."""
+        out = [c for c in self.coatings if c.side == side]
+        return out[::-1] if side == "top" else out
 
     def layer(self, layer_id: int) -> Optional[CopperLayer]:
         for layer in self.copper:

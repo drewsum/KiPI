@@ -1,4 +1,5 @@
-"""Default copper layer colors, and the key each copper layer's color is stored under.
+"""Default copper layer colors, and the key each copper layer's color is stored under;
+and the colors of solder masks and silkscreens.
 
 Colors are keyed like a KiCad color theme's ``board.copper`` (``f``, ``in1`` .. ``in30``,
 ``b``), so a KiCad theme can replace any of them; boards from any source use the same
@@ -38,3 +39,18 @@ def layer_key(layer_id: int, index: int, n_layers: int) -> str:
     if layers.is_inner(layer_id):
         return f"in{layer_id - layers.F_CU}"
     return f"in{index}"
+
+
+DEFAULT_MASK: RGB = (20, 81, 36)      # a green solder mask
+DEFAULT_SILK: RGB = (240, 240, 240)
+
+
+def coating_rgb(coating) -> Tuple[float, float, float]:
+    """A solder mask's or silkscreen's color, 0..1: the board's, else green or white."""
+    from kipi.core.model.board import MASK
+    c = coating.color or ""
+    if c.startswith("#") and len(c) == 7:
+        rgb = tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+    else:
+        rgb = DEFAULT_MASK if coating.kind == MASK else DEFAULT_SILK
+    return tuple(v / 255 for v in rgb)

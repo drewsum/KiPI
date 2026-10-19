@@ -37,7 +37,8 @@ def _view(zscale=1.0):
            _zscale=zscale, _show_models=True, _show_models_result=False, _show_board=True,
            _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
-           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
+           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
+           _coating_actors=[], _show_mask=False, _show_silk=False)
     for name in ("set_models", "_remove_model_actors", "_place_models", "_apply_visibility",
                  "set_zscale"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))

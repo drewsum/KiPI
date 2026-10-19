@@ -23,7 +23,8 @@ from kipi.core.model.board import (
 )
 from kipi.core.model.layers import B_CU, F_CU, canonical_name, id_from_name
 from kipi.core.model.stackup import (
-    DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM, build_stackup, combined_epsilon_r,
+    DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM, build_stackup, coating_of, combined_epsilon_r,
+    kicad_color,
 )
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.sources.kicad_pcb import pads as padgeo, project as kproject
@@ -113,10 +114,17 @@ def read_stackup(root: Node, names: Dict[int, str], progress: ProgressReporter,
     setup = child(root, "setup")
     stack = child(setup, "stackup") if setup is not None else None
     entries = []
+    coatings = []
     for layer in (children(stack, "layer") if stack is not None else []):
         if len(layer) < 2:
             continue
         name = layer[1]
+        coat = coating_of(name, value(layer, "type", "") or "", number(layer, "thickness"),
+                          value(layer, "material", "") or "",
+                          kicad_color(value(layer, "color", "") or ""))
+        if coat is not None:
+            coatings.append(coat)
+            continue
         lid = id_from_name(name)
         if value(layer, "type") == "copper" and lid in names:
             default = DEFAULT_OUTER_CU_MM if lid in (F_CU, B_CU) else DEFAULT_INNER_CU_MM
@@ -127,7 +135,7 @@ def read_stackup(root: Node, names: Dict[int, str], progress: ProgressReporter,
             er = combined_epsilon_r([(number(s, "thickness"), number(s, "epsilon_r"))
                                      for s in subs])
             entries.append(("diel", -1, t, value(subs[0], "material", "") or "", er))
-    return build_stackup(entries, cu_ids, names, progress, assumed)
+    return build_stackup(entries, cu_ids, names, progress, assumed, coatings)
 
 
 # ---------------------------------------------------------------------------

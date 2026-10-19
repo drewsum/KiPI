@@ -454,6 +454,14 @@ to see at the window's size, such as a copper foil on a thick board, is drawn 3 
 tall, and its label gives the real thickness; where the labels do not all fit, only the
 copper layers are labelled and the rest show on hover. Click a layer in the drawing to edit
 its thickness in the table.</p>
+<p>The solder mask and silkscreen on each side are listed above and below the copper, in
+their color. They come from the board: KiCad's stackup gives the mask's thickness and
+color, an ODB++ job its mask and silkscreen layers. KiCad gives a silkscreen no thickness,
+so KiPI takes 15 µm; a board with no stackup of its own gets KiCad's default, a 10 µm mask
+and a silkscreen on both sides. Unlocked, their thicknesses can be changed. They sit
+outside the board, so they do not add to its thickness or move any layer. Only the
+electro-thermal solve uses them: heat leaving the outer copper for the air crosses them
+(see <a href="#dc-thermal">Thermal</a>).</p>
 <figure><img src="images/stackup.png" alt="The Stackup window listing copper and dielectric layers">
 <figcaption>The Stackup window.</figcaption></figure>
 <details open>
@@ -586,6 +594,10 @@ Hiding layers does not change the result colors; set the
     layers beneath; vias stay solid.</td></tr>
   <tr><td><b>Vias / Pads / Board</b></td><td class="wrap">Show or hide via barrels, pads and
     the board body.</td></tr>
+  <tr><td><b>Mask / Silkscreen</b></td><td class="wrap">Show the solder masks, in their
+    color and open over the pads, and the silkscreens. KiPI does not read what a
+    silkscreen prints, so it is drawn over the whole face, as the electro-thermal solve
+    takes it. Both start off, since they hide the copper.</td></tr>
   <tr><td id="pi-models"><b>PI Models</b></td><td class="wrap">Marks the parts the current
     analysis uses on the copper: a dot on each of their pads, larger on the rail's pins and
     smaller on ground, with the part's name above. In DC mode those are the setup's
@@ -1032,7 +1044,8 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     The air always flows parallel to the board, along both faces, and its direction is fixed:
     every point is cooled equally, as if the air stayed at ambient across the whole board, so
     upstream parts do not warm the air that reaches downstream ones.
-    Convection is h = 10 + 3.8·v W/m²K per face.</td></tr>
+    Convection is h = 10 + 3.8·v W/m²K per face. The heat crosses each face's solder mask
+    and silkscreen on the way (Stackup window).</td></tr>
   <tr><td>Grid</td><td class="wrap">Thermal cell size; <i>auto</i> is about 250 cells across
     the board.</td></tr>
   <tr><td>Include load power dissipation</td><td class="wrap">Off by default. When ticked,

@@ -29,6 +29,7 @@ from kipi.dc.gui.pi_panel import PIPanel
 from kipi.dc.pi.tree import fmt_drop
 from kipi.gui.heartbeat import Heartbeat, busy_cursor
 from kipi.gui.stackup_window import StackupWindow
+from kipi.gui.tooltip_art import art_tip
 from kipi.gui.viewer3d import Viewer3D
 from kipi.gui.worker import QtProgress, Task
 from kipi.host import Host, current as current_host
@@ -457,11 +458,16 @@ class MainWindow(QMainWindow):
         opac.addWidget(self.sld_opacity, 1)
         opac.addWidget(self.lbl_opacity)
         feats = QVBoxLayout()
-        feat_rows = (QHBoxLayout(), QHBoxLayout())
+        feat_rows = (QHBoxLayout(), QHBoxLayout(), QHBoxLayout())
         for r in feat_rows:
             feats.addLayout(r)
         feat_tips = {"vias": "Show via and plated-hole barrels",
                      "pads": "Show pads", "board": "Show the board outline and laminate",
+                     "mask": "Show the solder masks, open over the pads. They hide the "
+                             "copper, so they start off.",
+                     "silk": "Show the silkscreens. KiPI does not read what is printed, so "
+                             "each covers its whole face, as the electro-thermal solve "
+                             "takes it. Off to start with.",
                      "pi": "Mark the parts of the current analysis on the nets shown: a "
                            "dot on each of their pads, larger on the rail and smaller on "
                            "ground, and the part's name. In DC mode its VRMs (green), "
@@ -477,14 +483,16 @@ class MainWindow(QMainWindow):
                                "Guess models picks them from KiCad's library. The copper "
                                "and result views each remember this; over results they "
                                "start off."}
-        for k, (name, label) in enumerate((("vias", "Vias"), ("pads", "Pads"),
-                                           ("board", "Board"), ("pi", "PI Models"),
-                                           ("models", "3D Models"))):
+        for k, (name, label) in ((0, ("vias", "Vias")), (0, ("pads", "Pads")),
+                                 (0, ("board", "Board")), (1, ("mask", "Mask")),
+                                 (1, ("silk", "Silkscreen")), (2, ("pi", "PI Models")),
+                                 (2, ("models", "3D Models"))):
             cb = QCheckBox(label, g_view)
-            cb.setChecked(name != "pi")
-            cb.setToolTip(feat_tips[name])
+            cb.setChecked(name not in ("pi", "mask", "silk"))
+            cb.setToolTip(art_tip(feat_tips[name], "coatings", name) if name in ("mask", "silk")
+                          else feat_tips[name])
             cb.toggled.connect(lambda v, n=name: self.viewer.set_feature_visible(n, v))
-            feat_rows[k // 3].addWidget(cb)
+            feat_rows[k].addWidget(cb)
             if name == "pi":
                 self.chk_pi = cb
         self.chk_models = cb
@@ -500,7 +508,7 @@ class MainWindow(QMainWindow):
         self.btn_guess.setVisible(self._tool.offers_part_models)
         self.btn_guess.setEnabled(False)            # with a board loaded
         self.btn_guess.clicked.connect(self.guess_models)
-        feat_rows[1].addWidget(self.btn_guess)
+        feat_rows[2].addWidget(self.btn_guess)
         self.chk_snap = QCheckBox("Snap to selected", g_view)
         self.chk_snap.setToolTip("Bring the 3D view to a VRM, load, series link, probe or "
                                  "capacitor model (all its parts) when it is clicked in the "
@@ -913,8 +921,9 @@ class MainWindow(QMainWindow):
         self._populate_layers()
         self._populate_nets(keep if keep is not None else setup.nets, setup)
         self._show_board_summary()
-        from kipi.core.viz.meshes import board_body
+        from kipi.core.viz.meshes import board_body, board_coatings
         self.viewer.set_board(*board_body(snap))
+        self.viewer.set_coatings(board_coatings(snap))
         self.sync_nets()
 
     def _load_layer_colors(self, snap: BoardSnapshot):
@@ -1544,7 +1553,7 @@ class MainWindow(QMainWindow):
 
     def _apply_stackup(self, snap, st):
         from kipi.core.model.stackup import to_setup
-        from kipi.core.viz.meshes import board_body
+        from kipi.core.viz.meshes import board_body, board_coatings
         snap.stackup = st
         self.solve_panel.setup.stackup = to_setup(st) if st.edited else None
         self.log(f"Stackup: {'edited in KiPI' if st.edited else 'from KiCad'}, "
@@ -1556,6 +1565,7 @@ class MainWindow(QMainWindow):
         self._populate_layers()
         self._show_board_summary()
         self.viewer.set_board(*board_body(snap), reset_view=False)
+        self.viewer.set_coatings(board_coatings(snap))
         for i in range(self.layer_list.count()):
             it = self.layer_list.item(i)
             if it.checkState() != Qt.Checked:

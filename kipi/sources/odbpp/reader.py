@@ -26,7 +26,9 @@ from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Via, Zone,
 )
 from kipi.core.model.layers import B_CU, F_CU, canonical_name, copper_id
-from kipi.core.model.stackup import DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM, build_stackup
+from kipi.core.model.stackup import (
+    DEFAULT_INNER_CU_MM, DEFAULT_OUTER_CU_MM, build_stackup, coating_of,
+)
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.sources.odbpp import eda as edamod, features as feat
 from kipi.sources.odbpp.archive import Job, OdbError, job_name
@@ -159,10 +161,22 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
         names[lid] = canonical if l.name.lower() == canonical.lower() else l.name
 
     entries = []
+    coatings = []
     missing_cu, missing_diel = [], []
     started = False
     for l in board:
-        if l.type in _COPPER_TYPES:
+        if l.type in ("SOLDER_MASK", "SILK_SCREEN"):
+            # Above the first copper layer it is on top, below it on the bottom.
+            attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
+            try:
+                t = float(attrs.get(".layer_dielectric", "")) * units.coord
+            except ValueError:
+                t = 0.0
+            coat = coating_of("B." if started else "F.",
+                              "Solder Mask" if l.type == "SOLDER_MASK" else "Silk Screen", t,
+                              attrs.get(".material", ""))
+            coatings.append(coat)
+        elif l.type in _COPPER_TYPES:
             started = True
             attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
             lid = ids[l.folder]
@@ -203,7 +217,7 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
     if not has_diel and n > 1:
         entries = []                    # no dielectrics at all: the default stackup
     return build_stackup(entries, [copper_id(i, n) for i in range(n)], names, progress,
-                         assumed), ids
+                         assumed, coatings), ids
 
 
 def _dielectric_attrs(job: Job, step: str, layer: Layer) -> Dict[str, str]:

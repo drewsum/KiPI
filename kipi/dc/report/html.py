@@ -625,13 +625,21 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                             else "No temperature limits were set.") + "</p>")
         parts.append(maps_html(_thermal_maps(th, snap, outline), pdf))
         if th.dielectrics:
+            from kipi.dc.thermal.materials import coating_k
+            coat = [[_e(c.name), _num(c.thickness_mm, ".3f"),
+                     "solder mask" if c.kind == "mask" else "silkscreen, over the whole face",
+                     _num(coating_k(c), "g"), _num(coating_k(c), "g")]
+                    for c in snap.stackup.coatings]
+            n_top = sum(1 for c in snap.stackup.coatings if c.side == "top")
             parts.append("<h3>Laminate (thermal conductivity)</h3>" + _table(
                 ["Stackup material", "Thickness (mm)", "Taken as", "In-plane k (W/m·K)",
                  "Through-plane k (W/m·K)"],
-                [[_e(m or "(unnamed)"), _num(t, ".3f"),
-                  _e(i.matched) + (" ⚠" if i.assumed else ""), _num(i.k_w_mk, "g"),
-                  _num(i.k_through, "g")]
-                 for m, t, i in th.dielectrics]))
+                coat[:n_top]
+                + [[_e(m or "(unnamed)"), _num(t, ".3f"),
+                    _e(i.matched) + (" ⚠" if i.assumed else ""), _num(i.k_w_mk, "g"),
+                    _num(i.k_through, "g")]
+                   for m, t, i in th.dielectrics]
+                + coat[n_top:]))
         parts.append(_table(["Iteration", "Heat (W)", "Peak (°C)", "Max change (°C)"],
                             [[str(h["iteration"]), _num(h["heat_w"]), _num(h["t_max"], ".2f"),
                               _num(h["dt_max"], ".3f")] for h in th.history]))

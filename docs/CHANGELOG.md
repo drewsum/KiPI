@@ -7,6 +7,20 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Solder mask and silkscreen** (#82). The stackup now has the solder mask and
+  silkscreen over each outer copper layer, read from KiCad (its stackup's mask thickness
+  and color), a KiCad board file or an ODB++ job (its mask and silkscreen layers). KiCad
+  gives a silkscreen no thickness, so it is taken as 15 µm; a board with no stackup of its
+  own gets KiCad's default, a 10 µm mask and a silkscreen on both sides. The Stackup window
+  lists them above and below the copper, and their thicknesses can be changed while
+  unlocked; they sit outside the board and do not change its thickness. In the
+  electro-thermal solve, heat leaving the top and bottom copper for the air crosses them
+  (a mask at 0.25 W/m·K, a silkscreen at 0.2, the silkscreen over the whole face, since
+  KiPI does not read what is printed). At their usual thickness they hold heat in only
+  slightly: a 25 µm mask adds 0.1 K mm²/W against 100 for still air. The 3D view draws
+  them, the mask in its color and open over the pads, under **Mask** and **Silkscreen**
+  in Display, both off to start with. Snapshots and setups keep them; older snapshots
+  have none.
 - **Drawings in tooltips** (#116). Tooltips on fields that are easier to see than to read
   show a small drawing under their text, coloured to match the window (on a background a
   shade darker), with the field's part picked out: the capacitor model (C, ESL and ESR in

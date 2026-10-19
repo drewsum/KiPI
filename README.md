@@ -262,7 +262,8 @@ Below that:
 
 * **Copper layers** toggles layers in the view.
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
-  shows or hides vias, pads, the board, **PI Models** and part **3D Models**. By layer, each copper layer has
+  shows or hides vias, pads, the board, the solder **Mask** and **Silkscreen** (off to start with), **PI Models**
+  and part **3D Models**. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
 * **PI Models** Marks the parts of the current analysis: a dot on each of their pads on the nets shown, with the
   part's name. In DC mode its VRMs, loads, series links and capacitors with a model; in AC mode its VRMs, series
@@ -302,7 +303,10 @@ and AC analysis uses the edited stackup, and the setup keeps it. A copper layer'
 conductivity, and like the thicknesses is changed with the lock unticked; locking again keeps it as set. This can be used to explore how material and thickness properties impact power distribution performance. KiCad's API cannot change a
 board's stackup yet, so enter a stackup you settle on in KiCad's Board Setup yourself.
 Beside the table, a cross-section draws the layers to scale with their thicknesses, and
-follows the thicknesses as they are typed.
+follows the thicknesses as they are typed. The solder mask and silkscreen on each side are
+listed above and below the copper, read from the board (KiCad gives a silkscreen no
+thickness, so KiPI takes 15 µm); their thicknesses can be changed too, and do not add to
+the board's.
 
 ![The Stackup window: copper and dielectric layers with thickness, material, εr, thermal conductivity and resistivity](docs/images/stackup.png)
 
@@ -455,7 +459,8 @@ power. The Notes tab and the report list the heat by source.
 Each copper layer has its own temperature. Heat goes onto the layer it is made on (a part's
 heat on the layers of its pads), crosses the laminate to the layers above and below, and goes
 down plated holes on any net, so thermal vias count. Only the top and bottom layers lose
-heat to the air. Solving each layer on its own was inspired by
+heat to the air, through their solder mask and silkscreen, which hold a little of it in.
+Solving each layer on its own was inspired by
 [KiCad Thermal Sim](https://github.com/PoeAlex/KiCad_Thermal_Sim) by
 [PoeAlex](https://github.com/PoeAlex), a KiCad plugin for heat spreading
 across copper layers.

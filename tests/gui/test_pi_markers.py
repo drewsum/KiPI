@@ -112,7 +112,8 @@ def _view():
            _show_board=True, _show_vias=True, _show_pi=True, _pi_markers=[], _pi_actors={},
            _pi_selected=None, _blink_left=0, _blink_timer=_Timer(),
            _result=None, _result_field="voltage", _chunk_actors={}, _result_actors={},
-           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set())
+           _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
+           _coating_actors=[], _show_mask=False, _show_silk=False)
     for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
                  "set_feature_visible", "_place_models", "_selected_markers", "set_pi_selected",
                  "pi_marker_at", "_to_screen", "focus_on", "_start_blink", "_blink_step",

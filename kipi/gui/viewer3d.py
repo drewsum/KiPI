@@ -284,6 +284,9 @@ class Viewer3D(QWidget):
         self._show_pads = True
         self._show_vias = True
         self._show_board = True
+        self._show_mask = False             # solder masks and silkscreens (#82): off until
+        self._show_silk = False             # asked for, as they hide the copper
+        self._coating_actors: List[Tuple[str, object]] = []      # (kind, actor)
         self._show_models = True            # in the copper (geometry) view
         self._show_models_result = False    # over results: off until asked for
         self._show_pi = False               # PI Models markers, copper view only
@@ -343,6 +346,7 @@ class Viewer3D(QWidget):
         self._remove_pi_actors()
         self._pi_markers = []
         self._board_actors.clear()
+        self._coating_actors = []
         self._hidden_layers.clear()
         self._next_color = 0
         if body is not None:
@@ -358,6 +362,21 @@ class Viewer3D(QWidget):
         self._apply_visibility()
         if reset_view:
             self.view_iso()
+
+    def set_coatings(self, coatings):
+        """Draw the solder masks and silkscreens: ``(kind, mesh, color)`` each, from
+        :func:`~kipi.core.viz.meshes.board_coatings`."""
+        renderer = self.plotter.renderer
+        for _, a in self._coating_actors:
+            renderer.RemoveActor(a)
+        self._coating_actors = []
+        for i, (kind, mesh, color) in enumerate(coatings):
+            a = self.plotter.add_mesh(mesh, color=color, opacity=0.8 if kind == "mask" else 0.6,
+                                      name=f"coating{i}", pickable=False,
+                                      reset_camera=False, render=False)
+            a.SetScale(1.0, 1.0, self._zscale)
+            self._coating_actors.append((kind, a))
+        self._apply_visibility()
 
     def nets(self) -> List[str]:
         return list(self._net_color)
@@ -668,6 +687,8 @@ class Viewer3D(QWidget):
                                                  or self._result_field == "via_current")
         for a in self._board_actors:
             a.SetVisibility(self._show_board)
+        for kind, a in self._coating_actors:
+            a.SetVisibility(self._show_mask if kind == "mask" else self._show_silk)
         models = self._show_models_result if showing_result else self._show_models
         for a in self._model_actors.values():
             a.SetVisibility(models)
@@ -678,6 +699,8 @@ class Viewer3D(QWidget):
     def set_zscale(self, s: float):
         self._zscale = max(1.0, float(s))
         for a in self._board_actors:
+            a.SetScale(1.0, 1.0, self._zscale)
+        for _, a in self._coating_actors:
             a.SetScale(1.0, 1.0, self._zscale)
         for a in self._chunk_actors.values():
             a.SetScale(1.0, 1.0, self._zscale)

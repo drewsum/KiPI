@@ -18,7 +18,7 @@ from kipi.sources.kicad_ipc.vias import read_vias
 from kipi.core.model.board import (
     BoardSnapshot, Footprint, Net, Pad, Poly, Stackup, Track, Zone,
 )
-from kipi.core.model.stackup import build_stackup, combined_epsilon_r
+from kipi.core.model.stackup import build_stackup, coating_of, combined_epsilon_r
 from kipi.core.progress import NULL, ProgressReporter
 
 
@@ -167,6 +167,7 @@ def extract_stackup(board, progress: ProgressReporter = NULL,
     names = _layer_names(board, cu_ids, stackup_layers)
 
     entries = []  # (kind, layer_id, thickness_mm, material, epsilon_r), top to bottom
+    coatings = []
     try:
         reports_enabled = _reports_enabled(stackup_layers)
         for sl in stackup_layers:
@@ -181,11 +182,38 @@ def extract_stackup(board, progress: ProgressReporter = NULL,
                 mat = subs[0].material_name if subs else sl.material_name
                 er = combined_epsilon_r([(mm(s.thickness), s.epsilon_r) for s in subs])
                 entries.append(("diel", -1, t, mat, er))
+            elif sl.type in (board_pb2.BoardStackupLayerType.BSLT_SOLDERMASK,
+                             board_pb2.BoardStackupLayerType.BSLT_SILKSCREEN):
+                coat = _coating(sl, board_pb2)
+                if coat is not None:
+                    coatings.append(coat)
     except Exception as e:  # noqa: BLE001 - stackup is optional; fall back below
         progress.warn(f"Could not read board stackup layers ({e}); using defaults")
         entries = []
+        coatings = []
 
-    return build_stackup(entries, cu_ids, names, progress, assumed)
+    return build_stackup(entries, cu_ids, names, progress, assumed, coatings)
+
+
+def _coating(sl, board_pb2):
+    """A solder mask or silkscreen of the stackup (#82); its side from its layer."""
+    mask = sl.type == board_pb2.BoardStackupLayerType.BSLT_SOLDERMASK
+    sub = sl.soldermask if mask else sl.silkscreen      # None before KiCad 10.0.6
+    t = mm(sl.thickness)
+    if not t and mask and sub is not None:
+        t = mm(sub.thickness)
+    c = sl.color
+    color = ("#%02x%02x%02x" % tuple(round(min(max(v, 0.0), 1.0) * 255)
+                                     for v in (c.red, c.green, c.blue))
+             if c.alpha > 0 else "")
+    from kipy.proto.board.board_types_pb2 import BoardLayer
+    try:
+        name = BoardLayer.Name(sl.layer)[3:].replace("_", ".")    # BL_F_Mask -> F.Mask
+    except ValueError:
+        name = ""
+    return coating_of(name, "Solder Mask" if mask else "Silk Screen", t,
+                      (sub.material_name if sub is not None else "") or sl.material_name,
+                      color)
 
 
 # ---------------------------------------------------------------------------

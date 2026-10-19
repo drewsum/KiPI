@@ -334,7 +334,7 @@ heat raises the board temperature by tens of degrees, and the heat from neighbor
 regulators and loads adds to it. KiPI's thermal model spreads that heat across the whole board,
 with a temperature for each copper layer <i>l</i>:</p>
 <p class="eq">∇·(G<sub>l</sub> ∇T<sub>l</sub>) + Σ<sub>m</sub> (T<sub>m</sub> − T<sub>l</sub>) / R<sub>lm</sub>
-− h (T<sub>l</sub> − T<sub>amb</sub>) + q″<sub>l</sub> = 0</p>
+− (T<sub>l</sub> − T<sub>amb</sub>) / (1/h + R<sub>coat</sub>) + q″<sub>l</sub> = 0</p>
 <ul>
   <li><i>G<sub>l</sub></i> is how well layer <i>l</i> spreads heat sideways: its copper
     (weighted by how much of each spot is copper, on any net) plus half the in-plane
@@ -346,6 +346,11 @@ with a temperature for each copper layer <i>l</i>:</p>
     barrel's copper in parallel, which is why thermal vias work.</li>
   <li><i>h</i> is the convection to the air, about 10 W/m²K in still air (with radiation)
     and rising with the airflow you set. Only the top and bottom layers touch the air.</li>
+  <li><i>R<sub>coat</sub></i> is the solder mask and silkscreen over an outer layer, in series
+    with the air: <i>t</i>/<i>k</i> for each, a mask at 0.25 W/m·K and a silkscreen at 0.2.
+    KiPI does not read what a silkscreen prints, so it takes it over the whole face, the most
+    it can hold heat in. Even so it matters little: a 25 µm mask is 0.1 K·mm²/W, against
+    100 K·mm²/W (1/h) from the surface into still air.</li>
   <li><i>q″<sub>l</sub></i> is the heat put into layer <i>l</i>: each layer's copper loss,
     via losses shared by the layers the via spans, and the heat of series parts, VRMs and,
     optionally, loads on the layers of their pads.</li>

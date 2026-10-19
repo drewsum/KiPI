@@ -27,7 +27,9 @@ class Band:
     """One layer: its label, thickness, fill colour and whether it is copper."""
     label: str
     mm: float
-    color: Optional[Tuple[float, float, float]] = None    # copper layer colour, 0..1
+    # Fill colour, 0..1: a copper layer's, or a solder mask's or silkscreen's. None: from
+    # the material.
+    color: Optional[Tuple[float, float, float]] = None
     copper: bool = False
     material: str = ""
 
@@ -160,7 +162,7 @@ class StackupView(QWidget):
             return
         edge = pal.window().color().darker(160)
         for b, r in zip(self._bands, self._rects):
-            fill = (QColor.fromRgbF(*b.color) if b.copper and b.color
+            fill = (QColor.fromRgbF(*b.color) if b.color
                     else COPPER if b.copper else dielectric_color(b.material))
             p.setBrush(fill)
             p.setPen(QPen(edge, 0.5) if r.height() > 4 else Qt.NoPen)

@@ -250,6 +250,8 @@ class FakeKiCad:
 
     def _GetBoardStackup(self, cmd):
         r = bc.BoardStackupResponse()
+        self._coating(r, L.BL_F_SilkS)
+        self._coating(r, L.BL_F_Mask)
         for i, lid in enumerate(COPPER):
             sl = r.stackup.layers.add()
             sl.type, sl.layer, sl.enabled = bp.BoardStackupLayerType.BSLT_COPPER, lid, True
@@ -263,7 +265,23 @@ class FakeKiCad:
                 sub = d.dielectric.layer.add()
                 sub.material_name, sub.epsilon_r = mat, er
                 sub.thickness.value_nm = int(t_mm * NM)
+        self._coating(r, L.BL_B_Mask)
+        self._coating(r, L.BL_B_SilkS)
         return r
+
+    @staticmethod
+    def _coating(r, lid):
+        """A solder mask (10 µm, red) or silkscreen (no thickness), as KiCad lists them."""
+        sl = r.stackup.layers.add()
+        sl.layer, sl.enabled = lid, True
+        if lid in (L.BL_F_Mask, L.BL_B_Mask):
+            sl.type = bp.BoardStackupLayerType.BSLT_SOLDERMASK
+            sl.thickness.value_nm = 10000
+            sl.soldermask.material_name = "Epoxy"
+            sl.color.r, sl.color.g, sl.color.b, sl.color.a = 1.0, 0.0, 0.0, 1.0
+        else:
+            sl.type = bp.BoardStackupLayerType.BSLT_SILKSCREEN
+            sl.silkscreen.material_name = ""
 
     def _GetBoardEnabledLayers(self, cmd):
         r = bc.BoardEnabledLayersResponse()

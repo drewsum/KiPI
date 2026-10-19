@@ -24,6 +24,10 @@ DEFAULT_K_Z_W_MK = 0.3        # FR4 core through the thickness
 
 DEFAULT_ER = 4.5              # FR4 core, as KiCad's stackup editor gives it
 
+# Coatings over the outer copper (#82): an LPI epoxy solder mask and an epoxy silkscreen ink.
+MASK_K_W_MK = 0.25
+SILK_K_W_MK = 0.20
+
 # (pattern, description, in-plane k in W/(m K), typical εr, through-plane k in W/(m K));
 # first match wins, so specific first. Each description also matches its own pattern.
 _TABLE: List[Tuple[str, str, float, float, float]] = [
@@ -154,3 +158,24 @@ def laminate_layers(stackup) -> Tuple[List[float], List[float]]:
             g[i] += DEFAULT_K_W_MK * 1e-3 * rest / 2
             g[i + 1] += DEFAULT_K_W_MK * 1e-3 * rest / 2
     return g, r
+
+
+def coating_k(coating) -> float:
+    """A solder mask's or silkscreen's thermal conductivity, W/(m K)."""
+    from kipi.core.model.board import MASK
+    return MASK_K_W_MK if coating.kind == MASK else SILK_K_W_MK
+
+
+def coating_resistance(stackup, side: str) -> float:
+    """Thermal resistance (K mm²/W) of the solder mask and silkscreen on ``side`` ("top"
+    or "bottom"), in series between the outer copper and the air. The silkscreen is taken
+    to cover the whole face, the most it can hold heat in."""
+    return sum(c.thickness_mm / (coating_k(c) * 1e-3)
+               for c in getattr(stackup, "coatings", []) if c.side == side)
+
+
+def coating_conductance(stackup, side: str) -> float:
+    """In-plane sheet conductance (W/K per square) the coatings on ``side`` add to the
+    outer copper layer under them."""
+    return sum(coating_k(c) * 1e-3 * c.thickness_mm
+               for c in getattr(stackup, "coatings", []) if c.side == side)

@@ -3,10 +3,10 @@
 Each copper layer is a sheet in the plane: heat spreads sideways through its copper
 (weighted by how much of each cell is copper, on all nets) and its share of the laminate,
 crosses the laminate to the copper layers above and below, and leaves the two outer
-layers by convection to ambient:
+layers through their solder mask and silkscreen by convection to ambient:
 
     div(G_l grad T_l) + sum over neighbors m of (T_m - T_l) / R_lm
-        - h (T_l - T_amb) [outer layers only] + q''_l = 0
+        - (T_l - T_amb) / (1/h + R_coat) [outer layers only] + q''_l = 0
 
 G_l (W/K per square) = k * t * coverage of the layer's conductor (copper unless the
 Stackup window says otherwise) + half the in-plane k * t of each dielectric it touches,
@@ -21,6 +21,10 @@ rules.
 Heat lands on the layer it is made on: a triangle's copper loss on its own layer, a
 barrel's loss shared by the layers it spans, a part's heat on the layers of its pads. A
 board with one copper layer loses heat from both faces of that layer.
+
+R_coat (K mm²/W) is the solder mask and silkscreen on that face in series, t / k for each
+(#82); the silkscreen is taken to cover the whole face. Both are thin and conduct about as
+well as the laminate, so they hold heat in only a little.
 
 Convection per face: h = 10 + 3.8 v W/(m^2 K), v the airflow speed in m/s (natural
 convection plus radiation at v = 0; a flat-plate forced-convection fit above that).
@@ -122,7 +126,10 @@ class BoardThermalModel:
                  progress: ProgressReporter = NULL,
                  conductor_by_layer: Optional[Dict[str, str]] = None,
                  via_rules=None):
-        from kipi.dc.thermal.materials import laminate_conductance, laminate_layers
+        from kipi.dc.thermal.materials import (
+            coating_conductance, coating_k, coating_resistance, laminate_conductance,
+            laminate_layers,
+        )
         self.settings = settings
         st = snap.stackup
         board = _board_geometry(snap)
@@ -149,8 +156,13 @@ class BoardThermalModel:
                 progress.warn(f"Dielectric material {material!r} not recognized; using FR4 "
                               f"({info.k_w_mk:g} W/m·K). Set 'Laminate k' in the Thermal tab "
                               "to override.")
+        for c in getattr(st, "coatings", []):
+            progress.info(f"  {c.name.lower()} {c.thickness_mm * 1000:.4g} µm: "
+                          f"k = {coating_k(c):g} W/m·K")
         g_lam, r_gap = laminate_layers(st)
         nl = len(g_lam)
+        g_lam[0] += coating_conductance(st, "top")
+        g_lam[-1] += coating_conductance(st, "bottom")
         g = np.array([np.full(X.shape, gl) for gl in g_lam])
         progress.info(f"  Mapping the copper of {len(st.copper)} layers onto a {nx} x {ny} "
                       "grid...")
@@ -198,11 +210,12 @@ class BoardThermalModel:
         cells = idx[self.inside]
         for li in range(nl - 1):
             couple(cells * nl + li, cells * nl + li + 1, gv[li][self.inside])
-        # W/K per cell leaving each layer by convection: the top and bottom faces.
-        hd2 = settings.h_w_mm2_k() * d * d
+        # W/K per cell leaving each layer by convection: the top and bottom faces, each
+        # through its coatings.
+        h = settings.h_w_mm2_k()
         self.g_conv = np.zeros(nl)
-        self.g_conv[0] += hd2
-        self.g_conv[-1] += hd2
+        self.g_conv[0] += d * d / (1 / h + coating_resistance(st, "top"))
+        self.g_conv[-1] += d * d / (1 / h + coating_resistance(st, "bottom"))
         diag += np.tile(self.g_conv, n_cells)
         A = sp.coo_matrix((np.concatenate(vals + [diag]),
                            (np.concatenate(rows + [np.arange(n)]),

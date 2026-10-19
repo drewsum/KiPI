@@ -360,3 +360,28 @@ def test_the_solver_reads_each_layers_own_copper():
                                    temperature=temp)
     hot = run(snap, prob(ByLayer()))
     assert 12.0 - hot.fields.terminals[1].v_mean == pytest.approx(R(8) * (1 + TCR * 100), rel=1e-9)
+
+
+def test_solder_mask_and_silkscreen_hold_heat_in():
+    """Uniform heat on a coated board: each face loses q_face / (1/h + sum t/k) (#82)."""
+    from kipi.core.model.board import MASK, SILK, Coating
+    from kipi.dc.thermal.materials import MASK_K_W_MK, SILK_K_W_MK, coating_resistance
+    s = ThermalSettings(enabled=True, ambient_c=25.0, grid_mm=1.0)
+    snap = plate()
+    bare = BoardThermalModel(snap, s)
+    snap.stackup.coatings = [Coating(SILK, "top", 0.02), Coating(MASK, "top", 0.03),
+                             Coating(MASK, "bottom", 0.03), Coating(SILK, "bottom", 0.02)]
+    r = 0.02 / (SILK_K_W_MK * 1e-3) + 0.03 / (MASK_K_W_MK * 1e-3)
+    assert coating_resistance(snap.stackup, "top") == pytest.approx(r)
+    assert coating_resistance(snap.stackup, "bottom") == pytest.approx(r)
+    m = BoardThermalModel(snap, s)
+    h = s.h_w_mm2_k()
+    q = 1e-4                                         # W per mm^2 of board
+    heat = m.empty_heat()
+    heat[:, m.inside] = q * m.d * m.d / 2
+    t = m.solve(heat)
+    expected = 25.0 + q / (2 / (1 / h + r))
+    assert np.nanmax(np.abs(t - expected)) < 1e-6
+    hot = np.nanmax(t) - 25.0
+    cold = np.nanmax(bare.solve(heat)) - 25.0
+    assert cold < hot < cold * 1.01                  # thin coatings: a little warmer

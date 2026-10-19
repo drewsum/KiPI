@@ -174,3 +174,10 @@ KiCad. What matters is whether that KiCad has a handler for each request.
   (250 × 200) builds and factors in 0.4–1.7 s for 2–8 layers, against 0.6 s for the one
   sheet; each solve takes under 0.15 s. The thermal sim's other features (time stepping,
   PWL power, a heatsink pad on User.Eco1) were left for later.
+* **Solder mask and silkscreen (0.9.0, #82).** Coatings sit outside the board (they do not
+  move z or add to the board thickness) and add t/k in series with 1/h on their face, plus
+  k·t to the outer layer's in-plane conductance. LPI epoxy mask k ≈ 0.25 W/m·K, silkscreen
+  ink ≈ 0.2. A 25 µm mask is 1e-4 m²K/W against 0.1 for still air, so the effect is about
+  0.1%: worth having for completeness, not a correction to earlier results. KiCad gives a
+  silkscreen no thickness (taken as 15 µm) and KiPI does not read the printed graphics, so
+  the silkscreen covers the whole face, an upper bound.

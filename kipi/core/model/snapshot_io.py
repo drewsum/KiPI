@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from kipi.core.model.board import (
-    BoardSnapshot, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup,
+    BoardSnapshot, Coating, CopperLayer, DielectricLayer, Footprint, Net, Pad, Poly, Stackup,
     Track, Via, Zone,
 )
 
@@ -65,7 +65,9 @@ def from_dict(d: Dict[str, Any]) -> BoardSnapshot:
         copper=[CopperLayer(**c) for c in st["copper"]],
         dielectrics=[DielectricLayer(**x) for x in st["dielectrics"]],
         board_thickness_mm=st["board_thickness_mm"],
-        from_board=st.get("from_board", True))
+        from_board=st.get("from_board", True),
+        # Snapshots from before #82 have no solder masks or silkscreens.
+        coatings=[Coating(**c) for c in st.get("coatings", [])])
     return BoardSnapshot(
         board_name=d["board_name"],
         project_dir=d.get("project_dir", ""),
