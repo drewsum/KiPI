@@ -13,6 +13,16 @@ milestones rather than versions that were ever set.
   pad on every layer that a connected via of its net spans, as KiCad does. On a 12-layer
   board with overlapping via pairs, the vias that differed from KiCad 10's own read went
   from 52 of 4374 to 0.
+- **ODB++ jobs from KiCad, Altium, OrCAD and Valor read correctly** (#138, from Tomachie).
+  The board step is read rather than the panel that places it (the note says what the
+  panel places). Feature files compressed with Unix `compress` (`.Z`) are read, a job
+  zipped inside a zip is opened, and a `.tgz` is read in one pass. A via's pad size is
+  read on each layer, and a layer with no pad is left out. Copper with no net takes the
+  net of the copper it touches, so a drawing's outline stroke is no longer dropped. An
+  Altium export's copper thickness comes from the layer's copper weight when the
+  thickness given is the neighbouring dielectric's. A pin exported as several pads, one of
+  them with no shape, no longer stops a solve on "pad has no meshed copper". A surface's
+  holes are cut in one step per island: an 18-layer job reads in 13 s instead of 200 s.
 
 ### Changed
 - **The main window fits the screen; the setup file is written only by Save** (#142, from
