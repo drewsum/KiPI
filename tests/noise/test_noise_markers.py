@@ -23,6 +23,16 @@ def test_each_victim_marks_its_driver_and_receiver():
     assert sum(m.is_item("victim", "SIG_LOOP") for m in ms) == 2
 
 
+def test_ac_probes_are_not_shown():
+    from kipi.ac.model import Probe
+    from kipi.ac.viz.markers import ac_markers
+    snap, setup = open_board("coupled_noise")
+    setup.probes.append(Probe("U2", PinRef("U2", "VOUT", ["1"]), PinRef("U2", "GND", ["2"])))
+    nets = ["VIN", "VOUT", "GND"]
+    assert any(m.kind == "probe" for m in ac_markers(snap, setup, nets))
+    assert not any(m.kind == "probe" for m in noise_markers(snap, setup, nets))
+
+
 def test_ends_not_set_are_the_guessed_ones():
     snap, setup = open_board("coupled_noise")
     setup.victims[0].driver = setup.victims[0].receiver = None

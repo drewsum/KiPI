@@ -1,5 +1,6 @@
-"""The 3D view's "PI Models" markers in Coupled Noise mode (#69): AC mode's (the VRMs, series
-links, probes and modelled capacitors), plus each victim's driver and receiver pins.
+"""The 3D view's "PI Models" markers in Coupled Noise mode (#69): AC mode's VRMs, series links
+and modelled capacitors (not its probes, which a noise solve does not use), plus each
+victim's driver and receiver pins.
 
 A victim gets two markers, "<victim> driver" and "<victim> receiver", both of the setup
 item ``victim`` so that selecting the victim marks both ends. Ends not set are the ones a
@@ -20,7 +21,7 @@ def noise_markers(snap: Optional[BoardSnapshot], setup,
     if snap is None or setup is None:
         return []
     from kipi.noise.victims import ends
-    out = ac_markers(snap, setup, nets)
+    out = [m for m in ac_markers(snap, setup, nets) if m.kind != "probe"]
     parts = []
     for v in setup.victims:
         driver, receiver, _ = ends(snap, v)

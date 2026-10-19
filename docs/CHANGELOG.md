@@ -9,8 +9,8 @@ milestones rather than versions that were ever set.
 ### Added
 - **Victim markers in the 3D view** (#69). In Coupled Noise mode, PI Models marks each
   victim's driver and receiver pins in orange, named "<victim> driver" and
-  "<victim> receiver" (the guessed ones where they are not set), beside AC mode's VRMs,
-  probes and capacitors. Selecting a victim in the Victims tab highlights both ends;
+  "<victim> receiver" (the guessed ones where they are not set), beside AC mode's VRMs
+  and capacitors (not its probes). Selecting a victim in the Victims tab highlights both ends;
   clicking either marker selects the victim.
 - **Coupled Noise mode, part 5: scanning, reports and a validation board** (#69).
   **Victims** below the Solve button picks which victims a solve covers: all, one by
