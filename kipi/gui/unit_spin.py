@@ -32,6 +32,7 @@ UNITS = {
     "V": ("v", "volt", "volts"),
     "W": ("w",),
     "m": ("m",),
+    "s": ("s", "sec"),
 }
 EXTRA_DECIMALS = 6
 _NUMBER = re.compile(r"\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*$")

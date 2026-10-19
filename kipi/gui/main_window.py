@@ -45,14 +45,16 @@ MAX_AUTO_NETS = 4
 # it); the window waits this long for the file to settle before offering to reload.
 FILE_SETTLE_MS = 800
 # Analysis modes, chosen in the toolbar: (key, label, setup dock title).
-MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"))
+MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"),
+         ("noise", "Noise", "Coupled Noise setup"))
 # Keyboard shortcuts (#105). The view keys work while the 3D view has the focus, so that
 # Home and letters still reach the lists and text boxes; the rest work anywhere in the
 # window. Each is named in its control's tooltip and in the user guide.
 VIEW_KEYS = {"iso": "Home", "top": "Z", "bottom": "Shift+Z"}
 KEYS = {"open": "Ctrl+O", "reload": "F5", "save": "Ctrl+S", "screenshot": "F12",
         "results": "Ctrl+Shift+O", "stackup": "Ctrl+L", "power_tree": "Ctrl+T",
-        "help": "F1", "solve": "Ctrl+Return", "cancel": "Esc", "dc": "Ctrl+1", "ac": "Ctrl+2"}
+        "help": "F1", "solve": "Ctrl+Return", "cancel": "Esc", "dc": "Ctrl+1", "ac": "Ctrl+2",
+        "noise": "Ctrl+3"}
 
 
 def with_keys(tip: str, keys: str) -> str:
@@ -136,21 +138,24 @@ class MainWindow(QMainWindow):
         self._own_write_until = 0.0         # changes before this are KiPI's own saves
 
         # The central area: the 3D view and, in AC mode, the impedance plot and the board
-        # map of the solve (#67).
+        # map of the solve (#67); in Coupled Noise mode, the aggressor's waveforms (#69).
         from kipi.ac.gui.board_map import BoardMap
         from kipi.ac.gui.plot import ImpedancePlot
+        from kipi.noise.gui.plot import NoisePlot
         self.views = QTabWidget(self)
         self.views.setDocumentMode(True)
         self.viewer = Viewer3D(self.views)
         self.plot = ImpedancePlot(self.views)
         self.board_map = BoardMap(self.views)
+        self.noise_plot = NoisePlot(self.views)
         self.views.addTab(self.viewer, "3D view")
         self.views.addTab(self.plot, "Impedance")
         self.views.addTab(self.board_map, "Board map")
+        self.views.addTab(self.noise_plot, "Waveforms")
         self.setCentralWidget(self.views)
         self.viewer.on_click(self._on_click)
         self.plot.cursor_moved.connect(self._show_cursor)
-        self._set_plot_tab_shown(False)
+        self._set_plot_tabs("dc")
 
         self._build_toolbar()
         self._build_left_panel()
@@ -245,7 +250,9 @@ class MainWindow(QMainWindow):
         tb.addWidget(QLabel("Mode: ", tb))
         self.mode_buttons = QButtonGroup(self)
         tips = {"dc": "DC power integrity: IR drop, current density, electro-thermal",
-                "ac": "AC power integrity: PDN impedance over frequency at probe points"}
+                "ac": "AC power integrity: PDN impedance over frequency at probe points",
+                "noise": "Coupled Noise: a buck or boost switcher's waveforms and the noise "
+                         "it couples onto signal nets"}
         for key, label, _ in MODES:
             rb = QRadioButton(label, tb)
             rb.setObjectName(f"mode_{key}")
@@ -272,7 +279,7 @@ class MainWindow(QMainWindow):
         self.act_cancel = key("cancel", self._cancel_task)
         self.act_cancel.setEnabled(False)
         self.btn_cancel.setToolTip(with_keys(self.btn_cancel.toolTip(), KEYS["cancel"]))
-        for panel in (self.solve_panel, self.ac_panel):
+        for panel in self._panels().values():
             panel.btn_solve.setToolTip(with_keys(panel.btn_solve.toolTip(), KEYS["solve"]))
 
     def _solve_shortcut(self):
@@ -293,15 +300,15 @@ class MainWindow(QMainWindow):
             return
         self.mode = mode
         self._check_mode_button(mode)
-        # VRMs and series links are shared: show the other panel's edits.
+        # VRMs, series links and capacitor models are shared: show the other panels' edits.
         if mode == "dc":
             self.solve_panel.reload_shared()
         else:
-            self.ac_panel.reload()
-        self.setup_stack.setCurrentWidget(self.solve_panel if mode == "dc" else self.ac_panel)
+            self._mode_panel().reload()
+        self.setup_stack.setCurrentWidget(self._mode_panel())
         self.solve_dock.setWindowTitle(next(t for k, _, t in MODES if k == mode))
         self._set_open_results_tip()
-        self._set_plot_tab_shown(mode == "ac")
+        self._set_plot_tabs(mode)
         self._sync_pi_markers()
         self._mode_panel()._part_selection(False)     # the part selected in this mode's lists
         if mode == "dc":
@@ -309,22 +316,28 @@ class MainWindow(QMainWindow):
                 self._show_group(self.solve_panel.cmb_group.currentText())
         else:
             self.viewer.clear_result()        # DC results do not apply; show the copper
-            if self.plot.result is not None:
-                self.views.setCurrentWidget(self.plot)
+            plot = self.plot if mode == "ac" else self.noise_plot
+            if plot.result is not None:
+                self.views.setCurrentWidget(plot)
         self.log(f"Analysis mode: {mode.upper()}")
 
     def _set_open_results_tip(self):
         self.act_open_results.setToolTip(with_keys(
-            "Reopen a saved DC or DC + thermal solve (.kipi-dc-results, .kipi-dc-thermal-results); "
-            "load the board first"
-            if self.mode == "dc" else
-            "Reopen saved AC impedance results (.kipi-ac-results); load the board first",
+            {"dc": "Reopen a saved DC or DC + thermal solve (.kipi-dc-results, "
+                   ".kipi-dc-thermal-results); load the board first",
+             "ac": "Reopen saved AC impedance results (.kipi-ac-results); load the board "
+                   "first",
+             "noise": "Reopen saved Coupled Noise results (.kipi-noise-results); load the "
+                      "board first"}[self.mode],
             KEYS["results"]))
 
-    def _set_plot_tab_shown(self, shown: bool):
-        """Show the impedance and board map tabs only in AC mode. QTabWidget.setTabVisible
-        needs Qt 5.15; older Qt disables the tabs instead."""
-        for w in (self.plot, self.board_map):
+    def _set_plot_tabs(self, mode: str):
+        """Show each mode's plot tabs only in that mode: the impedance and board map in AC
+        mode, the waveforms in Coupled Noise mode. QTabWidget.setTabVisible needs Qt 5.15;
+        older Qt disables the tabs instead."""
+        tabs = {self.plot: mode == "ac", self.board_map: mode == "ac",
+                self.noise_plot: mode == "noise"}
+        for w, shown in tabs.items():
             i = self.views.indexOf(w)
             if hasattr(self.views, "setTabVisible"):
                 self.views.setTabVisible(i, shown)
@@ -586,13 +599,22 @@ class MainWindow(QMainWindow):
         self.ac_panel.results_saved.connect(lambda path: self.log(f"Saved AC results to {path}"))
         self.ac_panel.part_selected.connect(
             lambda *a: self._pi_part_selected(*a) if self.mode == "ac" else None)
-        for panel in (self.solve_panel, self.ac_panel):
+        from kipi.noise.gui.panel import NoisePanel
+        self.noise_panel = NoisePanel(self)
+        self.noise_panel.save_requested.connect(self._save_setup)
+        self.noise_panel.solve_requested.connect(self.run_noise_solve)
+        self.noise_panel.result_selected.connect(self._show_noise_result)
+        self.noise_panel.results_saved.connect(
+            lambda path: self.log(f"Saved Coupled Noise results to {path}"))
+        self.noise_panel.part_selected.connect(
+            lambda *a: self._pi_part_selected(*a) if self.mode == "noise" else None)
+        for panel in self._panels().values():
             panel.setup_changed.connect(self._model_timer.start)
             panel.setup_changed.connect(self._refresh_power_tree)
         # One setup dock; it shows the panel of the current analysis mode.
         self.setup_stack = QStackedWidget(self)
-        self.setup_stack.addWidget(self.solve_panel)
-        self.setup_stack.addWidget(self.ac_panel)
+        for panel in self._panels().values():
+            self.setup_stack.addWidget(panel)
         dock = QDockWidget(MODES[0][2], self)
         dock.setObjectName("solve_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
@@ -718,10 +740,11 @@ class MainWindow(QMainWindow):
         from kipi.gui import app as kipi_app
         kipi_app.watchdog_stop()
         log.info("Task finished")
-        self.solve_panel.set_busy(False)
-        self.ac_panel.set_busy(False)
+        for panel in self._panels().values():
+            panel.set_busy(False)
         pending, self._pending_solve = getattr(self, "_pending_solve", None), None
         pending_ac, self._pending_ac = getattr(self, "_pending_ac", None), None
+        pending_noise, self._pending_noise = getattr(self, "_pending_noise", None), None
         self.btn_cancel.setEnabled(False)
         self.act_cancel.setEnabled(False)
         self.act_reload.setEnabled(True)
@@ -739,6 +762,8 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self.run_solve(pending))
         elif pending_ac is not None:
             QTimer.singleShot(0, lambda: self.run_ac_solve(*pending_ac))
+        elif pending_noise is not None:
+            QTimer.singleShot(0, lambda: self.run_noise_solve(*pending_noise))
 
     def _on_task_failed(self, name: str, tb: str):
         log.error(tb)
@@ -888,7 +913,7 @@ class MainWindow(QMainWindow):
     def save_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save screenshot", "kipi.png", "PNG (*.png)")
         if path:
-            if self.views.currentWidget() in (self.plot, self.board_map):
+            if self.views.currentWidget() in (self.plot, self.board_map, self.noise_plot):
                 self.views.currentWidget().save_png(path)
             else:
                 self.viewer.screenshot(path)
@@ -1063,6 +1088,7 @@ class MainWindow(QMainWindow):
             return
         self.solve_panel.set_nets(list(self._checked_set()))
         self.ac_panel.set_nets(list(self._checked_set()))
+        self.noise_panel.set_nets(list(self._checked_set()))
         self.solve_panel.setup.nets = self._checked_nets()   # saved with the setup
         self._model_timer.start()
         if self._busy():
@@ -1136,9 +1162,13 @@ class MainWindow(QMainWindow):
             markers = ac_markers(self.snapshot, setup, nets)
         self.viewer.set_pi_markers(markers)
 
+    def _panels(self):
+        """Each mode's setup panel, by mode key."""
+        return {"dc": self.solve_panel, "ac": self.ac_panel, "noise": self.noise_panel}
+
     def _mode_panel(self):
         """The setup panel of the current mode."""
-        return self.solve_panel if self.mode == "dc" else self.ac_panel
+        return self._panels()[self.mode]
 
     def _pi_part_selected(self, kind: str, name: str, by_user: bool):
         """Mark the part selected in the current mode's setup lists in the 3D view: a VRM,
@@ -1290,9 +1320,11 @@ class MainWindow(QMainWindow):
         self._setup_path = path
         self.solve_panel.set_board(snap, setup, label)
         self.ac_panel.set_board(snap, setup, label)
+        self.noise_panel.set_board(snap, setup, label)
         self._refresh_power_tree()
         self.plot.clear()
         self.board_map.clear()
+        self.noise_plot.clear()
         return setup
 
     def import_pdn(self):
@@ -1330,6 +1362,7 @@ class MainWindow(QMainWindow):
         label = f"Imported from {name}"
         self.solve_panel.set_board(self.snapshot, setup, label)
         self.ac_panel.set_board(self.snapshot, setup, label)
+        self.noise_panel.set_board(self.snapshot, setup, label)
         self._refresh_power_tree()
         self._save_setup()
 
@@ -1342,6 +1375,7 @@ class MainWindow(QMainWindow):
             self._setup_path = self.solve_panel.setup.save(self._setup_path)
             self.solve_panel.lbl_file.setText(f"Setup: {self._setup_path}")
             self.ac_panel.set_label(f"Setup: {self._setup_path}")
+            self.noise_panel.set_label(f"Setup: {self._setup_path}")
             self.log(f"Saved PI setup to {self._setup_path}")
         except OSError as e:
             self.log(f"Could not save the setup: {e}", logging.WARNING)
@@ -1496,6 +1530,80 @@ class MainWindow(QMainWindow):
             self.board_map.set_map(getattr(result, "board_map", None))  # None: saved before 0.7.2
         self.views.setCurrentWidget(self.plot)
 
+    def run_noise_solve(self, setup, aggressor: str):
+        """Solve one aggressor (#69): its waveforms are shown as soon as they are built."""
+        snap = self.snapshot
+        if snap is None:
+            return
+        if self._busy():
+            self._pending_noise = (setup, aggressor)
+            self.noise_panel.set_busy(True, queued=True)
+            self.log("Coupled Noise solve queued until the current task finishes")
+            return
+        self._save_setup()
+        import copy
+        frozen = copy.deepcopy(setup)
+
+        def work(progress):
+            from kipi.noise.checks import NoiseError
+            from kipi.noise.solver import solve_noise
+            try:
+                return solve_noise(snap, frozen, aggressor, progress), None
+            except NoiseError as e:
+                progress.warn(str(e))
+                return None, str(e)
+
+        def done(out):
+            result, error = out
+            if result is None:
+                self.noise_panel.show_error(error)
+                return
+            self.noise_panel.show_result(result)
+
+        def partial(result):
+            """The waveforms, shown while the coupling solves."""
+            self.noise_panel.show_result(result)
+
+        if self._run(work, done, "Coupled Noise solve", on_partial=partial) is not None:
+            self.noise_panel.set_busy(True)
+
+    def _show_noise_result(self, result):
+        """The Coupled Noise panel's shown result (None: that aggressor has not been
+        solved)."""
+        if result is None:
+            self.noise_plot.clear()
+            return
+        self.noise_plot.periods = self.noise_panel.setup.noise.periods_shown
+        self.noise_plot.set_result(result)
+        if self.mode == "noise":
+            self.views.setCurrentWidget(self.noise_plot)
+
+    def _open_noise_results(self):
+        from kipi.noise import report
+        start = str(self._setup_path.parent) if self._setup_path else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Coupled Noise results", start,
+            f"KiPI Coupled Noise results (*{report.RESULTS_SUFFIX})")
+        if not path:
+            return
+        try:
+            data = report.load_results(path)
+        except Exception as e:  # noqa: BLE001 - any unreadable file
+            QMessageBox.warning(self, "KiPI", f"Could not open {path}:\n{e}")
+            return
+        if data["board"] != self.snapshot.board_name:
+            self.log(f"Results are for {data['board']}, not {self.snapshot.board_name}",
+                     logging.WARNING)
+        left_out = self.noise_panel.load_results(data["results"])
+        if left_out:
+            self.log(f"No aggressor in the setup named {', '.join(left_out)}; their results "
+                     f"were left out", logging.WARNING)
+        if not data["results"] or len(left_out) == len(data["results"]):
+            QMessageBox.information(self, "KiPI", "None of the aggressors in this file is in "
+                                                  "the setup, so there is nothing to show.")
+            return
+        self.log(f"Opened Coupled Noise results saved {data['saved']} from {path}")
+
     def _show_cursor(self, text: str):
         """The impedance plot's cursor values, in the Info pane in place of the last pick."""
         if not text:
@@ -1643,6 +1751,9 @@ class MainWindow(QMainWindow):
             return
         if self.mode == "ac":
             self._open_ac_results()
+            return
+        if self.mode == "noise":
+            self._open_noise_results()
             return
         from kipi.dc.pi import report
         start = str(self._setup_path.parent) if self._setup_path else ""

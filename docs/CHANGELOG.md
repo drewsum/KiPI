@@ -7,6 +7,26 @@ milestones rather than versions that were ever set.
 ## 0.9.0 (in development)
 
 ### Added
+- **Coupled Noise mode, part 1: the aggressor's waveforms** (#69). A third analysis
+  mode (**Noise** in the toolbar, Ctrl+3) takes a buck or boost switcher as a noise
+  source. Its **Aggressors** tab names a switching VRM, which gives the input and output
+  voltages and so the topology (input above output: a buck; below: a boost), and the
+  output current from the DC setup's loads (either can be entered instead). It adds the
+  switching frequency and switch-node rise and fall times, and per phase the inductor
+  (its value read from the board), switch node, the switching device's high- and
+  low-side pins (separate parts for a discrete design), the input and output capacitors
+  and, optionally, the device's Coss, on-resistances and package inductance; **Fill from
+  VRM** finds them on the board. Its **Capacitors** tab is AC mode's capacitor models.
+  A solve builds every waveform as an exact Fourier series: each phase's switch node,
+  inductor current and pulsed current, interleaved 360°/N, each capacitor's ripple
+  current (shared by their impedances) and the input and output ripple voltage. From the
+  board it computes each phase's **hot-loop inductance** (partial inductances of the path
+  from each capacitor through the device, over its ground plane by images) and the
+  **switch node's capacitance** to ground (Coss plus its copper to the neighbouring
+  planes), and from them the **ringing** on the switch node's edges. They are shown in
+  the results and on a new **Waveforms** tab beside the 3D view, in time or as spectra,
+  and save to `.kipi-noise-results`. Coupling onto signal nets comes next. The Solver
+  Guide's further reading now lists the literature the mode is built on.
 - **Solder mask and silkscreen** (#82). The stackup now has the solder mask and
   silkscreen over each outer copper layer, read from KiCad (its stackup's mask thickness
   and color), a KiCad board file or an ODB++ job (its mask and silkscreen layers). KiCad

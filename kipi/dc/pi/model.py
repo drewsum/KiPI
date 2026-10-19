@@ -17,6 +17,9 @@ what the user kept, and nothing is inferred at solve time:
 * **AC setup** (:mod:`kipi.ac.model`): capacitor models, probe points and sweep settings.
   VRMs and series links are shared with the AC analysis; some of their fields apply to
   only one of the two (see each field).
+* **Coupled Noise setup** (:mod:`kipi.noise.model`): aggressors (a switching VRM's
+  frequency, edges and power parts) and their settings. It uses the VRMs and the
+  capacitor models above.
 
 Pins are referenced by footprint reference + pad numbers on a net, so a setup
 survives re-extracting the board from KiCad (pad ids are not stable across sessions).
@@ -36,6 +39,9 @@ from kipi.ac.model import (
 )
 from kipi.dc.solver.setup import SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
+from kipi.noise.model import (
+    Aggressor, NoiseSettings, aggressor_from_dict, settings_from_dict as noise_settings,
+)
 
 FORMAT_VERSION = 1
 VRM_KINDS = ("source", "ldo", "smps")
@@ -273,6 +279,9 @@ class PISetup:
     caps: List[CapModel] = field(default_factory=list)
     probes: List[Probe] = field(default_factory=list)
     ac: ACSettings = field(default_factory=ACSettings)
+    # Coupled Noise analysis (#69)
+    aggressors: List[Aggressor] = field(default_factory=list)
+    noise: NoiseSettings = field(default_factory=NoiseSettings)
 
     def pin_nets(self) -> set:
         """Nets the VRMs, loads, series links and probes have pins on."""
@@ -280,6 +289,7 @@ class PISetup:
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
         refs += [r for p in self.probes for r in (p.rail, p.ground) if r]
+        refs += self._aggressor_pins()
         return {r.net for r in refs}
 
     def part_refs(self) -> set:
@@ -287,9 +297,15 @@ class PISetup:
         refs = [r for v in self.vrms for r in v.pin_refs()]
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
+        refs += self._aggressor_pins()
         out = {r.ref for r in refs} | {ref for m in self.caps for ref in m.refs}
+        out |= {ph.inductor for a in self.aggressors for ph in a.phases}
         out.discard("")
         return out
+
+    def _aggressor_pins(self) -> List[PinRef]:
+        return [r for a in self.aggressors for ph in a.phases
+                for r in (ph.high_side, ph.low_side) if r]
 
     # ------------------------------------------------------------------ file
     def to_dict(self) -> dict:
@@ -355,6 +371,8 @@ class PISetup:
                     for p in d.get("probes", [])],
             ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
                              if k in {f.name for f in dataclasses.fields(ACSettings)}}),
+            aggressors=[aggressor_from_dict(a, pin) for a in d.get("aggressors", [])],
+            noise=noise_settings(d.get("noise", {})),
         )
 
     def save(self, path) -> Path:

@@ -64,7 +64,7 @@ def test_every_shortcut_is_used_once_and_shown_in_a_tooltip(window):
         if not a.shortcut().isEmpty():
             assert f"({a.shortcut().toString()})" in a.toolTip(), a.text()
     for name in ("reload", "save", "screenshot", "results", "stackup", "power_tree", "help",
-                 "solve", "cancel", "dc", "ac"):
+                 "solve", "cancel", "dc", "ac", "noise"):
         assert QKeySequence(mw.KEYS[name]).toString() in keys, name
     assert mw.KEYS["solve"] in window.solve_panel.btn_solve.toolTip()
     assert mw.KEYS["cancel"] in window.btn_cancel.toolTip()

@@ -594,6 +594,57 @@ currents are worst case, the capacitor values effective, and the stackup right. 
   <li>M. Swaminathan and A. E. Engin, <i>Power Integrity Modeling and Design for Semiconductors
     and Systems</i>, Prentice Hall, 2007.</li>
   <li>E. Bogatin, <i>Signal and Power Integrity — Simplified</i>, 3rd ed., Prentice Hall, 2018.</li>
+  <li>C. R. Paul, <i>Analysis of Multiconductor Transmission Lines</i>, 2nd ed., Wiley-IEEE
+    Press, 2008. Weak-coupling crosstalk between lines (chapter 3).</li>
+  <li>C. R. Paul, <i>Introduction to Electromagnetic Compatibility</i>, 2nd ed., Wiley,
+    2006.</li>
+  <li>D. A. Hill, K. H. Cavcey and R. T. Johnk, "Crosstalk between microstrip transmission
+    lines," NIST IR 5015, National Institute of Standards and Technology, Dec. 1993
+    (<a href="https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nistir5015.pdf">PDF</a>); also
+    <i>IEEE Transactions on Electromagnetic Compatibility</i>, vol. 36, no. 4, 1994.</li>
+  <li>T. Hubing, "Transmission line crosstalk," LearnEMC course notes, chapter 6
+    (<a href="https://learnemc.com/ext/pdf/EMC-Course-Notes/CH06-Transmission-Line-Crosstalk.pdf">PDF</a>).
+    Capacitive and inductive crosstalk with the near- and far-end terminations.</li>
+  <li>"Crosstalk reduction between PCB traces," <i>In Compliance Magazine</i>
+    (<a href="https://incompliancemag.com/crosstalk-reduction-between-pcb-traces/">article</a>).</li>
+  <li>A. E. Ruehli, "Inductance calculations in a complex integrated circuit environment,"
+    <i>IBM Journal of Research and Development</i>, vol. 16, no. 5, pp. 470–481, Sept. 1972.
+    Partial inductance, the basis of PEEC.</li>
+  <li>A. E. Ruehli, G. Antonini and L. Jiang, <i>Circuit Oriented Electromagnetic Modeling
+    Using the PEEC Techniques</i>, Wiley-IEEE Press, 2017.</li>
+  <li>C. Hoer and C. Love, "Exact inductance equations for rectangular conductors with
+    applications to more complicated geometries," <i>Journal of Research of the National
+    Bureau of Standards</i>, vol. 69C, no. 2, pp. 127–137, 1965.</li>
+  <li>G. Zhong and C.-K. Koh, "Exact closed-form formula for partial mutual inductances of
+    rectangular conductors," <i>IEEE Transactions on Circuits and Systems I</i>, vol. 50,
+    no. 10, pp. 1349–1352, Oct. 2003.</li>
+  <li>"Accurate calculation of partial inductances for the orthogonal PEEC formulation,"
+    <i>IEEE Transactions on Electromagnetic Compatibility</i>, vol. 63, no. 1, pp. 82–92,
+    Feb. 2021
+    (<a href="https://www.research-collection.ethz.ch/entities/publication/00342fb5-9ba4-4c68-8594-47f3e5e8826e">ETH Zurich record</a>).
+    Which closed-form formula to use for which pair of bars.</li>
+  <li>J. Lee, M. D. Rotaru, M. K. Iyer, H. Kim and J. Kim, "Analysis and suppression of SSN
+    noise coupling between power/ground plane cavities through cutouts in multilayer
+    packages and PCBs," <i>IEEE Transactions on Advanced Packaging</i>, vol. 28, no. 2,
+    pp. 298–309, May 2005. Transfer impedance between plane cavities.</li>
+  <li>G. Feng, G. Selli, K. Chand, M. Lai, L. Xue, J. L. Drewniak, B. Archambeault,
+    S. R. Connor and E. Matoglu, "Analysis of noise coupling result from overlapping power
+    areas within power delivery networks," <i>Proc. IEEE International Symposium on
+    Electromagnetic Compatibility</i>, Portland, OR, vol. 2, pp. 304–309, Aug. 2006.</li>
+  <li>B. Archambeault and J. Drewniak, <i>PCB Design for Real-World EMI Control</i>, Kluwer
+    Academic, 2002.</li>
+  <li>H. W. Ott, <i>Electromagnetic Compatibility Engineering</i>, Wiley, 2009. Switching
+    converter hot loops and switch-node coupling.</li>
+  <li>Analog Devices, "The unseen ring: taming parasitics in buck converters using a
+    snubber"
+    (<a href="https://www.analog.com/en/resources/technical-articles/the-unseen-ring.html">article</a>).
+    Switch-node ringing from the hot loop's inductance and the switch's output
+    capacitance.</li>
+  <li>Texas Instruments, LV5144 and LM5149 datasheets, layout sections
+    (<a href="https://www.ti.com/document-viewer/LV5144/datasheet/GUID-8D69104D-0FA2-4D33-9512-F21E27F89E74">LV5144</a>,
+    <a href="https://www.ti.com/document-viewer/LM5149/datasheet/GUID-028E4746-6966-49FD-87D4-6B7F91079394">LM5149</a>).
+    The power loop's inductance against the MOSFETs' Coss, and how it rings the switch
+    node.</li>
   <li>P. Horowitz and W. Hill, <i>The Art of Electronics</i>, 3rd ed., Cambridge University Press, 2015. Outstanding reading for any electronics designer.</li>
 </ul>
 </main>

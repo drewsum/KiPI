@@ -24,12 +24,10 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
+from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
 from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel, Probe
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
-from kipi.core.model.parts import (
-    is_class2, parse_capacitance, parse_dielectric, parse_voltage_rating,
-)
 from kipi.dc.gui.pi_panel import (
     ItemList, LinkEditor, PartSelection, PIPanel, VrmEditor, _Editor, _spin, _unique,
     make_searchable, new_link, new_vrm, parts_on_net, tip,
@@ -325,13 +323,6 @@ class CapEditor(_Editor):
         refs = [t.item(k, 0).data(Qt.UserRole) for k in range(t.rowCount())
                 if key(k) == want]
         self._assign(refs, True)
-
-
-def _fmt_farads(f: float) -> str:
-    for scale, unit in ((1e-3, "mF"), (1e-6, "µF"), (1e-9, "nF"), (1e-12, "pF")):
-        if f >= scale * 0.999:
-            return f"{f / scale:.4g} {unit}"
-    return f"{f:.3g} F"
 
 
 def _target_text(c) -> str:
@@ -1051,7 +1042,7 @@ class ACPanel(QWidget, PartSelection):
         return None if net is None else new_link(self.snapshot, self.setup, self._nets, net)
 
     def _new_cap(self):
-        return CapModel(_unique("Model1", [m.name for m in self.setup.caps]))
+        return new_cap(self.setup)
 
     def _new_probe(self):
         vrm = self._vrm()
@@ -1170,30 +1161,9 @@ class ACPanel(QWidget, PartSelection):
     def _models_from_values(self):
         if self.snapshot is None:
             return
-        assigned = {ref for m in self.setup.caps for ref in m.refs}
-        by_value = {}
-        for c in capacitor_candidates(self.snapshot, self._nets):
-            if c.ref not in assigned:
-                by_value.setdefault(c.value or "(no value)", []).append(c.ref)
-        if not by_value:
-            QMessageBox.information(self, "KiPI", "Every capacitor between ticked nets "
-                                                  "already has a model.")
-            return
-        taken = [m.name for m in self.setup.caps]
-        for value, refs in sorted(by_value.items()):
-            name = _unique(value, taken)
-            taken.append(name)
-            farads = parse_capacitance(value) or 0.0
-            rated = parse_voltage_rating(value)
-            diel = parse_dielectric(value)
-            # A rating turns on the DC bias estimate: only for class II ceramics.
-            self.setup.caps.append(CapModel(name, farads, 0.0, 0.0, refs,
-                                            rated_v=rated if is_class2(value) else None,
-                                            dielectric=diel,
-                                            aging_pct_per_decade=AGING_PCT_PER_DECADE.get(
-                                                diel, 0.0)))
-        self.cap_list.reload()
-        self._on_changed()
+        if models_from_values(self, self.snapshot, self.setup, self._nets):
+            self.cap_list.reload()
+            self._on_changed()
 
     # ------------------------------------------------------------------ describe
     @staticmethod
@@ -1204,13 +1174,7 @@ class ACPanel(QWidget, PartSelection):
 
     @staticmethod
     def _describe_cap(m: CapModel) -> str:
-        vals = (f"{_fmt_farads(m.capacitance_f)}, {m.esl_h * 1e9:g} nH, {m.esr_ohm * 1e3:g} mΩ"
-                if m.capacitance_f and m.esl_h and m.esr_ohm else "values needed")
-        bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias else ""
-        bias += f", {m.dielectric}" if m.dielectric else ""
-        bias += f", ±{m.mfg_tolerance_pct:g} %" if m.mfg_tolerance_pct else ""
-        return (f"{m.name}: {vals}{bias} "
-                f"({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})")
+        return describe_cap(m)
 
     @staticmethod
     def _describe_probe(p: Probe) -> str:

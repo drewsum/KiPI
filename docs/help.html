@@ -178,6 +178,16 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#ac-report">AC report</a></li>
         <li><a href="#ac-reading">Reading the curve</a></li>
       </ol></li>
+    <li class="group">Coupled Noise analysis</li>
+    <li><a href="#noise-concepts">Coupled Noise concepts</a></li>
+    <li><a href="#noise-setup">Coupled Noise setup tabs</a>
+      <ol>
+        <li><a href="#noise-aggressors">Aggressors</a></li>
+        <li><a href="#noise-caps">Capacitors</a></li>
+        <li><a href="#noise-settings">Settings</a></li>
+      </ol></li>
+    <li><a href="#noise-solving">Solving an aggressor</a></li>
+    <li><a href="#noise-results">Waveforms and parasitics</a></li>
     <li class="group">Workflows</li>
     <li><a href="#workflows">Step-by-step workflows</a></li>
     <li class="group">Reference</li>
@@ -722,7 +732,7 @@ tooltip names its key. On macOS, <b>Ctrl</b> is the <b>Command</b> key.</p>
   <tr><td><b>Ctrl+Shift+O</b></td><td class="wrap"><b>Open results…</b></td></tr>
   <tr><td><b>Ctrl+L</b></td><td class="wrap">The <a href="#stackup">Stackup window</a></td></tr>
   <tr><td><b>Ctrl+T</b></td><td class="wrap">The <b>Power tree</b></td></tr>
-  <tr><td><b>Ctrl+1</b> / <b>Ctrl+2</b></td><td class="wrap">DC / AC mode</td></tr>
+  <tr><td><b>Ctrl+1</b> / <b>Ctrl+2</b> / <b>Ctrl+3</b></td><td class="wrap">DC / AC / Coupled Noise mode</td></tr>
   <tr><td><b>Ctrl+Enter</b></td><td class="wrap">Solve: <b>Solve all</b> in DC mode,
     <b>Solve rail</b> in AC mode, when the button can be pressed</td></tr>
   <tr><td><b>Esc</b></td><td class="wrap"><b>Cancel</b> the running operation</td></tr>
@@ -1665,6 +1675,120 @@ way.</p>
 </div>
 </details>
 
+<!-- ================================================================== COUPLED NOISE -->
+<h2 id="noise-concepts">Coupled Noise concepts</h2>
+<details open>
+<summary>A switcher as a noise source</summary>
+<div class="body">
+<p><b>Coupled Noise</b> mode (<b>Ctrl+3</b>) treats a buck or boost switching regulator as an
+<b>aggressor</b>: from a few of its parameters and the board's layout it builds the
+converter's waveforms (the switch node, the inductor currents, each capacitor's ripple
+current and the rails' ripple voltage). Later versions couple them onto signal nets, the
+<b>victims</b>; this version builds and shows the aggressor's waveforms and the layout
+parasitics that shape them.</p>
+<p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
+Its input rail and set voltage give the input and output voltages, and from them the
+topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
+current is the DC setup's loads on its output rail, unless you enter one.</p>
+<p>The <b>hot loop</b> is the path the switching current takes on every edge: in a buck,
+from the input capacitors through the high-side switch and back from the low-side switch to
+the capacitors' ground; in a boost, the same through the output capacitors. KiPI draws it
+between the pads you name, as wide as the copper along it, and computes its inductance from
+partial inductances, with the plane under it taking image currents. With the switch node's
+capacitance to ground (the switch's Coss plus the switch-node copper's capacitance to the
+neighbouring planes) it sets the <b>ringing</b> on every edge, at
+f = 1 / (2π√(L·C)).</p>
+<p>The waveforms are exact Fourier series of piecewise-linear shapes (trapezoids and
+triangles) up to a highest frequency set by the edges and the ringing, so nothing is
+time-stepped and a solve takes well under a second.</p>
+</div>
+</details>
+
+<h2 id="noise-setup">Coupled Noise setup tabs</h2>
+<details open id="noise-aggressors">
+<summary>Aggressors</summary>
+<div class="body">
+<p><b>Add</b> makes an aggressor for a switcher VRM and fills its phases from the board. The
+top of the form holds what all phases share:</p>
+<ul>
+  <li><b>VRM</b> and <b>Topology</b> (Auto from the voltages, or Buck or Boost). The line
+    below shows the operating point: voltages, output current and duty cycle, or what is
+    missing for one.</li>
+  <li><b>Input voltage</b> and <b>Output current</b>: blank uses the VRM's and the DC loads'.</li>
+  <li><b>Switching frequency</b>, <b>Rise time</b> and <b>Fall time</b> of the switch node.
+    Phases are interleaved evenly, 360°/N apart.</li>
+  <li><b>Duty cycle</b>: blank computes it from the voltages, raised by the losses you enter.</li>
+</ul>
+<p>Below, one phase at a time: pick it in the phase list, or <b>Add phase</b> /
+<b>Remove phase</b>. <b>Fill from VRM</b> replaces the phases with one per VRM phase, read
+from the board: the switching device's pins from the VRM's, the inductor between the device
+and the rail, its value, the switch node, and the capacitors from each rail to ground, each
+given to the nearest phase. Each phase has:</p>
+<ul>
+  <li><b>Inductor</b>, <b>Inductance</b> and <b>DCR</b>.</li>
+  <li><b>Switch node</b>: the net between the switching device and the inductor.</li>
+  <li><b>High-side pins</b> and <b>Low-side pins</b> (<a href="#pin-picker">pin pickers</a>):
+    the switching device's pins on the rail its hot loop is fed from (VIN for a buck, the
+    output for a boost) and its power ground pins. A discrete design may name a different
+    part for each.</li>
+  <li><b>Input capacitors</b> and <b>Output capacitors</b>: tick the capacitors on each rail
+    this phase uses. The ripple current is shared among them by their impedances.</li>
+  <li><b>Coss</b>, <b>High-side Rds(on)</b> and <b>Low-side Rds(on)</b> from the datasheet,
+    all optional: without them typical values are used and the ringing is approximate.</li>
+  <li><b>Package inductance</b>: the loop inductance inside the device, added to the board's.</li>
+</ul>
+</div>
+</details>
+<details open id="noise-caps">
+<summary>Capacitors</summary>
+<div class="body">
+<p>The same capacitor models as <a href="#ac-caps">AC mode</a>, edited here too. A ticked
+capacitor without a model is taken at its value from the board with a typical ESR and ESL,
+and the results say so.</p>
+</div>
+</details>
+<details open id="noise-settings">
+<summary>Settings</summary>
+<div class="body">
+<ul>
+  <li><b>Highest frequency</b>: the highest harmonic kept. Blank: ten times the faster
+    edge's corner frequency, 1/(π·rise time), or three times the ringing, at most 3 GHz.</li>
+  <li><b>Harmonic limit</b>: the most harmonics of the switching frequency kept.</li>
+  <li><b>Least ringing damping</b>: the hot loop's resistance alone barely damps a real
+    switch node; its switches' output capacitance, reverse recovery and radiation take
+    energy too, and measured ringing usually dies within five to ten cycles. The ringing is
+    damped at least this much (ζ, default 0.05); 0 uses the loop's resistance alone.</li>
+  <li><b>Periods shown</b> in the waveform plot.</li>
+</ul>
+</div>
+</details>
+
+<h2 id="noise-solving">Solving an aggressor</h2>
+<details open>
+<summary>Aggressor and Solve</summary>
+<div class="body">
+<p>Below the tabs, pick the <b>Aggressor</b> and click <b>Solve</b>; problems that stop it
+are listed in red above. Only one aggressor is solved at a time, and each keeps its last
+result. <b>Save results…</b> writes every solved aggressor to a
+<code>.kipi-noise-results</code> file that <b>Open results…</b> reopens in this mode.</p>
+</div>
+</details>
+
+<h2 id="noise-results">Waveforms and parasitics</h2>
+<details open>
+<summary>The Waveforms tab and the results notes</summary>
+<div class="body">
+<p>The <b>Waveforms</b> tab beside the 3D view plots, over a few switching periods: the
+switch node of every phase (with its ringing), the inductor currents, each input and output
+capacitor's ripple current (the largest twelve), and the input and output rails' ripple
+voltage. Tick <b>Spectrum</b> to see each waveform's harmonics instead; hover to read the
+curves.</p>
+<p>The results notes give the operating point and, for each phase, the hot loop's
+inductance, the switch node's capacitance to ground (Coss and copper), the loop's
+resistance, and the ringing's frequency and damping.</p>
+</div>
+</details>
+
 <!-- ================================================================== WORKFLOWS -->
 <h2 id="workflows">Step-by-step workflows</h2>
 
@@ -1823,6 +1947,8 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>*.kipi-results</code></td><td class="wrap">DC results saved by KiPI 0.7 and
     earlier, as Python pickles, which can run code; KiPI asks before it opens one, and they
     are deprecated.</td></tr>
+  <tr><td><code>*.kipi-noise-results</code></td><td class="wrap">Saved Coupled Noise results,
+    every solved aggressor (Save results… / Open results… in Coupled Noise mode)</td></tr>
   <tr><td><code>*.kipi-ac-results</code></td><td class="wrap">Saved AC results, every rail
     solved, in the same format.</td></tr>
   <tr><td><code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code></td><td class="wrap">The DC HTML report.</td></tr>

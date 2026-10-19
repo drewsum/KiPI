@@ -32,9 +32,9 @@ def _mode(w, key) -> QRadioButton:
 def test_mode_buttons_are_last_on_the_toolbar(window):
     tb = window.findChild(QToolBar)
     widgets = [tb.widgetForAction(a) for a in tb.actions()]
-    tail = widgets[-3:]
+    tail = widgets[-4:]
     assert isinstance(tail[0], QLabel) and tail[0].text().strip() == "Mode:"
-    assert [rb.text() for rb in tail[1:]] == ["DC", "AC"]
+    assert [rb.text() for rb in tail[1:]] == ["DC", "AC", "Noise"]
 
 
 def test_dc_is_the_default(window):
