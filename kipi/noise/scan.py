@@ -6,13 +6,16 @@ candidate. Each is ranked by a quick estimate of the noise it picks up:
 * **capacitive**: its traces' mutual capacitance to the nearest switch-node copper, from
   Maxwell's potential coefficients for two wires a distance d apart at height h over a
   plane, Cm′ = 2πε·p12 / (p11² − p12²) with p11 = ln(2h/a) and p12 = ½·ln(1 + 4h²/d²)
-  (a = w/4, the strip's equivalent radius), times the switch node's steepest dV/dt across
-  the scan's driver resistance;
+  (a = w/4, the strip's equivalent radius). The edge's current Cm·dV/dt flows through
+  the scan's victim type's resistance R (driver and receiver in parallel) and charges the
+  net's own capacitance Cg (each trace's 2πε/p11 and the receiver's) through it: over an
+  edge of t = ΔV/(dV/dt), v = Cm·R·dV/dt·(1 − e^(−t/τ)), τ = R·(Cm + Cg). A low R gives
+  Cm·R·dV/dt; an undriven net (#158) the charge divider ΔV·Cm/(Cm + Cg);
 * **inductive**: the EMF the capacitor loops induce along its traces, with the full
   inductive model (it is cheap), its peak over a period.
 
-The nets with the highest estimates are then solved in full, as victims with the scan's
-default driver and logic level, every mechanism included.
+The nets with the highest estimates are then solved in full, as victims of the scan's
+type and logic level (:func:`kipi.noise.model.scan_victim`), every mechanism included.
 """
 
 from __future__ import annotations
@@ -99,9 +102,14 @@ def estimate(snap: BoardSnapshot, setup: PISetup, agg, wf, layouts,
         parts = [p for p in parts if not p.is_empty]
         if parts:
             sw_by_layer[lay.id] = (lay, shapely.union_all(parts))
+    from kipi.noise.model import scan_victim
     n = wf.samples_per_period()
     dvdt = max((float(np.max(np.abs(np.diff(p.switch_node.samples(n)))) * n * wf.fsw_hz)
                 for p in wf.phases), default=0.0)
+    swing = max((float(np.ptp(p.switch_node.samples(n))) for p in wf.phases), default=0.0)
+    t_edge = swing / dvdt if dvdt > 0 else 0.0
+    v = scan_victim(s, "")
+    r = 1.0 / sum(1.0 / x for x in (v.driver_ohm, v.receiver_ohm, v.termination_ohm) if x)
     sources = loop_sources(layouts, wf)
     freqs = wf.freqs()
     er = setup.ac.default_er
@@ -109,11 +117,14 @@ def estimate(snap: BoardSnapshot, setup: PISetup, agg, wf, layouts,
     for net, dist in nets.items():
         segs = split_tracks(snap, net, max(s.segment_mm, 1.0))
         cm = 0.0
+        cg = v.receiver_pf * 1e-12
         for seg in segs:
             lay = snap.stackup.layer(seg.layer)
             line = shapely.LineString([seg.a, seg.b])
             h = _height_over_plane(snap.stackup, seg.layer)
             a = max(seg.width_mm / 4, 0.01)
+            cg += 2 * math.pi * EPS0_F_PER_MM * er / math.log(max(2 * h / a, 1.01)) \
+                * seg.length_mm
             for lay2, geom in sw_by_layer.values():
                 dz = abs(lay2.z_mid_mm - lay.z_mid_mm)
                 d = math.hypot(line.distance(geom), dz)
@@ -124,7 +135,8 @@ def estimate(snap: BoardSnapshot, setup: PISetup, agg, wf, layouts,
                 if p12 < p11:
                     cm += 2 * math.pi * EPS0_F_PER_MM * er * p12 / (p11 ** 2 - p12 ** 2) \
                         * seg.length_mm
-        v_c = cm * s.scan_driver_ohm * dvdt
+        tau = r * (cm + cg)
+        v_c = cm * r * dvdt * (-math.expm1(-t_edge / tau)) if tau > 0 else 0.0
         v_l = 0.0
         if sources and segs:
             emf, _ = victim_emf(snap, sources, segs, freqs)

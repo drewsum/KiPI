@@ -67,6 +67,16 @@ milestones rather than versions that were ever set.
   AC) are gray italic, and they stay editable. A line at the top of each editor says what
   the styles mean. A VRM's input pins turn bold when it is an LDO or switcher, since they
   tie it into the power tree.
+- **A High impedance (undriven) victim type, the scan's default** (#158). The new type
+  holds the line with nothing but its inputs' leakage (1 MΩ at each end, 5 pF), as on a
+  tri-stated or floating net, so the coupled charge divides between the coupling and the
+  net's own capacitance. The scan now solves the nets it finds as this type unless
+  **Scan: victim type** in Settings says otherwise; a net that is a victim already keeps
+  its own type, and **Custom driver** keeps the old driver-resistance setting. The scan's
+  quick capacitive estimate now allows for the net's own capacitance, ΔV·Cm/(Cm + Cg) on
+  an undriven net, rather than Cm·R·dV/dt alone, which grew without bound with R. On the
+  coupled_noise example, SIG_SW scanned undriven picks up 132 mV by capacitance, against
+  14 mV behind a 33 Ω CMOS driver.
 
 ## 0.9.0
 

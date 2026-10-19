@@ -29,7 +29,7 @@ def _unique(branches: List[CapBranch]) -> List[CapBranch]:
 def _victims(snap, setup, agg, wf, layouts, result, progress):
     """The victims this solve covers: the setup's (all, one or none, by the settings) and
     the worst nets the scan finds."""
-    from kipi.noise.model import Victim
+    from kipi.noise.model import scan_victim
     s = setup.noise
     if s.victims == "all":
         chosen = list(setup.victims)
@@ -54,8 +54,7 @@ def _victims(snap, setup, agg, wf, layouts, result, progress):
         if drv is None or rcv is None:
             continue
         row.solved = True
-        chosen.append(Victim(row.net, driver=drv, receiver=rcv, driver_ohm=s.scan_driver_ohm,
-                             logic_v=s.scan_logic_v))
+        chosen.append(scan_victim(s, row.net, drv, rcv))
     result.scan = rows
     progress.info(f"Scan: {len(rows)} net(s) within {s.scan_radius_mm:g} mm, the worst "
                   f"{sum(r.solved for r in rows)} solved in full")

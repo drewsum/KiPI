@@ -138,6 +138,12 @@ VICTIM_PRESETS = {
                          note="one leg, half of a 100 Ω termination; 100 mV threshold"),
     "analog": VictimPreset("High-impedance analog input", 1000.0, 10e6, 5.0, None, 0.01,
                            note="a 1 kΩ source into an ADC or amplifier input"),
+    # Nothing holds the line (#158): the coupled charge divides between the coupling and
+    # the line's own capacitance to ground, the worst capacitive coupling a net whose
+    # driver is not known can take. (An EMF along it divides by where that capacitance
+    # sits; a low-impedance driver puts it all at the receiver.)
+    "hiz": VictimPreset("High impedance (undriven)", 1e6, 1e6, 5.0, None,
+                        note="tri-stated or floating: only its inputs' leakage holds it"),
 }
 CUSTOM = "custom"
 
@@ -224,15 +230,29 @@ class NoiseSettings:
     # Which victims a solve covers: "all", "none" (the waveforms only) or one's name.
     victims: str = "all"
     # Scan the signal nets near the aggressor (kipi.noise.scan): those within scan_radius_mm
-    # of its parts are estimated, and the scan_top_n worst solved in full with these
-    # defaults.
+    # of its parts are estimated, and the scan_top_n worst solved in full as victims of
+    # type scan_preset (a VICTIM_PRESETS key, or "custom" for scan_driver_ohm), by default
+    # undriven: their real drivers are not known (#158). A net that is a victim already
+    # keeps its own type.
     scan: bool = False
     scan_radius_mm: float = 10.0
     scan_top_n: int = 10
+    scan_preset: str = "hiz"
     scan_driver_ohm: float = 33.0
     scan_logic_v: float = 3.3
     html_report: bool = False           # write a report after each solve
     report_format: str = "html"         # "html" or "pdf"
+
+
+def scan_victim(s: NoiseSettings, net: str, driver: Optional[PinRef] = None,
+                receiver: Optional[PinRef] = None) -> Victim:
+    """A net the scan found, as the victim it is solved as."""
+    v = Victim(net, driver=driver, receiver=receiver, logic_v=s.scan_logic_v)
+    if s.scan_preset in VICTIM_PRESETS:
+        v.apply_preset(s.scan_preset)
+    else:
+        v.preset, v.driver_ohm = CUSTOM, s.scan_driver_ohm
+    return v
 
 
 def phase_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]

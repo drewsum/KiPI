@@ -864,21 +864,37 @@ class NoisePanel(QWidget, PartSelection):
         self.spin_top = QSpinBox()
         self.spin_top.setRange(1, 1000)
         self.spin_top.setValue(s.scan_top_n)
+        self.cmb_scan_type = QComboBox()
+        for key, p in VICTIM_PRESETS.items():
+            self.cmb_scan_type.addItem(p.label, key)
+        self.cmb_scan_type.addItem("Custom driver", CUSTOM)
+        self.cmb_scan_type.setCurrentIndex(max(self.cmb_scan_type.findData(s.scan_preset), 0))
         self.spin_scan_drv = _spin(0.01, 1e9, s.scan_driver_ohm, 2, " Ω", 1)
+        self.spin_scan_drv.setEnabled(s.scan_preset == CUSTOM)
         self.cmb_scan_logic = QComboBox()
         for v in LOGIC_LEVELS:
             self.cmb_scan_logic.addItem(f"{v:g} V", v)
         self.cmb_scan_logic.setCurrentIndex(max(self.cmb_scan_logic.findData(s.scan_logic_v), 0))
         f.addRow("Scan radius", self.spin_radius)
         f.addRow("Scan: solve in full", self.spin_top)
+        f.addRow("Scan: victim type", self.cmb_scan_type)
         f.addRow("Scan: driver resistance", self.spin_scan_drv)
         f.addRow("Scan: logic level", self.cmb_scan_logic)
         tip(f, self.spin_radius, "The scan looks at signal nets with a trace this close to the "
                                  "aggressor's parts")
         tip(f, self.spin_top, "How many of the scanned nets with the highest estimates are "
                               "solved in full (every mechanism)")
-        tip(f, self.spin_scan_drv, "The driver resistance a scanned net is solved with: its "
-                                   "real driver is not known", ("victim_terms", "drv"))
+        tip(f, self.cmb_scan_type, "The type a scanned net is solved as: its real driver "
+                                   "is not known. High impedance (undriven), the default, is "
+                                   "the worst case for capacitive coupling: nothing holds "
+                                   "the line, so the coupled charge divides between the "
+                                   "coupling and the net's own capacitance. (Inductive noise "
+                                   "reaches a receiver whole only through a low-impedance "
+                                   "driver.) A net that is a victim already keeps its own "
+                                   "type.", ("victim_terms", "drv", "rcv"))
+        tip(f, self.spin_scan_drv, "The driver resistance a scanned net is solved with, for "
+                                   "a custom driver", ("victim_terms", "drv"))
+        self.cmb_scan_type.currentIndexChanged.connect(self._settings_changed)
         tip(f, self.cmb_scan_logic, "The logic level a scanned net is judged against")
         for wdg in (self.spin_radius, self.spin_top, self.spin_scan_drv):
             wdg.valueChanged.connect(self._settings_changed)
@@ -935,6 +951,8 @@ class NoisePanel(QWidget, PartSelection):
         s.field_per_decade = self.spin_fpd.value()
         s.scan_radius_mm = self.spin_radius.value()
         s.scan_top_n = self.spin_top.value()
+        s.scan_preset = self.cmb_scan_type.currentData() or s.scan_preset
+        self.spin_scan_drv.setEnabled(s.scan_preset == CUSTOM)
         s.scan_driver_ohm = self.spin_scan_drv.value()
         s.scan_logic_v = self.cmb_scan_logic.currentData() or s.scan_logic_v
         self._on_changed()
@@ -963,6 +981,10 @@ class NoisePanel(QWidget, PartSelection):
         self.cmb_scan_logic.blockSignals(True)
         self.cmb_scan_logic.setCurrentIndex(max(self.cmb_scan_logic.findData(s.scan_logic_v), 0))
         self.cmb_scan_logic.blockSignals(False)
+        self.cmb_scan_type.blockSignals(True)
+        self.cmb_scan_type.setCurrentIndex(max(self.cmb_scan_type.findData(s.scan_preset), 0))
+        self.cmb_scan_type.blockSignals(False)
+        self.spin_scan_drv.setEnabled(s.scan_preset == CUSTOM)
         self.report_option.set_value(s.html_report, s.report_format)
 
     # ------------------------------------------------------------------ data
