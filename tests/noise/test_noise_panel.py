@@ -237,6 +237,33 @@ def test_the_victim_plot_shows_the_superposition_and_ticked_mechanisms(vpanel, w
     assert plot.victim_row.isHidden()
 
 
+def test_a_curve_is_hidden_by_its_tickbox(vpanel, window):
+    from kipi.ac.gui.plot import COLORS
+    from kipi.noise.solver import solve_noise
+    r = solve_noise(vpanel.snapshot, vpanel.setup, vpanel.setup.aggressors[0].name)
+    plot = window.noise_plot
+    plot.set_result(r)
+    plot.set_view("ripple")                       # Vin and Vout ripple
+    assert not plot.curve_scroll.isHidden() and len(plot.chk_shown) == 2
+    assert [c[0] for c in plot._curves] == ["Vin ripple", "Vout ripple"]
+    plot.chk_shown[0].setChecked(False)
+    assert [c[0] for c in plot._curves] == ["Vout ripple"]
+    assert plot.ax.get_lines()[0].get_color() == COLORS[1]   # keeps its colour
+    # Hidden in the spectrum too, and still hidden after another view.
+    plot.chk_spectrum.setChecked(True)
+    assert [c[0] for c in plot._curves] == ["Vout ripple"]
+    plot.set_view("sw")
+    plot.set_view("ripple")
+    assert not plot.chk_shown[0].isChecked() and len(plot._curves) == 1
+    plot.chk_shown[1].setChecked(False)
+    assert plot._curves == [] and "Tick a curve" in plot.lbl.text()
+    plot.chk_shown[0].setChecked(True)
+    assert [c[0] for c in plot._curves] == ["Vin ripple"]
+    # The victim view has its own tickboxes.
+    plot.set_view("victim")
+    assert plot.curve_scroll.isHidden()
+
+
 def test_the_ac_probes_to_show_ripple_at_are_ticked(app):
     """#157: the aggressor lists the AC setup's probes; the ticked ones are kept."""
     from kipi.ac.model import Probe

@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **Show or hide each waveform.** In Coupled Noise mode's waveform viewer, every view with
+  several curves (all except the victim's, which has its own) has a tickbox for each curve
+  beside the plot, in the curve's colour. Untick one to hide it, in the time plot and the
+  spectrum; it stays hidden across views and solves.
 - **Estimate a series link's ESL** (#159). Two buttons under the link's ESL:
   - **From package** reads the size of the part on side A from its footprint's name
     (`R_0603_1608Metric`, `RESC2012X65N`, `0805`). If the name gives no size, it uses

@@ -6,7 +6,10 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 import numpy as np
-from qtpy.QtWidgets import QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor, QIcon, QPixmap
+from qtpy.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QScrollArea,
+                            QVBoxLayout, QWidget)
 
 from kipi.ac.gui.plot import COLORS, _eng, _eng_hz
 
@@ -81,7 +84,25 @@ class NoisePlot(QWidget):
         self.victim_row.setVisible(False)
         lay.addWidget(self.victim_row)
         lay.addWidget(self.lbl)
-        lay.addWidget(self.canvas, 1)
+        # Beside the plot, a tickbox per curve to show or hide it, in the curve's colour.
+        self.curve_box = QWidget()
+        self.curve_lay = QVBoxLayout(self.curve_box)
+        self.curve_lay.setContentsMargins(2, 2, 2, 2)
+        self.curve_lay.setSpacing(2)
+        self.curve_lay.addStretch(1)
+        self.curve_scroll = QScrollArea(self)
+        self.curve_scroll.setWidget(self.curve_box)
+        self.curve_scroll.setWidgetResizable(True)
+        self.curve_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.curve_scroll.setMaximumWidth(220)
+        self.curve_scroll.setVisible(False)
+        row = QHBoxLayout()
+        row.addWidget(self.canvas, 1)
+        row.addWidget(self.curve_scroll)
+        lay.addLayout(row, 1)
+        self.chk_shown: List[QCheckBox] = []
+        self._hidden = {}               # view -> the names of the curves hidden in it
+        self._ticks_for = (None, [])    # the view and curves the tickboxes are for
         self.cmb_view.currentIndexChanged.connect(lambda _: self._draw())
         self.chk_spectrum.toggled.connect(lambda _: self._draw())
         self.canvas.mpl_connect("motion_notify_event", self._hover)
@@ -116,6 +137,7 @@ class NoisePlot(QWidget):
     def clear(self):
         self.result = None
         self._curves = []
+        self.curve_scroll.setVisible(False)
         self.lbl.setText(EMPTY)
         self._layout(1)
         self.canvas.draw_idle()
@@ -193,6 +215,8 @@ class NoisePlot(QWidget):
         self.victim_row.setVisible(key == "victim")
         spectra = self._spectra() if self.result is not None else []
         states = key == "states" and not spectrum and len(spectra) > 1
+        if states or key == "victim" or not spectra:     # the victim view has its own
+            self.curve_scroll.setVisible(False)
         self._layout(len(spectra) if states else 1)
         ax = self.ax
         if self.result is None:
@@ -217,9 +241,15 @@ class NoisePlot(QWidget):
             self.canvas.draw_idle()
             return
         unit = spectra[0][1].unit
+        # Each curve keeps its colour when others are hidden.
+        shown = self._curve_ticks(key, spectra)
+        if not shown:
+            self.lbl.setText("Tick a curve to plot")
+            self.canvas.draw_idle()
+            return
         if spectrum:
             f = wf.freqs()
-            for i, (label, s) in enumerate(spectra):
+            for i, (label, s) in shown:
                 amp = s.amplitude()
                 ax.loglog(f, np.maximum(amp, 1e-15), color=COLORS[i % len(COLORS)], lw=1.0,
                           label=label)
@@ -235,7 +265,7 @@ class NoisePlot(QWidget):
             periods = max(1, int(self.periods))
             t = wf.time(periods)
             n = wf.samples_per_period()
-            for i, (label, s) in enumerate(spectra):
+            for i, (label, s) in shown:
                 y = s.samples(n, periods)
                 ax.plot(t * 1e6, y, color=COLORS[i % len(COLORS)], lw=1.0, label=label)
                 self._curves.append((label, t, y, unit, ax))
@@ -270,6 +300,45 @@ class NoisePlot(QWidget):
             hint += f" (the ±{v.margin_v * 1e3:.4g} mV noise margin is off the scale)"
         self.lbl.setText(hint)
         self.canvas.draw_idle()
+
+    def _curve_ticks(self, key, spectra):
+        """A tickbox per curve of ``spectra`` beside the plot (several curves; not the
+        victim view, which has its own). Returns [(colour index, (label, Spectrum))] of
+        those ticked."""
+        names = [_name(label) for label, _ in spectra]
+        hidden = self._hidden.setdefault(key, set())
+        listed = key != "victim" and len(spectra) > 1
+        labels = (key, [label for label, _ in spectra] if listed else [])
+        if labels != self._ticks_for:
+            self._ticks_for = labels
+            for chk in self.chk_shown:
+                self.curve_lay.removeWidget(chk)
+                chk.deleteLater()
+            self.chk_shown = []
+            if listed:
+                for i, (label, _) in enumerate(spectra):
+                    chk = QCheckBox(label, self.curve_box)
+                    chk.setProperty("curve", names[i])
+                    chk.setChecked(names[i] not in hidden)
+                    chk.setToolTip(f"Show {label}")
+                    pix = QPixmap(12, 12)
+                    pix.fill(QColor(COLORS[i % len(COLORS)]))
+                    chk.setIcon(QIcon(pix))
+                    chk.toggled.connect(lambda on, n=names[i]: self._show_curve(n, on))
+                    self.curve_lay.insertWidget(i, chk)
+                    self.chk_shown.append(chk)
+        self.curve_scroll.setVisible(listed)
+        if not listed:
+            return list(enumerate(spectra))
+        return [(i, c) for i, c in enumerate(spectra) if names[i] not in hidden]
+
+    def _show_curve(self, name: str, on: bool):
+        hidden = self._hidden.setdefault(self.cmb_view.currentData(), set())
+        if on:
+            hidden.discard(name)
+        else:
+            hidden.add(name)
+        self._draw()
 
     def _draw_states(self, v, wf):
         """The victim's line held high (top) and low (#156): the driver's level with the
@@ -328,3 +397,9 @@ class NoisePlot(QWidget):
                 parts.append(_eng_hz(xs[k]) if spectrum else _eng(xs[k], "s"))
             parts.append(f"{label.split(' (')[0]}: {_eng(float(ys[k]), unit)}")
         self.lbl.setText("   ".join(parts))
+
+
+def _name(label: str) -> str:
+    """A curve's name without the figures after it (a capacitor's rms current), which
+    change from solve to solve: what hiding it goes by."""
+    return label.split(" (")[0]
