@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 import numpy as np
-from qtpy.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from kipi.ac.gui.plot import COLORS, _eng, _eng_hz
 
@@ -16,6 +16,19 @@ MAX_CAP_CURVES = 12             # more capacitors than this: the largest current
 VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("cin", "Input capacitor currents"), ("cout", "Output capacitor currents"),
          ("ripple", "Input and output ripple voltage"), ("victim", "Victim noise"))
+
+# The victim view's curves (#154): the superposition of the mechanisms is shown, each
+# mechanism on its own only when ticked.
+VICTIM_CURVES = (("total", "Superposition", True,
+                  "The noise at the receiver from every mechanism added up"),
+                 ("capacitive", "Capacitive", False,
+                  "The noise coupled through the capacitance to the switch nodes"),
+                 ("inductive", "Inductive", False,
+                  "The noise induced by the capacitor loops' changing current"),
+                 ("common", "Common ground", False,
+                  "The noise from the ground voltage between the driver and the receiver"),
+                 ("driver", "Driver end", True,
+                  "The superposition at the driver's end of the net as well"))
 
 
 class NoisePlot(QWidget):
@@ -50,6 +63,20 @@ class NoisePlot(QWidget):
         top.addWidget(self.chk_spectrum)
         top.addStretch(1)
         lay.addLayout(top)
+        self.victim_row = QWidget(self)
+        grid = QGridLayout(self.victim_row)            # three across, to fit a small screen
+        grid.setContentsMargins(0, 0, 0, 0)
+        self.chk_curves = {}
+        for i, (key, text, on, tip) in enumerate(VICTIM_CURVES):
+            chk = QCheckBox(text, self.victim_row)
+            chk.setChecked(on)
+            chk.setToolTip(tip)
+            chk.toggled.connect(lambda _: self._draw())
+            grid.addWidget(chk, i // 3, i % 3)
+            self.chk_curves[key] = chk
+        grid.setColumnStretch(3, 1)
+        self.victim_row.setVisible(False)
+        lay.addWidget(self.victim_row)
         lay.addWidget(self.lbl)
         lay.addWidget(self.canvas, 1)
         self.cmb_view.currentIndexChanged.connect(lambda _: self._draw())
@@ -118,11 +145,12 @@ class NoisePlot(QWidget):
             v = self._victim()
             if v is None:
                 return []
+            shown = {k for k, chk in self.chk_curves.items() if chk.isChecked()}
             out = [(f"{v.receiver} {k}", sp) for k, sp in v.receiver_v.items()
-                   if k != "total" and len(v.receiver_v) > 2]
-            if "total" in v.receiver_v:
+                   if k != "total" and k in shown]
+            if "total" in v.receiver_v and "total" in shown:
                 out.insert(0, (f"{v.receiver} (receiver)", v.receiver_v["total"]))
-            if "total" in v.driver_v:
+            if "total" in v.driver_v and "driver" in shown:
                 out.append((f"{v.driver} (driver)", v.driver_v["total"]))
             return out
         out = []
@@ -143,15 +171,22 @@ class NoisePlot(QWidget):
         ax.clear()
         self._style()
         self._curves = []
+        key = self.cmb_view.currentData()
+        self.victim_row.setVisible(key == "victim")
         if self.result is None:
             self.canvas.draw_idle()
             return
         wf = self.result.waveforms
         spectra = self._spectra()
         spectrum = self.chk_spectrum.isChecked()
+        if key == "victim":
+            v = self._victim()
+            for k, chk in self.chk_curves.items():       # mechanisms this victim lacks
+                chk.setEnabled(v is None or k in ("total", "driver") or k in v.receiver_v)
         if not spectra:
-            key = self.cmb_view.currentData()
-            self.lbl.setText({"victim": "No victims were solved: add them in the Victims tab",
+            victim = ("No victims were solved: add them in the Victims tab"
+                      if self._victim() is None else "Tick a curve to plot")
+            self.lbl.setText({"victim": victim,
                               "sw": EMPTY}.get(key, "Nothing to plot: no capacitors are set "
                                                     "for this rail"))
             self.canvas.draw_idle()

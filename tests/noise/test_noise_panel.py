@@ -200,3 +200,25 @@ def test_victim_results_fill_the_table_and_plot(vpanel, window):
     plot.set_victim("SIG")
     assert plot.cmb_view.currentData() == "victim" and plot._curves
     assert "off the scale" in plot.lbl.text()
+
+
+def test_the_victim_plot_shows_the_superposition_and_ticked_mechanisms(vpanel, window):
+    from kipi.noise.solver import solve_noise
+    vpanel.victim_list._add()
+    r = solve_noise(vpanel.snapshot, vpanel.setup, vpanel.setup.aggressors[0].name)
+    plot = window.noise_plot
+    plot.set_result(r)
+    plot.set_victim("SIG")
+    assert not plot.victim_row.isHidden()
+    labels = [c[0] for c in plot._curves]
+    assert labels == [f"{r.victims[0].receiver} (receiver)",
+                      f"{r.victims[0].driver} (driver)"]
+    plot.chk_curves["capacitive"].setChecked(True)
+    plot.chk_curves["driver"].setChecked(False)
+    assert [c[0] for c in plot._curves] == [f"{r.victims[0].receiver} (receiver)",
+                                            f"{r.victims[0].receiver} capacitive"]
+    plot.chk_curves["total"].setChecked(False)
+    plot.chk_curves["capacitive"].setChecked(False)
+    assert plot._curves == [] and "Tick a curve" in plot.lbl.text()
+    plot.set_view("sw")
+    assert plot.victim_row.isHidden()

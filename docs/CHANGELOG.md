@@ -34,6 +34,10 @@ milestones rather than versions that were ever set.
   asks Save / Discard / Cancel. The mode switch, Import and Save are greyed out while a task
   runs. A pdn.json import asks before replacing a power tree, and the Log's last line says
   what it read and how that differs from the tree it replaced.
+- **The victim noise plot shows the superposition, with each mechanism behind a tick
+  box** (#154). By default the plot shows the receiver's noise from every mechanism added
+  up, and the driver end's. Tick Capacitive, Inductive or Common ground to add that
+  mechanism's own curve, or untick Superposition or Driver end to hide those curves.
 
 ## 0.9.0
 
