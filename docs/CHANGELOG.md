@@ -17,6 +17,13 @@ milestones rather than versions that were ever set.
   - **Ferrite bead…** works out a bead's inductance from its impedance at one frequency,
     read off its datasheet's curve: L = √(|Z|² − DCR²) / 2πf. The dialog asks for a point
     well below the peak, where the bead is still an inductor.
+- **The ripple at AC probes** (#157). An aggressor can tick any of the AC setup's probes
+  under **Ripple at AC probes**. The board model then also gives the voltage between each
+  probe's rail and ground pins: the ripple at the load, through the plane and the
+  capacitors near it, not only at the converter. A new **Ripple at AC probes** waveform
+  view plots it. The results notes and the report give each probe's peak-to-peak and RMS
+  ripple. A probe has to be on the aggressor's input or output rail, or on a net a series
+  link joins to one, and the board model must be on.
 
 ### Fixed
 - **The hot-loop capacitors carry the switch node's ringing** (#151). The ringing on the

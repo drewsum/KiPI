@@ -100,6 +100,16 @@ class NoiseResult:
     def victim(self, name: str) -> Optional[VictimResult]:
         return next((v for v in self.victims if v.name == name), None)
 
+    def probe_lines(self) -> List[str]:
+        """The ripple at each AC probe asked for (#157)."""
+        wf = self.waveforms
+        n = wf.samples_per_period()
+        out = []
+        for name, sp in getattr(wf, "probe_ripple", {}).items():
+            out.append(f"Ripple at probe {name}: {np.ptp(sp.samples(n)) * 1e3:.4g} mV p-p, "
+                       f"{sp.ac_rms() * 1e3:.3g} mV rms")
+        return out
+
     def summary_lines(self) -> List[str]:
         """The operating point and each phase's parasitics, for the log and the panel."""
         op, wf = self.operating, self.waveforms
@@ -121,6 +131,7 @@ class NoiseResult:
                 lines.append(f"Phase {h.phase}: {wf.phases[h.phase - 1].edges}")
         if self.board_note:
             lines.append(self.board_note)
+        lines += self.probe_lines()
         if self.scan:
             solved = sum(r.solved for r in self.scan)
             lines.append(f"Scan: {len(self.scan)} net(s) near the aggressor estimated, the "

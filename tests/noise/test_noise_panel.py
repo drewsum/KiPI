@@ -145,11 +145,15 @@ def test_a_result_is_plotted(window):
     window.noise_panel.set_board(snap, setup)
     window.noise_panel.agg_list._add()
     window.findChild(QRadioButton, "mode_noise").setChecked(True)
+    from kipi.ac.model import Probe
+    setup.probes = [Probe("LOAD", PinRef("U2", "VOUT", ["1"]), PinRef("U2", "GND", ["2"]))]
+    setup.aggressors[0].ripple_probes = ["LOAD"]
+    setup.noise.board_model = True
     r = solve_noise(snap, setup, setup.aggressors[0].name)
     window.noise_panel.show_result(r)
     assert window.noise_plot.result is r
     assert window.views.currentWidget() is window.noise_plot
-    for key in ("sw", "il", "cin", "cout", "ripple"):
+    for key in ("sw", "il", "cin", "cout", "ripple", "probes"):
         window.noise_plot.set_view(key)
         window.noise_plot.chk_spectrum.setChecked(key == "il")
         assert window.noise_plot._curves, key
@@ -229,3 +233,27 @@ def test_the_victim_plot_shows_the_superposition_and_ticked_mechanisms(vpanel, w
     assert plot._curves == [] and "Tick a curve" in plot.lbl.text()
     plot.set_view("sw")
     assert plot.victim_row.isHidden()
+
+
+def test_the_ac_probes_to_show_ripple_at_are_ticked(app):
+    """#157: the aggressor lists the AC setup's probes; the ticked ones are kept."""
+    from kipi.ac.model import Probe
+    from kipi.noise.gui.panel import NoisePanel
+    p = NoisePanel()
+    setup = buck_setup()
+    setup.probes = [Probe("LOAD", PinRef("U2", "VOUT", ["1"]), PinRef("U2", "GND", ["2"])),
+                    Probe("VIN", PinRef("C1", "VIN", ["1"]), PinRef("C1", "GND", ["2"]))]
+    p.set_board(buck_board(), setup)
+    p.set_nets(["VIN", "GND", "SW", "VOUT"])
+    p.agg_list._add()
+    a = setup.aggressors[0]
+    ed = p.agg_list.editor
+    assert [ed.probes.item(i).data(Qt.UserRole) for i in range(ed.probes.count())] == \
+        ["LOAD", "VIN"]
+    assert a.ripple_probes == []
+    ed.probes.item(0).setCheckState(Qt.Checked)
+    assert a.ripple_probes == ["LOAD"]
+    setup.probes = []                                   # the probe went: still shown, marked
+    ed.load(a)
+    assert "no such probe" in ed.probes.item(0).text()
+    p.close()

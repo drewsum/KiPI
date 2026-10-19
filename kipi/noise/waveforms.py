@@ -146,6 +146,7 @@ class SmpsWaveforms:
     output_caps: Dict[str, Spectrum] = field(default_factory=dict)
     input_ripple: Optional[Spectrum] = None      # rail voltage ripple, AC only
     output_ripple: Optional[Spectrum] = None
+    probe_ripple: Dict[str, Spectrum] = field(default_factory=dict)   # per AC probe (#157)
     warnings: List[str] = field(default_factory=list)
 
     @property

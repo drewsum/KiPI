@@ -68,6 +68,9 @@ class Aggressor:
     duty: Optional[float] = None        # None: from the voltages and losses
     load_a: Optional[float] = None      # None: the DC setup's loads on the output rail
     phases: List[AggressorPhase] = field(default_factory=list)
+    # AC probes (by name) to show this aggressor's ripple at (#157): the board model's
+    # voltage between each probe's rail and ground pins.
+    ripple_probes: List[str] = field(default_factory=list)
 
 
 # JESD8 logic levels: supply volts -> (VIL, VIH, VOL, VOH), typical CMOS families. Off
@@ -285,7 +288,8 @@ def aggressor_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef
         vin_v=d.get("vin_v"), fsw_hz=float(d.get("fsw_hz", 500e3)),
         rise_s=float(d.get("rise_s", 2e-9)), fall_s=float(d.get("fall_s", 2e-9)),
         duty=d.get("duty"), load_a=d.get("load_a"),
-        phases=[phase_from_dict(p, pin) for p in d.get("phases", [])])
+        phases=[phase_from_dict(p, pin) for p in d.get("phases", [])],
+        ripple_probes=[str(x) for x in d.get("ripple_probes", [])])
 
 
 def victim_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]) -> Victim:

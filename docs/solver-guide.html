@@ -709,7 +709,11 @@ Z<sub>Es</sub> I<sub>s</sub>, through the copper's real resistance and inductanc
 voltage at an observing port is the terminated transfer impedance
 Z<sub>os</sub> − Z<sub>oE</sub>(Z<sub>EE</sub> + Z<sub>e</sub>)⁻¹Z<sub>Es</sub> times the
 source currents. That gives each capacitor's ripple current (which the inductive coupling
-then uses), the rails' ripple at the device, and ΔV between a victim's grounds.</p>
+then uses), the rails' ripple at the device, and ΔV between a victim's grounds. The AC
+probes ticked for an aggressor are observing ports too, open between the probe's rail and
+ground pins. Their terminated transfer impedance times the source currents gives the
+ripple at the load, through the plane's spreading inductance and the capacitors nearer the
+load.</p>
 <p>Only the transfer impedance's resistive part is taken between a victim's grounds. The
 inductive part of a ground's potential depends on the path it is measured along: the
 victim's own loop, its trace over the plane, links that flux, which the inductive coupling

@@ -1760,6 +1760,11 @@ top of the form holds what all phases share:</p>
   <li><b>Switching frequency</b>, <b>Rise time</b> and <b>Fall time</b> of the switch node.
     Phases are interleaved evenly, 360°/N apart.</li>
   <li><b>Duty cycle</b>: blank computes it from the voltages, raised by the losses you enter.</li>
+  <li><b>Ripple at AC probes</b>: tick any of the AC setup's probes to see this aggressor's
+    ripple there. The ripple is the voltage between the probe's rail and ground pins, from
+    the board model, so the board model must be on. A probe has to be on the aggressor's
+    input or output rail, or on a net that a series link joins to one; any other probe is
+    noted and left out.</li>
 </ul>
 <p>Below, one phase at a time: pick it in the phase list, or <b>Add phase</b> /
 <b>Remove phase</b>. <b>Fill from VRM</b> replaces the phases with one per VRM phase, read
@@ -1882,12 +1887,14 @@ scan's estimates and the notes. <b>Open report</b> opens it again. <b>Save resul
 <div class="body">
 <p>The <b>Waveforms</b> tab beside the 3D view plots, over a few switching periods: the
 switch node of every phase (with its ringing), the inductor currents, each input and output
-capacitor's ripple current (the largest twelve), and the input and output rails' ripple
-voltage. Tick <b>Spectrum</b> to see each waveform's harmonics instead; hover to read the
+capacitor's ripple current (the largest twelve), the input and output rails' ripple
+voltage, and the ripple at each AC probe ticked for the aggressor (<b>Ripple at AC
+probes</b>). Tick <b>Spectrum</b> to see each waveform's harmonics instead; hover to read the
 curves.</p>
 <p>The results notes give the operating point and, for each phase, the hot loop's
 inductance, the switch node's capacitance to ground (Coss and copper), the loop's
-resistance, and the ringing's frequency and damping.</p>
+resistance, and the ringing's frequency and damping. They also give the peak-to-peak and
+RMS ripple at each AC probe ticked.</p>
 <p>The <b>results table</b> lists each victim: its receiver's peak noise over a switching
 period, its noise margin, the share of the margin used, the coupling mechanism that
 dominates, and <b>PASS</b> or <b>FAIL</b>. The worst victim is selected; select one to plot

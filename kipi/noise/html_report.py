@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
+
 from kipi import __version__
 from kipi.core.naming import timestamp
 from kipi.dc.report.html import CSS, _e, _png, _table, _verdict, finish, notes_section
@@ -130,6 +132,14 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     ripple = [(s.name, s) for s in (wf.input_ripple, wf.output_ripple) if s is not None]
     if ripple:
         parts.append(_img(_time_png(ripple, wf, "Rail ripple", "V")))
+    probes = getattr(wf, "probe_ripple", {})
+    if probes:
+        parts.append(_img(_time_png([(f"{n} (AC probe)", s) for n, s in probes.items()], wf,
+                                    "Ripple at AC probes", "V")))
+        n = wf.samples_per_period()
+        parts.append(_table(["AC probe", "Ripple (mV p-p)", "Ripple (mV rms)"],
+                            [[_e(name), f"{np.ptp(s.samples(n)) * 1e3:.4g}",
+                              f"{s.ac_rms() * 1e3:.3g}"] for name, s in probes.items()]))
 
     # ---------------- victim noise
     parts.append("<h2 id='noise'>Victim noise</h2>")

@@ -15,7 +15,8 @@ MAX_CAP_CURVES = 12             # more capacitors than this: the largest current
 
 VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("cin", "Input capacitor currents"), ("cout", "Output capacitor currents"),
-         ("ripple", "Input and output ripple voltage"), ("victim", "Victim noise"),
+         ("ripple", "Input and output ripple voltage"), ("probes", "Ripple at AC probes"),
+         ("victim", "Victim noise"),
          ("states", "Victim held high and low"))
 
 # The victim view's curves (#154): the superposition of the mechanisms is shown, each
@@ -153,6 +154,9 @@ class NoisePlot(QWidget):
             caps = wf.input_caps if key == "cin" else wf.output_caps
             ranked = sorted(caps.items(), key=lambda kv: -kv[1].ac_rms())[:MAX_CAP_CURVES]
             return [(f"{ref} ({kv.ac_rms():.3g} A rms)", kv) for ref, kv in ranked]
+        if key == "probes":
+            return [(f"{n} (AC probe)", sp)
+                    for n, sp in getattr(wf, "probe_ripple", {}).items()]
         if key == "states":
             v = self._victim()
             return [] if v is None else [(f"{v.receiver} held {st.name}", st.receiver_v)

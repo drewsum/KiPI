@@ -86,6 +86,12 @@ class AggressorEditor(_Editor):
         f.addRow("Rise time", self.rise)
         f.addRow("Fall time", self.fall)
         f.addRow("Duty cycle", self.duty)
+        # AC probes to show the ripple at (#157).
+        self.probes = QListWidget()
+        self.probes.setMinimumHeight(50)
+        self.probes.setMaximumHeight(100)
+        self.probes.itemChanged.connect(self._store)
+        f.addRow("Ripple at AC probes", self.probes)
         for w, text, art in (
                 (self.name, "A name for this aggressor", None),
                 (self.vrm, "The switching regulator (a VRM of type Switcher, set up in DC or "
@@ -109,7 +115,14 @@ class AggressorEditor(_Editor):
                 (self.duty, "The high side's (buck) or low side's (boost) on-time, as % of "
                             "the period. Blank computes it from the voltages, raised by the "
                             "inductor DCR and on-resistances entered for a buck, and by the "
-                            "VRM's efficiency for a boost.", None)):
+                            "VRM's efficiency for a boost.", None),
+                (self.probes, "The AC mode's probes to show this aggressor's ripple at: "
+                              "the voltage between each probe's rail and ground pins, "
+                              "from the board model (Settings tab), which carries the "
+                              "inductor's and the switch's currents through the rails' "
+                              "copper and capacitors. A probe must be on the aggressor's "
+                              "input or output rail, or a net a series link joins to one. "
+                              "Shown in the Ripple at AC probes plot.", None)):
             tip(f, w, text, art)
         self._watch(self.name, self.vrm, self.topology, self.vin, self.load_a, self.fsw,
                     self.rise, self.fall, self.duty)
@@ -278,6 +291,26 @@ class AggressorEditor(_Editor):
             lst.addItem(it)
         lst.blockSignals(False)
 
+    def _fill_probes(self, chosen: List[str]):
+        """The AC setup's probes, those ``chosen`` ticked."""
+        lst = self.probes
+        lst.blockSignals(True)
+        lst.clear()
+        names = [p.name for p in self.panel.setup.probes]
+        rows = [(n, "") for n in names] + [(n, " (no such probe)") for n in chosen
+                                          if n not in names]
+        for name, note in rows:
+            it = QListWidgetItem(name + note)
+            it.setData(Qt.UserRole, name)
+            it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            it.setCheckState(Qt.Checked if name in chosen else Qt.Unchecked)
+            lst.addItem(it)
+        if not rows:
+            it = QListWidgetItem("No AC probes: add them in AC mode")
+            it.setFlags(Qt.NoItemFlags)
+            lst.addItem(it)
+        lst.blockSignals(False)
+
     @staticmethod
     def _ticked(lst: QListWidget) -> List[str]:
         return [lst.item(i).data(Qt.UserRole) for i in range(lst.count())
@@ -305,6 +338,7 @@ class AggressorEditor(_Editor):
         self.rise.setValue(a.rise_s * 1e9)
         self.fall.setValue(a.fall_s * 1e9)
         _set_optional(self.duty, a.duty * 100 if a.duty is not None else None)
+        self._fill_probes(a.ripple_probes)
         self.phase = min(self.phase, max(len(a.phases) - 1, 0))
         self._fill_phase_combo()
         self._load_phase()
@@ -373,6 +407,7 @@ class AggressorEditor(_Editor):
         a.fall_s = self.fall.value() * 1e-9
         duty = _get_optional(self.duty)
         a.duty = duty / 100 if duty is not None else None
+        a.ripple_probes = self._ticked(self.probes)
         if a.phases and 0 <= self.phase < len(a.phases):
             ph = a.phases[self.phase]
             ph.inductor = self.inductor.currentData() or ""

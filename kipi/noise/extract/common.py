@@ -45,6 +45,7 @@ class BoardModelResult:
     plane_capacitance_f: float = 0.0
     missing_caps: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    probe_ripple: Dict[str, np.ndarray] = field(default_factory=dict)   # V(rail) − V(gnd)
 
 
 def ground_pads(snap: BoardSnapshot, ref: str, gnd: str) -> List[str]:
@@ -63,9 +64,10 @@ def _pads(snap: BoardSnapshot, pin: Optional[PinRef]) -> List[str]:
 
 def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
                 victim_grounds: Dict[str, Tuple[List[str], List[str]]],
-                progress: ProgressReporter = NULL) -> BoardModelResult:
+                progress: ProgressReporter = NULL, probes=()) -> BoardModelResult:
     """The board model of the aggressor's rails at the waveforms' harmonics.
-    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids."""
+    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids;
+    ``probes``, AC probes to give the rails' ripple at (#157)."""
     from kipi.ac.checks import rail_caps, rail_nets
     from kipi.ac.solver.fem import ACError, ACSystem, PortDef
     from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
@@ -132,8 +134,26 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
                 shorts.append((a, b))
             else:
                 ports.append(PortDef(k.name, "link", a, b, k))
-    obs_victims: List[str] = []
     notes: List[str] = []
+    # The AC probes the ripple is wanted at: open ports between their rail and ground pins.
+    obs_probes: List[str] = []
+    for pr in probes:
+        plus, minus = _pads(snap, pr.rail), _pads(snap, pr.ground)
+        if pr.rail is None or pr.rail.net not in rail:
+            where = pr.rail.net if pr.rail else "(none)"
+            notes.append(f"Probe {pr.name}: its rail {where} is not one of the aggressor's "
+                         "rails: no ripple shown there")
+        elif pr.ground is None or pr.ground.net != gnd:
+            notes.append(f"Probe {pr.name}: its ground pins are not on {gnd}: no ripple "
+                         "shown there")
+        elif not plus or not minus:
+            notes.append(f"Probe {pr.name}: its pins have no pads on the board: no ripple "
+                         "shown there")
+        else:
+            ports.append(PortDef(f"probe {pr.name}", "probe", plus, minus))
+            obs_probes.append(pr.name)
+    first_probe = len(ports) - len(obs_probes)
+    obs_victims: List[str] = []
     for name, (drv, rcv) in victim_grounds.items():
         if not drv or not rcv:
             notes.append(f"Victim {name}: its driver or receiver has no pad on {gnd}: no "
@@ -173,22 +193,24 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     flows = np.einsum("fes,fs->fe", per_amp, i_src)
     cap_currents = {ports[e].name: -flows[:, j] for j, e in enumerate(E)
                     if ports[e].kind == "cap"}
-    obs = src + [len(ports) - len(obs_victims) + j for j in range(len(obs_victims))]
+    obs = (src + [first_probe + j for j in range(len(obs_probes))]
+           + [len(ports) - len(obs_victims) + j for j in range(len(obs_victims))])
     zt = terminate_transfer(z, freqs, ports, src, obs)
     # Between a victim's grounds only the copper's resistance (skin effect included) is
     # shared impedance. The inductive part of a ground's potential depends on the path
     # it is measured along: the victim's own loop (its trace over the plane) links that
     # flux, which the inductive coupling counts. (The 2.5D model would also overstate it
     # where a plane faces no rail copper: its current spreads wider than a real return.)
-    nv = len(obs_victims)
-    if nv:
-        zt[:, len(src):, :] = zt[:, len(src):, :].real
+    first_victim = len(src) + len(obs_probes)
+    if obs_victims:
+        zt[:, first_victim:, :] = zt[:, first_victim:, :].real
     v = np.einsum("fos,fs->fo", zt, i_src)
     # The rails at phase 1's device: buck VIN = −V(I_HS1), VOUT = V(I_L1); boost VOUT =
     # V(I_HS1), VIN = −V(I_L1).
     input_ripple = -v[:, 0] if buck else -v[:, 1]
     output_ripple = v[:, 1] if buck else v[:, 0]
-    ground = {name: v[:, len(src) + j] for j, name in enumerate(obs_victims)}
+    ground = {name: v[:, first_victim + j] for j, name in enumerate(obs_victims)}
+    at_probes = {name: v[:, len(src) + j] for j, name in enumerate(obs_probes)}
     return BoardModelResult(cap_currents, cap_rail, input_ripple, output_ripple, ground,
                             f_field, system.n, system.total_plane_capacitance, missing,
-                            notes + system.warnings)
+                            notes + system.warnings, at_probes)

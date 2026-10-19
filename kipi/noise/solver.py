@@ -61,6 +61,17 @@ def _victims(snap, setup, agg, wf, layouts, result, progress):
     return chosen
 
 
+def _ripple_probes(setup, agg, result, progress):
+    """The AC probes the aggressor's ripple is wanted at (#157)."""
+    by_name = {p.name: p for p in setup.probes}
+    for name in agg.ripple_probes:
+        if name not in by_name:
+            msg = f"No AC probe named {name}: no ripple shown there"
+            result.warnings.append(msg)
+            progress.warn(msg)
+    return [by_name[n] for n in agg.ripple_probes if n in by_name]
+
+
 def _board_model(snap, setup, agg, op, wf, result, progress, victims=None):
     """Run the board model and put its capacitor currents and ripple into the waveforms;
     None (with a warning) where it cannot be built."""
@@ -81,7 +92,8 @@ def _board_model(snap, setup, agg, op, wf, result, progress, victims=None):
     progress.stage("Board model")
     try:
         with progress.timed("board model"):
-            bm = solve_board(snap, setup, agg, op, wf, grounds, progress)
+            bm = solve_board(snap, setup, agg, op, wf, grounds, progress,
+                             _ripple_probes(setup, agg, result, progress))
     except (ACError, MeshError, SolveError) as e:
         msg = f"Board model left out ({e}); the capacitors share the current by their own " \
               "impedance and there is no shared-ground coupling"
@@ -94,6 +106,7 @@ def _board_model(snap, setup, agg, op, wf, result, progress, victims=None):
                       if bm.cap_rail[r] == "out"}
     wf.input_ripple = Spectrum("Vin ripple", "V", 0.0, bm.input_ripple)
     wf.output_ripple = Spectrum("Vout ripple", "V", 0.0, bm.output_ripple)
+    wf.probe_ripple = {n: Spectrum(f"V({n})", "V", 0.0, c) for n, c in bm.probe_ripple.items()}
     result.board_note = (f"Board model: {len(bm.cap_currents)} capacitor(s) on the rails, "
                          f"{bm.unknowns} unknowns, {len(bm.field_freqs)} field solves, plane "
                          f"capacitance {bm.plane_capacitance_f * 1e9:.3g} nF")
@@ -169,7 +182,13 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
     if setup.noise.board_model:
         board = _board_model(snap, setup, agg, op, wf, result, progress, victims)
         if board is not None:
+            for line in result.probe_lines():
+                progress.info(line)
             progress.partial(result)
+    elif agg.ripple_probes:
+        msg = "The ripple at AC probes needs the board model (Settings tab): not shown"
+        result.warnings.append(msg)
+        progress.warn(msg)
 
     if victims:
         from kipi.noise.extract.xsection import Cache
