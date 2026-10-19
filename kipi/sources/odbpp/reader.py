@@ -33,6 +33,8 @@ from kipi.sources.odbpp.archive import Job, OdbError, job_name
 
 #: KiCad's ODB++ export, and most others, give copper weight in oz per square foot.
 MM_PER_OZ = 0.035
+# A written copper thickness this far from the copper weight is not the copper's.
+COPPER_WEIGHT_TOLERANCE = 0.25
 _COPPER_TYPES = ("SIGNAL", "POWER_GROUND", "MIXED")
 # Where a pad and the hole drilled through it are taken to be the same place.
 SAME_PLACE_MM = 0.002
@@ -170,20 +172,23 @@ def pick_step(job: Job, progress: ProgressReporter, wanted: Optional[str] = None
     return step
 
 
-def _copper_thickness(attrs: Dict[str, str]) -> Optional[float]:
-    """A copper layer's thickness: its own if written precisely enough, else its weight."""
-    t_text = attrs.get(".layer_dielectric") or attrs.get(".copper_thickness") or ""
-    weight = attrs.get(".copper_weight")
+def _copper_thickness(attrs: Dict[str, str], mm_per_unit: float) -> Optional[float]:
+    """A copper layer's thickness in mm: its own if written precisely enough and in line
+    with its weight, else its weight. Altium writes the neighbouring dielectric's thickness
+    in a copper layer's .layer_dielectric (an inner layer read 1.33 mm), so a thickness
+    far from the weight is not the copper's."""
+    t_text = attrs.get(".copper_thickness") or attrs.get(".layer_dielectric") or ""
     try:
-        t = float(t_text) if t_text else None
+        t = float(t_text) * mm_per_unit if t_text else None
     except ValueError:
         t = None
+    try:
+        w = float(attrs.get(".copper_weight") or "") * MM_PER_OZ
+    except ValueError:
+        w = None
     # At the default precision (2 decimals) 35 um is written 0.03: the weight says more.
-    if weight and (t is None or _decimals(t_text) <= 2):
-        try:
-            return float(weight) * MM_PER_OZ
-        except ValueError:
-            pass
+    if w and (t is None or _decimals(t_text) <= 2 or abs(t - w) > COPPER_WEIGHT_TOLERANCE * w):
+        return w
     return t
 
 
@@ -212,12 +217,10 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
             attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
             lid = ids[l.folder]
             outer = lid in (F_CU, B_CU)
-            t = _copper_thickness(attrs)
+            t = _copper_thickness(attrs, units.coord)
             if t is None or t <= 0:
                 missing_cu.append(l.name)
                 t = DEFAULT_OUTER_CU_MM if outer else DEFAULT_INNER_CU_MM
-            else:
-                t *= units.coord
             entries.append(("cu", lid, t, "", 0.0))
         elif l.type == "DIELECTRIC" and started:
             attrs = _dielectric_attrs(job, step, l)
