@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **Harmonics drawn as stems.** Coupled Noise's spectrum view draws each harmonic as a
+  line up from the axis with a dot at its amplitude, as a spectrum analyser does, instead
+  of joining the harmonics into a jagged curve: a periodic waveform has nothing between
+  them.
 - **Ringing damping per aggressor.** **Least ringing damping** and **Soft edge damping**
   moved from Coupled Noise's Settings tab to each aggressor, next to its edges, so two
   switchers can be damped differently. Setups saved before keep their values: every

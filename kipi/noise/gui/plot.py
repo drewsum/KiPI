@@ -265,15 +265,24 @@ class NoisePlot(QWidget):
             self.canvas.draw_idle()
             return
         if spectrum:
+            # A periodic waveform has nothing between its harmonics: each is drawn as a
+            # stem up from the axis's floor, as a spectrum analyser shows it, not joined.
             f = wf.freqs()
-            for i, (label, s) in shown:
-                amp = s.amplitude()
-                ax.loglog(f, np.maximum(amp, 1e-15), color=COLORS[i % len(COLORS)], lw=1.0,
-                          label=label)
+            amps = [(i, label, s.amplitude()) for i, (label, s) in shown]
+            peak = max(float(np.max(a)) for _, _, a in amps)
+            floor = peak * 1e-8 if peak > 0 else 1e-15   # the nulls between lobes go far down
+            for i, label, amp in amps:
+                color = COLORS[i % len(COLORS)]
+                xs = np.repeat(f, 3)
+                xs[2::3] = np.nan
+                ys = np.column_stack([np.full_like(amp, floor), np.maximum(amp, floor),
+                                      np.full_like(amp, np.nan)]).ravel()
+                ax.loglog(xs, ys, color=color, lw=0.8, label=label)
+                ax.loglog(f, np.maximum(amp, floor), ls="none", marker="o", ms=2.5,
+                          color=color)
                 self._curves.append((label, f, amp, unit, ax))
-            peak = max(float(np.max(c[2])) for c in self._curves)
-            if peak > 0:                      # the nulls between harmonics' lobes go far down
-                ax.set_ylim(peak * 1e-8, peak * 3)
+            if peak > 0:
+                ax.set_ylim(floor, peak * 3)
             ax.set_xlabel("Frequency")
             ax.set_ylabel(f"Amplitude ({unit} peak)")
             ax.xaxis.set_major_formatter(FuncFormatter(_eng_hz))
