@@ -720,10 +720,12 @@ layer, behind the ground plane. Open its snapshot to try it.
   input and output voltages and the load current come from the DC setup unless you enter
   them. **Coss**, **Rds(on)** and **package inductance** from the datasheet are optional.
   KiPI draws the hot loop through the copper and computes its inductance, which with the
-  switch node's capacitance sets the ringing on every edge.
+  switch node's capacitance sets the ringing on every edge. The ringing's current flows
+  round the hot loop too, through the input capacitors, and couples onto victims.
 * **Victims tab**: each victim is a net with its driver and receiver pins (guessed as the
   net's farthest-apart pads when left blank) and a **Type**: CMOS push-pull, open drain,
-  series or parallel terminated, an LVDS leg or an analog input. The type fills in the
+  series or parallel terminated, an LVDS leg, an analog input, or high impedance
+  (undriven: a tri-stated or floating net). The type fills in the
   driver and receiver resistances, the receiver capacitance and any termination. An open
   drain has a separate **Driving low** resistance: the line is held by its 4.7 kΩ pull-up
   when high, and by the switch when low. The **Logic level** gives the JESD8 levels and so
@@ -738,7 +740,9 @@ layer, behind the ground plane. Open its snapshot to try it.
 Pick the **Aggressor** and click **Solve**. The waveforms are exact Fourier series of the
 converter's piecewise-linear shapes, so they appear in well under a second, and the victims
 follow. Tick **Scan nearby nets** to also estimate every signal net near the aggressor and
-solve the worst in full. The **Waveforms** tab plots the switch node of every phase with its
+solve the worst in full. Their real drivers are not known, so they are solved as undriven,
+the worst case for capacitive coupling, unless **Scan: victim type** in Settings says
+otherwise; a net that is a victim already keeps its own type. The **Waveforms** tab plots the switch node of every phase with its
 ringing, the inductor currents, each capacitor's ripple current and the rails' ripple
 voltage, in time or, with **Spectrum**, as harmonics. The notes give the hot loop's
 inductance, the switch node's capacitance and the ringing's frequency and damping.
@@ -766,9 +770,10 @@ adds to it, blue takes from it. Pick the superposition or one mechanism. The com
 share is a dot at the driver, and the capacitor loops that induce the inductive noise are
 drawn in magenta. The shares add up exactly to the peak, so the brightest pieces are the
 ones to move. Below, SIG_LOOP picks up most of its noise near the switching device, where it
-runs closest to the hot loop.
+runs closest to the hot loop, enough to fail: the hot loop's 179 MHz ringing current
+induces most of it.
 
-![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 256 mV peak, beside the magenta capacitor loops](docs/images/noise_coupling_3d.png)
+![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 695 mV peak, beside the magenta capacitor loops](docs/images/noise_coupling_3d.png)
 
 The mechanisms point to different fixes. Capacitive noise comes from the switch node's
 dV/dt: keep victims away from its copper or behind a plane, and drive them harder.

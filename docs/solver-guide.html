@@ -588,7 +588,7 @@ and the log reports each:</p>
     the ripple current among the capacitors through the real copper, and gives the ground
     voltage between each victim's ends.</li>
   <li><b>Scan</b> (optional). Every signal net near the converter is estimated cheaply and
-    the worst are added as victims with default drivers and receivers.</li>
+    the worst are added as victims of the scan's type, undriven by default.</li>
   <li><b>Victims.</b> For each one, the coupling to its traces is extracted (mutual
     capacitance by 2D field cuts, mutual inductance by PEEC), its line is solved at every
     harmonic once per mechanism, and the result is turned back into a waveform at the
@@ -604,7 +604,8 @@ for a buck (raised by its losses) and 1 − η·V<sub>in</sub>/V<sub>out</sub> f
 phase's switch node is a trapezoid with the entered rise and fall times, its inductor
 current a triangle of ripple ΔI = (V<sub>in</sub> − V<sub>out</sub>)·D/(L·f<sub>sw</sub>)
 (buck) or V<sub>in</sub>·D/(L·f<sub>sw</sub>) (boost), and its pulsed current the
-inductor current while the hot-loop switch conducts. These are piecewise linear, so their
+inductor current while the hot-loop switch conducts (plus the ringing's current, below).
+These are piecewise linear, so their
 Fourier series is exact in closed form: the second derivative is a set of impulses at the
 corners, and c<sub>k</sub> = −1/(T·ω<sub>k</sub>²)·Σ Δs<sub>i</sub>·e<sup>−jω<sub>k</sub>t<sub>i</sub></sup>.
 N phases are interleaved by delaying phase n by n·T/N, which cancels every harmonic but
@@ -627,7 +628,17 @@ bar's self inductance within 0.5 % and a square loop's within 2 %.</p>
 copper over the neighbouring planes) rings at f = 1/(2π√(L·C)) on every edge, damped by
 ζ = R/2·√(C/L). The loop's resistance alone gives far less damping than real switch
 nodes show, so a least damping (ζ = 0.05 by default) stands in for the losses the model
-leaves out.</p>
+leaves out. Each edge passes through H(jω) = ω₀²/(s² + 2ζω₀s + ω₀²), the switch node's
+response through the loop's L–C tank.</p>
+<p>The ringing is the switch node's capacitance trading charge with the loop's inductance,
+so its current flows round the hot loop, through the capacitors that close it. By KCL at
+the switch node, with the inductor current steady over an edge, a buck's high side carries
+C·dv/dt more and a boost's rectifier C·dv/dt less, where v is the ringing, the switch
+node's departure from its ideal trapezoid: I<sub>ring</sub> = jω·C·(H − 1)·V<sub>ideal</sub>
+at each harmonic. Its peak is about V/Z<sub>0</sub>, with Z<sub>0</sub> = √(L/C): a few
+amps for a 12 V switch node ringing at a few hundred MHz. It is part of the pulsed current,
+so the input capacitors of a buck (the output capacitors of a boost) carry it, and with it
+the inductive coupling and the board model.</p>
 
 <h3 id="noise-capacitive">Capacitive coupling</h3>
 <p>A victim's traces are cut into short segments. Across the middle of each, a line through
@@ -697,10 +708,22 @@ go.</p>
 the worst in full. The estimate's capacitive part uses Maxwell's potential coefficients for
 two wires a distance d apart at height h over a plane, C<sub>m</sub>′ = 2πε·p₁₂/(p₁₁² − p₁₂²)
 with p₁₁ = ln(2h/a), p₁₂ = ½·ln(1 + 4h²/d²) and a = w/4, from each trace segment to the
-nearest switch-node copper, times the switch node's steepest dV/dt across the scan's driver
-resistance; its inductive part is the full inductive model, which is cheap. The estimate
-only ranks the nets (its capacitive part errs high, on the safe side); the results are the
-full solves.</p>
+nearest switch-node copper. The edge drives C<sub>m</sub>·dV/dt into the net through
+the scan's victim type's resistance R (its driver and receiver in parallel), which also
+charges the net's own capacitance C<sub>g</sub> (each segment's 2πε/p₁₁ per length, plus
+the receiver's): over an edge of t = ΔV/(dV/dt),
+v = C<sub>m</sub>·R·dV/dt·(1 − e<sup>−t/τ</sup>) with τ = R·(C<sub>m</sub> + C<sub>g</sub>).
+A low R gives C<sub>m</sub>·R·dV/dt; an undriven net the charge divider
+ΔV·C<sub>m</sub>/(C<sub>m</sub> + C<sub>g</sub>). Its inductive part is the full
+inductive model, which is cheap. The estimate only ranks the nets (its capacitive part
+errs high, on the safe side); the results are the full solves.</p>
+<p>A scanned net's real driver is not known, so by default it is solved as
+<b>undriven</b> (high impedance: 1 MΩ at each end and 5 pF), the worst case for capacitive
+coupling: nothing holds the line, so the coupled charge divides between the coupling and
+the line's own capacitance. It is not the worst case for inductive coupling. An EMF along
+a floating line divides by where the line's capacitance sits, while a low-impedance driver
+at the far end puts all of it at the receiver. A net that is a victim already keeps its
+own type, and the scan's type can be changed in Settings.</p>
 
 <h3 id="noise-victim">The victim's line</h3>
 <p>Each segment is a lossy transmission line, Z<sub>0</sub> = √((R′ + jωL′)/(G′ + jωC′))
@@ -716,6 +739,13 @@ holds the line down, and an open-drain line released high, held only by its pull
 picks up far more. The receiver's noise over a period is compared with its noise margin,
 from its logic family's JESD8 levels: min(V<sub>IL</sub> − V<sub>OL</sub>,
 V<sub>OH</sub> − V<sub>IH</sub>).</p>
+<p>The line is also solved as it really sits: held high at V<sub>OH</sub>, with V<sub>IH</sub>
+below it, and held low at V<sub>OL</sub>, with V<sub>IL</sub> above it. Only noise toward the
+threshold counts in each state, so each state's excursion is the noise's largest step that
+way, against that state's own margin. A driver may hold the line harder one way than the
+other: an open drain is held high by its pull-up and low by its switch. The line is then
+solved once per driver resistance. The verdict takes the larger noise of either state
+against the smaller margin.</p>
 
 <h3 id="noise-verdict">From harmonics to a verdict</h3>
 <p>Every source is periodic at the switching frequency, so the victim's response is too:
@@ -739,6 +769,14 @@ margin; the Spectrum option shows the same as harmonics, where a peak at the rin
 frequency or a line resonance points at its cause. Victims the scan added are marked
 (scan) in the results, and the report's Scan table ranks every net it estimated, with the
 ones solved in full marked.</p>
+<p>The 3D view shows where along the victim the noise couples in. Its line network is
+linear and reciprocal: the voltage a unit source at segment i puts at the receiver equals
+the voltage a unit current injected at the receiver puts at segment i. So one extra solve
+per harmonic, driven from the receiver, gives the transfer from every segment at once.
+Each segment's sources (its charge current, its EMF, the driver's ground difference) times
+that transfer give its contribution to the receiver's spectrum; taken at the instant of
+the peak, the contributions add up exactly to the peak. A segment that adds to the peak is
+red, one that takes from it blue.</p>
 
 <h2 id="solvers">Linear solvers and PARDISO</h2>
 <p>Every analysis ends in a large sparse system of equations, one unknown per mesh node. DC

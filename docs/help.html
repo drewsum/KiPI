@@ -1714,7 +1714,9 @@ between the pads you name, as wide as the copper along it, and computes its indu
 partial inductances, with the plane under it taking image currents. With the switch node's
 capacitance to ground (the switch's Coss plus the switch-node copper's capacitance to the
 neighbouring planes) it sets the <b>ringing</b> on every edge, at
-f = 1 / (2π√(L·C)).</p>
+f = 1 / (2π√(L·C)). The ringing's current flows round the hot loop too, so the input
+capacitors of a buck (the output capacitors of a boost) carry it, and it couples onto
+victims through their loops.</p>
 <p>The waveforms are exact Fourier series of piecewise-linear shapes (trapezoids and
 triangles) up to a highest frequency set by the edges and the ringing, so nothing is
 time-stepped and a solve takes well under a second.</p>
@@ -1764,12 +1766,16 @@ receiver guessed as the net's two pads farthest apart. For each victim:</p>
 <ul>
   <li><b>Net</b> and an optional <b>Name</b>.</li>
   <li><b>Type</b>: what drives and loads the net. CMOS push-pull, open drain (held only by its
-    pull-up), series or parallel terminated, a differential (LVDS) leg or a high-impedance
-    analog input. A type fills in the values below; editing them makes it Custom.</li>
+    pull-up), series or parallel terminated, a differential (LVDS) leg, a high-impedance
+    analog input, or <b>High impedance (undriven)</b>: a tri-stated or floating net, held by
+    nothing but its inputs' leakage. A type fills in the values below; editing them makes it
+    Custom.</li>
   <li><b>Driver pins</b> and <b>Receiver pins</b> (<a href="#pin-picker">pin pickers</a>):
     where the trace is driven and where its noise is judged. Blank guesses them.</li>
-  <li><b>Driver resistance</b>, <b>Receiver resistance</b>, <b>Receiver capacitance</b> and
-    <b>Termination</b> (a parallel termination at the receiver).</li>
+  <li><b>Driver resistance</b> (driving high, or an open drain's pull-up), <b>Driving
+    low</b> (where it differs: an open drain's switch, 20 Ω; blank is the same as driving
+    high), <b>Receiver resistance</b>, <b>Receiver capacitance</b> and <b>Termination</b> (a
+    parallel termination at the receiver).</li>
   <li><b>Logic level</b>: the family's supply; its JESD8 levels give the noise margin,
     min(VIL − VOL, VOH − VIH), 400 mV for 3.3 V CMOS. <b>Noise margin</b> overrides it.</li>
 </ul>
@@ -1809,9 +1815,11 @@ and the results say so.</p>
     response in between is interpolated (default 10).</li>
   <li><b>Scan radius</b>: the scan looks at signal nets with a trace this close to the
     aggressor's parts (default 10 mm). <b>Scan: solve in full</b>: how many of the worst
-    estimates are solved in full (default 10). <b>Scan: driver resistance</b> and
-    <b>logic level</b>: what scanned nets are solved and judged with, as their real
-    drivers are not known.</li>
+    estimates are solved in full (default 10). <b>Scan: victim type</b> and <b>logic
+    level</b>: what scanned nets are solved as and judged with, as their real drivers are
+    not known. The default type, <b>High impedance (undriven)</b>, is the worst case for
+    capacitive coupling. A net that is a victim already keeps its own type. <b>Custom
+    driver</b> uses <b>Scan: driver resistance</b> instead.</li>
 </ul>
 </div>
 </details>
@@ -1827,8 +1835,8 @@ while you work on one route), or none (the aggressor's waveforms only).</p>
 <p>Tick <b>Scan nearby nets</b> to also look for victims you have not named: every signal net
 with a trace within the scan radius of the aggressor's parts gets a quick estimate of its
 noise (capacitive from its distance to the switch-node copper, inductive from the full
-model), and the worst are solved in full with the scan's default driver and logic level
-(Settings). They are marked <b>(scan)</b> in the results table. Scan and a chosen victim
+model), and the worst are solved in full as the scan's victim type, undriven by
+default, and its logic level (Settings). They are marked <b>(scan)</b> in the results table. Scan and a chosen victim
 work together: name the nets you know, scan for the ones you do not.</p>
 <p>Tick <b>Report</b> to write <code>&lt;board&gt;_&lt;aggressor&gt;_noise_report_&lt;date&gt;_&lt;time&gt;.html</code>
 (or <code>.pdf</code>) next to the board after each solve: the victims against their
@@ -1853,10 +1861,25 @@ resistance, and the ringing's frequency and damping.</p>
 <p>The <b>results table</b> lists each victim: its receiver's peak noise over a switching
 period, its noise margin, the share of the margin used, the coupling mechanism that
 dominates, and <b>PASS</b> or <b>FAIL</b>. The worst victim is selected; select one to plot
-its noise under <b>Victim noise</b> in the Waveforms tab: the receiver's total, each
-mechanism's share of it and the driver's, against its margin (in time, or as a
-spectrum). The log gives each victim's mutual capacitance to the switch node, the length
-of trace beside it, and its mutual inductance to the capacitor loops.</p>
+its noise under <b>Victim noise</b> in the Waveforms tab, against its margin (in time, or as
+a spectrum). By default the plot shows the <b>Superposition</b>, the receiver's noise from
+every mechanism added up, and the <b>Driver end</b>; tick <b>Capacitive</b>,
+<b>Inductive</b> or <b>Common ground</b> to add that mechanism's own curve. The log gives
+each victim's mutual capacitance to the switch node, the length of trace beside it, and
+its mutual inductance to the capacitor loops.</p>
+<p><b>Victim held high and low</b> plots the receiver's line as it sits: at VOH with VIH
+below it, and at VOL with VIL above it, with the noise on each. Each plot's title gives how
+far the noise reaches toward that threshold and the share of that state's margin it uses.
+A victim whose driver holds the line differently each way (an open drain: the pull-up
+high, the switch low) is solved once per state. The verdict takes the larger noise of the
+two against the smaller margin.</p>
+<p><b>Coupling in 3D</b>, under the results table, shows in the 3D view where the selected
+victim's peak noise couples in: <b>Superposition</b>, or one mechanism. Each piece of its
+traces is colored by its share of the receiver's peak, red adding to it and blue taking
+from it; the shares add up exactly to the peak, so the brightest pieces are the ones to
+move. The common-ground share is a dot at the driver, and the capacitor loops that induce
+the inductive noise are drawn in magenta. The line under the menu gives each mechanism's
+share. Choose <b>Off</b> to go back to the board.</p>
 <p>The mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
 node's dV/dt: keep victims away from the switch node's copper (or behind a plane), and
 drive them harder. <b>Inductive</b> noise comes from the hot loop's dI/dt: make the loop
