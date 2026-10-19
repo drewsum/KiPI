@@ -417,6 +417,38 @@ class _Editor(QWidget):
         self._save(self.obj)
         self.changed.emit()
 
+    def _legend(self, unused: bool = False):
+        """A line over the fields saying how their labels show what a solve needs (#136);
+        ``unused``: some fields are only another analysis's."""
+        text = NEED_LEGEND + (NEED_LEGEND_UNUSED if unused else "")
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet("color: #999;")
+        self.form.insertRow(0, lbl)
+        self.lbl_legend = lbl
+
+    def _mark(self, needs: Dict[QWidget, str]):
+        mark_needs(self.form, needs)
+
+
+# What a solve needs from a field, shown on its label (#136): bold if the solve cannot run
+# without it, gray if it is optional (blank, or a default that can be left), gray italic if
+# only the other analysis uses it (it stays editable).
+REQUIRED, OPTIONAL, UNUSED = "required", "optional", "unused"
+NEED_STYLES = {REQUIRED: "font-weight: bold;", OPTIONAL: "color: #8c8c8c;",
+               UNUSED: "color: #6f6f6f; font-style: italic;"}
+NEED_LEGEND = "Bold fields are needed to solve; gray ones are optional."
+NEED_LEGEND_UNUSED = " Gray italic ones are used by the other analysis only."
+
+
+def mark_needs(form: QFormLayout, needs: Dict[QWidget, str]):
+    """Style the labels of ``form``'s rows by what a solve needs from each field."""
+    for w, need in needs.items():
+        label = form.labelForField(w)
+        if label is not None:
+            label.setStyleSheet(NEED_STYLES[need])
+            label.setProperty("kipi_need", need)
+
 
 def _gray(widgets, on: bool, why: str, editable: bool = False):
     """Enable ``widgets`` or gray them out, saying why in their tooltip. ``editable``: they
@@ -585,6 +617,8 @@ class VrmEditor(_Editor):
         self.cmb_phase.currentIndexChanged.connect(self._phase_selected)
         self.output.cmb_net.currentIndexChanged.connect(
             lambda _i: self._guess_voltage(self.output.net()))
+        self._legend(unused=True)
+        self._kind_rows()
 
     def _kind_rows(self, *_):
         kind = self.kind.currentData()
@@ -595,12 +629,21 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.vin_row, kind != "source")
         self.form.setRowVisible(self.acc_row, kind != "source")
         dc = self.mode == "dc"
-        _gray((self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
-               self.input,
-               self.sense, self.ground_sense, self.dropout, *self.vin_row.fields()),
+        dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
+                   self.input, self.sense, self.ground_sense, self.dropout)
+        ac_only = (self.bandwidth, self.acc_row)
+        _gray((*dc_only, *self.vin_row.fields()),
               dc, "Used by the DC analysis only", editable=True)
         _gray((self.bandwidth, *self.acc_row.fields()), not dc, "Used by the AC analysis only",
               editable=True)
+        needs = {w: OPTIONAL for w in (self.iq, self.i_limit, self.load_line, self.dropout,
+                                       self.vin_row, self.n_phases, self.ground, self.sense,
+                                       self.ground_sense, *ac_only)}
+        needs.update({w: REQUIRED for w in (self.name, self.kind, self.voltage, self.output)})
+        needs[self.eff] = REQUIRED              # a switcher's input current follows from it
+        needs[self.input] = REQUIRED if kind != "source" else OPTIONAL   # ties it into the tree
+        needs.update({w: UNUSED for w in (ac_only if dc else (*dc_only, self.vin_row))})
+        self._mark(needs)
 
     def _input_nominal(self) -> Optional[float]:
         inp = self.input.value()
@@ -815,9 +858,13 @@ class LoadEditor(_Editor):
         self.tol.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
+        self._legend()
+        self._mode_rows()
 
     def _mode_rows(self, *_):
         grouped = self.mode.currentData() == "groups"
+        self._mark({self.name: REQUIRED, self.supply: REQUIRED, self.mode: REQUIRED,
+                    self.current: REQUIRED, self.ground: OPTIONAL, self.tol: OPTIONAL})
         self.form.setRowVisible(self.current, not grouped)
         self.form.setRowVisible(self.groups, grouped)
         self.form.setRowVisible(self.lbl_total, grouped)
@@ -974,6 +1021,9 @@ class LinkEditor(_Editor):
         f.addRow(hint)
         self._watch(self.name, self.r, self.esl)
         _gray((self.esl,), mode == "ac", "Used by the AC analysis only")
+        self._legend(unused=mode == "dc")
+        self._mark({self.name: REQUIRED, self.a: REQUIRED, self.b: REQUIRED, self.r: REQUIRED,
+                    self.esl: OPTIONAL if mode == "ac" else UNUSED})
 
     def _load(self, k: DcLink):
         self.name.setText(k.name)

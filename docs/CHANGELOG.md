@@ -54,6 +54,12 @@ milestones rather than versions that were ever set.
   in magenta. The shares come from one extra solve per frequency (reciprocity), so they add
   up exactly to the peak. The line under the menu says how much of the peak each mechanism
   gives.
+- **The setup editors show which fields a solve needs** (#136). In the VRM, load, series
+  link, capacitor model and probe editors, a field's label is bold if a solve cannot run
+  without it, and gray if it is optional. Fields that only the other analysis uses (DC or
+  AC) are gray italic, and they stay editable. A line at the top of each editor says what
+  the styles mean. A VRM's input pins turn bold when it is an LDO or switcher, since they
+  tie it into the power tree.
 
 ## 0.9.0
 

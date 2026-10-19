@@ -30,8 +30,8 @@ from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel, Probe
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import (
-    ItemList, LinkEditor, PartSelection, PIPanel, VrmEditor, _Editor, _spin, _unique,
-    make_searchable, new_link, new_vrm, parts_on_net, tip,
+    OPTIONAL, REQUIRED, ItemList, LinkEditor, PartSelection, PIPanel, VrmEditor, _Editor,
+    _spin, _unique, make_searchable, new_link, new_vrm, parts_on_net, tip,
 )
 from kipi.dc.pi.autofill import guess_ground_pins, part_nets
 from kipi.dc.pi.load_model import apply_to_probe, new_items
@@ -98,6 +98,10 @@ class CapEditor(_Editor):
         self.mfg_tol = _spin(0, 100, 0, 1, " %", 1)
         self.mfg_tol.setSpecialValueText("not set")
         f.addRow("Manufacturing tolerance", self.mfg_tol)
+        self._legend()
+        self._mark({self.name: REQUIRED, self.cap: REQUIRED, self.esl: REQUIRED,
+                    self.esr: REQUIRED, self.rated: OPTIONAL, self.kept: OPTIONAL,
+                    self.dielectric: OPTIONAL, self.aging: OPTIONAL, self.mfg_tol: OPTIONAL})
         # Drawings under the tooltips (#116): the series model and its impedance curve with
         # the field's element picked out, the DC bias curve and aging.
         art = {self.cap: ("cap_model", "c"), self.esl: ("cap_model", "l"),
@@ -411,6 +415,10 @@ class ProbeEditor(_Editor):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
+        self._legend()
+        self._mark({self.name: REQUIRED, self.rail: REQUIRED, self.ground: REQUIRED,
+                    self.target_kind: OPTIONAL, self.target: OPTIONAL,
+                    self.target_f: OPTIONAL})
         # Drawings under the tooltips (#116): the flat and custom targets on the |Z| plot.
         art = {self.target_kind: ("target_types", "flat", "custom"),
                self.target: ("target_types", "flat"), self.target_f: ("target_types", "tf")}
