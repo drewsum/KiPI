@@ -50,7 +50,8 @@ def write_touchstone(path, result, probe) -> Path:
         raise ValueError(f"No impedance curve for probe {probe}")
     with path.open("w", encoding="ascii", newline="\n") as fh:
         fh.write(f"! KiPI AC impedance, rail {result.rail}, probe {probe}\n")
-        fh.write("# Hz Z RI R 50\n")
+        # Touchstone 1 normalizes Z to the reference resistance: R 1 keeps it in ohms.
+        fh.write("# Hz Z RI R 1\n")
         for freq, z in zip(result.freqs, curve.z):
             fh.write(f"{freq:.12g} {z.real:.12g} {z.imag:.12g}\n")
     return path

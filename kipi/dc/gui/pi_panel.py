@@ -1203,8 +1203,6 @@ class LinkEditor(_Editor):
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
         self._watch(self.name, self.r, self.diode_vf, self.esl)
-        self.diode_vf.valueChanged.connect(lambda value: self.diode_vf.setEnabled(value > 0))
-        self.diode_vf.setEnabled(False)
         _gray((self.esl, self.btn_esl_package, self.btn_esl_bead), mode == "ac",
               "Used by the AC analysis only")
         self._legend(unused=mode == "dc")
@@ -1249,7 +1247,6 @@ class LinkEditor(_Editor):
         self.b.set_value(k.side_b)
         self.r.setValue(k.resistance * 1e3)
         self.diode_vf.setValue(k.diode_vf)
-        self.diode_vf.setEnabled(k.diode_vf > 0)
         self.esl.setValue((k.esl_h or 0.0) * 1e9)
 
     def _save(self, k: DcLink):

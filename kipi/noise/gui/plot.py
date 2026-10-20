@@ -191,7 +191,7 @@ class NoisePlot(QWidget):
         if key in ("cin", "cout"):
             caps = wf.input_caps if key == "cin" else wf.output_caps
             ranked = sorted(caps.items(), key=lambda kv: -kv[1].ac_rms())[:MAX_CAP_CURVES]
-            return [(f"{ref} ({kv.ac_rms():.3g} A rms)", kv) for ref, kv in ranked]
+            return [(ref, kv) for ref, kv in ranked]     # rms is labelled on the plot
         if key == "probes":
             return [(f"{n} (AC probe)", sp)
                     for n, sp in getattr(wf, "probe_ripple", {}).items()]
@@ -234,8 +234,8 @@ class NoisePlot(QWidget):
         normalized_victim = key == "victim" and self._victim() is not None
         if normalized_victim:
             from kipi.noise.waveforms import Spectrum
-            scale = max(self._victim().margin_v, 1e-15)
-            spectra = [(label, Spectrum(s.name, "% margin", s.mean / scale, s.c / scale))
+            scale = 100.0 / max(self._victim().margin_v, 1e-15)
+            spectra = [(label, Spectrum(s.name, "% margin", s.mean * scale, s.c * scale))
                        for label, s in spectra]
         states = key == "states" and not spectrum and len(spectra) > 1
         if states or key == "victim" or not spectra:     # the victim view has its own
@@ -297,17 +297,22 @@ class NoisePlot(QWidget):
             periods = max(1, int(self.periods))
             t = wf.time(periods)
             n = wf.samples_per_period()
-            for i, (label, s) in shown:
+            for row, (i, (label, s)) in enumerate(shown):
                 y = s.samples(n, periods)
-                ax.plot(t * 1e6, y, color=COLORS[i % len(COLORS)], lw=1.0, label=label)
+                color = COLORS[i % len(COLORS)]
+                ax.plot(t * 1e6, y, color=color, lw=1.0, label=label)
                 self._curves.append((label, t, y, unit, ax))
+                ax.text(.99, .98 - row * .08,
+                        f"{label}: {np.ptp(y):.4g} {unit} p-p, "
+                        f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} {unit} rms",
+                        transform=ax.transAxes, ha="right", va="top", fontsize=7, color=color)
             ax.set_xlim(0, t[-1] * 1e6)
             v = self._victim() if self.cmb_view.currentData() == "victim" else None
             # The margin lines are drawn where they fit; far above small noise they would
             # flatten it, so the axis then follows the noise.
             if normalized_victim:
-                ax.axhline(1.0, color="#ff6060", lw=1.0, ls="--", label="noise margin")
-                ax.axhline(-1.0, color="#ff6060", lw=1.0, ls="--")
+                ax.axhline(100.0, color="#ff6060", lw=1.0, ls="--", label="noise margin")
+                ax.axhline(-100.0, color="#ff6060", lw=1.0, ls="--")
             elif v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
                 for sign in (1, -1):
                     ax.axhline(sign * v.margin_v, color="#ff6060", lw=1.0, ls="--",
@@ -317,12 +322,6 @@ class NoisePlot(QWidget):
             ax.set_xlabel("Time (µs)")
             ax.set_ylabel(unit)
             ax.grid(True, color="#444", lw=0.5)
-            for i, (label, _, y, curve_unit, _) in enumerate(self._curves):
-                ax.text(.99, .98 - i * .08,
-                        f"{label}: {np.ptp(y):.4g} {curve_unit} p-p, "
-                        f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} "
-                        f"{curve_unit} rms", transform=ax.transAxes, ha="right",
-                        va="top", fontsize=7, color=COLORS[i % len(COLORS)])
         op = self.result.operating
         v = self._victim() if self.cmb_view.currentData() in ("victim", "states") else None
         if v is not None:

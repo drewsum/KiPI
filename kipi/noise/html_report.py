@@ -185,13 +185,13 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     parts.append("<h2 id='noise'>Victim noise</h2>")
     worst = sorted(result.victims, key=lambda v: -v.ratio)[:MAX_VICTIM_PLOTS]
     for v in worst:
-        scale = max(v.margin_v, 1e-15)
+        scale = 100.0 / max(v.margin_v, 1e-15)
         from kipi.noise.waveforms import Spectrum
-        curves = [(label, Spectrum(sp.name, "% margin", sp.mean / scale, sp.c / scale))
+        curves = [(label, Spectrum(sp.name, "% margin", sp.mean * scale, sp.c * scale))
                   for label, sp in ([(f"{v.receiver} total", v.receiver_v["total"])] +
                                     [(k, sp) for k, sp in v.receiver_v.items()
                                      if k != "total"])]
-        margin = 1.0 if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
+        margin = 100.0 if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
         parts.append(f"<h3>{_e(v.name)}</h3>")
         plot(curves, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of its "
                      "margin", "% margin", margin)
@@ -224,7 +224,6 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
         parts.insert(0, controls)
         parts.append("<script>(function(){const plots=[...document.querySelectorAll('.noise-plot')];"
                      "const update=()=>plots.forEach(p=>{"
-                     "p.querySelector('.plot-visible').checked;"
                      "p.style.display=p.querySelector('.plot-visible').checked?'':'none';"
                      "p.querySelector('img').src=document.getElementById('spec').checked?"
                      "(document.getElementById('bw').checked?p.dataset.spectrumLimited:"

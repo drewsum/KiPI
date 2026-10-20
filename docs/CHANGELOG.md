@@ -6,16 +6,6 @@ milestones rather than versions that were ever set.
 
 ## 0.9.2 (in development)
 
-### Fixed
-- **Subtract VRM DC accuracy with a VRM targeted away from nominal** (#172). The button
-  now takes the larger side of the VRM's accuracy about its target voltage, the amount its
-  label shows, and **Subtract DC drop at the load** measures the solved voltage against
-  the load's nominal (or the VRM's nominal output) instead of the VRM's target. A VRM
-  targeted above nominal to make up for the copper drop no longer has that offset taken
-  off the AC tolerance twice.
-
-## 0.9.1
-
 ### Added
 - **AC fitted-pole and Touchstone export** (#86). Export a probe's impedance curve as a
   fitted HyperLynx PLS one-port model or as sampled Touchstone Z1P data. Probes export
@@ -31,6 +21,25 @@ milestones rather than versions that were ever set.
   its anode, alongside its nonzero series resistance. DC solves include the drop and its
   dissipation; AC solves use the resistance and ESL as the small-signal series model.
   Reverse blocking is not modeled.
+- **Nominal output voltage per VRM.** A VRM's nominal output can differ from the target
+  voltage it regulates to, e.g. a rail targeted high to make up for its copper drop. Loads
+  without their own nominal judge their tolerance against it; blank uses the target.
+- **Show all copper in the geometry view.** Every net's copper is drawn for context; the
+  new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
+
+### Fixed
+- **Subtract VRM DC accuracy with a VRM targeted away from nominal** (#172). The button
+  now takes the larger side of the VRM's accuracy about its target voltage, the amount its
+  label shows, and **Subtract DC drop at the load** measures the solved voltage against
+  the load's nominal (or the VRM's nominal output) instead of the VRM's target. A VRM
+  targeted above nominal to make up for the copper drop no longer has that offset taken
+  off the AC tolerance twice.
+- **Noise waveform legends.** A capacitor's rms current is no longer in its legend entry;
+  each curve's peak-to-peak and rms are labelled on the plot instead.
+
+## 0.9.1
+
+### Added
 - **Harmonics drawn as stems.** Coupled Noise's spectrum view draws each harmonic as a
   line up from the axis with a dot at its amplitude, as a spectrum analyser does, instead
   of joining the harmonics into a jagged curve: a periodic waveform has nothing between
