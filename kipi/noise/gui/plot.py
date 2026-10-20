@@ -231,6 +231,12 @@ class NoisePlot(QWidget):
         self.victim_row.setVisible(key == "victim")
         spectra = self._spectra() if self.result is not None else []
         spectra = [(label, self._limited(s)) for label, s in spectra]
+        normalized_victim = key == "victim" and self._victim() is not None
+        if normalized_victim:
+            from kipi.noise.waveforms import Spectrum
+            scale = max(self._victim().margin_v, 1e-15)
+            spectra = [(label, Spectrum(s.name, "% margin", s.mean / scale, s.c / scale))
+                       for label, s in spectra]
         states = key == "states" and not spectrum and len(spectra) > 1
         if states or key == "victim" or not spectra:     # the victim view has its own
             self.curve_scroll.setVisible(False)
@@ -299,7 +305,10 @@ class NoisePlot(QWidget):
             v = self._victim() if self.cmb_view.currentData() == "victim" else None
             # The margin lines are drawn where they fit; far above small noise they would
             # flatten it, so the axis then follows the noise.
-            if v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
+            if normalized_victim:
+                ax.axhline(1.0, color="#ff6060", lw=1.0, ls="--", label="noise margin")
+                ax.axhline(-1.0, color="#ff6060", lw=1.0, ls="--")
+            elif v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
                 for sign in (1, -1):
                     ax.axhline(sign * v.margin_v, color="#ff6060", lw=1.0, ls="--",
                                label="noise margin" if sign > 0 else None)
@@ -308,6 +317,12 @@ class NoisePlot(QWidget):
             ax.set_xlabel("Time (µs)")
             ax.set_ylabel(unit)
             ax.grid(True, color="#444", lw=0.5)
+            for i, (label, _, y, curve_unit, _) in enumerate(self._curves):
+                ax.text(.99, .98 - i * .08,
+                        f"{label}: {np.ptp(y):.4g} {curve_unit} p-p, "
+                        f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} "
+                        f"{curve_unit} rms", transform=ax.transAxes, ha="right",
+                        va="top", fontsize=7, color=COLORS[i % len(COLORS)])
         op = self.result.operating
         v = self._victim() if self.cmb_view.currentData() in ("victim", "states") else None
         if v is not None:

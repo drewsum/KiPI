@@ -36,20 +36,36 @@ def _figure():
     return fig, fig.add_subplot(111)
 
 
-def _time_png(curves, wf, title: str, unit: str, margin: Optional[float] = None) -> str:
+def _time_png(curves, wf, title: str, unit: str, margin: Optional[float] = None,
+              spectrum: bool = False) -> str:
     fig, ax = _figure()
     periods = 2
     t = wf.time(periods) * 1e6
     n = wf.samples_per_period()
     for i, (label, sp) in enumerate(curves):
-        ax.plot(t, sp.samples(n, periods), lw=0.9, color=COLORS[i % len(COLORS)],
-                label=label)
+        if spectrum:
+            amp = sp.amplitude()
+            ax.loglog(wf.freqs(), amp, marker="o", ms=2.5, lw=0.8,
+                      color=COLORS[i % len(COLORS)], label=label)
+        else:
+            y = sp.samples(n, periods)
+            ax.plot(t, y, lw=0.9, color=COLORS[i % len(COLORS)], label=label)
+            ax.text(.99, .98 - i * .11,
+                    f"{label}: {np.ptp(y):.4g} {unit} p-p, "
+                    f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} {unit} rms",
+                    transform=ax.transAxes, ha="right", va="top", fontsize=7,
+                    color=COLORS[i % len(COLORS)])
     if margin is not None:
         for sign in (1, -1):
             ax.axhline(sign * margin, color="#d62728", lw=0.8, ls="--",
                        label="noise margin" if sign > 0 else None)
-    ax.set_xlabel("Time (µs)")
-    ax.set_ylabel(unit)
+    ax.set_xlabel("Frequency (Hz)" if spectrum else "Time (µs)")
+    if spectrum:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_ylabel(f"Amplitude ({unit} peak)")
+    else:
+        ax.set_ylabel(unit)
     ax.set_title(title, fontsize=10)
     ax.grid(True, lw=0.4, color="#ccc")
     if curves:
@@ -127,8 +143,25 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
         progress.info("Report: waveforms")
     parts.append("<h2 id='waveforms'>Waveforms</h2>")
 
+    plot_id = 0
     def plot(curves, title, unit, margin=None):
-        parts.append(_img(pdf, _time_png(curves, wf, title, unit, margin)))
+        nonlocal plot_id
+        plot_id += 1
+        full = _time_png(curves, wf, title, unit, margin)
+        if pdf:
+            parts.append(_img(pdf, full))
+            return
+        from kipi.noise.waveforms import bandwidth_limited
+        limited = _time_png([(label, bandwidth_limited(s, wf.fsw_hz))
+                             for label, s in curves], wf, title, unit, margin)
+        spectrum = _time_png(curves, wf, title, unit, spectrum=True)
+        spectrum_limited = _time_png([(label, bandwidth_limited(s, wf.fsw_hz))
+                                      for label, s in curves], wf, title, unit, spectrum=True)
+        attrs = (f"data-full='{full}' data-limited='{limited}' data-spectrum='{spectrum}' "
+                 f"data-spectrum-limited='{spectrum_limited}'")
+        parts.append(f"<div class='noise-plot' data-plot='{plot_id}' {attrs}><h3>{_e(title)} "
+                     f"<label><input type='checkbox' class='plot-visible' checked> show</label></h3>"
+                     f"<img src='{full}' style='max-width:100%'></div>")
 
     plot([(p.switch_node.name, p.switch_node) for p in wf.phases], "Switch node", "V")
     plot([(p.inductor.name, p.inductor) for p in wf.phases], "Inductor currents", "A")
@@ -152,12 +185,16 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     parts.append("<h2 id='noise'>Victim noise</h2>")
     worst = sorted(result.victims, key=lambda v: -v.ratio)[:MAX_VICTIM_PLOTS]
     for v in worst:
-        curves = [(f"{v.receiver} total", v.receiver_v["total"])] + \
-            [(k, sp) for k, sp in v.receiver_v.items() if k != "total"]
-        margin = v.margin_v if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
+        scale = max(v.margin_v, 1e-15)
+        from kipi.noise.waveforms import Spectrum
+        curves = [(label, Spectrum(sp.name, "% margin", sp.mean / scale, sp.c / scale))
+                  for label, sp in ([(f"{v.receiver} total", v.receiver_v["total"])] +
+                                    [(k, sp) for k, sp in v.receiver_v.items()
+                                     if k != "total"])]
+        margin = 1.0 if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
         parts.append(f"<h3>{_e(v.name)}</h3>")
         plot(curves, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of its "
-                     "margin", "V", margin)
+                     "margin", "% margin", margin)
     if len(result.victims) > len(worst):
         parts.append(f"<p class='note'>The {len(worst)} victims nearest their margin are "
                      "plotted.</p>")
@@ -180,4 +217,20 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     parts.append("<ul>" + "".join(f"<li>{_e(w)}</li>" for w in warnings) + "</ul>"
                  if warnings else "<p>None.</p>")
     parts.append(notes_section(pdf))
+    if not pdf:
+        controls = ("<fieldset class='noise-controls'><legend>Waveform plots</legend>"
+                    "<label><input type='checkbox' id='bw'> 20 MHz limit</label> "
+                    "<label><input type='checkbox' id='spec'> Spectrum</label></fieldset>")
+        parts.insert(0, controls)
+        parts.append("<script>(function(){const plots=[...document.querySelectorAll('.noise-plot')];"
+                     "const update=()=>plots.forEach(p=>{"
+                     "p.querySelector('.plot-visible').checked;"
+                     "p.style.display=p.querySelector('.plot-visible').checked?'':'none';"
+                     "p.querySelector('img').src=document.getElementById('spec').checked?"
+                     "(document.getElementById('bw').checked?p.dataset.spectrumLimited:"
+                     "p.dataset.spectrum):(document.getElementById('bw').checked?"
+                     "p.dataset.limited:p.dataset.full)});"
+                     "document.getElementById('bw').onchange=update;"
+                     "document.getElementById('spec').onchange=update;"
+                     "plots.forEach(p=>p.querySelector('.plot-visible').onchange=update);})();</script>")
     return finish(path, f"KiPI Coupled Noise report: {result.aggressor}", parts, CSS, pdf)

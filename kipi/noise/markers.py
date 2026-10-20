@@ -21,7 +21,20 @@ def noise_markers(snap: Optional[BoardSnapshot], setup,
     if snap is None or setup is None:
         return []
     from kipi.noise.victims import ends
-    out = [m for m in ac_markers(snap, setup, nets) if m.kind != "probe"]
+    # In noise mode, generic regulator points obscure the specific switching devices
+    # and hot-loop parts that make the selected aggressor. Keep links/caps, omit VRMs.
+    out = [m for m in ac_markers(snap, setup, nets) if m.kind not in ("probe", "vrm")]
+    agg = next((a for a in setup.noise.aggressors
+                if a.name == setup.noise.aggressor), None)
+    if agg is not None:
+        phase_parts = []
+        for i, phase in enumerate(agg.phases, 1):
+            pins = [p for p in (phase.high_side, phase.low_side) if p is not None]
+            phase_parts.append(("aggressor", agg.name,
+                                f"{agg.name} phase {i}", pins, []))
+        out += markers_from(snap, setup, {p.net for part in agg.phases
+                                         for p in (part.high_side, part.low_side)
+                                         if p is not None}, phase_parts)
     parts = []
     for v in setup.victims:
         driver, receiver, _ = ends(snap, v)
