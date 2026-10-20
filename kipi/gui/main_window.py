@@ -1226,7 +1226,7 @@ class MainWindow(QMainWindow):
             self.viewer.render()
             self.log(f"Added {len(added)} net(s); {len(self.viewer.nets())} net(s) shown")
 
-        task = self._run(work, done, "Building view", on_partial=on_net)
+        self._run(work, done, "Building view", on_partial=on_net)
 
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):
