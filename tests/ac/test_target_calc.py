@@ -222,16 +222,16 @@ def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
 
 
 def test_a_vrm_targeted_above_nominal_is_counted_once(app, monkeypatch):
-    """#172: a VRM targeted 30 mV above its 1 V nominal to make up for 30 mV of copper drop.
-    Its +/-1 % accuracy is taken about the target, and the drop against the nominal: the
-    offset and the drop cancel, rather than both coming off the tolerance."""
+    """#172: a VRM targeting 1 V that regulates to a 1.03 V nominal to make up for 30 mV of
+    copper drop. Its +/-1 % accuracy is taken about what it regulates to, and the drop
+    against the 1 V target: the offset and the drop cancel, rather than both coming off."""
     from kipi.ac.gui.target_calc import TargetCalculator
     from kipi.ac.target import probe_loads, vrm_accuracies
     from kipi.dc.pi.model import PinRef
     monkeypatch.setattr(TargetCalculator, "last", (100.0, 0.0, 0.0))
     s, rail = _setup(), PinRef("U2", "+1V0")
     vr1 = s.vrms[0]
-    vr1.kind, vr1.voltage, vr1.nominal_v = "smps", 1.03, 1.0
+    vr1.kind, vr1.voltage, vr1.nominal_v = "smps", 1.0, 1.03
     vr1.acc_min, vr1.acc_max = -1.0, 1.0
     tree = _tree(("FPGA core", 1.03, 1.0))
     tree.loads[0].load_nominal = 1.0

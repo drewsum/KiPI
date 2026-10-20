@@ -63,9 +63,9 @@ def input_voltage(setup: PISetup, agg: Aggressor, vrm: Vrm) -> Tuple[Optional[fl
     lo, hi = vin_range(setup, vrm)
     if lo and hi:
         return 0.5 * (lo + hi), f"middle of {vrm.name}'s input range"
-    nom = rail_nominal(setup, vrm.input.net if vrm.input else None, vrm.name)
+    nom = rail_nominal(setup, vrm.input.net if vrm.input else None, vrm.name, regulated=True)
     if nom:
-        return nom, f"target voltage of the VRM feeding {vrm.input.net}"
+        return nom, f"regulated voltage of the VRM feeding {vrm.input.net}"
     return (lo or hi), (f"{vrm.name}'s input range" if (lo or hi) else "")
 
 
@@ -94,7 +94,7 @@ def _mean(xs, default):
 
 def operating_point(setup: PISetup, agg: Aggressor) -> OperatingPoint:
     vrm = find_vrm(setup, agg)
-    vout = float(vrm.voltage)
+    vout = float(vrm.regulated_v())
     vin, vin_from = input_voltage(setup, agg, vrm)
     if not vin or vin <= 0 or vout <= 0:
         raise NoiseError(f"Aggressor {agg.name}: its input voltage is unknown; enter it, "

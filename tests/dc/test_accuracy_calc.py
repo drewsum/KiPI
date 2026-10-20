@@ -72,9 +72,11 @@ def test_calculator_updates_vrm_nominal_and_absolute_limits(app, monkeypatch):
         return QDialog.Accepted
 
     monkeypatch.setattr(accuracy_calc.DcAccuracyCalculator, "exec", run)
-    editor.btn_accuracy_calc.click()
     vrm = setup.vrms[1]
-    assert vrm.voltage == pytest.approx(8.801)
+    target = vrm.voltage
+    editor.btn_accuracy_calc.click()
+    # The divider's nominal is what it regulates to; the target loads need is left alone.
+    assert vrm.nominal_v == pytest.approx(8.801) and vrm.voltage == target
     assert (vrm.acc_min, vrm.acc_max, vrm.acc_pct, vrm.acc_dv) == (
         pytest.approx(8.5452683), pytest.approx(9.0613323), False, False)
     assert editor.form.isRowVisible(editor.btn_accuracy_calc)

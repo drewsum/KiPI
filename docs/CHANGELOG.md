@@ -16,25 +16,27 @@ milestones rather than versions that were ever set.
 - **DC Accuracy Calculator** (#168). An LDO or switcher's VRM editor can calculate its
   nominal, minimum and maximum output from feedback reference limits, divider resistor
   values and tolerances, and its feedback pin leakage: a signed nominal, and a maximum
-  that may flow either way. The result fills the VRM's target voltage and absolute output
-  accuracy limits.
+  that may flow either way. The result fills the VRM's nominal output (what it
+  regulates to) and absolute output accuracy limits.
 - **Diode series links** (#161). Enter the diode's constant forward drop with side A as
   its anode, alongside its nonzero series resistance. DC solves include the drop and its
   dissipation; AC solves use the resistance and ESL as the small-signal series model.
   Reverse blocking is not modeled.
-- **Nominal output voltage per VRM.** A VRM's nominal output can differ from the target
-  voltage it regulates to, e.g. a rail targeted high to make up for its copper drop. Loads
-  without their own nominal judge their tolerance against it; blank uses the target.
+- **Nominal output voltage per VRM.** A VRM can regulate to a nominal output that differs
+  from the rail's target voltage, e.g. a feedback divider's nominal, or a rail set high to
+  make up for its copper drop. The DC solve regulates to the nominal, and drops are
+  measured from it; loads without their own nominal are still judged against the target.
+  Blank regulates to the target.
 - **Show all copper in the geometry view.** Every net's copper is drawn for context; the
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
-- **Subtract VRM DC accuracy with a VRM targeted away from nominal** (#172). The button
-  now takes the larger side of the VRM's accuracy about its target voltage, the amount its
-  label shows, and **Subtract DC drop at the load** measures the solved voltage against
-  the load's nominal (or the VRM's nominal output) instead of the VRM's target. A VRM
-  targeted above nominal to make up for the copper drop no longer has that offset taken
-  off the AC tolerance twice.
+- **Subtract VRM DC accuracy with a VRM regulating away from its target** (#172). The
+  button now takes the larger side of the VRM's accuracy about the voltage it regulates
+  to, the amount its label shows, and **Subtract DC drop at the load** measures the solved
+  voltage against the load's nominal (or the VRM's target voltage). A VRM regulating above
+  its target to make up for the copper drop no longer has that offset taken off the AC
+  tolerance twice.
 - **Noise waveform legends.** A capacitor's rms current is no longer in its legend entry;
   each curve's peak-to-peak and rms are labelled on the plot instead.
 

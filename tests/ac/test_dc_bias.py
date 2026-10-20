@@ -86,7 +86,7 @@ def test_without_a_dc_solve_the_vrm_set_point_is_used(board):
     setup = _setup(board)
     r = solve_ac(board, setup, "VRM1", "GND")
     assert r.cap_bias["C1"] == (3.3, pytest.approx(setup.caps[0].capacitance_at(3.3)))
-    assert "target voltage" in r.bias_note and "VRM1" in r.bias_note and "aged" not in r.bias_note
+    assert "regulated voltage" in r.bias_note and "VRM1" in r.bias_note and "aged" not in r.bias_note
     assert setup.caps[0].capacitance_f == 10e-6           # the setup's model is untouched
     setup.ac.dc_bias = False
     off = solve_ac(board, setup, "VRM1", "GND")

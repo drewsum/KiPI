@@ -20,9 +20,10 @@ The calculator's AC tolerance and load step can be copied from the DC load on th
 pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from that load's nominal
 voltage (or the VRM target voltage when unset), and its current. Two things that eat into that
 tolerance before any load step can be taken off it: the larger side of the VRM's DC
-accuracy about its target voltage (:func:`vrm_accuracies`), and how far the load's solved
-DC voltage sits from its nominal (:func:`load_drop`), which needs a DC solve. A VRM
-targeted above nominal to make up for the copper drop shows up once, in the second (#172).
+accuracy about the voltage it regulates to (:func:`vrm_accuracies`), and how far the load's
+solved DC voltage sits from its nominal (:func:`load_drop`), which needs a DC solve. A VRM
+regulating above its target to make up for the copper drop shows up once, in the second
+(#172).
 
 An LDO's or switcher's input pins load the rail feeding it just as a DC load does
 (#117): each phase's input counts as a load whose tolerance is the regulator's input
@@ -174,8 +175,8 @@ def _tighter_side(nominal: float, lo: Optional[float], hi: Optional[float]
 class VrmAccuracy:
     name: str             # the VRM's name
     accuracy: str         # as set: "±1 %", "1.19 to 1.21 V"
-    v: float              # its larger side, volts from the target voltage
-    nominal_v: Optional[float] = None  # VRM output nominal
+    v: float              # its larger side, volts from the voltage the VRM regulates to
+    nominal_v: Optional[float] = None  # the voltage it regulates to
     minimum_v: Optional[float] = None  # lowest regulated output in volts
     maximum_v: Optional[float] = None  # highest regulated output in volts
 
@@ -186,7 +187,7 @@ class VrmAccuracy:
 @dataclass
 class LoadDrop:
     name: str             # the DC load's name
-    nominal: float        # the load's nominal, or its VRM's nominal output
+    nominal: float        # the load's nominal, or its VRM's target voltage
     v_effective: float    # its solved effective voltage: supply pins minus ground pins
     v: float              # how far that sits from nominal, volts (never negative)
     kind: str             # "drop" (below nominal) or "boost" (above it)
@@ -216,8 +217,8 @@ def _same_pins(a: Optional["PinRef"], b: Optional["PinRef"]) -> bool:
 
 def load_drop(dc_result, name: str) -> Optional[LoadDrop]:
     """How far a DC load's solved effective voltage sits from its nominal (its own, or its
-    VRM's nominal output; not the VRM's target voltage, so a VRM targeted high to make up
-    for the copper drop leaves less of one, #172), out of the power-tree result
+    VRM's target voltage; not what the VRM regulates to, so a VRM regulating high to make
+    up for the copper drop leaves less of one, #172), out of the power-tree result
     ``dc_result``. None without a solve, or when
     that solve has no voltage for the load: it was not in the setup then, it has no copper
     path to its VRM (#88), or no VRM drives it."""
@@ -299,7 +300,7 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         group = net_groups(setup, [load.supply.net])[load.supply.net]
         vrm = next((v for v in setup.vrms if v.voltage
                     and any(ph.output.net in group for ph in v.all_phases())), None)
-        tol = (LoadTolerance.of(load, vrm.output_nominal_v())
+        tol = (LoadTolerance.of(load, vrm.voltage)
                if load.has_tolerance() and vrm else None)
         exact = _same_pins(load.supply, rail) and (load.ground is None
                                                    or _same_pins(load.ground, ground))
@@ -331,7 +332,7 @@ def vrm_accuracies(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[Vr
         if acc is None or (rail and not any(rail.net in groups[ph.output.net]
                                             for ph in v.all_phases())):
             continue
-        low, high = range_volts(v.voltage, v.acc_min, v.acc_max,
+        low, high = range_volts(v.regulated_v(), v.acc_min, v.acc_max,
                                 range_unit(v.acc_pct, v.acc_dv))
-        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc, v.output_nominal_v(), low, high))
+        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc, v.regulated_v(), low, high))
     return out

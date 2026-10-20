@@ -783,11 +783,11 @@ output current, efficiency or quiescent current) is applied as a load upstream. 
 <h4>Voltage reference</h4>
 <p>Voltages are measured against the source's ground (0 V). If ground pins are given, the
 ground return is solved too and a load's ground rises above 0 V. The figure to compare with
-the VRM's target voltage is the load's <b>effective voltage</b>: supply minus ground at the load.</p>
+the VRM's regulated voltage is the load's <b>effective voltage</b>: supply minus ground at the load.</p>
 <h4>Drop and boost</h4>
-<p>A <b>drop</b> is a pin below the VRM's target voltage. A <b>boost</b> is a pin above it, which
+<p>A <b>drop</b> is a pin below the VRM's regulated voltage. A <b>boost</b> is a pin above it, which
 happens with remote sense: the VRM raises its output to hold a sense point further down the
-copper, so pins nearer the VRM sit above the target voltage. A load is judged by its worst pin,
+copper, so pins nearer the VRM sit above the regulated voltage. A load is judged by its worst pin,
 whichever direction.</p>
 </div>
 </details>
@@ -878,20 +878,25 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Type</td><td class="wrap"><b>Source</b>: an ideal supply with no input (connector,
     bench supply, battery). <b>LDO</b>: I<sub>in</sub> = I<sub>out</sub> + I<sub>q</sub>.
     <b>Switcher</b>: P<sub>in</sub> = P<sub>out</sub> / efficiency.</td></tr>
-  <tr><td>Target voltage</td><td class="wrap">The voltage it holds at its output (or sense) pins.
-    Read from the net name when you pick the output net (see
-    <a href="#autofill">pre-filled fields</a>).</td></tr>
+  <tr><td>Target voltage</td><td class="wrap">The rail's target: loads without a nominal of
+    their own are judged against it. The VRM regulates to it at its output (or sense) pins
+    unless a nominal output voltage is set. Read from the net name when you pick the output
+    net (see <a href="#autofill">pre-filled fields</a>).</td></tr>
+  <tr><td>Nominal</td><td class="wrap">LDO and switcher only, optional, on the DC accuracy
+    row. What the VRM actually regulates to when that differs from the target, e.g. a
+    feedback divider's nominal output or a rail set high to make up for its copper drop.
+    Blank regulates to the target. The <b>DC Accuracy Calculator</b> fills it in.</td></tr>
   <tr><td>Efficiency</td><td class="wrap">Switcher only.</td></tr>
   <tr><td>Quiescent</td><td class="wrap">LDO and switcher: extra input current.</td></tr>
   <tr><td>Output current limit</td><td class="wrap">Optional. The VRM row shows PASS if its total
     output current (all phases) is at most this.</td></tr>
   <tr><td>Load line</td><td class="wrap">Optional, DC only (adaptive voltage positioning). The
-    VRM regulates to its target voltage less this resistance times its output current: what its
+    VRM regulates to its regulated voltage less this resistance times its output current: what its
     connected loads and the VRMs it feeds actually draw, so a
     <a href="#ts-no-path">disconnected</a> load adds no droop. Drops are still measured from
-    the target voltage, so the droop counts against each load's tolerance. The Notes tab, the
+    the regulated voltage, so the droop counts against each load's tolerance. The Notes tab, the
     HTML report and the VRM CSV show the droop and the voltage it regulates to
-    (<b>V target</b>). <b>none</b> holds the target voltage.</td></tr>
+    (<b>V target</b>). <b>none</b> holds the regulated voltage.</td></tr>
   <tr><td>Dropout</td><td class="wrap">LDO only: the least input-to-output difference at which it
     still regulates.</td></tr>
   <tr><td>Input range</td><td class="wrap">Optional input range, min and max on one row, in
@@ -906,7 +911,7 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     <a href="#ac-calc">target calculator</a>. The output's DC error (DC accuracy or DC
     tolerance) from the datasheet: the regulator's reference accuracy, the feedback resistor
     tolerances, leakage into the FB pin, and line and load regulation. Min and max
-    on one row, in <b>%</b> of the target voltage (e.g. -1 %, +1 %), in <b>±V</b> from it (e.g.
+    on one row, in <b>%</b> of the regulated voltage (e.g. -1 %, +1 %), in <b>±V</b> from it (e.g.
     -0.01 V, +0.01 V) or in <b>V</b>, the lowest and highest output voltage.</td></tr>
   <tr><td>Control loop bandwidth</td><td class="wrap">AC only. Also called the loop
     gain crossover, gain crossover or control loop crossover frequency; it depends on the
@@ -929,7 +934,7 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     (needs ground pins).</td></tr>
   <tr><td>Mesh sense</td><td class="wrap">Off by default. Any number of sense points (<b>Sense
     points</b>, edited one at a time with <b>Edit sense point</b>), each with its own sense
-    and optional ground sense pins. Every point's sense pins are held at the target voltage
+    and optional ground sense pins. Every point's sense pins are held at the regulated voltage
     (less the load line), above its own ground sense pins; the VRM's current enters there
     and its output pins only measure.</td></tr>
 </table>
@@ -1135,7 +1140,7 @@ it there.</p>
 <p>The report's <b>Pins</b> section, and <code>_pins.csv</code> in <b>Export ▾ Tables as
 CSV…</b>, list every pin each group was solved with. That covers VRM output, phase, input
 and sense pins, load supply and ground pins, and DC connection pins. Each row gives the pin's
-position, voltage, drop or boost from the VRM target voltage (0 V for a ground), and current.
+position, voltage, drop or boost from the VRM regulated voltage (0 V for a ground), and current.
 The current is what the pin draws from the copper, so it is negative where current is
 delivered into the copper, as at a VRM output. VRM output pin currents are solved, so they
 show how the current shares between the pins. A load's current is split equally across its
@@ -1239,10 +1244,10 @@ scale, a minimum of zero or below falls back to four decades below the maximum.<
 <div class="body">
 <ul>
   <li><b>Effective voltage</b> is what the load actually sees: its supply pins minus its ground
-    pins. Compare it with the target voltage, not the raw plane voltage.</li>
-  <li>A supply plane reading <em>above</em> its target voltage is normal with remote sense or when
+    pins. Compare it with the regulated voltage, not the raw plane voltage.</li>
+  <li>A supply plane reading <em>above</em> its regulated voltage is normal with remote sense or when
     ground return is solved; see <a href="#dc-concepts">drop and boost</a>.</li>
-  <li><b>Worst pin</b> is the one furthest from the target voltage; with many pins, one far pin can
+  <li><b>Worst pin</b> is the one furthest from the regulated voltage; with many pins, one far pin can
     fail a load whose average looks fine.</li>
   <li>The color scale covers the whole result; type a minimum and maximum under it to look
     closer.</li>
@@ -1346,7 +1351,7 @@ are required.</p>
   <tr><td>Voltage rating</td><td class="wrap">The part's rated DC voltage. Class II ceramics
     (X5R, X7R, X6S…) lose capacitance with DC voltage; with a rating, each part's capacitance
     is derated by the DC voltage across it: what the last DC solve found across its pads, or
-    else the rail's VRM target voltage. The Results notes and the HTML report give the voltages
+    else the rail's VRM regulated voltage. The Results notes and the HTML report give the voltages
     and the capacitance left. <b>Models from values</b> fills it in for values naming a class
     II dielectric. Leave it <b>not set</b> for polymer and electrolytic parts; a model with a
     C0G dielectric is never derated.</td></tr>
@@ -1458,16 +1463,16 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
   <li><b>Subtract DC drop at the load</b> takes the DC drop the copper causes at the
     selected load's own pins off the AC voltage tolerance, so what is left is the budget for
     the transient. It reads the last DC solve: its effective voltage there (supply pins minus
-    ground pins) against the load's nominal voltage (or, without one, the nominal output of
+    ground pins) against the load's nominal voltage (or, without one, the target voltage of
     the VRM driving it), so <b>solve the power tree on
     the DC tab first</b> &mdash; without a result for that load the button stays disabled and
     says so. A load above its nominal (a remote-sensed VRM raises pins near it) has its
     boost subtracted just the same, since it eats the same symmetric window. A VRM whose
-    target voltage sits above nominal to make up for the copper drop leaves less of a drop
+    nominal output sits above its target to make up for the copper drop leaves less of a drop
     here. Each click subtracts again.</li>
   <li><b>Subtract VRM DC accuracy</b> takes the DC accuracy of the LDO or switcher driving
     the probe's rail off the AC voltage tolerance: the larger side of it (20 mV for
-    -1 % / +2 % of 1 V), as the output may already sit that far from its target voltage. It
+    -1 % / +2 % of 1 V), as the output may already sit that far from its regulated voltage. It
     shows a menu when several VRMs drive the rail; each click subtracts again.</li>
   <li><b>Load step (ΔI)</b>: the size of the current step.</li>
   <li><b>Copy current from DC load</b> fills the load step from a DC load's current, a step
@@ -1729,7 +1734,7 @@ device's pins, and the ground difference between each victim's ends gives its sh
 ground coupling. It is the slow part of a solve (comparable to an AC solve of the rails);
 untick it in Settings for a quick look.</p>
 <p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
-Its input rail and target voltage give the input and output voltages, and from them the
+Its input rail and regulated voltage give the input and output voltages, and from them the
 topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
 current is the DC setup's loads on its output rail, unless you enter one.</p>
 <p>The <b>hot loop</b> is the path the switching current takes on every edge: in a buck,
@@ -2017,9 +2022,9 @@ imbalance.</p>
     load's supply pins).</li>
   <li>For differential sensing, also set <b>Ground sense pins</b> on the ground net (the VRM needs
     ground pins too).</li>
-  <li>Solve. The sense point sits exactly at the target voltage; pins nearer the VRM read
+  <li>Solve. The sense point sits exactly at the regulated voltage; pins nearer the VRM read
     <em>above</em> it (a boost). The tolerance check catches both directions.</li>
-  <li>To hold several points at the target voltage at once (mesh remote sense), tick <b>Mesh
+  <li>To hold several points at the regulated voltage at once (mesh remote sense), tick <b>Mesh
     sense</b>, set <b>Sense points</b> and pick each point's pins in turn with <b>Edit sense
     point</b>. Every point is then a fixed voltage, the VRM's current entering there.</li>
 </ol>

@@ -352,17 +352,18 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Field | Meaning |
 |---|---|
 | Type | **Source** (ideal supply), **LDO** (I_in = I_out + I_q) or **Switcher** (P_in = P_out / efficiency) |
-| Output pins, Target voltage | Where it drives, and to what voltage |
+| Output pins, Target voltage | Where it drives, and the rail's target voltage: what loads without their own nominal are judged against, and what the VRM regulates to unless Nominal is set |
+| Nominal | Optional (LDO and switcher, on the DC accuracy row): what the VRM actually regulates to when that differs from the target, e.g. its feedback divider's nominal. Blank regulates to the target. The DC Accuracy Calculator fills it in |
 | Input pins | LDO and switcher only. The pins it draws from, which ties this VRM to its upstream net and defines the power tree. |
 | Efficiency / Quiescent | Switcher efficiency, LDO quiescent current |
 | Output current limit | Optional: the VRM PASSes if its total output current (all phases) is at most this. Leave at **no limit** to skip the check. |
-| Load line | Optional, in mΩ: the VRM regulates to its target voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the target voltage, so the droop counts against load tolerances. |
+| Load line | Optional, in mΩ: the VRM regulates to its regulated voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the regulated voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
-| Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the target voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its target voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
-| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
+| Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the target voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its regulated voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
+| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the regulated voltage (Nominal, else Target), or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
 | Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
-| Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its target voltage relative to these pins instead of 0 V (needs ground pins) |
+| Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its regulated voltage relative to these pins instead of 0 V (needs ground pins) |
 | Phases | Parallel phases of a multi-phase regulator. **Edit phase** picks which phase the output, input and ground pins belong to. |
 
 KiPI automatically calculates the input current into the input pins on a VRM based on the efficiency, type, and output power (which is based on defined loads).
@@ -371,7 +372,7 @@ KiPI automatically calculates the input current into the input pins on a VRM bas
 give it its own output pins (e.g. its inductor), input pins and ground pins. A new phase
 takes the next parts in sequence (`L1` → `L2`, `Q1` → `Q2`), or on a board annotated by
 schematic sheet the same parts on the next sheet (`L101`, `Q101` → `L201`, `Q201`), or copies the previous one when
-there is no next part, so check its pins. All phases share the VRM's set
+there is no next part, so check its pins. All phases share the VRM's target
 voltage, type, efficiency and sense pins. Each phase carries an equal share of the output
 current and settles at whatever voltage its copper needs to deliver that share. The VRM
 regulates its sense pins or, without them, the average of its phase outputs. Each phase draws
@@ -394,7 +395,7 @@ To try it without a design of your own, open the example board in
   3.135 to 3.465 V). A load passes when every
   pin is within it, none below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point
-  further down the copper, so pins nearer the VRM sit above the target voltage. A load on a net
+  further down the copper, so pins nearer the VRM sit above the regulated voltage. A load on a net
   group whose solve did not converge shows **NOT CONVERGED** instead of a result.
 * Before solving, KiPI checks that every load pin reaches its VRM through copper or series
   links. Unconnected pins draw nothing: the load's current goes through its other pins, or,
@@ -563,8 +564,8 @@ In the **Results** pane, choose a **net group** and a **field** to show in 3D:
 * **Temperature** (with thermal on)
 
 Voltages are measured against the source's ground pins (0 V). When ground returns are
-solved, the ground under a load rises above 0 V, so a supply plane can read above its VRM's set
-point even though a remotely sensed rail is exactly on target. The Loads tab's effective
+solved, the ground under a load rises above 0 V, so a supply plane can read above its VRM's regulated
+voltage even though a remotely sensed rail is exactly on target. The Loads tab's effective
 voltage (supply minus ground at the load) is the figure to compare with the load's voltage requirements.
 
 The color scale covers the whole result, on every layer. To look closer, type a minimum and
@@ -627,7 +628,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   A ceramic model (X5R, X7R…) with a **Voltage rating** is derated by the DC voltage across
   each of its parts: enter the rating and how much capacitance it **Keeps at rating**
   (from the datasheet's DC bias curve; 40 % by default). The voltage is what the last DC
-  solve found across each part, or else the rail's VRM target voltage. **Models from values**
+  solve found across each part, or else the rail's VRM regulated voltage. **Models from values**
   reads the rating from values such as `10uF 6.3V X5R` for class II dielectrics.
   A model's **Dielectric** (X7R, X5R, Y5V…) fills in its typical **Aging** rate, in % of
   capacitance lost per decade of hours (enter the datasheet's rate if it gives one), and

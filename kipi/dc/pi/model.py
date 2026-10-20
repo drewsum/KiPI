@@ -120,15 +120,16 @@ class Vrm:
     # ground_sense above, points 2..N these.
     mesh_sense: bool = False
     sense_points: List[SensePoint] = field(default_factory=list)
-    # Optional nominal output voltage for the rail's requirements. When blank, the
-    # regulator target voltage is the nominal, as it was in setups saved before this field.
+    # Optional nominal output voltage: what the regulator actually regulates to (e.g. its
+    # feedback divider's nominal), when it differs from ``voltage``, the rail's target that
+    # loads are judged against. Blank regulates to the target, as setups saved before did.
     nominal_v: Optional[float] = None
 
     def all_phases(self) -> List[VrmPhase]:
         return [VrmPhase(self.output, self.input, self.ground), *self.phases]
 
-    def output_nominal_v(self) -> float:
-        """Nominal rail voltage for requirements; defaults to the regulated target voltage."""
+    def regulated_v(self) -> float:
+        """The voltage the VRM regulates to: its nominal output if set, else its target."""
         return self.voltage if self.nominal_v is None else self.nominal_v
 
     def all_sense_points(self) -> List[SensePoint]:
@@ -151,10 +152,12 @@ class Vrm:
         return tolerance_label(self.acc_min, self.acc_max, self.acc_pct, self.acc_dv)
 
     def accuracy_v(self) -> Optional[float]:
-        """The larger side of the DC accuracy, volts from the target voltage; None if not set."""
-        lo, hi = range_volts(self.voltage, self.acc_min, self.acc_max,
+        """The larger side of the DC accuracy, volts from the regulated voltage; None if
+        not set."""
+        v = self.regulated_v()
+        lo, hi = range_volts(v, self.acc_min, self.acc_max,
                              range_unit(self.acc_pct, self.acc_dv))
-        sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
+        sides = [abs(x - v) for x in (lo, hi) if x is not None]
         return max(sides) if sides else None
 
     def __setstate__(self, state):
@@ -535,14 +538,16 @@ def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
 
 
 def rail_nominal(setup: PISetup, net: Optional[str], skip: str = "",
-                 groups=None) -> Optional[float]:
-    """The nominal voltage of the rail ``net`` is on: the output nominal of a VRM (other
-    than ``skip``) driving it. None if no VRM does."""
+                 groups=None, regulated: bool = False) -> Optional[float]:
+    """The nominal voltage of the rail ``net`` is on: the target voltage of a VRM (other
+    than ``skip``) driving it, or with ``regulated``, the voltage it regulates to. None if
+    no VRM does."""
     if not net:
         return None
     groups = groups or net_groups(setup, [net])
     group = groups.get(net, frozenset([net]))
-    return next((u.output_nominal_v() for u in setup.vrms if u.name != skip and u.voltage
+    return next(((u.regulated_v() if regulated else u.voltage) for u in setup.vrms
+                 if u.name != skip and u.voltage
                  and any(ph.output.net in group for ph in u.all_phases())), None)
 
 
@@ -759,9 +764,9 @@ def _estimated_input(setup: PISetup, groups, v: Vrm, seen=frozenset()) -> float:
     if v.kind == "smps":
         feed = next((u for u in setup.vrms if groups[u.output.net] == groups[v.input.net]),
                     None)
-        if feed is None or feed.voltage <= 0:
+        if feed is None or feed.regulated_v() <= 0:
             return v.quiescent_a
-        return v.voltage * i_out / (v.efficiency * feed.voltage) + v.quiescent_a
+        return v.regulated_v() * i_out / (v.efficiency * feed.regulated_v()) + v.quiescent_a
     return i_out + v.quiescent_a
 
 

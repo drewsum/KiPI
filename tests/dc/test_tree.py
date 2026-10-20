@@ -476,3 +476,17 @@ def test_ranges_in_volts_from_nominal():
     assert (back.vin_dv, back.acc_dv) == (True, True)
     del s.vrms[0]
     assert any("in volts from nominal needs a VRM" in e for e in validate(s))
+
+
+def test_a_vrm_regulates_to_its_nominal_output_and_loads_judge_the_target():
+    s = setup("ldo")
+    u1 = s.vrms[1]
+    u1.nominal_v = 3.35                       # regulates high; the rail's target stays 3.3 V
+    s.loads[0].tol_min, s.loads[0].tol_max = -1.0, 1.0
+    res = solve_tree(board(), s)
+    vr, ld = by_name(res.vrms, "U1"), by_name(res.loads, "U2")
+    assert vr.v_out == pytest.approx(3.35, abs=1e-12)
+    assert ld.v_supply == pytest.approx(3.35 - R(8), rel=1e-9)
+    assert ld.nominal == 3.35 and ld.load_nominal == 3.3   # drop from 3.35, judged at 3.3
+    assert (ld.limit_low, ld.limit_high) == pytest.approx((3.267, 3.333))
+    assert u1.accuracy_v() is None and u1.regulated_v() == 3.35

@@ -105,7 +105,7 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
     d = Diagram()
     grounds = _ground_nets(setup)
     groups = net_groups(setup)
-    group_v = {groups[v.output.net]: v.voltage for v in setup.vrms if v.output.net in groups}
+    group_v = {groups[v.output.net]: v.regulated_v() for v in setup.vrms if v.output.net in groups}
 
     def rail(net: str) -> str:
         bid = f"rail:{net}"
@@ -119,7 +119,7 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
     for v in setup.vrms:
         bid = f"vrm:{v.name}"
         kind = v.kind if v.kind in VRM_KIND_LABELS else "source"
-        lines = [f"{si(v.voltage, 'V')} out"]
+        lines = [f"{si(v.regulated_v(), 'V')} out"]
         if kind == "smps":
             lines.append(f"η {v.efficiency * 100:.3g} %")
         if v.phases:
