@@ -1,6 +1,7 @@
 """Adjustable regulator output accuracy from its feedback divider and reference limits."""
 
 from dataclasses import dataclass
+from itertools import product
 from typing import Optional
 
 
@@ -17,18 +18,19 @@ def feedback_divider_accuracy(vfb_min: float, vfb_nom: float, vfb_max: float,
                               leakage_nom_a: float, leakage_max_a: float) -> Optional[DcAccuracy]:
     """Return nominal and tolerance-corner output voltages, or None for invalid inputs.
 
-    Positive FB leakage is current flowing into the feedback node, which raises the
-    regulator output by ``I_leak * Rtop``. The low corner combines the low reference,
-    low top resistor, high bottom resistor and nominal leakage. The high corner combines
-    the high reference, high top resistor, low bottom resistor and maximum leakage.
+    Positive FB leakage is current flowing out of the divider into the FB pin, which
+    raises the regulator output by ``I_leak * Rtop``; negative leakage lowers it. The
+    nominal leakage is signed, and the leakage may be anywhere within +/- ``leakage_max_a``.
+    The minimum and maximum are the extremes over every corner of the reference, both
+    resistor tolerances and that leakage range.
     """
     values = (vfb_min, vfb_nom, vfb_max, rtop_ohm, rtop_tolerance_pct,
-              rbottom_ohm, rbottom_tolerance_pct, leakage_nom_a, leakage_max_a)
+              rbottom_ohm, rbottom_tolerance_pct, leakage_max_a)
     if any(x < 0 for x in values):
         return None
     if (not 0 < vfb_min <= vfb_nom <= vfb_max or rtop_ohm <= 0 or rbottom_ohm <= 0
             or rtop_tolerance_pct >= 100 or rbottom_tolerance_pct >= 100
-            or leakage_max_a < leakage_nom_a):
+            or leakage_max_a < abs(leakage_nom_a)):
         return None
 
     rt_min = rtop_ohm * (1 - rtop_tolerance_pct / 100)
@@ -36,6 +38,10 @@ def feedback_divider_accuracy(vfb_min: float, vfb_nom: float, vfb_max: float,
     rb_min = rbottom_ohm * (1 - rbottom_tolerance_pct / 100)
     rb_max = rbottom_ohm * (1 + rbottom_tolerance_pct / 100)
     nominal = vfb_nom * (1 + rtop_ohm / rbottom_ohm) + leakage_nom_a * rtop_ohm
-    minimum = vfb_min * (1 + rt_min / rb_max) + leakage_nom_a * rt_min
-    maximum = vfb_max * (1 + rt_max / rb_min) + leakage_max_a * rt_max
-    return DcAccuracy(nominal, minimum, maximum)
+    # Rtop scales both the divider gain and the leakage term, so which end of it is worst
+    # depends on the leakage: try every corner.
+    corners = [vfb * (1 + rt / rb) + leak * rt
+               for vfb, rt, rb, leak in product((vfb_min, vfb_max), (rt_min, rt_max),
+                                                (rb_min, rb_max),
+                                                (-leakage_max_a, leakage_max_a))]
+    return DcAccuracy(nominal, min(corners), max(corners))

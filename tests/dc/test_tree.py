@@ -262,7 +262,7 @@ def test_worst_pin_and_verdict_use_load_nominal():
     assert ld.v_worst == pytest.approx(ld.v_low)
     assert ld.drop_worst == pytest.approx(3.25 - ld.v_worst)
     assert ld.drop_worst_pct == pytest.approx(100 * ld.drop_worst / 3.25)
-    # The solved pins are around the 3.3 V VRM set point, outside ±1% of 3.25 V.
+    # The solved pins are around the 3.3 V VRM target voltage, outside ±1% of 3.25 V.
     assert ld.passed is False
     load.tol_min, load.tol_max = -2.0, 2.0
     ld = by_name(solve_tree(board(), s).loads, load.name)

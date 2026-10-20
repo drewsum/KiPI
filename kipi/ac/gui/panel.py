@@ -748,7 +748,7 @@ class ACPanel(QWidget, PartSelection):
         f.addRow(self.chk_bias)
         tip(f, self.chk_bias, "Derate the capacitor models that have a voltage rating "
                               "by the DC voltage across each part (from the last DC solve, "
-                              "or else the rail's VRM set point). Untick to solve with every "
+                              "or else the rail's VRM target voltage). Untick to solve with every "
                               "model's capacitance as entered.")
         self.chk_bias.toggled.connect(self._ac_settings_changed)
         self.chk_mfg = QCheckBox("Capacitor manufacturing tolerance")

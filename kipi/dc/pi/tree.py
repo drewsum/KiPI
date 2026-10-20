@@ -8,8 +8,8 @@ output delivers, and its input pins are a load on the group feeding it.
 * Switcher:  I_in = V_out * I_out / (efficiency * V_in) + I_q, where V_in is the voltage
              at the VRM's input pins, which depends on I_in, so the feeding group is
              iterated to a fixed point (the factorized system is reused).
-* Remote sense: the VRM's output is corrected until the sense pins sit at the set point.
-  With ground sense, the set point is held above the ground sense pins instead of 0 V;
+* Remote sense: the VRM's output is corrected until the sense pins sit at the target voltage.
+  With ground sense, the target voltage is held above the ground sense pins instead of 0 V;
   their voltage comes from the ground solve, so rails and grounds are iterated together.
 * Mesh remote sense (#93): every sense point's pins are a voltage boundary at the set
   point (less the load line, above that point's ground sense pins); the VRM's current
@@ -35,7 +35,7 @@ ground pin connected, its current is left out and it shows as disconnected. The 
 list every unconnected pin. A rail with loads but none of them connected stops the solve.
 
 After the solve each VRM's input is checked against its dropout and input range. A VRM
-that cannot hold its set point fails every load it feeds, directly or downstream; a
+that cannot hold its target voltage fails every load it feeds, directly or downstream; a
 group whose iteration did not converge leaves its loads unjudged.
 
 Excluded nets: only the net groups kept by :func:`~kipi.dc.pi.model.active_setup` are
@@ -418,8 +418,8 @@ class _TreeSolver:
                       warnings: List[str]):
         """Fixed point of the rail: VRM input currents downstream depend on the voltage at
         their input pins, and remote sense (or a multi-phase VRM's mean output) moves the
-        output until the regulated pins sit at the set point. Returns (solution, applied
-        voltage, input voltages, currents, iterations). A load line moves the set point
+        output until the regulated pins sit at the target voltage. Returns (solution, applied
+        voltage, input voltages, currents, iterations). A load line moves the target voltage
         down by R_LL times the output current."""
         vrm = rail.vrm
         set_point = vrm.voltage + self.v_gsense.get(vrm.name, 0.0)
@@ -611,7 +611,7 @@ class _TreeSolver:
         not_converged_labels = {self.label_of(g) for g in self.not_converged}
         set_point = {v.name: v.voltage for v in self.setup.vrms}
         for label, nets, kind, drv, mesh, sol, it in solved:
-            # Drop and boost on a rail are measured from its VRM's set point, not from the
+            # Drop and boost on a rail are measured from its VRM's target voltage, not from the
             # output pins (which remote sense moves); grounds from their 0 V reference.
             ref = set_point[drv] if kind == "rail" else 0.0
             out.groups[label] = GroupResult(label, nets, kind, drv,
@@ -629,7 +629,7 @@ class _TreeSolver:
 
     # ------------------------------------------------------------ checks and reports
     def _regulation(self, v: Vrm) -> str:
-        """Why the VRM cannot hold its set point at the solved input voltage ("" if it can).
+        """Why the VRM cannot hold its target voltage at the solved input voltage ("" if it can).
         A multi-phase VRM is judged on its worst phase."""
         if not v.input:
             return ""
@@ -685,7 +685,7 @@ class _TreeSolver:
         g_hi = 0.0 if gv is None else float(gv.max())
         low, high = float(sv.min()) - g_hi, float(sv.max()) - g_lo
         # Load tolerance and worst pin deviations use the device's nominal, independently
-        # of the VRM set point used for the mean copper drop.
+        # of the VRM target voltage used for the mean copper drop.
         worst = low if load_nominal - low >= high - load_nominal else high
         eff = float(sv.mean()) - g_mean
         rep = LoadReport(l.name, self.label_of(g), self.load_amps[l.name], nominal,

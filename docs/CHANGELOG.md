@@ -15,8 +15,9 @@ milestones rather than versions that were ever set.
   the driving VRM voltage. The value is saved in setup and reusable load-model YAML.
 - **DC Accuracy Calculator** (#168). An LDO or switcher's VRM editor can calculate its
   nominal, minimum and maximum output from feedback reference limits, divider resistor
-  values and tolerances, and nominal and maximum feedback pin leakage. The result fills
-  the VRM's nominal set voltage and absolute output accuracy limits.
+  values and tolerances, and its feedback pin leakage: a signed nominal, and a maximum
+  that may flow either way. The result fills the VRM's target voltage and absolute output
+  accuracy limits.
 - **Diode series links** (#161). Enter the diode's constant forward drop with side A as
   its anode, alongside its nonzero series resistance. DC solves include the drop and its
   dissipation; AC solves use the resistance and ESL as the small-signal series model.
@@ -36,6 +37,10 @@ milestones rather than versions that were ever set.
   off the AC tolerance twice.
 - **Noise waveform legends.** A capacitor's rms current is no longer in its legend entry;
   each curve's peak-to-peak and rms are labelled on the plot instead.
+
+### Changed
+- **"Set voltage" is now "Target voltage"** everywhere: the VRM editor, tooltips, reports,
+  help and README. The DC loads CSV column is `vrm_target_V`.
 
 ## 0.9.1
 

@@ -1,7 +1,7 @@
 """3D meshes for solver results (no Qt).
 
 Each copper layer becomes a slab carrying:
-  point data  "V" (volts) and "drop_mV" (mV below the reference: the VRM set point for a
+  point data  "V" (volts) and "drop_mV" (mV below the reference: the VRM target voltage for a
               power-tree rail; negative where the copper sits above it, a boost)
   cell data   "J" (A/mm^2) and "P" (mW/mm^2 of board area)
 Plated holes become barrels with cell data "I_mA" (current through the barrel).

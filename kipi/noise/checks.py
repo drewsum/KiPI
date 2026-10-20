@@ -65,7 +65,7 @@ def input_voltage(setup: PISetup, agg: Aggressor, vrm: Vrm) -> Tuple[Optional[fl
         return 0.5 * (lo + hi), f"middle of {vrm.name}'s input range"
     nom = rail_nominal(setup, vrm.input.net if vrm.input else None, vrm.name)
     if nom:
-        return nom, f"set voltage of the VRM feeding {vrm.input.net}"
+        return nom, f"target voltage of the VRM feeding {vrm.input.net}"
     return (lo or hi), (f"{vrm.name}'s input range" if (lo or hi) else "")
 
 

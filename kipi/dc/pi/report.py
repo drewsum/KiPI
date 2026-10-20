@@ -185,7 +185,7 @@ class PinRow:
     x: float
     y: float
     v: float
-    nominal: float            # the group's reference: its VRM's set point, or 0 V
+    nominal: float            # the group's reference: its VRM's target voltage, or 0 V
     current: Optional[float]  # A drawn from the copper at the pin (negative: delivered)
     current_is: str           # PIN_CURRENT_SOLVED or PIN_CURRENT_SHARED; "" if unknown
 
@@ -265,7 +265,7 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
         return [mag * 1e3, None if pct is None else abs(pct), kind]
 
     out.append(_write(folder / f"{stem}_loads.csv",
-                      ["load", "group", "current_A", "vrm_set_V", "load_nominal_V",
+                      ["load", "group", "current_A", "vrm_target_V", "load_nominal_V",
                        "v_supply_mean_V",
                        "v_supply_min_V", "v_ground_mean_V", "v_effective_V", "v_lowest_pin_V",
                        "v_highest_pin_V", "mean_mV", "mean_pct", "mean_is", "worst_pin_V",

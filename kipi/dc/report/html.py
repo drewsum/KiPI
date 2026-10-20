@@ -84,7 +84,7 @@ def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
                v_ref: Optional[float] = None) -> str:
     """Top-down tripcolor of one layer (KiCad y down, drawn the same way as in KiCad).
 
-    A voltage map passes its set point ``v_ref``. When its spread is so narrow that the
+    A voltage map passes its target voltage ``v_ref``. When its spread is so narrow that the
     colorbar would label ticks against an offset ("1e-5+3.2999", #145), it is redrawn as
     the drop from ``v_ref`` in V, mV or µV, the absolute range moving into the title.
     Maps whose colorbar reads plainly are left as they are."""
@@ -525,7 +525,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
     parts.append(_table(
-        ["Load", "Group", "I (A)", "VRM set (V)", "Load nominal (V)", "V effective (V)",
+        ["Load", "Group", "I (A)", "VRM target (V)", "Load nominal (V)", "V effective (V)",
          "Drop / boost (mV)", "%", "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance",
          "Result"],
         [[_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
@@ -536,7 +536,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
           _e(l.tolerance),
           _verdict(l.passed, l.status)]
          for l in tree.loads]))
-    parts.append("<p class='note'>Drop / boost is measured from the VRM set point. The worst pin "
+    parts.append("<p class='note'>Drop / boost is measured from the VRM target voltage. The worst pin "
                  "deviation and load PASS/FAIL are measured from the load nominal voltage; a "
                  "load passes when every pin is within its tolerance.</p>")
     pg = [[_e(l.name), _e(n), _num(a), _num(vm, ".6f"), _num(vmin, ".6f"), _num(vmax, ".6f")]
@@ -593,7 +593,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      "negative is delivered into it (a VRM output, or a DC connection's far "
                      "side). VRM output pin currents are solved; a load's current is shared "
                      "equally by its pins, as the solver applies it, and a DC connection's by "
-                     "the pins on each side. Drop and boost are from the VRM set point (0 V "
+                     "the pins on each side. Drop and boost are from the VRM target voltage (0 V "
                      "for a ground).</p>")
     else:
         parts.append("<p class='note'>These results were saved before KiPI kept each pin "
@@ -713,7 +713,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                              "|J| p99.5 (A/mm²)", "|J| max", "Loss (mW)"], rows))
         if g.kind == "rail":
             parts.append(f"<p class='note'>Drop and boost are measured from the "
-                         f"{scene.v_ref:g} V set point.</p>")
+                         f"{scene.v_ref:g} V target voltage.</p>")
         maps = []
         vmin, vmax = scene.ranges["voltage"]
         for lid, lr in scene.layers.items():

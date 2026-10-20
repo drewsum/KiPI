@@ -76,7 +76,7 @@ def test_report_mesh_keeps_copper(tmp_path):
 @pytest.mark.parametrize("drop, label", [(20e-6, "Drop from 3.3 V (µV)"), (0.15, "V")])
 def test_narrow_voltage_maps_show_the_drop(monkeypatch, drop, label):
     """A rail that sags by µV would label its colorbar against an offset ("1e-5+3.2999"),
-    so it is drawn as the drop from the set point; a plainly labelled map is left (#145)."""
+    so it is drawn as the drop from the target voltage; a plainly labelled map is left (#145)."""
     import numpy as np
     from types import SimpleNamespace
     from matplotlib.tri import Triangulation

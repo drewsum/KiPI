@@ -101,7 +101,7 @@ class Vrm:
     # +0.5), instead of in volts (#131).
     vin_pct: bool = False
     vin_dv: bool = False
-    # DC accuracy of the set voltage (LDO / switcher), either end None: in % of it (e.g.
+    # DC accuracy of the target voltage (LDO / switcher), either end None: in % of it (e.g.
     # -1 / +1), with acc_dv in volts from it (e.g. -0.01 / +0.01), or with neither, the
     # output's lowest and highest volts. The target calculator takes its larger side off
     # the AC tolerance.
@@ -115,20 +115,20 @@ class Vrm:
     # AC only: control loop bandwidth, kHz (None = not given).
     bandwidth_khz: Optional[float] = None
     # Mesh remote sense (#93, DC only, off by default): every sense point's pins are held
-    # at the set voltage (less the load line, above that point's ground sense pins), the
+    # at the target voltage (less the load line, above that point's ground sense pins), the
     # VRM's current entering there; its output pins only measure. Point 1 is sense and
     # ground_sense above, points 2..N these.
     mesh_sense: bool = False
     sense_points: List[SensePoint] = field(default_factory=list)
     # Optional nominal output voltage for the rail's requirements. When blank, the
-    # regulator set voltage is the nominal, as it was in setups saved before this field.
+    # regulator target voltage is the nominal, as it was in setups saved before this field.
     nominal_v: Optional[float] = None
 
     def all_phases(self) -> List[VrmPhase]:
         return [VrmPhase(self.output, self.input, self.ground), *self.phases]
 
     def output_nominal_v(self) -> float:
-        """Nominal rail voltage for requirements; defaults to the regulated set voltage."""
+        """Nominal rail voltage for requirements; defaults to the regulated target voltage."""
         return self.voltage if self.nominal_v is None else self.nominal_v
 
     def all_sense_points(self) -> List[SensePoint]:
@@ -151,7 +151,7 @@ class Vrm:
         return tolerance_label(self.acc_min, self.acc_max, self.acc_pct, self.acc_dv)
 
     def accuracy_v(self) -> Optional[float]:
-        """The larger side of the DC accuracy, volts from the set voltage; None if not set."""
+        """The larger side of the DC accuracy, volts from the target voltage; None if not set."""
         lo, hi = range_volts(self.voltage, self.acc_min, self.acc_max,
                              range_unit(self.acc_pct, self.acc_dv))
         sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
@@ -177,7 +177,7 @@ class Load:
     current: float
     ground: Optional[PinRef] = None
     # PASS if every pin is within this range, either end None for no limit: in % from
-    # nominal, the set point of the VRM driving the rail (e.g. -5 / +5), with tol_dv in
+    # nominal, the target voltage of the VRM driving the rail (e.g. -5 / +5), with tol_dv in
     # volts from nominal (e.g. -0.15 / +0.15, #131), or with neither, in volts.
     tol_min: Optional[float] = None
     tol_max: Optional[float] = None
@@ -187,7 +187,7 @@ class Load:
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
     # Optional nominal voltage for this device's tolerance requirements. When blank,
-    # its limits use the driving VRM's set voltage, as older setups did.
+    # its limits use the driving VRM's target voltage, as older setups did.
     nominal_v: Optional[float] = None
 
     def total_current(self) -> float:

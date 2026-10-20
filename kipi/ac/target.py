@@ -18,7 +18,7 @@ applies above the VRM's bandwidth (:func:`judged_from`).
 
 The calculator's AC tolerance and load step can be copied from the DC load on the probe's
 pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from that load's nominal
-voltage (or the VRM set point when unset), and its current. Two things that eat into that
+voltage (or the VRM target voltage when unset), and its current. Two things that eat into that
 tolerance before any load step can be taken off it: the larger side of the VRM's DC
 accuracy about its target voltage (:func:`vrm_accuracies`), and how far the load's solved
 DC voltage sits from its nominal (:func:`load_drop`), which needs a DC solve. A VRM
@@ -134,7 +134,7 @@ def _hz(f: float) -> str:
 class LoadTolerance:
     name: str             # the DC load's name
     tolerance: str        # as set: "±5 %", "-3 / +5 %", "3.1 to 3.5 V"
-    nominal_v: float      # the set point of the VRM feeding it
+    nominal_v: float      # the target voltage of the VRM feeding it
     v_ac_v: float         # the tighter side of the tolerance, volts from nominal
 
     @classmethod

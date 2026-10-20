@@ -30,7 +30,7 @@ BOOST_EPS = 1e-12          # volts; smaller deviations read as a (zero) drop, no
 def drop_or_boost(dv: float):
     """Split ``dv`` = nominal - actual into (magnitude, "drop" | "boost").
 
-    A load can sit above its VRM's set point: a remote-sensed VRM raises its output pins
+    A load can sit above its VRM's target voltage: a remote-sensed VRM raises its output pins
     to hold a sense point further down the copper, so pins nearer the VRM see a boost.
     """
     if math.isnan(dv):                 # nothing solved, as for a disconnected load (#88)
@@ -49,7 +49,7 @@ class LoadReport:
     name: str
     group: str
     current: float
-    nominal: float            # set point of the VRM driving the group
+    nominal: float            # target voltage of the VRM driving the group
     v_supply: float           # mean over the supply pins
     v_supply_min: float
     v_ground: Optional[float]  # mean over the ground pins (None if not modeled)
@@ -143,7 +143,7 @@ class VrmReport:
     phases: List[PhaseReport] = field(default_factory=list)   # multi-phase VRMs only
     current_limit_a: Optional[float] = None   # total output current limit, if one is set
     passed: Optional[bool] = None             # |I out| within the limit
-    regulation: str = ""                     # why the VRM cannot hold its set point
+    regulation: str = ""                     # why the VRM cannot hold its target voltage
     load_line_mohm: float = 0.0               # load line (#94), 0 = none
     v_droop: float = 0.0                      # load line x I out: how far v_target is
                                               # below v_set
@@ -157,7 +157,7 @@ class VrmReport:
 
     @property
     def v_target(self) -> float:
-        """The voltage the VRM regulates to: its set point less the load-line droop."""
+        """The voltage the VRM regulates to: its target voltage less the load-line droop."""
         return self.v_set - self.v_droop
 
     @property

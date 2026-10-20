@@ -147,7 +147,7 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
                    temps: Optional[Dict[str, float]] = None, temp_text: str = ""
                    ) -> Tuple[Dict[str, Tuple[Optional[float], float]], List[str]]:
     """Derate the capacitor ports, in place, for DC bias (models that estimate it, at the
-    voltage across each part: ``volts``, else the VRM's set point), aging (#109, models
+    voltage across each part: ``volts``, else the VRM's target voltage), aging (#109, models
     with a dielectric, when the sweep settings age them), temperature (#77, models with
     a dielectric, at ``temps``: °C by reference, described by ``temp_text``) and
     manufacturing tolerance (models that have one, when the sweep settings model it). Each
@@ -197,9 +197,9 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
                 where = "the voltages the last DC solve found across them"
             elif from_dc:
                 where = (f"the last DC solve's voltages ({from_dc} of them) or else the "
-                         f"{vrm.name} set point, {vrm.voltage:g} V")
+                         f"{vrm.name} target voltage, {vrm.voltage:g} V")
             else:
-                where = (f"the {vrm.name} set point, {vrm.voltage:g} V (no DC solve of this "
+                where = (f"the {vrm.name} target voltage, {vrm.voltage:g} V (no DC solve of this "
                          "rail)")
             what.append(f"{n_bias} for DC bias at {where}")
         if n_aged:

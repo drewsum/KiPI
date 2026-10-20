@@ -100,13 +100,13 @@ class AggressorEditor(_Editor):
         for w, text, art in (
                 (self.name, "A name for this aggressor", None),
                 (self.vrm, "The switching regulator (a VRM of type Switcher, set up in DC or "
-                           "AC mode) this aggressor is. Its input rail and set voltage give "
+                           "AC mode) this aggressor is. Its input rail and target voltage give "
                            "the input and output voltages.", ("converter",)),
                 (self.topology, "Buck or boost. Auto takes it from the VRM's voltages: an "
                                 "input above the output is a buck, below it a boost.",
                  ("converter", "buck", "boost")),
                 (self.vin, "The input voltage. Blank uses the VRM's: the middle of its input "
-                           "range if it has one, else the set voltage of the VRM feeding its "
+                           "range if it has one, else the target voltage of the VRM feeding its "
                            "input rail.", ("converter", "vin")),
                 (self.load_a, "The total output current, all phases. Blank uses the DC "
                               "setup's loads on the VRM's output rail, plus the input current "

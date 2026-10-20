@@ -152,7 +152,7 @@ def _static(html):
 
 def test_dc_report_as_pdf(dc, tmp_path, printed):
     tree, scenes, snap, s = dc
-    # The load's nominal can differ from its VRM set point; the PDF is rendered from the
+    # The load's nominal can differ from its VRM target voltage; the PDF is rendered from the
     # same HTML report path as HTML output.
     s.loads[0].nominal_v = 3.25
     tree = solve_tree(snap, s)
@@ -164,7 +164,7 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
     _static(html)
     for l in tree.loads:
         assert l.name in html
-    assert "VRM set (V)" in html and "Load nominal (V)" in html
+    assert "VRM target (V)" in html and "Load nominal (V)" in html
     assert "3.25" in html and "3.3" in html
     assert "id='pins'" in html and "id='loads'" in html
     assert html.count("data:image/png;base64,") >= 2 * len(tree.groups)

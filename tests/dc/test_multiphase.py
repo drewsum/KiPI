@@ -181,7 +181,7 @@ def test_example_board_solves():
     tree = solve_tree(snap, s)
     u1, ld = by_name(tree.vrms, "U1"), by_name(tree.loads, "U10")
     assert [p.i_out for p in u1.phases] == pytest.approx([10.0] * 4, rel=1e-9)
-    # Remote sense and ground sense hold the sense balls at the set point.
+    # Remote sense and ground sense hold the sense balls at the target voltage.
     assert u1.v_sense - u1.v_ground_sense == pytest.approx(0.9, abs=1e-9)
     # The phases far from the load have to sit higher to push the same current.
     v = [p.v_out for p in u1.phases]

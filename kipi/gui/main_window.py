@@ -2071,7 +2071,7 @@ class MainWindow(QMainWindow):
             f"{rows}</table><br><i>Left-click copper in the 3D view to identify it.</i>")
 
     def _probe_deviation(self, dv: float, v_ref: float) -> str:
-        """A probed point against its reference: drop or boost from a rail's set point, or
+        """A probed point against its reference: drop or boost from a rail's target voltage, or
         how far a ground sits from its 0 V reference."""
         group = self._tree.groups.get(self.viewer.result.net) if self._tree else None
         if group is not None and group.kind == "ground":

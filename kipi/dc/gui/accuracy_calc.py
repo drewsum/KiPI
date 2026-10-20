@@ -15,8 +15,9 @@ from kipi.dc.pi.accuracy import DcAccuracy, feedback_divider_accuracy
 
 NOTE = ("V<sub>out</sub> = V<sub>FB</sub> · (1 + R<sub>top</sub> / R<sub>bottom</sub>) "
         "+ I<sub>FB</sub> · R<sub>top</sub>. Positive feedback pin leakage flows into "
-        "the FB node. The low and high results combine the reference and resistor limits "
-        "at their worst corners.")
+        "the FB pin, raising the output; negative leakage flows out of it. The leakage may "
+        "be anywhere within ± its maximum. The minimum and maximum output are the worst "
+        "corners of the reference, resistor and leakage limits.")
 
 
 class DcAccuracyCalculator(QDialog):
@@ -34,7 +35,7 @@ class DcAccuracyCalculator(QDialog):
         self.rtop_tol = _spin(0, 99.99, 0, 2, " %", 0.1)
         self.rbottom = _spin(0, 1e12, 0, 3, " Ω", 100)
         self.rbottom_tol = _spin(0, 99.99, 0, 2, " %", 0.1)
-        self.leak_nom = _spin(0, 1e9, 0, 3, " nA", 1)
+        self.leak_nom = _spin(-1e9, 1e9, 0, 3, " nA", 1)
         self.leak_max = _spin(0, 1e9, 0, 3, " nA", 1)
         self.inputs = (self.vfb_min, self.vfb_nom, self.vfb_max, self.rtop,
                        self.rtop_tol, self.rbottom, self.rbottom_tol,
@@ -58,7 +59,11 @@ class DcAccuracyCalculator(QDialog):
         form.addRow("Bottom resistor", self.rbottom)
         form.addRow("Bottom resistor tolerance", self.rbottom_tol)
         form.addRow("FB leakage nominal", self.leak_nom)
-        form.addRow("FB leakage maximum", self.leak_max)
+        form.addRow("FB leakage maximum (±)", self.leak_max)
+        self.leak_nom.setToolTip("Typical FB pin leakage, signed: positive flows into the "
+                                 "FB pin and raises the output, negative lowers it")
+        self.leak_max.setToolTip("Largest FB pin leakage in either direction: the output "
+                                 "range covers anywhere from -max to +max")
         form.addRow(QLabel(""))
         form.addRow("Minimum output", self.lbl_min)
         form.addRow("Nominal output", self.lbl_nom)

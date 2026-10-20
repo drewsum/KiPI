@@ -18,7 +18,7 @@ def test_load_line_droops_the_output_pins():
     assert u1.v_target == pytest.approx(3.29, rel=1e-9)
     assert u1.v_out == pytest.approx(3.29, rel=1e-9)
     assert ld.v_supply == pytest.approx(3.29 - R(8), rel=1e-9)
-    # Drop is still measured from the set point, so the droop counts against tolerance.
+    # Drop is still measured from the target voltage, so the droop counts against tolerance.
     assert ld.nominal == 3.3 and ld.drop == pytest.approx(0.01 + R(8), rel=1e-9)
 
 

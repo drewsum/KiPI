@@ -352,17 +352,17 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Field | Meaning |
 |---|---|
 | Type | **Source** (ideal supply), **LDO** (I_in = I_out + I_q) or **Switcher** (P_in = P_out / efficiency) |
-| Output pins, Set voltage | Where it drives, and to what voltage |
+| Output pins, Target voltage | Where it drives, and to what voltage |
 | Input pins | LDO and switcher only. The pins it draws from, which ties this VRM to its upstream net and defines the power tree. |
 | Efficiency / Quiescent | Switcher efficiency, LDO quiescent current |
 | Output current limit | Optional: the VRM PASSes if its total output current (all phases) is at most this. Leave at **no limit** to skip the check. |
-| Load line | Optional, in mΩ: the VRM regulates to its set voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the set voltage, so the droop counts against load tolerances. |
+| Load line | Optional, in mΩ: the VRM regulates to its target voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the target voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
-| Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the set voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its set voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
-| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the set voltage, or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
+| Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the target voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its target voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
+| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
 | Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
-| Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its set voltage relative to these pins instead of 0 V (needs ground pins) |
+| Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its target voltage relative to these pins instead of 0 V (needs ground pins) |
 | Phases | Parallel phases of a multi-phase regulator. **Edit phase** picks which phase the output, input and ground pins belong to. |
 
 KiPI automatically calculates the input current into the input pins on a VRM based on the efficiency, type, and output power (which is based on defined loads).
@@ -390,11 +390,11 @@ To try it without a design of your own, open the example board in
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
 * **Ground pins** (optional) include the ground return. KiPI superimposes all VRM and load return currents to form a comprehensive GND plane current model.
 * **Tolerance** is the PASS/FAIL limit: a min and a max, each optional, in % from the VRM
-  set point (e.g. -3 % / +5 %), in volts from it (±V, e.g. -0.1 / +0.15 V) or in volts (e.g.
+  target voltage (e.g. -3 % / +5 %), in volts from it (±V, e.g. -0.1 / +0.15 V) or in volts (e.g.
   3.135 to 3.465 V). A load passes when every
   pin is within it, none below it (a **drop**) or above it (a **boost**). Boosts
   happen with remote sense, where the VRM raises its output pins to hold a sense point
-  further down the copper, so pins nearer the VRM sit above the set point. A load on a net
+  further down the copper, so pins nearer the VRM sit above the target voltage. A load on a net
   group whose solve did not converge shows **NOT CONVERGED** instead of a result.
 * Before solving, KiPI checks that every load pin reaches its VRM through copper or series
   links. Unconnected pins draw nothing: the load's current goes through its other pins, or,
@@ -503,7 +503,7 @@ the `.yml` file, which is read from then on. AI Agents can make quick work of po
 
 **Data Prepoulation**: As you pick pins when setting up the power tree, KiPI pre-fills the fields that usually follow from those selections. Every prepopulation can be changed, and a field the extracted board gives no answer for is left as it was:
 
-* **VRM set voltage** from the output net's name: `+3V3`, `3.3V`, `V1P8`, `VDD_0V75`, `-5V`,
+* **VRM target voltage** from the output net's name: `+3V3`, `3.3V`, `V1P8`, `VDD_0V75`, `-5V`,
   `VBUS` (5 V).
 * **Ground pins** of a VRM, load or AC probe: the same part's pins on its ground net. Grounds
   aren't always called GND, so KiPI tries grounds the setup already uses, then names like
@@ -627,7 +627,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   A ceramic model (X5R, X7R…) with a **Voltage rating** is derated by the DC voltage across
   each of its parts: enter the rating and how much capacitance it **Keeps at rating**
   (from the datasheet's DC bias curve; 40 % by default). The voltage is what the last DC
-  solve found across each part, or else the rail's VRM set point. **Models from values**
+  solve found across each part, or else the rail's VRM target voltage. **Models from values**
   reads the rating from values such as `10uF 6.3V X5R` for class II dielectrics.
   A model's **Dielectric** (X7R, X5R, Y5V…) fills in its typical **Aging** rate, in % of
   capacitance lost per decade of hours (enter the datasheet's rate if it gives one), and
@@ -643,7 +643,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   It can copy the tolerance and the load step from the DC load on the probe's pins, and
   subtract from the tolerance both the DC accuracy of the VRM driving the rail and, from the
   last DC solve, the **DC drop at the load** itself: how far that load's effective voltage
-  sits from its VRM's set point (solve the power tree first, or the button is disabled).
+  sits from its nominal voltage (solve the power tree first, or the button is disabled).
   Targets apply only above the rail's VRM **Control loop bandwidth**: the AC solve leaves
   the VRM out of circuit (the open-loop PDN impedance, capacitive only), and below its bandwidth the
   converter's control loop is assumed to hold the rail. If the bandwidth is at or above the target frequency,

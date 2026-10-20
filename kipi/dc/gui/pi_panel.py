@@ -485,7 +485,7 @@ class VrmEditor(_Editor):
         self.output = self._picker()
         self.voltage = _spin(-1000, 1000, 3.3, 4, " V", 0.1)
         self.nominal_v = _optional_volts()
-        self.nominal_v.setSpecialValueText("use set voltage")
+        self.nominal_v.setSpecialValueText("use target voltage")
         self.eff = _spin(1, 100, 90, 1, " %", 1)
         self.iq = _spin(0, 10000, 0, 3, " mA", 0.1)
         self.i_limit = _spin(0, 10000, 0, 3, " A", 0.1)
@@ -495,7 +495,7 @@ class VrmEditor(_Editor):
         self.dropout = _spin(0, 100, 0, 3, " V", 0.05)
         # Input range, in volts or in % from the input rail's nominal voltage.
         self.vin_row = RangeRow(self._input_nominal)
-        # DC accuracy, in % of the set voltage or in volts.
+        # DC accuracy, in % of the target voltage or in volts.
         self.acc_row = RangeRow(lambda: self.voltage.value() or None)
         self.acc_row.add_leading("Nominal", self.nominal_v, 1)
         self.btn_accuracy_calc = QPushButton("DC Accuracy Calculator…")
@@ -567,7 +567,7 @@ class VrmEditor(_Editor):
                                "pins if it has them. Picking the output net fills it in from "
                                "the net's name (3V3, +1.8V, V1P2, -5V...)."),
                 (self.nominal_v, "Nominal voltage used as the default for loads on this rail. "
-                                 "Blank uses the VRM set voltage. It does not change the "
+                                 "Blank uses the VRM target voltage. It does not change the "
                                  "voltage the VRM regulates."),
                 (self.eff, "Switcher efficiency: input power = output power / efficiency"),
                 (self.iq, "Quiescent current, drawn from the input on top of the load "
@@ -575,11 +575,11 @@ class VrmEditor(_Editor):
                 (self.i_limit, "PASS if the VRM's total output current (all phases) is at "
                                "most this"),
                 (self.load_line, "Load line (adaptive voltage positioning): the VRM's "
-                                 "set voltage droops by this resistance times its output "
+                                 "target voltage droops by this resistance times its output "
                                  "current, i.e. the current its connected loads and the "
                                  "VRMs it feeds actually draw. Drops are still measured "
-                                 "from the set voltage, so the droop counts against each "
-                                 "load's tolerance. 'none' holds the set voltage."),
+                                 "from the target voltage, so the droop counts against each "
+                                 "load's tolerance. 'none' holds the target voltage."),
                 (self.dropout, "LDO dropout: the least input-to-output difference it "
                                "regulates at. Below it, its loads are marked VRM OUT OF "
                                "REGULATION."),
@@ -590,26 +590,26 @@ class VrmEditor(_Editor):
                 (self.vin_row.max, "Optional highest input voltage it regulates at. A higher "
                                    "solved input marks its loads VRM OUT OF REGULATION."),
                 (self.vin_row.unit, "V: the input range in volts.\n±V: in volts below and "
-                                    "above the input rail's nominal voltage, the set voltage "
+                                    "above the input rail's nominal voltage, the target voltage "
                                     "of the VRM driving it (e.g. min -0.5 V, max +0.5 V).\n"
                                     "%: in % from that nominal voltage (e.g. min -10 %, max "
                                     "+10 %).\nSwitching converts the values when that VRM "
                                     "is known."),
                 (self.acc_row, "Optional nominal output voltage and DC accuracy. The "
-                               "nominal defaults to the set voltage and is used as the default "
+                               "nominal defaults to the target voltage and is used as the default "
                                "for load requirements. DC accuracy (also called DC "
                                "error or DC tolerance), from the datasheet. It comes from the "
                                "regulator's reference accuracy, the feedback resistor "
                                "tolerances, leakage into the FB pin, and line and load "
                                "regulation. The target calculator can take it off the AC "
                                "voltage tolerance."),
-                (self.acc_row.min, "How far below the set voltage the output may sit, e.g. "
+                (self.acc_row.min, "How far below the target voltage the output may sit, e.g. "
                                    "-1 % or -0.01 V (±V), or in V, the lowest output voltage"),
-                (self.acc_row.max, "How far above the set voltage the output may sit, e.g. "
+                (self.acc_row.max, "How far above the target voltage the output may sit, e.g. "
                                    "+1 % or +0.01 V (±V), or in V, the highest output "
                                    "voltage"),
-                (self.acc_row.unit, "%: the accuracy in % of the set voltage.\n±V: in volts "
-                                    "below and above the set voltage.\nV: the lowest and "
+                (self.acc_row.unit, "%: the accuracy in % of the target voltage.\n±V: in volts "
+                                    "below and above the target voltage.\nV: the lowest and "
                                     "highest output voltage.\nSwitching converts the "
                                     "values."),
                 (self.bandwidth, "Control loop bandwidth of the converter (AC analysis), "
@@ -635,10 +635,10 @@ class VrmEditor(_Editor):
                 (self.ground, "Optional: the VRM's ground pins. With them, the ground return "
                               "is solved too and drops are measured output to ground. Picking "
                               "the output pins fills in the same part's ground pins."),
-                (self.sense, "Optional remote sense: the VRM holds its set voltage at these "
+                (self.sense, "Optional remote sense: the VRM holds its target voltage at these "
                              "pins instead of at its output"),
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
-                                    "set voltage is held relative to these pins instead of "
+                                    "target voltage is held relative to these pins instead of "
                                     "0 V (needs ground pins)"),
                 (self.mesh, "Mesh remote sense, a niche model, off by default: any number "
                             "of sense points, each with its sense pins and optional ground "
@@ -818,7 +818,7 @@ class VrmEditor(_Editor):
         if result is None:
             return
         # The calculated endpoints are absolute output voltages, while voltage is the
-        # nominal set point. Suppress intermediate editor saves, then store one coherent
+        # target voltage. Suppress intermediate editor saves, then store one coherent
         # change so the DC and AC panels see the same result.
         self._loading = True
         try:
@@ -970,10 +970,10 @@ class LoadEditor(_Editor):
                               "return in the solve. Picking the supply pins fills in the same "
                               "part's ground pins."),
                 (self.tolerance_line, "Optional nominal output voltage for this load. When "
-                                     "blank, the driving VRM's set voltage is used. PASS if "
+                                     "blank, the driving VRM's target voltage is used. PASS if "
                                      "every supply pin is within this load's tolerance range."),
                 (self.nominal_v, "Nominal output voltage used as the basis for this load's "
-                                 "tolerance. Blank uses the driving VRM's set voltage; this "
+                                 "tolerance. Blank uses the driving VRM's target voltage; this "
                                  "does not change the VRM."),
                 (self.tol, "Optional: PASS if every supply pin is within this range, so no "
                            "pin drops below the min or is boosted above the max"),
@@ -985,7 +985,7 @@ class LoadEditor(_Editor):
                                "+0.15 V or +5 %)"),
                 (self.tol.unit, "V: the lowest and highest voltage, in volts.\n±V: in volts "
                                 "below and above the nominal output voltage set above.\n%: in % "
-                                "from that nominal voltage. If it is blank, the VRM set voltage "
+                                "from that nominal voltage. If it is blank, the VRM target voltage "
                                 "is used."
                                 "\nSwitching converts the values when that VRM is known.")):
             tip(f, w, text, art.get(w))
@@ -1645,7 +1645,7 @@ class PIPanel(QWidget, PartSelection):
                                       "Load nominal (V)", "Drop / boost (mV)",
                                       "Worst pin (mV)", "Worst %", "Tolerance", ""],
                                      sortable=True)
-        self.tbl_loads.setToolTip("Drop: below the VRM set point. Boost: above it, e.g. near "
+        self.tbl_loads.setToolTip("Drop: below the VRM target voltage. Boost: above it, e.g. near "
                                   "a remote-sensed VRM's output pins. Worst pin and PASS/FAIL "
                                   "use the load nominal voltage and tolerance.")
         self.tbl_vrms = self._table(["VRM", "Type", "V out", "I out (A)", "V in", "I in (A)",

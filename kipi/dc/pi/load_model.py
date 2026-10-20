@@ -13,7 +13,7 @@ A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
         ground_pins: [A1, A10]      # its ground pins (optional)
         current_a: 1.2              # or pin_groups, each drawing its own current
         pin_groups: [{name: core, pins: [F7, F9], current_a: 0.8}]
-        nominal_v: 1.0              # tolerance basis; defaults to the VRM's set voltage
+        nominal_v: 1.0              # tolerance basis; defaults to the VRM's target voltage
         tolerance: {min: -3, max: 3, unit: "%"}     # unit V, ±V or %
         target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[hz, ohm], ...]}
         load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}

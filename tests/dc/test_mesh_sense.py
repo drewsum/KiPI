@@ -1,4 +1,4 @@
-"""Mesh remote sense (#93): every sense point is held at the set voltage."""
+"""Mesh remote sense (#93): every sense point is held at the target voltage."""
 
 import pytest
 

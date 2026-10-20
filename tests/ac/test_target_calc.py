@@ -298,7 +298,7 @@ def test_dialog_subtracts_the_dc_drop(app, monkeypatch):
     for _ in range(4):
         d.btn_drop.click()
     assert d.v_ac.value() == 0                                   # never below zero
-    # Solved, but sitting exactly at the set voltage: nothing to take off
+    # Solved, but sitting exactly at the target voltage: nothing to take off
     flat = TargetCalculator(loads=[ProbeLoad("SoC", None, 2.0,
                                              drop=LoadDrop("SoC", 1.0, 1.0, 0.0, "drop"))])
     assert not flat.btn_drop.isEnabled()
