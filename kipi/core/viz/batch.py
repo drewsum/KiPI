@@ -55,12 +55,13 @@ class Chunk:
     def empty(self) -> bool:
         return not self.parts
 
-    def build(self) -> Optional[pv.PolyData]:
-        """Concatenate the parts into one triangle mesh with a per-cell ``rgb`` array."""
-        if not self.parts:
+    def build(self, visible_nets: Optional[Set[str]] = None) -> Optional[pv.PolyData]:
+        """Concatenate visible net parts into one mesh with per-cell ``rgb`` data."""
+        parts = [p for net, p in self.parts.items()
+                 if visible_nets is None or net in visible_nets]
+        if not parts:
             self.mesh = None
             return None
-        parts = list(self.parts.values())
         offsets = np.cumsum([0] + [len(p.points) for p in parts[:-1]])
         pts = np.concatenate([p.points for p in parts])
         tris = np.concatenate([p.tris + o for p, o in zip(parts, offsets)])
@@ -136,6 +137,10 @@ class MeshBatcher:
         """Chunks changed since the last call. Empty ones should lose their actor."""
         dirty, self._dirty = list(self._dirty), set()
         return dirty
+
+    def mark_all_dirty(self):
+        """Rebuild each chunk, for example after changing its visible net subset."""
+        self._dirty.update(self.chunks())
 
     # ---------------------------------------------------------------- internals
     def _open_chunk(self, category: Category, n_tris: int) -> Chunk:

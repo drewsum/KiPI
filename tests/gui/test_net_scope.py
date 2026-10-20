@@ -68,9 +68,28 @@ def test_chosen_nets_are_saved_and_restored(app, tmp_path):
     saved = yaml_io.loads(setup_path("multiphase", str(tmp_path)).read_text(encoding="utf-8"))
     assert saved["nets"] == ["VIN"]
     w.close()
-
     w = _window(app, _board(tmp_path))         # the plugin started again
     assert w._checked_nets() == ["VIN"]
+    w.close()
+
+
+def test_geometry_shows_all_copper_by_default_and_can_filter_to_included_nets(app, tmp_path):
+    snap = _board(tmp_path)
+    w = _window(app, snap)
+    all_nets = {net.name for net in snap.nets}
+    w.sync_nets()
+    _idle(app, w)
+
+    assert set(w.viewer.nets()) == all_nets, w.log_view.toPlainText()
+    assert not w.chk_hide_non_included.isChecked()
+    assert not w.viewer.hide_non_included
+
+    _tick(app, w, {"VIN"})
+    w.chk_hide_non_included.setChecked(True)
+
+    assert w.viewer.hide_non_included
+    assert w.viewer.included_nets == {"VIN"}
+    assert set(w.viewer.nets()) == all_nets
     w.close()
 
 

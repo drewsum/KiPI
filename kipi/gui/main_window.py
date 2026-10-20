@@ -563,6 +563,11 @@ class MainWindow(QMainWindow):
                 setattr(self, f"chk_{name}", cb)
         self.chk_models = cb
         self.chk_models.setVisible(self._tool.offers_part_models)
+        self.chk_hide_non_included = QCheckBox("Hide non-simulated copper", g_view)
+        self.chk_hide_non_included.setToolTip(
+            "Show all copper by default. When ticked, show only nets included in the analysis.")
+        self.chk_hide_non_included.toggled.connect(self.viewer.set_hide_non_included)
+        feats.addWidget(self.chk_hide_non_included)
         # Only on request: a guessed model may be the wrong part (#130).
         self.btn_guess = QPushButton("Guess models", g_view)
         self.btn_guess.setToolTip(
@@ -1146,6 +1151,7 @@ class MainWindow(QMainWindow):
 
     def _on_net_item_changed(self, item):
         self._checked_cache = None
+        self.viewer.set_included_nets(self._checked_set())
         self._sync_timer.start()
         self._show_unsaved()
 
@@ -1166,25 +1172,25 @@ class MainWindow(QMainWindow):
 
     # ============================================================ scene
     def sync_nets(self):
-        """Make the 3D view match the checked nets.
+        """Keep all board copper in the view and synchronize checked nets to analysis.
 
-        Unchecked nets are removed at once. Newly checked nets are built in the
-        background and added as they finish; the nets already shown are left alone.
+        All net meshes are retained so the geometry view can show context copper;
+        checked nets continue to define each analysis scope.
         """
         if self.snapshot is None:
             return
-        self.solve_panel.set_nets(list(self._checked_set()))
-        self.ac_panel.set_nets(list(self._checked_set()))
-        self.noise_panel.set_nets(list(self._checked_set()))
+        included = self._checked_set()
+        self.viewer.set_included_nets(included)
+        self.solve_panel.set_nets(list(included))
+        self.ac_panel.set_nets(list(included))
+        self.noise_panel.set_nets(list(included))
         self.solve_panel.setup.nets = self._checked_nets()   # saved with the setup
         self._model_timer.start()
         if self._busy():
             self._resync_pending = True
             return
-        wanted = self._checked_nets()
+        wanted = [n.name for n in self.snapshot.nets]
         shown = set(self.viewer.nets())
-        for net in shown - set(wanted):
-            self.viewer.remove_net(net)
         todo = [n for n in wanted if n not in shown]
         if not todo:
             return
@@ -1209,9 +1215,6 @@ class MainWindow(QMainWindow):
         added: List[str] = []
 
         def on_net(ns):
-            # Runs on the UI thread as each net finishes; skip nets unchecked meanwhile.
-            if ns.net not in self._checked_set():
-                return
             if not ns.copper:
                 self.log(f"{ns.net}: no copper on any layer", logging.WARNING)
             self.viewer.add_net(ns, render=False)
@@ -1224,10 +1227,6 @@ class MainWindow(QMainWindow):
             self.log(f"Added {len(added)} net(s); {len(self.viewer.nets())} net(s) shown")
 
         task = self._run(work, done, "Building view", on_partial=on_net)
-        if task is not None:
-            # A canceled build leaves its nets unchecked so the list matches the view.
-            task.canceled.connect(lambda: self._set_checked(
-                lambda it: it.data(Qt.UserRole) in self.viewer.nets()))
 
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):

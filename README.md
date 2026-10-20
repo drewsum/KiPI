@@ -257,7 +257,7 @@ with two or more it lists them and asks you to close the others.
 ### 2. Pick Power Nets from Netlist
 
 The **Board** panel on the left lists every net in the extracted design. Tick the nets you want to analyze power distribution on: they are
-drawn in 3D and offered in the PI setup pin pickers. **Power & ground only** filters the
+offered in the PI setup pin pickers and can be filtered in 3D with **Hide non-simulated copper**. By default, all copper is drawn. **Power & ground only** filters the
 list, **All power** ticks every likely power and ground net, and **None** clears it. Type in
 the filter box to find a net. In order for a net to be simulated, it must be ticked here.
 
@@ -271,7 +271,8 @@ Below that:
 * **Copper layers** toggles layers in the view.
 * **Display** colors copper by layer or by net, exaggerates the stackup (**Z scale**), and
   shows or hides vias, pads, the board, the solder **Mask** and **Silkscreen** (off to start with), **PI Models**
-  and part **3D Models**. By layer, each copper layer has
+  and part **3D Models**. **Hide non-simulated copper** filters the geometry view to the
+  checked nets; with it off, all board copper is shown. By layer, each copper layer has
   its color from the PCB editor's color theme (KiCad's default theme if it cannot be read).
 * **PI Models** Marks the parts of the current analysis: a dot on each of their pads on the nets shown, with the
   part's name. In DC mode its VRMs, loads, series links and capacitors with a model; in AC mode its VRMs, series

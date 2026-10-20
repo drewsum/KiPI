@@ -69,8 +69,16 @@ def no_3d(monkeypatch):
         def __init__(self, parent=None):
             super().__init__(parent)
             self._nets = []
+            self.included_nets = set()
+            self.hide_non_included = False
             self.models_shown = self.models_wanted = True
             self.shown = {}
+
+        def set_included_nets(self, nets):
+            self.included_nets = set(nets)
+
+        def set_hide_non_included(self, hidden):
+            self.hide_non_included = bool(hidden)
 
         def set_feature_visible(self, feature, visible):
             if feature == "models":

@@ -29,6 +29,24 @@ def test_merges_nets_into_one_chunk_per_category():
     assert m.faces.reshape(-1, 4)[:, 1:].max() == m.n_points - 1
 
 
+def test_chunk_can_filter_to_included_nets_without_dropping_stored_geometry():
+    b = MeshBatcher()
+    b.add("IN", ("cu", 3), plane(2), RED)
+    b.add("OUT", ("cu", 3), plane(3, x=5), BLUE)
+    chunk, = b.chunks(("cu", 3))
+
+    all_copper = chunk.build()
+    included_only = chunk.build({"IN"})
+
+    assert all_copper.n_cells == 8 + 18
+    assert included_only.n_cells == 8
+    assert (included_only.cell_data["rgb"] == [255, 0, 0]).all()
+    assert set(chunk.parts) == {"IN", "OUT"}
+
+    assert chunk.build(set()) is None
+    assert set(chunk.parts) == {"IN", "OUT"}
+
+
 def test_chunks_split_at_triangle_budget():
     b = MeshBatcher(max_triangles=20)
     for i in range(5):

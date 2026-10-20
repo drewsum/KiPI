@@ -292,6 +292,8 @@ class Viewer3D(QWidget):
         self._next_color = 0
         self._board_actors: List[object] = []
         self._hidden_layers: set = set()
+        self._included_nets: set = set()
+        self._hide_non_included = False
         self._show_pads = True
         self._show_vias = True
         self._show_board = True
@@ -702,7 +704,8 @@ class Viewer3D(QWidget):
         renderer = self.plotter.renderer
         for chunk in self._batch.take_dirty():
             actor = self._chunk_actors.get(chunk)
-            mesh = chunk.build()
+            visible_nets = self._included_nets if self._hide_non_included else None
+            mesh = chunk.build(visible_nets)
             if mesh is None:
                 if actor is not None:
                     renderer.RemoveActor(actor)
@@ -738,6 +741,22 @@ class Viewer3D(QWidget):
     def set_layer_visible(self, layer_id: int, visible: bool):
         (self._hidden_layers.discard if visible else self._hidden_layers.add)(layer_id)
         self._apply_visibility()
+
+    def set_included_nets(self, nets):
+        """Update the net set used by the optional geometry-view filter."""
+        self._included_nets = set(nets)
+        if self._hide_non_included:
+            self._batch.mark_all_dirty()
+            self.render()
+
+    def set_hide_non_included(self, hidden: bool):
+        """Show only included nets in the geometry view when ``hidden`` is true."""
+        hidden = bool(hidden)
+        if hidden == self._hide_non_included:
+            return
+        self._hide_non_included = hidden
+        self._batch.mark_all_dirty()
+        self.render()
 
     def set_feature_visible(self, feature: str, visible: bool):
         if feature in PER_VIEW and self._result is not None:
