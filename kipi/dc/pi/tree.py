@@ -668,7 +668,8 @@ class _TreeSolver:
         g = self.groups[l.supply.net]
         sol = self.rail_solutions[g]
         nominal = self.driver[g].voltage
-        load_nominal = l.nominal_v if l.nominal_v is not None else nominal
+        load_nominal = (l.nominal_v if l.nominal_v is not None
+                        else self.driver[g].output_nominal_v())
         if l.name in self.disconnected:
             nan = math.nan
             return LoadReport(l.name, self.label_of(g), 0.0, nominal, nan, nan,
@@ -692,7 +693,7 @@ class _TreeSolver:
                          None if gv is None else g_mean, eff, nominal - eff,
                          l.tolerance_label(), None, worst, self._pin_group_rows(l, sol), low,
                          high, load_nominal=load_nominal)
-        rep.limit_low, rep.limit_high = l.limits(nominal)
+        rep.limit_low, rep.limit_high = l.limits(load_nominal)
         if not self.tree_converged or g in self.not_converged:
             rep.status = NOT_CONVERGED
         elif g in out_of_reg:

@@ -478,6 +478,8 @@ class VrmEditor(_Editor):
         self.kind.addItem("Switcher (P_in = P_out / η)", "smps")
         self.output = self._picker()
         self.voltage = _spin(-1000, 1000, 3.3, 4, " V", 0.1)
+        self.nominal_v = _optional_volts()
+        self.nominal_v.setSpecialValueText("use set voltage")
         self.eff = _spin(1, 100, 90, 1, " %", 1)
         self.iq = _spin(0, 10000, 0, 3, " mA", 0.1)
         self.i_limit = _spin(0, 10000, 0, 3, " A", 0.1)
@@ -514,6 +516,7 @@ class VrmEditor(_Editor):
         f.addRow("Name", self.name)
         f.addRow("Type", self.kind)
         f.addRow("Set voltage", self.voltage)
+        f.addRow("Nominal output voltage", self.nominal_v)
         f.addRow("Efficiency", self.eff)
         f.addRow("Quiescent", self.iq)
         f.addRow("Output current limit", self.i_limit)
@@ -540,6 +543,7 @@ class VrmEditor(_Editor):
                self.vin_row.min: ("dropout", "range"), self.vin_row.max: ("dropout", "range"),
                self.acc_row: ("accuracy", "min", "max"), self.acc_row.min: ("accuracy", "min"),
                self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
+               self.nominal_v: ("tolerance", "volts"),
                self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
                self.ground_sense: ("remote_sense", "gsense"),
                self.mesh: ("remote_sense", "sense", "gsense"),
@@ -556,6 +560,9 @@ class VrmEditor(_Editor):
                 (self.voltage, "The voltage the VRM holds at its output pins, or at its sense "
                                "pins if it has them. Picking the output net fills it in from "
                                "the net's name (3V3, +1.8V, V1P2, -5V...)."),
+                (self.nominal_v, "Nominal voltage used as the default for loads on this rail. "
+                                 "Blank uses the VRM set voltage. It does not change the "
+                                 "voltage the VRM regulates."),
                 (self.eff, "Switcher efficiency: input power = output power / efficiency"),
                 (self.iq, "Quiescent current, drawn from the input on top of the load "
                           "current"),
@@ -636,7 +643,7 @@ class VrmEditor(_Editor):
                 (self.cmb_point, "The mesh sense point whose sense and ground sense pins "
                                  "are shown below")):
             tip(f, w, text, art.get(w))
-        self._watch(self.name, self.kind, self.voltage, self.eff, self.iq, self.i_limit,
+        self._watch(self.name, self.kind, self.voltage, self.nominal_v, self.eff, self.iq, self.i_limit,
                     self.load_line, self.dropout, self.bandwidth)
         self.vin_row.changed.connect(self._store)
         self.acc_row.changed.connect(self._store)
@@ -672,7 +679,7 @@ class VrmEditor(_Editor):
         needs = {w: OPTIONAL for w in (self.iq, self.i_limit, self.load_line, self.dropout,
                                        self.vin_row, self.n_phases, self.ground, self.sense,
                                        self.ground_sense, self.mesh, self.n_points,
-                                       *ac_only)}
+                                       self.nominal_v, *ac_only)}
         needs.update({w: REQUIRED for w in (self.name, self.kind, self.voltage, self.output)})
         needs[self.eff] = REQUIRED              # a switcher's input current follows from it
         needs[self.input] = REQUIRED if kind != "source" else OPTIONAL   # ties it into the tree
@@ -773,6 +780,7 @@ class VrmEditor(_Editor):
         self.name.setText(v.name)
         self.kind.setCurrentIndex(max(0, self.kind.findData(v.kind)))
         self.voltage.setValue(v.voltage)
+        _set_optional(self.nominal_v, v.nominal_v)
         self.eff.setValue(v.efficiency * 100)
         self.iq.setValue(v.quiescent_a * 1e3)
         self.i_limit.setValue(v.current_limit_a or 0.0)
@@ -822,6 +830,7 @@ class VrmEditor(_Editor):
         v.name = typed
         v.kind = self.kind.currentData()
         v.voltage = self.voltage.value()
+        v.nominal_v = _get_optional(self.nominal_v)
         v.efficiency = self.eff.value() / 100
         v.quiescent_a = self.iq.value() / 1e3
         v.current_limit_a = self.i_limit.value() or None

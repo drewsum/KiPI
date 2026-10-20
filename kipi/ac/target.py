@@ -174,7 +174,7 @@ class VrmAccuracy:
     name: str             # the VRM's name
     accuracy: str         # as set: "±1 %", "1.19 to 1.21 V"
     v: float              # its larger side, volts from the set voltage
-    nominal_v: Optional[float] = None  # VRM set point
+    nominal_v: Optional[float] = None  # VRM output nominal
     minimum_v: Optional[float] = None  # lowest regulated output in volts
     maximum_v: Optional[float] = None  # highest regulated output in volts
 
@@ -307,8 +307,10 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         group = net_groups(setup, [load.supply.net])[load.supply.net]
         vrm = next((v for v in setup.vrms if v.voltage
                     and any(ph.output.net in group for ph in v.all_phases())), None)
-        nominal = load.nominal_v if load.nominal_v is not None else (vrm.voltage if vrm else None)
-        tol = LoadTolerance.of(load, vrm.voltage) if load.has_tolerance() and vrm else None
+        nominal = (load.nominal_v if load.nominal_v is not None
+                   else (vrm.output_nominal_v() if vrm else None))
+        tol = (LoadTolerance.of(load, vrm.output_nominal_v())
+               if load.has_tolerance() and vrm else None)
         exact = _same_pins(load.supply, rail) and (load.ground is None
                                                    or _same_pins(load.ground, ground))
         out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact,
@@ -342,5 +344,5 @@ def vrm_accuracies(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[Vr
             continue
         low, high = range_volts(v.voltage, v.acc_min, v.acc_max,
                                 range_unit(v.acc_pct, v.acc_dv))
-        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc, v.voltage, low, high))
+        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc, v.output_nominal_v(), low, high))
     return out

@@ -120,9 +120,16 @@ class Vrm:
     # ground_sense above, points 2..N these.
     mesh_sense: bool = False
     sense_points: List[SensePoint] = field(default_factory=list)
+    # Optional nominal output voltage for the rail's requirements. When blank, the
+    # regulator set voltage is the nominal, as it was in setups saved before this field.
+    nominal_v: Optional[float] = None
 
     def all_phases(self) -> List[VrmPhase]:
         return [VrmPhase(self.output, self.input, self.ground), *self.phases]
+
+    def output_nominal_v(self) -> float:
+        """Nominal rail voltage for requirements; defaults to the regulated set voltage."""
+        return self.voltage if self.nominal_v is None else self.nominal_v
 
     def all_sense_points(self) -> List[SensePoint]:
         """Every sense point: point 1 (sense, ground_sense), then the mesh's others when
@@ -149,6 +156,10 @@ class Vrm:
                              range_unit(self.acc_pct, self.acc_dv))
         sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
         return max(sides) if sides else None
+
+    def __setstate__(self, state):
+        """Open result files and setups saved before nominal output voltage existed."""
+        self.__dict__.update({"nominal_v": None, **state})
 
 
 @dataclass
@@ -355,6 +366,7 @@ class PISetup:
         known = {f.name for f in dataclasses.fields(SolveSettings)}
         return PISetup(
             vrms=[Vrm(name=v["name"], output=pin(v["output"]), voltage=v["voltage"],
+                      nominal_v=v.get("nominal_v"),
                       kind=v.get("kind", "source"), efficiency=v.get("efficiency", 0.9),
                       quiescent_a=v.get("quiescent_a", 0.0), input=pin(v.get("input")),
                       sense=pin(v.get("sense")), ground=pin(v.get("ground")),
@@ -524,13 +536,13 @@ def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
 
 def rail_nominal(setup: PISetup, net: Optional[str], skip: str = "",
                  groups=None) -> Optional[float]:
-    """The nominal voltage of the rail ``net`` is on: the set voltage of a VRM (other than
-    ``skip``) driving it. None if no VRM does."""
+    """The nominal voltage of the rail ``net`` is on: the output nominal of a VRM (other
+    than ``skip``) driving it. None if no VRM does."""
     if not net:
         return None
     groups = groups or net_groups(setup, [net])
     group = groups.get(net, frozenset([net]))
-    return next((u.voltage for u in setup.vrms if u.name != skip and u.voltage
+    return next((u.output_nominal_v() for u in setup.vrms if u.name != skip and u.voltage
                  and any(ph.output.net in group for ph in u.all_phases())), None)
 
 
@@ -602,6 +614,8 @@ def validate(setup: PISetup) -> List[str]:
         by_group.setdefault(groups[v.output.net], []).append(v.name)
         if v.kind not in VRM_KINDS:
             errors.append(f"VRM {v.name}: unknown type {v.kind!r}")
+        if v.nominal_v is not None and not math.isfinite(v.nominal_v):
+            errors.append(f"VRM {v.name}: nominal output voltage must be finite")
         if v.kind in ("ldo", "smps") and v.input is None:
             errors.append(f"VRM {v.name}: an {v.kind.upper()} needs its input pins set "
                           "(that is what connects it into the power tree)")
