@@ -489,6 +489,11 @@ class VrmEditor(_Editor):
         self.vin_row = RangeRow(self._input_nominal)
         # DC accuracy, in % of the set voltage or in volts.
         self.acc_row = RangeRow(lambda: self.voltage.value() or None)
+        self.btn_accuracy_calc = QPushButton("DC Accuracy Calculator…")
+        self.btn_accuracy_calc.setToolTip(
+            "Calculate an adjustable regulator's output range from its feedback reference, "
+            "resistor divider and FB pin leakage")
+        self.btn_accuracy_calc.clicked.connect(self._accuracy_calculator)
         self.input = self._picker(optional=True)
         self.sense = self._picker(optional=True)
         self.ground = self._picker(optional=True)
@@ -516,6 +521,7 @@ class VrmEditor(_Editor):
         f.addRow("Dropout", self.dropout)
         f.addRow("Input range", self.vin_row)
         f.addRow("DC accuracy", self.acc_row)
+        f.addRow("", self.btn_accuracy_calc)
         f.addRow("Control loop bandwidth", self.bandwidth)
         f.addRow("Phases", self.n_phases)
         f.addRow("Edit phase", self.cmb_phase)
@@ -653,6 +659,7 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.dropout, kind == "ldo")
         self.form.setRowVisible(self.vin_row, kind != "source")
         self.form.setRowVisible(self.acc_row, kind != "source")
+        self.form.setRowVisible(self.btn_accuracy_calc, kind in ("ldo", "smps"))
         dc = self.mode == "dc"
         dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                    self.input, self.sense, self.ground_sense, self.dropout, self.mesh,
@@ -785,6 +792,26 @@ class VrmEditor(_Editor):
         self._show_point(v)
         self._kind_rows()
 
+    def _accuracy_calculator(self):
+        from kipi.dc.gui.accuracy_calc import DcAccuracyCalculator
+
+        dlg = DcAccuracyCalculator(self, self.obj.name if self.obj else "")
+        if dlg.exec() != QDialog.Accepted:
+            return
+        result = dlg.result_data()
+        if result is None:
+            return
+        # The calculated endpoints are absolute output voltages, while voltage is the
+        # nominal set point. Suppress intermediate editor saves, then store one coherent
+        # change so the DC and AC panels see the same result.
+        self._loading = True
+        try:
+            self.voltage.setValue(result.nominal_v)
+            self.acc_row.set_values(result.minimum_v, result.maximum_v, False, False)
+        finally:
+            self._loading = False
+        self._store()
+
     def _save(self, v: Vrm):
         typed = self.name.text().strip() or v.name
         # A name still equal to the output part's reference follows a newly picked part.
@@ -887,8 +914,17 @@ class LoadEditor(_Editor):
         gb.addWidget(self.btn_each)
         self.lbl_total = QLabel()
         self.ground = self._picker(optional=True)
-        # Tolerance, in % from the rail's nominal voltage or in volts.
+        # Tolerance, in % or volts from the load's nominal output, or the VRM's set
+        # voltage when that optional load nominal is blank.
+        self.nominal_v = _optional_volts()
+        self.nominal_v.setSpecialValueText("use VRM")
         self.tol = RangeRow(self._rail_nominal)
+        self.tolerance_line = QWidget()
+        tol_layout = QHBoxLayout(self.tolerance_line)
+        tol_layout.setContentsMargins(0, 0, 0, 0)
+        tol_layout.addWidget(QLabel("Nominal"))
+        tol_layout.addWidget(self.nominal_v, 1)
+        tol_layout.addWidget(self.tol, 3)
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -897,12 +933,13 @@ class LoadEditor(_Editor):
         f.addRow(gb)
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
-        f.addRow("Tolerance", self.tol)
+        f.addRow("Tolerance", self.tolerance_line)
         # Drawings under the tooltips (#116), the field's part picked out.
         art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
                self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
                self.tol.max: ("tolerance", "max"),
-               self.tol.unit: ("tolerance", "volts", "dv", "pct")}
+               self.tol.unit: ("tolerance", "volts", "dv", "pct"),
+               self.nominal_v: ("tolerance", "volts")}
         for w, text in (
                 (self.name, "A name for this load, used in the results tables"),
                 (self.supply, "The pins the load draws its current from"),
@@ -915,24 +952,31 @@ class LoadEditor(_Editor):
                 (self.ground, "Optional: the load's ground pins, to include the ground "
                               "return in the solve. Picking the supply pins fills in the same "
                               "part's ground pins."),
+                (self.tolerance_line, "Optional nominal output voltage for this load. When "
+                                     "blank, the driving VRM's set voltage is used. PASS if "
+                                     "every supply pin is within this load's tolerance range."),
+                (self.nominal_v, "Nominal output voltage used as the basis for this load's "
+                                 "tolerance. Blank uses the driving VRM's set voltage; this "
+                                 "does not change the VRM."),
                 (self.tol, "Optional: PASS if every supply pin is within this range, so no "
                            "pin drops below the min or is boosted above the max"),
                 (self.tol.min, "The lowest voltage a supply pin may have, or in ±V or %, "
-                               "the most it may drop below the VRM set voltage (e.g. "
+                               "the most it may drop below the load nominal output (e.g. "
                                "-0.15 V or -5 %)"),
                 (self.tol.max, "The highest voltage a supply pin may have, or in ±V or %, "
-                               "the most it may be boosted above the VRM set voltage (e.g. "
+                               "the most it may be boosted above the load nominal output (e.g. "
                                "+0.15 V or +5 %)"),
                 (self.tol.unit, "V: the lowest and highest voltage, in volts.\n±V: in volts "
-                                "below and above the rail's nominal voltage, the set voltage "
-                                "of the VRM driving it.\n%: in % from that nominal voltage."
+                                "below and above the nominal output voltage set above.\n%: in % "
+                                "from that nominal voltage. If it is blank, the VRM set voltage "
+                                "is used."
                                 "\nSwitching converts the values when that VRM is known.")):
             tip(f, w, text, art.get(w))
         self.groups.setToolTip(art_tip(
             "Pin groups: an optional name, the pin numbers (e.g. 15,28) and the current into "
             "those pins. Click a column header to sort by it.", "current_split", "groups"))
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
-        self._watch(self.name, self.current, self.mode)
+        self._watch(self.name, self.current, self.mode, self.nominal_v)
         self.tol.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
@@ -942,7 +986,8 @@ class LoadEditor(_Editor):
     def _mode_rows(self, *_):
         grouped = self.mode.currentData() == "groups"
         self._mark({self.name: REQUIRED, self.supply: REQUIRED, self.mode: REQUIRED,
-                    self.current: REQUIRED, self.ground: OPTIONAL, self.tol: OPTIONAL})
+                    self.current: REQUIRED, self.ground: OPTIONAL,
+                    self.tolerance_line: OPTIONAL})
         self.form.setRowVisible(self.current, not grouped)
         self.form.setRowVisible(self.groups, grouped)
         self.form.setRowVisible(self.lbl_total, grouped)
@@ -1022,11 +1067,15 @@ class LoadEditor(_Editor):
             self._add_group_row(g.name, ",".join(g.pins), g.current)
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
+        _set_optional(self.nominal_v, l.nominal_v)
         self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct, l.tol_dv)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
     def _rail_nominal(self) -> Optional[float]:
+        override = _get_optional(self.nominal_v)
+        if override is not None:
+            return override
         sup = self.supply.value()
         return rail_nominal(self.panel.setup, sup.net if sup else None)
 
@@ -1058,6 +1107,7 @@ class LoadEditor(_Editor):
             if gnd is not None:
                 l.ground = gnd
                 self._show(self.ground, gnd)
+        l.nominal_v = _get_optional(self.nominal_v)
         l.tol_min, l.tol_max = self.tol.values()
         l.tol_pct, l.tol_dv = self.tol.pct(), self.tol.dv()
         self.lbl_total.setText(f"{l.total_current():.4g} A")
@@ -1578,11 +1628,12 @@ class PIPanel(QWidget, PartSelection):
         lr.addLayout(self._scale_row(g_res))
         self.res_tabs = QTabWidget(g_res)
         self.tbl_loads = self._table(["Load", "Group", "I (A)", "V eff (V)",
-                                      "Drop / boost (mV)", "Worst pin (mV)", "Worst %",
-                                      "Tolerance", ""], sortable=True)
+                                      "Load nominal (V)", "Drop / boost (mV)",
+                                      "Worst pin (mV)", "Worst %", "Tolerance", ""],
+                                     sortable=True)
         self.tbl_loads.setToolTip("Drop: below the VRM set point. Boost: above it, e.g. near "
-                                  "a remote-sensed VRM's output pins. The worst pin is the one "
-                                  "furthest from the set point either way.")
+                                  "a remote-sensed VRM's output pins. Worst pin and PASS/FAIL "
+                                  "use the load nominal voltage and tolerance.")
         self.tbl_vrms = self._table(["VRM", "Type", "V out", "I out (A)", "V in", "I in (A)",
                                      "P in (W)", "Loss (W)", "I limit (A)", ""], sortable=True)
         self.tbl_vrms.setToolTip("Each VRM's solved output and input, conversion loss, and "
@@ -2279,8 +2330,10 @@ class PIPanel(QWidget, PartSelection):
         for r, l in enumerate(tree.loads):
             status = l.verdict
             v_eff = "" if math.isnan(l.v_effective) else f"{l.v_effective:.5f}"
+            v_nom = "" if l.load_nominal is None else f"{l.load_nominal:.5f}"
             # Drop and boost sort as one signed value: largest boost ... largest drop.
             set_row(t, r, [l.name, l.group, f"{l.current:.4g}", v_eff,
+                           v_nom,
                            (fmt_drop(l.drop, unit=""), l.drop * 1e3),
                            (fmt_drop(l.drop_worst, unit=""), l.drop_worst * 1e3),
                            ("" if math.isnan(l.drop_worst_pct)
@@ -2289,7 +2342,7 @@ class PIPanel(QWidget, PartSelection):
             color = (("#ffb040" if l.status else None) if l.passed is None
                      else ("#60d060" if l.passed else "#ff6060"))
             if color:
-                t.item(r, 8).setForeground(QColor(color))
+                t.item(r, 9).setForeground(QColor(color))
         f = lambda x, fmt: "" if x is None else format(x, fmt)
         t = self.tbl_vrms
         t.setRowCount(sum(1 + len(v.phases) for v in tree.vrms))

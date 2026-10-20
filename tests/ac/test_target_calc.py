@@ -142,8 +142,10 @@ def test_an_uneven_tolerance_gives_its_tighter_side():
     s = _setup()
     soc = s.loads[1]
     soc.tol_min, soc.tol_max = -2.0, 5.0                     # -2 % of 1 V is tighter
+    soc.nominal_v = 1.1
     t = probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance
-    assert t.v_ac_v == pytest.approx(0.02) and t.label() == "SoC: -2 / +5 % of 1 V"
+    assert t.v_ac_v == pytest.approx(0.022) and t.label() == "SoC: -2 / +5 % of 1.1 V"
+    soc.nominal_v = None
     soc.tol_min, soc.tol_max, soc.tol_pct = 0.97, 1.01, False  # volts: +10 mV is tighter
     t = probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance
     assert t.v_ac_v == pytest.approx(0.01) and t.label() == "SoC: 0.97 to 1.01 V (±10 mV)"
@@ -198,6 +200,7 @@ def test_vrm_accuracies_on_the_probes_rail():
     accs = vrm_accuracies(s, PinRef("U1", "+1V0"))             # through the link to VR1
     assert [(a.name, a.label()) for a in accs] == [("VR1", "VR1: -1 / +2 % (±20 mV)")]
     assert accs[0].v == pytest.approx(0.02)
+    assert (accs[0].minimum_v, accs[0].maximum_v) == pytest.approx((0.99, 1.02))
     assert [a.v for a in vrm_accuracies(s)] == [pytest.approx(0.02), pytest.approx(0.05)]
     vr2.kind = "source"                                        # sources have none
     assert [a.name for a in vrm_accuracies(s)] == ["VR1"]
@@ -216,6 +219,17 @@ def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
     for _ in range(4):
         d.btn_accuracy.click()
     assert d.v_ac.value() == 0                                 # never below zero
+
+
+def test_dialog_subtracts_difference_from_load_nominal(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import ProbeLoad, VrmAccuracy
+    monkeypatch.setattr(TargetCalculator, "last", (100.0, 0.0, 0.0))
+    load = ProbeLoad("SoC", None, 1.0, nominal_v=1.04)
+    accuracy = VrmAccuracy("VR1", "0.99 to 1.02 V", 0.02, 1.0, 0.99, 1.02)
+    d = TargetCalculator(loads=[load], accuracies=[accuracy])
+    d.btn_accuracy.click()
+    assert d.v_ac.value() == pytest.approx(50.0)  # max(50 mV below, 20 mV above)
 
 
 # --- Subtract the solved DC drop at the load's pins ----------------------------------------

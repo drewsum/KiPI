@@ -5,7 +5,7 @@ A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
 
 .. code-block:: yaml
 
-    kipi_load_model: 1
+    kipi_load_model: 2
     part: XC7A35T-1CSG324C          # what it is a model of (free text)
     supplies:                       # one per supply rail of the part
       - name: VCCINT
@@ -13,16 +13,18 @@ A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
         ground_pins: [A1, A10]      # its ground pins (optional)
         current_a: 1.2              # or pin_groups, each drawing its own current
         pin_groups: [{name: core, pins: [F7, F9], current_a: 0.8}]
+        nominal_v: 1.0              # tolerance basis; defaults to the VRM's set voltage
         tolerance: {min: -3, max: 3, unit: "%"}     # unit V, ±V or %
         target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[hz, ohm], ...]}
         load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}
 
 Every key but ``name`` is optional, and only the ones given are applied. The DC loads take
-the current, pin groups and tolerance; the AC probes the target, or one worked out
-from the load step as the target calculator does (with the AC tolerance given, else the
-tighter side of the DC tolerance). A model exported from a setup holds every load and probe
-on one reference designator, one supply each, so a part with several supplies keeps them
-all. Pins make a model usable to add the loads and probes for another copy of the part.
+the current, pin groups, nominal output voltage and tolerance; the AC probes take the
+target, or one worked out from the load step as the target calculator does (with the AC
+tolerance given, else the tighter side of the DC tolerance). A model exported from a setup
+holds every load and probe on one reference designator, one supply each, so a part with
+several supplies keeps them all. Pins make a model usable to add the loads and probes for
+another copy of the part.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from kipi.dc.pi.model import (
     rail_nominal, range_volts,
 )
 
-FORMAT = 1
+FORMAT = 2
 KEY = "kipi_load_model"
 SUFFIX = ".kipi-load.yml"
 UNITS = (VOLTS, DELTA_VOLTS, PERCENT)
@@ -63,6 +65,7 @@ class SupplyModel:
     step_a: Optional[float] = None
     slew_a_per_us: Optional[float] = None
     ac_tolerance_mv: Optional[float] = None
+    nominal_v: Optional[float] = None
 
     def has_tolerance(self) -> bool:
         return self.tol_min is not None or self.tol_max is not None
@@ -80,6 +83,8 @@ class SupplyModel:
                         f"{len(self.groups)} groups")
         elif self.current_a is not None:
             bits.append(f"{self.current_a:g} A")
+        if self.nominal_v is not None:
+            bits.append(f"nominal {self.nominal_v:g} V")
         if self.has_tolerance():
             bits.append(tolerance_label(self.tol_min, self.tol_max, self.tol_unit == PERCENT,
                                         self.tol_unit == DELTA_VOLTS))
@@ -177,6 +182,7 @@ def _supply(d, i: int) -> SupplyModel:
     where = f"supply {d['name']}"
     s = SupplyModel(str(d["name"]).strip(), _pins(d.get("pins"), where),
                     _pins(d.get("ground_pins"), where), _num(d, "current_a", where))
+    s.nominal_v = _num(d, "nominal_v", where)
     for g in d.get("pin_groups") or []:
         if not isinstance(g, dict):
             raise ModelError(f"{where}: each pin group needs pins and current_a")
@@ -209,6 +215,8 @@ def _supply(d, i: int) -> SupplyModel:
 
 def _supply_dict(s: SupplyModel) -> dict:
     d: Dict[str, object] = {"name": s.name}
+    if s.nominal_v is not None:
+        d["nominal_v"] = s.nominal_v
     if s.pins:
         d["pins"] = list(s.pins)
     if s.ground_pins:
@@ -262,6 +270,7 @@ def model_of(setup: PISetup, ref: str, part: str = "") -> LoadModel:
                         None if l.groups else l.current,
                         [PinGroup(list(g.pins), g.current, g.name) for g in l.groups],
                         l.tol_min, l.tol_max, range_unit(l.tol_pct, l.tol_dv))
+        s.nominal_v = l.nominal_v
         model.supplies.append(s)
         by_net.setdefault(l.supply.net, s)
     for p in setup.probes:
@@ -313,6 +322,9 @@ def apply_to_load(load: Load, s: SupplyModel) -> List[str]:
     elif s.current_a is not None:
         load.current, load.groups = s.current_a, []
         done.append("current")
+    if s.nominal_v is not None:
+        load.nominal_v = s.nominal_v
+        done.append("nominal output")
     if s.has_tolerance():
         load.tol_min, load.tol_max = s.tol_min, s.tol_max
         load.tol_pct, load.tol_dv = s.tol_unit == PERCENT, s.tol_unit == DELTA_VOLTS
@@ -324,6 +336,7 @@ def ac_tolerance_v(s: SupplyModel, nominal: Optional[float]) -> Optional[float]:
     """The AC tolerance, volts: as given, else the tighter side of the DC tolerance."""
     if s.ac_tolerance_mv is not None:
         return s.ac_tolerance_mv / 1e3
+    nominal = s.nominal_v if s.nominal_v is not None else nominal
     if not (nominal and s.has_tolerance()):
         return None
     lo, hi = range_volts(nominal, s.tol_min, s.tol_max, s.tol_unit)

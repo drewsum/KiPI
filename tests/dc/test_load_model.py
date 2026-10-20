@@ -11,7 +11,7 @@ from kipi.dc.pi.load_model import (
 from kipi.dc.pi.model import Load, PinGroup, PinRef, PISetup, Vrm
 
 YAML = """\
-kipi_load_model: 1
+kipi_load_model: 2
 part: FPGA-X
 supplies:
   - name: VCCINT
@@ -20,6 +20,7 @@ supplies:
     pin_groups:
       - {name: core, pins: [F7, F9], current_a: 0.8}
       - {pins: [H7], current_a: 0.4}
+    nominal_v: 0.95
     tolerance: {min: -3, max: 3, unit: "%"}
     heat_w: 0.9                 # from before #121: read and ignored
     load_step: {step_a: 0.6, slew_a_per_us: 5}
@@ -36,7 +37,8 @@ def _setup():
     s.vrms = [Vrm("U1", PinRef("U1", "+1V0", ["2"]), 1.0, "source")]
     s.loads = [Load("U5 VCCINT", PinRef("U5", "+1V0", ["F7", "F9", "H7"]), 1.2,
                     ground=PinRef("U5", "GND", ["A1"]), tol_min=-3.0, tol_max=3.0,
-                    groups=[PinGroup(["F7", "F9"], 0.8, "core"), PinGroup(["H7"], 0.4)]),
+                    groups=[PinGroup(["F7", "F9"], 0.8, "core"), PinGroup(["H7"], 0.4)],
+                    nominal_v=0.95),
                Load("U5", PinRef("U5", "+1V8", ["K1"]), 0.1, tol_min=1.71, tol_max=None,
                     tol_pct=False),
                Load("U6", PinRef("U6", "+1V0", []), 2.0)]
@@ -53,13 +55,17 @@ def test_a_model_file_reads_and_writes_back(tmp_path):
     m = LoadModel.load(path)
     assert m.part == "FPGA-X" and [s.name for s in m.supplies] == ["VCCINT", "VCCAUX"]
     core, aux = m.supplies
+    assert m.to_dict()["kipi_load_model"] == 2
     assert [g.current for g in core.groups] == [0.8, 0.4] and core.groups[0].name == "core"
     assert (core.tol_min, core.tol_max, core.tol_unit) == (-3.0, 3.0, "%")
+    assert core.nominal_v == pytest.approx(0.95)
     assert (aux.tol_unit, aux.target_points) == ("±V", [(1e3, 0.1), (1e7, 0.2)])
     assert (core.step_a, core.slew_a_per_us) == (0.6, 5.0)
     again = LoadModel.load(m.save(tmp_path / "again.yml"))
     assert again == m
     assert m.save(tmp_path / "again.json") == tmp_path / "again.json.yml"   # YAML only
+    old = LoadModel.from_dict({"kipi_load_model": 1, "supplies": [{"name": "old"}]})
+    assert old.supplies[0].nominal_v is None
 
 
 def test_only_yaml_files_are_load_models(tmp_path, monkeypatch):
@@ -97,6 +103,7 @@ def test_export_takes_every_load_and_probe_on_the_part():
     assert core.current_a is None and len(core.groups) == 2       # groups carry the current
     assert (core.pins, core.ground_pins) == (["F7", "F9", "H7"], ["A1"])
     assert (core.target_ohm, core.target_hz) == (0.01, 5e7)       # the probe on its net
+    assert core.nominal_v == pytest.approx(0.95)
     assert (aux.current_a, aux.tol_min, aux.tol_max, aux.tol_unit) == (0.1, 1.71, None, "V")
     assert io.current_a is None and io.target_points == [(1e3, 0.1), (1e6, 0.2)]
 
@@ -108,8 +115,9 @@ def test_apply_to_many_loads_and_probes():
     for l in loads:
         i = best_supply(m, l.name, l.supply)
         assert i == 0
-        assert apply_to_load(l, m.supplies[i]) == ["pin groups", "tolerance"]
+        assert apply_to_load(l, m.supplies[i]) == ["pin groups", "nominal output", "tolerance"]
         assert l.total_current() == pytest.approx(1.2) and l.tol_min == -3.0
+        assert l.nominal_v == pytest.approx(0.95)
     aux = Load("U7 aux", PinRef("U7", "+1V8", []), 9.0, tol_min=-5.0, tol_max=5.0)
     assert best_supply(m, aux.name, aux.supply) == 1                 # by its net's name
     apply_to_load(aux, m.supplies[1])

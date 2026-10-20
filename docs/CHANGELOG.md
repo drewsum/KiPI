@@ -7,6 +7,13 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **Nominal output voltage per load** (#168). Each load can set the voltage its tolerance
+  is specified around, independently of the VRM's nominal set point. Blank keeps using
+  the driving VRM voltage. The value is saved in setup and reusable load-model YAML.
+- **DC Accuracy Calculator** (#168). An LDO or switcher's VRM editor can calculate its
+  nominal, minimum and maximum output from feedback reference limits, divider resistor
+  values and tolerances, and nominal and maximum feedback pin leakage. The result fills
+  the VRM's nominal set voltage and absolute output accuracy limits.
 - **Diode series links** (#161). Enter the diode's constant forward drop with side A as
   its anode, alongside its nonzero series resistance. DC solves include the drop and its
   dissipation; AC solves use the resistance and ESL as the small-signal series model.

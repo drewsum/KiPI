@@ -30,6 +30,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -44,7 +45,7 @@ from kipi.noise.model import (
     victim_from_dict,
 )
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 VRM_KINDS = ("source", "ldo", "smps")
 
 
@@ -174,6 +175,9 @@ class Load:
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
+    # Optional nominal voltage for this device's tolerance requirements. When blank,
+    # its limits use the driving VRM's set voltage, as older setups did.
+    nominal_v: Optional[float] = None
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
@@ -182,7 +186,8 @@ class Load:
         return self.tol_min is not None or self.tol_max is not None
 
     def limits(self, nominal: float) -> Tuple[Optional[float], Optional[float]]:
-        """The tolerance as (lowest, highest) volts on a rail at ``nominal``, either None."""
+        """The tolerance as (lowest, highest) volts at its nominal, either end optional."""
+        nominal = self.nominal_v if self.nominal_v is not None else nominal
         unit = range_unit(self.tol_pct, self.tol_dv)
         if unit != VOLTS and not nominal:
             return None, None
@@ -194,7 +199,8 @@ class Load:
     def __setstate__(self, state):
         # Setups pickled in results files before asymmetric tolerances: +/- one %.
         t = state.pop("tolerance_pct", None)
-        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True, **state}
+        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True,
+                 "nominal_v": None, **state}
         self.__dict__.update(state)
 
 
@@ -371,7 +377,8 @@ class PISetup:
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), **_load_tolerance(l),
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
-                                for g in l.get("groups", [])])
+                                for g in l.get("groups", [])],
+                        nominal_v=l.get("nominal_v"))
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                           resistance=k["resistance"], esl_h=k.get("esl_h"),
@@ -644,6 +651,10 @@ def validate(setup: PISetup) -> List[str]:
 
     rail_groups = set(by_group)
     for l in setup.loads:
+        if l.nominal_v is not None and not math.isfinite(l.nominal_v):
+            errors.append(f"Load {l.name}: nominal output voltage must be finite")
+        if (l.nominal_v == 0 and l.tol_pct and l.has_tolerance()):
+            errors.append(f"Load {l.name}: a percent tolerance needs a nonzero nominal output voltage")
         if l.tol_min is not None and l.tol_max is not None and l.tol_min > l.tol_max:
             errors.append(f"Load {l.name}: tolerance minimum is above its maximum")
         if l.groups:

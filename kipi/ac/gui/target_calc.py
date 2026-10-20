@@ -71,9 +71,9 @@ class TargetCalculator(QDialog):
         self.accuracies = list(accuracies or [])
         self.btn_accuracy = _copy_button(
             "Subtract VRM DC accuracy", self.accuracies, self.subtract_accuracy,
-            "Take the DC accuracy of the VRM driving this rail off the AC voltage tolerance: "
-            "the larger side of it, which the output may sit away from its set voltage "
-            "before any load step. Each click subtracts it again.",
+            "Take the larger difference between the VRM's minimum/maximum regulated voltage "
+            "and the selected load's nominal voltage off the AC voltage tolerance. Each click "
+            "subtracts it again.",
             "No LDO or switcher driving this probe's rail has a DC accuracy set")
         self.btn_current = QPushButton("Copy current from DC load")
         self.btn_current.clicked.connect(lambda: self.copy_current(self.selected_load()))
@@ -168,7 +168,10 @@ class TargetCalculator(QDialog):
             self.v_ac.setValue(max(0.0, self.v_ac.value() - load.drop.v * 1e3))
 
     def subtract_accuracy(self, a: VrmAccuracy):
-        self.v_ac.setValue(max(0.0, self.v_ac.value() - a.v * 1e3))
+        load = self.selected_load()
+        nominal = load.nominal_v if load and load.nominal_v is not None else a.nominal_v
+        difference = a.difference_from(nominal)
+        self.v_ac.setValue(max(0.0, self.v_ac.value() - difference * 1e3))
 
     def copy_current(self, load: Optional[ProbeLoad]):
         if load and load.current_a:

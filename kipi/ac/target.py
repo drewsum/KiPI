@@ -17,11 +17,11 @@ Below the converter's control loop bandwidth the loop holds the rail, so a targe
 applies above the VRM's bandwidth (:func:`judged_from`).
 
 The calculator's AC tolerance and load step can be copied from the DC load on the probe's
-pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from the voltage of the
-VRM feeding it, and its current. Two things that eat into that tolerance before any load
-step can be taken off it: the DC accuracy of the VRM driving the rail
-(:func:`vrm_accuracies`), the larger side of it, and the DC drop the copper itself causes
-at the load's pins (:func:`load_drop`), which needs a DC solve.
+pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from that load's nominal
+voltage (or the VRM set point when unset), and its current. Two things that eat into that
+tolerance before any load step can be taken off it: the largest difference between the
+load's nominal voltage and the VRM's DC accuracy range (:func:`vrm_accuracies`), and the DC
+drop the copper itself causes at the load's pins (:func:`load_drop`), which needs a DC solve.
 
 An LDO's or switcher's input pins load the rail feeding it just as a DC load does
 (#117): each phase's input counts as a load whose tolerance is the regulator's input
@@ -140,8 +140,9 @@ class LoadTolerance:
     def of(cls, load: "Load", nominal_v: float) -> Optional["LoadTolerance"]:
         """The AC tolerance a DC load's tolerance allows: +/- its tighter side. None if
         it has none, or nominal lies outside it."""
-        v_ac = _tighter_side(nominal_v, *load.limits(nominal_v))
-        return cls(load.name, load.tolerance_label(), nominal_v, v_ac) if v_ac else None
+        nominal = load.nominal_v if load.nominal_v is not None else nominal_v
+        v_ac = _tighter_side(nominal, *load.limits(nominal_v))
+        return cls(load.name, load.tolerance_label(), nominal, v_ac) if v_ac else None
 
     @classmethod
     def of_vrm_input(cls, name: str, vrm: "Vrm", nominal_v: float, lo: Optional[float],
@@ -173,6 +174,20 @@ class VrmAccuracy:
     name: str             # the VRM's name
     accuracy: str         # as set: "±1 %", "1.19 to 1.21 V"
     v: float              # its larger side, volts from the set voltage
+    nominal_v: Optional[float] = None  # VRM set point
+    minimum_v: Optional[float] = None  # lowest regulated output in volts
+    maximum_v: Optional[float] = None  # highest regulated output in volts
+
+    def difference_from(self, nominal_v: Optional[float]) -> float:
+        """Largest specified distance from a load nominal to the VRM accuracy limits."""
+        if nominal_v is None:
+            return self.v
+        limits = [x for x in (self.minimum_v, self.maximum_v) if x is not None]
+        if limits:
+            return max(abs(nominal_v - x) for x in limits)
+        if self.nominal_v is not None:
+            return self.v + abs(nominal_v - self.nominal_v)
+        return self.v
 
     def label(self) -> str:
         return f"{self.name}: {self.accuracy} (±{self.v * 1e3:.4g} mV)"
@@ -200,6 +215,7 @@ class ProbeLoad:
     drop: Optional[LoadDrop] = None     # its DC drop, once the power tree is solved
     vrm_input: bool = False             # an LDO's or switcher's input, not a DC load:
                                         # its current is known only from a DC solve
+    nominal_v: Optional[float] = None    # load's nominal, or its driving rail nominal
 
     def label(self) -> str:
         return self.name
@@ -288,16 +304,15 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         if load.supply.ref != rail.ref or (ground and load.ground
                                            and load.ground.ref != ground.ref):
             continue
-        tol = None
-        if load.has_tolerance():
-            group = net_groups(setup, [load.supply.net])[load.supply.net]
-            vrm = next((v for v in setup.vrms if v.voltage
-                        and any(ph.output.net in group for ph in v.all_phases())), None)
-            tol = vrm and LoadTolerance.of(load, vrm.voltage)
+        group = net_groups(setup, [load.supply.net])[load.supply.net]
+        vrm = next((v for v in setup.vrms if v.voltage
+                    and any(ph.output.net in group for ph in v.all_phases())), None)
+        nominal = load.nominal_v if load.nominal_v is not None else (vrm.voltage if vrm else None)
+        tol = LoadTolerance.of(load, vrm.voltage) if load.has_tolerance() and vrm else None
         exact = _same_pins(load.supply, rail) and (load.ground is None
                                                    or _same_pins(load.ground, ground))
         out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact,
-                             load_drop(dc_result, load.name)))
+                             load_drop(dc_result, load.name), nominal_v=nominal))
     for name, v, k in vrm_inputs(setup):
         ph = v.all_phases()[k]
         if ph.input.ref != rail.ref or (ground and ph.ground and ph.ground.ref != ground.ref):
@@ -308,7 +323,8 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         exact = _same_pins(ph.input, rail) and (ph.ground is None
                                                 or _same_pins(ph.ground, ground))
         out.append(ProbeLoad(name, tol or None, abs(i_in or 0.0), exact,
-                             vrm_input_drop(dc_result, name, v.name, k, nominal), True))
+                             vrm_input_drop(dc_result, name, v.name, k, nominal), True,
+                             nominal_v=nominal))
     out.sort(key=lambda p: not p.exact)
     return out
 
@@ -316,7 +332,7 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
 def vrm_accuracies(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[VrmAccuracy]:
     """LDOs and switchers with a DC accuracy: with the probe's supply pins ``rail``, only
     those driving that rail (its nets joined by series links)."""
-    from kipi.dc.pi.model import net_groups
+    from kipi.dc.pi.model import net_groups, range_unit, range_volts
     groups = net_groups(setup, [rail.net] if rail else [])
     out = []
     for v in setup.vrms:
@@ -324,5 +340,7 @@ def vrm_accuracies(setup: "PISetup", rail: Optional["PinRef"] = None) -> List[Vr
         if acc is None or (rail and not any(rail.net in groups[ph.output.net]
                                             for ph in v.all_phases())):
             continue
-        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc))
+        low, high = range_volts(v.voltage, v.acc_min, v.acc_max,
+                                range_unit(v.acc_pct, v.acc_dv))
+        out.append(VrmAccuracy(v.name, v.accuracy_label(), acc, v.voltage, low, high))
     return out
