@@ -24,7 +24,7 @@ def noise_markers(snap: Optional[BoardSnapshot], setup,
     # In noise mode, generic regulator points obscure the specific switching devices
     # and hot-loop parts that make the selected aggressor. Keep links/caps, omit VRMs.
     out = [m for m in ac_markers(snap, setup, nets) if m.kind not in ("probe", "vrm")]
-    agg = next((a for a in setup.noise.aggressors
+    agg = next((a for a in setup.aggressors
                 if a.name == setup.noise.aggressor), None)
     if agg is not None:
         phase_parts = []
