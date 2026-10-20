@@ -108,6 +108,12 @@ class RangeRow(QWidget):
             s.valueChanged.connect(self._changed)
         self.unit.currentIndexChanged.connect(self._unit_changed)
 
+    def add_leading(self, label: str, widget: QWidget, stretch: int = 0):
+        """Put a labelled control before the min/max range without changing its form row."""
+        h = self.layout()
+        h.insertWidget(0, QLabel(label), 0)
+        h.insertWidget(1, widget, stretch)
+
     def fields(self):
         return self.min, self.max, self.unit
 
@@ -491,12 +497,7 @@ class VrmEditor(_Editor):
         self.vin_row = RangeRow(self._input_nominal)
         # DC accuracy, in % of the set voltage or in volts.
         self.acc_row = RangeRow(lambda: self.voltage.value() or None)
-        self.accuracy_line = QWidget()
-        accuracy_layout = QHBoxLayout(self.accuracy_line)
-        accuracy_layout.setContentsMargins(0, 0, 0, 0)
-        accuracy_layout.addWidget(QLabel("Nominal"))
-        accuracy_layout.addWidget(self.nominal_v, 1)
-        accuracy_layout.addWidget(self.acc_row, 3)
+        self.acc_row.add_leading("Nominal", self.nominal_v, 1)
         self.btn_accuracy_calc = QPushButton("DC Accuracy Calculator…")
         self.btn_accuracy_calc.setToolTip(
             "Calculate an adjustable regulator's output range from its feedback reference, "
@@ -528,7 +529,7 @@ class VrmEditor(_Editor):
         f.addRow("Load line", self.load_line)
         f.addRow("Dropout", self.dropout)
         f.addRow("Input range", self.vin_row)
-        f.addRow("DC accuracy", self.accuracy_line)
+        f.addRow("DC accuracy", self.acc_row)
         f.addRow("", self.btn_accuracy_calc)
         f.addRow("Control loop bandwidth", self.bandwidth)
         f.addRow("Phases", self.n_phases)
@@ -546,7 +547,7 @@ class VrmEditor(_Editor):
                self.iq: ("vrm_types", "ldo"), self.load_line: ("load_line", "ll"),
                self.dropout: ("dropout", "dropout"), self.vin_row: ("dropout", "range"),
                self.vin_row.min: ("dropout", "range"), self.vin_row.max: ("dropout", "range"),
-               self.accuracy_line: ("accuracy", "min", "max"), self.acc_row.min: ("accuracy", "min"),
+               self.acc_row: ("accuracy", "min", "max"), self.acc_row.min: ("accuracy", "min"),
                self.acc_row.max: ("accuracy", "max"), self.bandwidth: ("bandwidth", "bw"),
                self.nominal_v: ("tolerance", "volts"),
                self.n_phases: ("phases", "phase"), self.sense: ("remote_sense", "sense"),
@@ -594,7 +595,7 @@ class VrmEditor(_Editor):
                                     "%: in % from that nominal voltage (e.g. min -10 %, max "
                                     "+10 %).\nSwitching converts the values when that VRM "
                                     "is known."),
-                (self.accuracy_line, "Optional nominal output voltage and DC accuracy. The "
+                (self.acc_row, "Optional nominal output voltage and DC accuracy. The "
                                "nominal defaults to the set voltage and is used as the default "
                                "for load requirements. DC accuracy (also called DC "
                                "error or DC tolerance), from the datasheet. It comes from the "
@@ -672,15 +673,13 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.input, kind != "source")
         self.form.setRowVisible(self.dropout, kind == "ldo")
         self.form.setRowVisible(self.vin_row, kind != "source")
-        self.acc_row.setVisible(kind != "source")
-        self.form.labelForField(self.accuracy_line).setText(
-            "DC accuracy" if kind != "source" else "Nominal output voltage")
+        self.form.setRowVisible(self.acc_row, kind != "source")
         self.form.setRowVisible(self.btn_accuracy_calc, kind in ("ldo", "smps"))
         dc = self.mode == "dc"
         dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                    self.input, self.sense, self.ground_sense, self.dropout, self.mesh,
                    self.n_points)
-        ac_only = (self.bandwidth,)
+        ac_only = (self.bandwidth, self.acc_row)
         _gray((*dc_only, *self.vin_row.fields()),
               dc, "Used by the DC analysis only", editable=True)
         _gray((self.bandwidth, *self.acc_row.fields()), not dc, "Used by the AC analysis only",
@@ -688,7 +687,7 @@ class VrmEditor(_Editor):
         needs = {w: OPTIONAL for w in (self.iq, self.i_limit, self.load_line, self.dropout,
                                        self.vin_row, self.n_phases, self.ground, self.sense,
                                        self.ground_sense, self.mesh, self.n_points,
-                                       self.accuracy_line, *ac_only)}
+                                       self.nominal_v, *ac_only)}
         needs.update({w: REQUIRED for w in (self.name, self.kind, self.voltage, self.output)})
         needs[self.eff] = REQUIRED              # a switcher's input current follows from it
         needs[self.input] = REQUIRED if kind != "source" else OPTIONAL   # ties it into the tree
