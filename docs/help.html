@@ -1643,7 +1643,10 @@ saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
 <p>Below the table, the notes give the rail's nets and ground, the number of capacitors and
 series links included, the total plane capacitance, the solve size and time, capacitors left
 out for having no model, and any warnings. <b>Export CSV…</b> writes |Z|, R and X of every probe
-at every frequency. <b>Save results…</b> writes every rail solved so far to a
+at every frequency. <b>Export model</b> writes the selected probe as either sampled
+Touchstone Z1P or a fitted-pole HyperLynx PLS one-port file. Each probe is exported
+separately because the solve stores driving-point curves, not mutual impedances between probes.
+<b>Save results…</b> writes every rail solved so far to a
 <code>.kipi-ac-results</code> file (named with the board and the time by default);
 <b>Open results…</b> in AC mode brings them back, each
 under its VRM in <b>Rail</b>. Rails whose VRM is no longer in the setup are left out.</p>

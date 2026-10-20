@@ -7,6 +7,9 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **AC fitted-pole and Touchstone export** (#86). Export a probe's impedance curve as a
+  fitted HyperLynx PLS one-port model or as sampled Touchstone Z1P data. Probes export
+  separately because the solve stores driving-point impedance, not mutual impedances.
 - **Nominal output voltage per load** (#168). Each load can set the voltage its tolerance
   is specified around, independently of the VRM's nominal set point. Blank keeps using
   the driving VRM voltage. The value is saved in setup and reusable load-model YAML.

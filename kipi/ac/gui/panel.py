@@ -22,6 +22,7 @@ from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSlider, QSpinBox,
     QTableWidget, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    QInputDialog,
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
@@ -682,6 +683,17 @@ class ACPanel(QWidget, PartSelection):
         self.btn_export.setToolTip("Write |Z|, R and X at every probe and sweep frequency to a "
                                    "CSV file")
         self.btn_export.clicked.connect(self._export_csv)
+        self.btn_export_model = QToolButton(g_res)
+        self.btn_export_model.setText("Export model ▾")
+        self.btn_export_model.setPopupMode(QToolButton.InstantPopup)
+        model_menu = QMenu(self.btn_export_model)
+        model_menu.addAction("Fitted poles (HyperLynx .pls)…",
+                             lambda: self._export_model("pls"))
+        model_menu.addAction("Touchstone impedance (.s1p)…",
+                             lambda: self._export_model("s1p"))
+        self.btn_export_model.setMenu(model_menu)
+        self.btn_export_model.setEnabled(False)
+        self.btn_export_model.setToolTip("Export the selected probe's one-port impedance model")
         self.btn_save = QPushButton("Save results…", g_res)
         self.btn_save.setEnabled(False)
         self.btn_save.setToolTip("Save every solved rail's results to reopen later with "
@@ -689,6 +701,7 @@ class ACPanel(QWidget, PartSelection):
         self.btn_save.clicked.connect(self._save_results)
         row.addStretch(1)
         row.addWidget(self.btn_save)
+        row.addWidget(self.btn_export_model)
         row.addWidget(self.btn_export)
         lr.addWidget(self.tbl_probes)
         lr.addWidget(self.txt_notes)
@@ -1192,6 +1205,7 @@ class ACPanel(QWidget, PartSelection):
         self.tbl_probes.setRowCount(0)
         self.txt_notes.clear()
         self.btn_export.setEnabled(False)
+        self.btn_export_model.setEnabled(False)
         self.btn_report.setVisible(False)
 
     def show_error(self, message: str):
@@ -1265,6 +1279,7 @@ class ACPanel(QWidget, PartSelection):
         notes += [f"⚠ {html.escape(w)}" for w in result.warnings]
         self.txt_notes.setText("<br>".join(notes))
         self.btn_export.setEnabled(True)
+        self.btn_export_model.setEnabled(True)
         self.btn_report.setVisible(getattr(result, "report_path", None) is not None)
         self.result_selected.emit(result)
 
@@ -1309,3 +1324,31 @@ class ACPanel(QWidget, PartSelection):
                 write_csv(path, self.result)
             except OSError as e:
                 QMessageBox.warning(self, "KiPI", f"Export failed: {e}")
+
+    def _export_model(self, kind):
+        if self.result is None:
+            return
+        from kipi.ac.report import write_fitted_poles, write_touchstone
+        names = [c.name for c in self.result.probes]
+        if not names:
+            return
+        selected = self.tbl_probes.currentRow()
+        default_probe = (self.tbl_probes.item(selected, 0).text()
+                         if 0 <= selected < self.tbl_probes.rowCount() else names[0])
+        probe, ok = QInputDialog.getItem(self, "Export impedance model", "Probe", names,
+                                         names.index(default_probe) if default_probe in names else 0,
+                                         False)
+        if not ok:
+            return
+        suffix = ".pls" if kind == "pls" else ".s1p"
+        fmt = "Fitted poles (*.pls)" if kind == "pls" else "Touchstone (*.s1p)"
+        start = self.snapshot.project_dir if self.snapshot is not None else ""
+        stem = f"{self.result.rail}_{probe}_impedance{suffix}"
+        path, _ = QFileDialog.getSaveFileName(self, "Export impedance model",
+                                              f"{start}/{stem}" if start else stem, fmt)
+        if not path:
+            return
+        try:
+            (write_fitted_poles if kind == "pls" else write_touchstone)(path, self.result, probe)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "KiPI", f"Export failed: {e}")
