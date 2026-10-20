@@ -171,7 +171,7 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
         link = prob.series[e.link]
         va, vb = float(sol.v_merged[e.node_a]), float(sol.v_merged[e.node_b])
         i = sol.series_current.get(e.name, float("nan"))
-        pw = 0.0 if e.g is None else e.g * (va - vb) ** 2
+        pw = 0.0 if e.g is None else i * (link.resistance * i + e.voltage_drop)
         series_power += pw
         series.append(SeriesResult(e.name, 0.0 if e.g is None else link.resistance, i, va, vb,
                                    pw, list(link.pads_a), list(link.pads_b)))

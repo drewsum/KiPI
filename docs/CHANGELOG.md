@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.9.1 (in development)
 
 ### Added
+- **Diode series links** (#161). Enter the diode's constant forward drop with side A as
+  its anode, alongside its nonzero series resistance. DC solves include the drop and its
+  dissipation; AC solves use the resistance and ESL as the small-signal series model.
+  Reverse blocking is not modeled.
 - **Harmonics drawn as stems.** Coupled Noise's spectrum view draws each harmonic as a
   line up from the axis with a dot at its amplitude, as a spectrum analyser does, instead
   of joining the harmonics into a jagged curve: a periodic waveform has nothing between

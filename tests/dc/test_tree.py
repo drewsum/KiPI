@@ -113,7 +113,8 @@ def test_validation_rules():
 
 def test_setup_file_round_trip(tmp_path):
     s = setup(kind="smps", eff=0.85, sense=True, ground=True, gsense=True)
-    s.links.append(DcLink("FB1", PinRef("U2", "+3V3", ["1"]), PinRef("U2", "+3V3", ["1"]), 0.05))
+    s.links.append(DcLink("D1", PinRef("U2", "+3V3", ["1"]),
+                          PinRef("U2", "+3V3", ["2"]), 0.05, diode_vf=0.32))
     from kipi.dc.pi.model import PinGroup
     s.loads[0].groups = [PinGroup(["1"], 0.4, "a")]
     s.settings.rho_by_layer = {"In1.Cu": 1.9e-5}

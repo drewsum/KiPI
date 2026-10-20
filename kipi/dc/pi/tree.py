@@ -278,7 +278,8 @@ class _TreeSolver:
 
     # ------------------------------------------------------------ systems
     def _links_in(self, g: Group) -> List[SeriesLink]:
-        return [SeriesLink(k.name, self.pads(k.side_a), self.pads(k.side_b), k.resistance)
+        return [SeriesLink(k.name, self.pads(k.side_a), self.pads(k.side_b), k.resistance,
+                           k.diode_vf)
                 for k in self.setup.links if k.side_a.net in g]
 
     def _system_for(self, g: Group, sources, loads, label):

@@ -43,6 +43,7 @@ class SeriesLink:
     pads_a: List[str]
     pads_b: List[str]
     resistance: float       # ohms; at or below SHORT_OHMS the two sides are merged
+    voltage_drop: float = 0.0  # volts, oriented from side A to side B (diode model)
 
 
 SHORT_OHMS = 1e-9

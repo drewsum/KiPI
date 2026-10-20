@@ -1073,12 +1073,14 @@ class LinkEditor(_Editor):
         self.b = self._picker()
         self.r = _spin(0, 1e9, 0, 3, " mΩ", 1)
         self.r.setSpecialValueText("0 (short)")
+        self.diode_vf = _spin(0, 10, 0, 3, " V", 0.01)
         self.esl = _spin(0, 1e6, 0, 3, " nH", 0.1)
         self.esl.setSpecialValueText("none")
         f.addRow("Name", self.name)
         f.addRow("Side A pins", self.a)
         f.addRow("Side B pins", self.b)
         f.addRow("Resistance (DCR)", self.r)
+        f.addRow("Diode forward drop (A → B)", self.diode_vf)
         f.addRow("ESL", self.esl)
         # Estimates of the ESL (#159): from the part's package, or a ferrite bead's
         # impedance.
@@ -1108,6 +1110,11 @@ class LinkEditor(_Editor):
                          "part with pins on just two nets (a resistor, ferrite, fuse...)."),
                 (self.r, "DC resistance (DCR), used by both analyses. For a resistor, it is "
                          "read from the part's value when both sides are on it."),
+                (self.diode_vf, "Constant forward voltage drop used by the DC model. Side A "
+                                "is the anode and side B the cathode. This is a linear "
+                                "forward model; reverse blocking is not modeled. Enter a "
+                                "nonzero DCR; "
+                                "the AC analysis uses DCR and ESL as its small-signal model."),
                 (self.esl, "Series inductance (ESL) of the part"),
                 (self.btn_esl_package,
                  "Estimate the ESL from the size of the part on side A: its footprint's "
@@ -1123,16 +1130,20 @@ class LinkEditor(_Editor):
                  "point well below the peak gives the inductance best.")):
             tip(f, w, text, art.get(w))
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
-                      "load switch…). The nets it joins are simulated together.")
+                      "load switch or diode). For a diode, side A is the anode; enter its "
+                      "forward drop and nonzero series resistance.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)
-        self._watch(self.name, self.r, self.esl)
+        self._watch(self.name, self.r, self.diode_vf, self.esl)
+        self.diode_vf.valueChanged.connect(lambda value: self.diode_vf.setEnabled(value > 0))
+        self.diode_vf.setEnabled(False)
         _gray((self.esl, self.btn_esl_package, self.btn_esl_bead), mode == "ac",
               "Used by the AC analysis only")
         self._legend(unused=mode == "dc")
         self._mark({self.name: REQUIRED, self.a: REQUIRED, self.b: REQUIRED, self.r: REQUIRED,
-                    self.esl: OPTIONAL if mode == "ac" else UNUSED})
+                    self.esl: OPTIONAL if mode == "ac" else UNUSED,
+                    self.diode_vf: OPTIONAL})
 
     def _esl_from_package(self):
         k = self.obj
@@ -1170,6 +1181,8 @@ class LinkEditor(_Editor):
         self.a.set_value(k.side_a)
         self.b.set_value(k.side_b)
         self.r.setValue(k.resistance * 1e3)
+        self.diode_vf.setValue(k.diode_vf)
+        self.diode_vf.setEnabled(k.diode_vf > 0)
         self.esl.setValue((k.esl_h or 0.0) * 1e9)
 
     def _save(self, k: DcLink):
@@ -1191,6 +1204,7 @@ class LinkEditor(_Editor):
                 k.side_b = other
                 self._show(self.b, other)
         k.resistance = self.r.value() / 1e3
+        k.diode_vf = self.diode_vf.value()
         k.esl_h = self.esl.value() * 1e-9 or None
         # Both sides just became the same resistor: take its resistance from its value.
         if (k.side_a.ref, k.side_b.ref) != parts and k.side_a.ref == k.side_b.ref:
@@ -2225,7 +2239,8 @@ class PIPanel(QWidget, PartSelection):
     @staticmethod
     def _describe_link(k: DcLink) -> str:
         r = "short" if k.resistance <= 0 else f"{k.resistance * 1e3:g} mΩ"
-        return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r})"
+        kind = f", diode {k.diode_vf:g} V A→B" if k.diode_vf else ""
+        return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r}{kind})"
 
     # ------------------------------------------------------------------ results
     def set_busy(self, busy: bool, queued: bool = False):

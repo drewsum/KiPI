@@ -53,6 +53,7 @@ class SeriesElement:
     node_a: int        # merged unknowns of side A and side B
     node_b: int
     g: Optional[float]  # siemens; None when the part is a short (sides merged)
+    voltage_drop: float = 0.0
 
 
 @dataclass
@@ -221,10 +222,10 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
         na = int(merged_of[pad_groups[link.pads_a[0]][0]])
         nb = int(merged_of[pad_groups[link.pads_b[0]][0]])
         if link.resistance <= SHORT_OHMS or na == nb:
-            series.append(SeriesElement(i, link.name, na, nb, None))
+            series.append(SeriesElement(i, link.name, na, nb, None, link.voltage_drop))
             continue
         g = 1.0 / link.resistance
-        series.append(SeriesElement(i, link.name, na, nb, g))
+        series.append(SeriesElement(i, link.name, na, nb, g, link.voltage_drop))
         rows = np.concatenate([rows, [na, nb, na, nb]])
         cols = np.concatenate([cols, [na, nb, nb, na]])
         data = np.concatenate([data, [g, g, -g, -g]])
@@ -354,6 +355,15 @@ class LinearSystem:
         for name, us in self.source_unknowns.items():
             u_fixed[us] = volts[name] - v_ref
         rhs = f[self.free] - self.K_fd @ u_fixed[self.fixed_idx]
+        # A modeled diode is a constant forward drop in series with its DCR. Its anode is
+        # side A; the voltage source term is added with opposite signs at its terminals.
+        free_index = {int(node): i for i, node in enumerate(self.free)}
+        for e in self.series:
+            if e.g is not None and e.voltage_drop:
+                if e.node_a in free_index:
+                    rhs[free_index[e.node_a]] += e.g * e.voltage_drop
+                if e.node_b in free_index:
+                    rhs[free_index[e.node_b]] -= e.g * e.voltage_drop
         with progress.timed("Solving"):
             x = self.factor.solve(rhs, progress)
 
@@ -365,6 +375,10 @@ class LinearSystem:
         # Current each source delivers = net current flowing out of its fixed unknowns.
         # K annihilates constants on each connected piece, so using u avoids cancellation.
         flow = self.K @ np.nan_to_num(u_all) - f
+        for e in self.series:
+            if e.g is not None and e.voltage_drop:
+                flow[e.node_a] -= e.g * e.voltage_drop
+                flow[e.node_b] += e.g * e.voltage_drop
         source_current = {name: float(flow[us].sum())
                           for name, us in self.source_unknowns.items()}
         # Per pad: pads that touch share one unknown, and so share its current.
@@ -377,7 +391,8 @@ class LinearSystem:
             if e.g is None:
                 series_current[e.name] = float("nan")   # a short: current not resolved
             else:
-                series_current[e.name] = float(e.g * (u_all[e.node_a] - u_all[e.node_b]))
+                series_current[e.name] = float(e.g * (u_all[e.node_a] - u_all[e.node_b]
+                                                      - e.voltage_drop))
         stats = dict(self.stats)
         stats["solve_s"] = self.setup_s + time.perf_counter() - t0
         return Solution(problem=prob, mesh=self.mesh, node_v=v[self.merged_of],

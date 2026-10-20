@@ -59,6 +59,18 @@ def test_series_resistor_joins_nets():
     assert res.fields.summary["energy_balance_error"] < 1e-9
 
 
+def test_series_diode_applies_forward_drop_and_counts_its_loss():
+    p = problem(0.02)
+    p.series[0].voltage_drop = 0.5
+    res = run(board(), p)
+    expected = 2.0 * (strip_r(8) + 0.02 + strip_r(8)) + 0.5
+    assert 1.0 - res.fields.terminals[1].v_mean == pytest.approx(expected, rel=1e-9)
+    (sr,) = res.fields.series
+    assert sr.current == pytest.approx(2.0, rel=1e-9)
+    assert sr.power == pytest.approx(2.0 ** 2 * 0.02 + 2.0 * 0.5, rel=1e-9)
+    assert res.fields.summary["energy_balance_error"] < 1e-9
+
+
 def test_zero_ohm_part_is_a_short():
     res = run(board(), problem(0.0))
     expected = 2.0 * (strip_r(8) + strip_r(8))
