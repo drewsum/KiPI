@@ -63,8 +63,7 @@ def test_dc_loads_and_links(app):
     ed = p.load_list.editor
     ed.load(Load("U3", PinRef("U3", "3V3", ["4"]), 0.5))
     assert _needs(ed, ed.supply, ed.current) == ["required"] * 2
-    assert _needs(ed, ed.ground, ed.tolerance_line) == ["optional"] * 2
-    assert ed.nominal_v in ed.tolerance_line.findChildren(type(ed.nominal_v))
+    assert _needs(ed, ed.ground, ed.tol) == ["optional"] * 2
     link = p.link_list.editor
     link.load(DcLink("R1", PinRef("R1", "A", ["1"]), PinRef("R1", "B", ["2"]), 0.01))
     assert _needs(link, link.r, link.esl) == ["required", "unused"]

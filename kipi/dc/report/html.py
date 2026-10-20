@@ -525,20 +525,18 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
     parts.append(_table(
-        ["Load", "Group", "I (A)", "VRM target (V)", "Load nominal (V)", "V effective (V)",
-         "Drop / boost (mV)", "%", "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance",
-         "Result"],
+        ["Load", "Group", "I (A)", "Nominal (V)", "V effective (V)", "Drop / boost (mV)", "%",
+         "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance", "Result"],
         [[_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
-          _num(l.load_nominal, ".5g"),
           _num(l.v_effective, ".6f"), fmt_drop(l.drop, unit=""), _num(abs(l.drop_pct), ".3f"),
           _num(l.v_worst, ".6f"), fmt_drop(l.drop_worst, unit=""),
           _num(abs(l.drop_worst_pct), ".3f"),
           _e(l.tolerance),
           _verdict(l.passed, l.status)]
          for l in tree.loads]))
-    parts.append("<p class='note'>Drop / boost is measured from the VRM target voltage. The worst pin "
-                 "deviation and load PASS/FAIL are measured from the load nominal voltage; a "
-                 "load passes when every pin is within its tolerance.</p>")
+    parts.append("<p class='note'>Drop: below the VRM target voltage. Boost: above it, e.g. near a "
+                 "remote-sensed VRM's output pins. The worst pin is the one furthest from the "
+                 "target voltage either way. A load passes when every pin is within its tolerance.</p>")
     pg = [[_e(l.name), _e(n), _num(a), _num(vm, ".6f"), _num(vmin, ".6f"), _num(vmax, ".6f")]
           for l in tree.loads for n, a, vm, vmin, vmax in l.pin_groups]
     if pg:

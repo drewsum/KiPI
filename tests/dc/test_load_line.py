@@ -206,19 +206,15 @@ def test_editor_load_tolerance_is_min_and_max_in_percent_or_volts():
     panel.load_list.lst.setCurrentRow(0)
     ed = panel.load_list.editor
     u2 = s.loads[0]
-    assert ed.form.labelForField(ed.tolerance_line).text() == "Tolerance"
+    assert ed.form.labelForField(ed.tol).text() == "Tolerance"
     assert ed.tol.unit.currentData() == "%" and ed.tol.values() == (-1.0, 1.0)
-    assert ed.nominal_v.value() == ed.nominal_v.minimum()
-    ed.nominal_v.setValue(3.0)
-    assert u2.nominal_v == pytest.approx(3.0)
-    assert u2.limits(3.3) == pytest.approx((2.97, 3.03))
     ed.tol.min.setValue(-3.0)
     assert (u2.tol_min, u2.tol_max, u2.tol_pct) == (-3.0, 1.0, True)
     ed.tol.unit.setCurrentIndex(ed.tol.unit.findData("V"))
     assert u2.tol_pct is False and ed.tol.min.suffix() == " V"
-    assert (u2.tol_min, u2.tol_max) == (pytest.approx(2.91), pytest.approx(3.03))
+    assert (u2.tol_min, u2.tol_max) == (pytest.approx(3.201), pytest.approx(3.333))
     ed.tol.max.setValue(ed.tol.max.minimum())                      # "not set"
-    assert u2.tol_max is None and u2.tolerance_label() == "min 2.91 V"
+    assert u2.tol_max is None and u2.tolerance_label() == "min 3.201 V"
     panel.close()
 
 

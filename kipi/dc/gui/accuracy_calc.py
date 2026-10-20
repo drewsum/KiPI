@@ -23,50 +23,42 @@ NOTE = ("V<sub>out</sub> = V<sub>FB</sub> · (1 + R<sub>top</sub> / R<sub>bottom
 class DcAccuracyCalculator(QDialog):
     """Calculate the expected adjustable regulator output range for a VRM editor."""
 
-    last: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    last: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
     def __init__(self, parent: Optional[QWidget] = None, vrm_name: str = ""):
         super().__init__(parent)
         self.setWindowTitle("DC Accuracy Calculator" + (f": {vrm_name}" if vrm_name else ""))
         self.vfb_min = _spin(0, 100, 0, 4, " V", 0.01)
-        self.vfb_nom = _spin(0, 100, 0, 4, " V", 0.01)
         self.vfb_max = _spin(0, 100, 0, 4, " V", 0.01)
         self.rtop = _spin(0, 1e12, 0, 3, " Ω", 100)
         self.rtop_tol = _spin(0, 99.99, 0, 2, " %", 0.1)
         self.rbottom = _spin(0, 1e12, 0, 3, " Ω", 100)
         self.rbottom_tol = _spin(0, 99.99, 0, 2, " %", 0.1)
-        self.leak_nom = _spin(-1e9, 1e9, 0, 3, " nA", 1)
         self.leak_max = _spin(0, 1e9, 0, 3, " nA", 1)
-        self.inputs = (self.vfb_min, self.vfb_nom, self.vfb_max, self.rtop,
-                       self.rtop_tol, self.rbottom, self.rbottom_tol,
-                       self.leak_nom, self.leak_max)
+        self.inputs = (self.vfb_min, self.vfb_max, self.rtop, self.rtop_tol,
+                       self.rbottom, self.rbottom_tol, self.leak_max)
         for s, value in zip(self.inputs, self.last):
             s.setKeyboardTracking(True)
             s.setValue(value)
             s.valueChanged.connect(self._update)
-        for s in (self.vfb_min, self.vfb_nom, self.vfb_max, self.rtop, self.rbottom):
+        for s in (self.vfb_min, self.vfb_max, self.rtop, self.rbottom):
             s.setSpecialValueText("required")
 
-        self.lbl_min, self.lbl_nom, self.lbl_max = QLabel(), QLabel(), QLabel()
-        for label in (self.lbl_min, self.lbl_nom, self.lbl_max):
+        self.lbl_min, self.lbl_max = QLabel(), QLabel()
+        for label in (self.lbl_min, self.lbl_max):
             label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form = QFormLayout()
         form.addRow("FB reference minimum", self.vfb_min)
-        form.addRow("FB reference nominal", self.vfb_nom)
         form.addRow("FB reference maximum", self.vfb_max)
         form.addRow("Top resistor", self.rtop)
         form.addRow("Top resistor tolerance", self.rtop_tol)
         form.addRow("Bottom resistor", self.rbottom)
         form.addRow("Bottom resistor tolerance", self.rbottom_tol)
-        form.addRow("FB leakage nominal", self.leak_nom)
         form.addRow("FB leakage maximum (±)", self.leak_max)
-        self.leak_nom.setToolTip("Typical FB pin leakage, signed: positive flows into the "
-                                 "FB pin and raises the output, negative lowers it")
         self.leak_max.setToolTip("Largest FB pin leakage in either direction: the output "
                                  "range covers anywhere from -max to +max")
         form.addRow(QLabel(""))
         form.addRow("Minimum output", self.lbl_min)
-        form.addRow("Nominal output", self.lbl_nom)
         form.addRow("Maximum output", self.lbl_max)
         note = QLabel(NOTE)
         note.setWordWrap(True)
@@ -83,19 +75,17 @@ class DcAccuracyCalculator(QDialog):
         self._update()
 
     def result_data(self) -> Optional[DcAccuracy]:
-        vals = [s.value() for s in self.inputs]
-        return feedback_divider_accuracy(vals[0], vals[1], vals[2], vals[3], vals[4],
-                                         vals[5], vals[6], vals[7] * 1e-9, vals[8] * 1e-9)
+        *vals, leak_na = [s.value() for s in self.inputs]
+        return feedback_divider_accuracy(*vals, leak_na * 1e-9)
 
     def _update(self, *_):
         result = self.result_data()
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(result is not None)
         if result is None:
-            for label in (self.lbl_min, self.lbl_nom, self.lbl_max):
+            for label in (self.lbl_min, self.lbl_max):
                 label.setText("–")
             return
         self.lbl_min.setText(f"{result.minimum_v:.6g} V")
-        self.lbl_nom.setText(f"{result.nominal_v:.6g} V")
         self.lbl_max.setText(f"{result.maximum_v:.6g} V")
 
     def accept(self):

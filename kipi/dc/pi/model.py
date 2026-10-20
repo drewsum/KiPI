@@ -30,7 +30,6 @@ from __future__ import annotations
 import copy
 import dataclasses
 import json
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -120,17 +119,9 @@ class Vrm:
     # ground_sense above, points 2..N these.
     mesh_sense: bool = False
     sense_points: List[SensePoint] = field(default_factory=list)
-    # Optional nominal output voltage: what the regulator actually regulates to (e.g. its
-    # feedback divider's nominal), when it differs from ``voltage``, the rail's target that
-    # loads are judged against. Blank regulates to the target, as setups saved before did.
-    nominal_v: Optional[float] = None
 
     def all_phases(self) -> List[VrmPhase]:
         return [VrmPhase(self.output, self.input, self.ground), *self.phases]
-
-    def regulated_v(self) -> float:
-        """The voltage the VRM regulates to: its nominal output if set, else its target."""
-        return self.voltage if self.nominal_v is None else self.nominal_v
 
     def all_sense_points(self) -> List[SensePoint]:
         """Every sense point: point 1 (sense, ground_sense), then the mesh's others when
@@ -152,17 +143,12 @@ class Vrm:
         return tolerance_label(self.acc_min, self.acc_max, self.acc_pct, self.acc_dv)
 
     def accuracy_v(self) -> Optional[float]:
-        """The larger side of the DC accuracy, volts from the regulated voltage; None if
-        not set."""
-        v = self.regulated_v()
-        lo, hi = range_volts(v, self.acc_min, self.acc_max,
+        """The larger side of the DC accuracy, volts from the target voltage; None if not
+        set."""
+        lo, hi = range_volts(self.voltage, self.acc_min, self.acc_max,
                              range_unit(self.acc_pct, self.acc_dv))
-        sides = [abs(x - v) for x in (lo, hi) if x is not None]
+        sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
         return max(sides) if sides else None
-
-    def __setstate__(self, state):
-        """Open result files and setups saved before nominal output voltage existed."""
-        self.__dict__.update({"nominal_v": None, **state})
 
 
 @dataclass
@@ -189,9 +175,6 @@ class Load:
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
-    # Optional nominal voltage for this device's tolerance requirements. When blank,
-    # its limits use the driving VRM's target voltage, as older setups did.
-    nominal_v: Optional[float] = None
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
@@ -200,8 +183,7 @@ class Load:
         return self.tol_min is not None or self.tol_max is not None
 
     def limits(self, nominal: float) -> Tuple[Optional[float], Optional[float]]:
-        """The tolerance as (lowest, highest) volts at its nominal, either end optional."""
-        nominal = self.nominal_v if self.nominal_v is not None else nominal
+        """The tolerance as (lowest, highest) volts on a rail at ``nominal``, either None."""
         unit = range_unit(self.tol_pct, self.tol_dv)
         if unit != VOLTS and not nominal:
             return None, None
@@ -213,8 +195,7 @@ class Load:
     def __setstate__(self, state):
         # Setups pickled in results files before asymmetric tolerances: +/- one %.
         t = state.pop("tolerance_pct", None)
-        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True,
-                 "nominal_v": None, **state}
+        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True, **state}
         self.__dict__.update(state)
 
 
@@ -369,7 +350,6 @@ class PISetup:
         known = {f.name for f in dataclasses.fields(SolveSettings)}
         return PISetup(
             vrms=[Vrm(name=v["name"], output=pin(v["output"]), voltage=v["voltage"],
-                      nominal_v=v.get("nominal_v"),
                       kind=v.get("kind", "source"), efficiency=v.get("efficiency", 0.9),
                       quiescent_a=v.get("quiescent_a", 0.0), input=pin(v.get("input")),
                       sense=pin(v.get("sense")), ground=pin(v.get("ground")),
@@ -392,8 +372,7 @@ class PISetup:
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), **_load_tolerance(l),
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
-                                for g in l.get("groups", [])],
-                        nominal_v=l.get("nominal_v"))
+                                for g in l.get("groups", [])])
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                           resistance=k["resistance"], esl_h=k.get("esl_h"),
@@ -538,16 +517,14 @@ def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
 
 
 def rail_nominal(setup: PISetup, net: Optional[str], skip: str = "",
-                 groups=None, regulated: bool = False) -> Optional[float]:
+                 groups=None) -> Optional[float]:
     """The nominal voltage of the rail ``net`` is on: the target voltage of a VRM (other
-    than ``skip``) driving it, or with ``regulated``, the voltage it regulates to. None if
-    no VRM does."""
+    than ``skip``) driving it. None if no VRM does."""
     if not net:
         return None
     groups = groups or net_groups(setup, [net])
     group = groups.get(net, frozenset([net]))
-    return next(((u.regulated_v() if regulated else u.voltage) for u in setup.vrms
-                 if u.name != skip and u.voltage
+    return next((u.voltage for u in setup.vrms if u.name != skip and u.voltage
                  and any(ph.output.net in group for ph in u.all_phases())), None)
 
 
@@ -619,8 +596,6 @@ def validate(setup: PISetup) -> List[str]:
         by_group.setdefault(groups[v.output.net], []).append(v.name)
         if v.kind not in VRM_KINDS:
             errors.append(f"VRM {v.name}: unknown type {v.kind!r}")
-        if v.nominal_v is not None and not math.isfinite(v.nominal_v):
-            errors.append(f"VRM {v.name}: nominal output voltage must be finite")
         if v.kind in ("ldo", "smps") and v.input is None:
             errors.append(f"VRM {v.name}: an {v.kind.upper()} needs its input pins set "
                           "(that is what connects it into the power tree)")
@@ -670,10 +645,6 @@ def validate(setup: PISetup) -> List[str]:
 
     rail_groups = set(by_group)
     for l in setup.loads:
-        if l.nominal_v is not None and not math.isfinite(l.nominal_v):
-            errors.append(f"Load {l.name}: nominal output voltage must be finite")
-        if (l.nominal_v == 0 and l.tol_pct and l.has_tolerance()):
-            errors.append(f"Load {l.name}: a percent tolerance needs a nonzero nominal output voltage")
         if l.tol_min is not None and l.tol_max is not None and l.tol_min > l.tol_max:
             errors.append(f"Load {l.name}: tolerance minimum is above its maximum")
         if l.groups:
@@ -764,9 +735,9 @@ def _estimated_input(setup: PISetup, groups, v: Vrm, seen=frozenset()) -> float:
     if v.kind == "smps":
         feed = next((u for u in setup.vrms if groups[u.output.net] == groups[v.input.net]),
                     None)
-        if feed is None or feed.regulated_v() <= 0:
+        if feed is None or feed.voltage <= 0:
             return v.quiescent_a
-        return v.regulated_v() * i_out / (v.efficiency * feed.regulated_v()) + v.quiescent_a
+        return v.voltage * i_out / (v.efficiency * feed.voltage) + v.quiescent_a
     return i_out + v.quiescent_a
 
 

@@ -142,10 +142,8 @@ def test_an_uneven_tolerance_gives_its_tighter_side():
     s = _setup()
     soc = s.loads[1]
     soc.tol_min, soc.tol_max = -2.0, 5.0                     # -2 % of 1 V is tighter
-    soc.nominal_v = 1.1
     t = probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance
-    assert t.v_ac_v == pytest.approx(0.022) and t.label() == "SoC: -2 / +5 % of 1.1 V"
-    soc.nominal_v = None
+    assert t.v_ac_v == pytest.approx(0.02) and t.label() == "SoC: -2 / +5 % of 1 V"
     soc.tol_min, soc.tol_max, soc.tol_pct = 0.97, 1.01, False  # volts: +10 mV is tighter
     t = probe_loads(s, PinRef("U1", "+1V0"))[0].tolerance
     assert t.v_ac_v == pytest.approx(0.01) and t.label() == "SoC: 0.97 to 1.01 V (±10 mV)"
@@ -200,7 +198,6 @@ def test_vrm_accuracies_on_the_probes_rail():
     accs = vrm_accuracies(s, PinRef("U1", "+1V0"))             # through the link to VR1
     assert [(a.name, a.label()) for a in accs] == [("VR1", "VR1: -1 / +2 % (±20 mV)")]
     assert accs[0].v == pytest.approx(0.02)
-    assert (accs[0].minimum_v, accs[0].maximum_v) == pytest.approx((0.99, 1.02))
     assert [a.v for a in vrm_accuracies(s)] == [pytest.approx(0.02), pytest.approx(0.05)]
     vr2.kind = "source"                                        # sources have none
     assert [a.name for a in vrm_accuracies(s)] == ["VR1"]
@@ -219,28 +216,6 @@ def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
     for _ in range(4):
         d.btn_accuracy.click()
     assert d.v_ac.value() == 0                                 # never below zero
-
-
-def test_a_vrm_targeted_above_nominal_is_counted_once(app, monkeypatch):
-    """#172: a VRM targeting 1 V that regulates to a 1.03 V nominal to make up for 30 mV of
-    copper drop. Its +/-1 % accuracy is taken about what it regulates to, and the drop
-    against the 1 V target: the offset and the drop cancel, rather than both coming off."""
-    from kipi.ac.gui.target_calc import TargetCalculator
-    from kipi.ac.target import probe_loads, vrm_accuracies
-    from kipi.dc.pi.model import PinRef
-    monkeypatch.setattr(TargetCalculator, "last", (100.0, 0.0, 0.0))
-    s, rail = _setup(), PinRef("U2", "+1V0")
-    vr1 = s.vrms[0]
-    vr1.kind, vr1.voltage, vr1.nominal_v = "smps", 1.0, 1.03
-    vr1.acc_min, vr1.acc_max = -1.0, 1.0
-    tree = _tree(("FPGA core", 1.03, 1.0))
-    tree.loads[0].load_nominal = 1.0
-    loads, accs = probe_loads(s, rail, None, tree), vrm_accuracies(s, rail)
-    assert accs[0].label() == "VR1: ±1 % (±10.3 mV)"
-    d = TargetCalculator(loads=loads, accuracies=accs)
-    d.btn_accuracy.click()
-    assert d.v_ac.value() == pytest.approx(89.7)               # what the label says
-    assert not d.btn_drop.isEnabled()                          # at its nominal: no drop
 
 
 # --- Subtract the solved DC drop at the load's pins ----------------------------------------
@@ -266,11 +241,6 @@ def test_load_drop_is_the_solved_effective_voltage_against_nominal():
     assert load_drop(_tree(("SoC", 1.0, float("nan"))), "SoC") is None   # disconnected (#88)
     assert load_drop(_tree(("SoC", 0.0, 0.0)), "SoC") is None   # no VRM drives it
     assert load_drop(None, "SoC") is None                       # no solve yet
-    # Against the load's nominal, not the VRM's target voltage (#172)
-    tree = _tree(("SoC", 1.03, 0.99))
-    tree.loads[0].load_nominal = 1.0
-    d = load_drop(tree, "SoC")
-    assert (d.nominal, d.v, d.kind) == (1.0, pytest.approx(0.01), "drop")
 
 
 def test_probe_loads_carry_their_drop_once_solved():
@@ -302,7 +272,7 @@ def test_dialog_subtracts_the_dc_drop(app, monkeypatch):
     flat = TargetCalculator(loads=[ProbeLoad("SoC", None, 2.0,
                                              drop=LoadDrop("SoC", 1.0, 1.0, 0.0, "drop"))])
     assert not flat.btn_drop.isEnabled()
-    assert "sits at its nominal voltage" in flat.btn_drop.toolTip()
+    assert "sits at its VRM's target voltage" in flat.btn_drop.toolTip()
 
 
 def test_the_calculator_gets_the_panels_dc_result(app, monkeypatch):

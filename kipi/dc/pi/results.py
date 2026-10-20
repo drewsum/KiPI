@@ -65,7 +65,6 @@ class LoadReport:
     status: str = ""                     # why the load was not judged, or was failed outright
     limit_low: Optional[float] = None    # the tolerance in volts, either end None if not set
     limit_high: Optional[float] = None
-    load_nominal: Optional[float] = None  # load's own nominal, or the VRM's nominal output
 
     def __setstate__(self, state):
         # Results files saved before boosts were reported: only the lowest pin is known,
@@ -76,8 +75,7 @@ class LoadReport:
             state.update(tolerance=f"±{t:g} %", limit_low=nom - abs(nom) * t / 100,
                          limit_high=nom + abs(nom) * t / 100)
         state = {"v_low": state.get("v_worst"), "v_high": None, "status": "",
-                 "tolerance": "", "limit_low": None, "limit_high": None,
-                 "load_nominal": state.get("nominal"), **state}
+                 "tolerance": "", "limit_low": None, "limit_high": None, **state}
         state["pin_groups"] = [tuple(g) + (None,) * (5 - len(g))
                                for g in state.get("pin_groups", [])]
         self.__dict__.update(state)
@@ -88,14 +86,12 @@ class LoadReport:
 
     @property
     def drop_worst(self) -> float:
-        """Load nominal minus its worst pin, volts (negative: above nominal)."""
-        nominal = self.load_nominal if self.load_nominal is not None else self.nominal
-        return nominal - self.v_worst
+        """Nominal minus the worst pin, volts (negative: a boost)."""
+        return self.nominal - self.v_worst
 
     @property
     def drop_worst_pct(self) -> float:
-        nominal = self.load_nominal if self.load_nominal is not None else self.nominal
-        return 100.0 * self.drop_worst / abs(nominal) if nominal else 0.0
+        return 100.0 * self.drop_worst / abs(self.nominal) if self.nominal else 0.0
 
     @property
     def verdict(self) -> str:

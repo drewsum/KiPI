@@ -117,7 +117,6 @@ def test_setup_file_round_trip(tmp_path):
                           PinRef("U2", "+3V3", ["2"]), 0.05, diode_vf=0.32))
     from kipi.dc.pi.model import PinGroup
     s.loads[0].groups = [PinGroup(["1"], 0.4, "a")]
-    s.loads[0].nominal_v = 3.25
     s.settings.rho_by_layer = {"In1.Cu": 1.9e-5}
     s.settings.tcr_per_c = 0.0038
     path = s.save(tmp_path / "x.kipi-setup.json")
@@ -126,7 +125,6 @@ def test_setup_file_round_trip(tmp_path):
     from kipi.core import yaml_io
     saved = yaml_io.loads(path.read_text(encoding="utf-8"))
     assert saved["format_version"] == 2
-    assert saved["loads"][0]["nominal_v"] == 3.25
 
 
 def test_legacy_json_setups_still_load(tmp_path):
@@ -145,23 +143,6 @@ def test_hand_edited_yaml_reads_numbers_as_numbers(tmp_path):
     from kipi.core import yaml_io
     d = yaml_io.loads("a: 1e-9\nb: 2.5E+3\nc: 3\nd: '1e-9'\ne: .5\nf: 1_000.5\n")
     assert d == {"a": 1e-9, "b": 2500.0, "c": 3, "d": "1e-9", "e": 0.5, "f": 1000.5}
-
-
-def test_load_tolerance_limits_use_its_nominal_output_when_set():
-    load = Load("U2", PinRef("U2", "+3V3"), 1.0, tol_min=-5, tol_max=5,
-                nominal_v=3.0)
-    assert load.limits(3.3) == pytest.approx((2.85, 3.15))
-    load.nominal_v = None
-    assert load.limits(3.3) == pytest.approx((3.135, 3.465))
-
-
-def test_old_setup_yaml_loads_with_vrm_nominal_as_load_tolerance_basis():
-    d = setup().to_dict()
-    d["format_version"] = 1
-    d["loads"][0].pop("nominal_v")
-    load = PISetup.from_dict(d).loads[0]
-    assert load.nominal_v is None
-    assert load.limits(3.3) == pytest.approx((3.267, 3.333))
 
 
 def test_without_pyyaml_setups_stay_json(tmp_path, monkeypatch):
@@ -250,23 +231,6 @@ def test_worst_pin_is_furthest_from_nominal_either_way():
     assert ld.v_low == pytest.approx(3.3, abs=1e-9)
     assert ld.v_high == pytest.approx(3.3 + 0.5 * R(4), rel=1e-9)
     assert ld.v_worst == ld.v_high and ld.drop_worst < 0
-
-
-def test_worst_pin_and_verdict_use_load_nominal():
-    s = setup("ldo")
-    load = s.loads[0]
-    load.nominal_v = 3.25
-    load.tol_min, load.tol_max = -1.0, 1.0
-    ld = by_name(solve_tree(board(), s).loads, load.name)
-    assert ld.load_nominal == pytest.approx(3.25)
-    assert ld.v_worst == pytest.approx(ld.v_low)
-    assert ld.drop_worst == pytest.approx(3.25 - ld.v_worst)
-    assert ld.drop_worst_pct == pytest.approx(100 * ld.drop_worst / 3.25)
-    # The solved pins are around the 3.3 V VRM target voltage, outside ±1% of 3.25 V.
-    assert ld.passed is False
-    load.tol_min, load.tol_max = -2.0, 2.0
-    ld = by_name(solve_tree(board(), s).loads, load.name)
-    assert ld.passed is True
 
 
 def test_results_saved_before_boosts_still_load():
@@ -477,16 +441,3 @@ def test_ranges_in_volts_from_nominal():
     del s.vrms[0]
     assert any("in volts from nominal needs a VRM" in e for e in validate(s))
 
-
-def test_a_vrm_regulates_to_its_nominal_output_and_loads_judge_the_target():
-    s = setup("ldo")
-    u1 = s.vrms[1]
-    u1.nominal_v = 3.35                       # regulates high; the rail's target stays 3.3 V
-    s.loads[0].tol_min, s.loads[0].tol_max = -1.0, 1.0
-    res = solve_tree(board(), s)
-    vr, ld = by_name(res.vrms, "U1"), by_name(res.loads, "U2")
-    assert vr.v_out == pytest.approx(3.35, abs=1e-12)
-    assert ld.v_supply == pytest.approx(3.35 - R(8), rel=1e-9)
-    assert ld.nominal == 3.35 and ld.load_nominal == 3.3   # drop from 3.35, judged at 3.3
-    assert (ld.limit_low, ld.limit_high) == pytest.approx((3.267, 3.333))
-    assert u1.accuracy_v() is None and u1.regulated_v() == 3.35

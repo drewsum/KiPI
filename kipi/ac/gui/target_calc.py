@@ -71,9 +71,9 @@ class TargetCalculator(QDialog):
         self.accuracies = list(accuracies or [])
         self.btn_accuracy = _copy_button(
             "Subtract VRM DC accuracy", self.accuracies, self.subtract_accuracy,
-            "Take the larger side of the VRM's DC accuracy, about its target voltage, off "
-            "the AC voltage tolerance. A target set away from nominal is taken off with the "
-            "DC drop at the load instead. Each click subtracts it again.",
+            "Take the DC accuracy of the VRM driving this rail off the AC voltage tolerance: "
+            "the larger side of it, which the output may sit away from its target voltage "
+            "before any load step. Each click subtracts it again.",
             "No LDO or switcher driving this probe's rail has a DC accuracy set")
         self.btn_current = QPushButton("Copy current from DC load")
         self.btn_current.clicked.connect(lambda: self.copy_current(self.selected_load()))
@@ -136,10 +136,10 @@ class TargetCalculator(QDialog):
         if drop and drop.v > 0:
             tip = (f"Take the {drop.v * 1e3:.4g} mV {drop.kind} at {drop.name}'s pins off the "
                    f"AC voltage tolerance: its effective voltage in the last DC solve, "
-                   f"{drop.v_effective:.4g} V, against its {drop.nominal:g} V nominal. Each "
-                   "click subtracts it again.")
+                   f"{drop.v_effective:.4g} V, against the {drop.nominal:g} V its VRM is set "
+                   "to. Each click subtracts it again.")
         elif drop:
-            tip = f"{drop.name} sits at its nominal voltage in the last DC solve"
+            tip = f"{drop.name} sits at its VRM's target voltage in the last DC solve"
         elif load:
             tip = (f"No DC result for {load.name}: solve the power tree on the DC tab, then "
                    "open the calculator again")
