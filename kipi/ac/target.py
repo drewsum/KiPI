@@ -19,9 +19,10 @@ applies above the VRM's bandwidth (:func:`judged_from`).
 The calculator's AC tolerance and load step can be copied from the DC load on the probe's
 pins (:func:`probe_loads`): +/- the tighter side of its tolerance, from that load's nominal
 voltage (or the VRM set point when unset), and its current. Two things that eat into that
-tolerance before any load step can be taken off it: the largest difference between the
-load's nominal voltage and the VRM's DC accuracy range (:func:`vrm_accuracies`), and the DC
-drop the copper itself causes at the load's pins (:func:`load_drop`), which needs a DC solve.
+tolerance before any load step can be taken off it: the larger side of the VRM's DC
+accuracy about its target voltage (:func:`vrm_accuracies`), and how far the load's solved
+DC voltage sits from its nominal (:func:`load_drop`), which needs a DC solve. A VRM
+targeted above nominal to make up for the copper drop shows up once, in the second (#172).
 
 An LDO's or switcher's input pins load the rail feeding it just as a DC load does
 (#117): each phase's input counts as a load whose tolerance is the regulator's input
@@ -173,21 +174,10 @@ def _tighter_side(nominal: float, lo: Optional[float], hi: Optional[float]
 class VrmAccuracy:
     name: str             # the VRM's name
     accuracy: str         # as set: "±1 %", "1.19 to 1.21 V"
-    v: float              # its larger side, volts from the set voltage
+    v: float              # its larger side, volts from the target voltage
     nominal_v: Optional[float] = None  # VRM output nominal
     minimum_v: Optional[float] = None  # lowest regulated output in volts
     maximum_v: Optional[float] = None  # highest regulated output in volts
-
-    def difference_from(self, nominal_v: Optional[float]) -> float:
-        """Largest specified distance from a load nominal to the VRM accuracy limits."""
-        if nominal_v is None:
-            return self.v
-        limits = [x for x in (self.minimum_v, self.maximum_v) if x is not None]
-        if limits:
-            return max(abs(nominal_v - x) for x in limits)
-        if self.nominal_v is not None:
-            return self.v + abs(nominal_v - self.nominal_v)
-        return self.v
 
     def label(self) -> str:
         return f"{self.name}: {self.accuracy} (±{self.v * 1e3:.4g} mV)"
@@ -196,10 +186,10 @@ class VrmAccuracy:
 @dataclass
 class LoadDrop:
     name: str             # the DC load's name
-    nominal: float        # the set voltage of the VRM that drove it in the solve
+    nominal: float        # the load's nominal, or its VRM's nominal output
     v_effective: float    # its solved effective voltage: supply pins minus ground pins
     v: float              # how far that sits from nominal, volts (never negative)
-    kind: str             # "drop" (below the set voltage) or "boost" (above it)
+    kind: str             # "drop" (below nominal) or "boost" (above it)
 
     def label(self) -> str:
         return (f"{self.name}: {self.v_effective:.4g} V of {self.nominal:g} V "
@@ -215,7 +205,6 @@ class ProbeLoad:
     drop: Optional[LoadDrop] = None     # its DC drop, once the power tree is solved
     vrm_input: bool = False             # an LDO's or switcher's input, not a DC load:
                                         # its current is known only from a DC solve
-    nominal_v: Optional[float] = None    # load's nominal, or its driving rail nominal
 
     def label(self) -> str:
         return self.name
@@ -226,16 +215,19 @@ def _same_pins(a: Optional["PinRef"], b: Optional["PinRef"]) -> bool:
 
 
 def load_drop(dc_result, name: str) -> Optional[LoadDrop]:
-    """How far a DC load's solved effective voltage sits from the set voltage of the VRM
-    feeding it, out of the power-tree result ``dc_result``. None without a solve, or when
+    """How far a DC load's solved effective voltage sits from its nominal (its own, or its
+    VRM's nominal output; not the VRM's target voltage, so a VRM targeted high to make up
+    for the copper drop leaves less of one, #172), out of the power-tree result
+    ``dc_result``. None without a solve, or when
     that solve has no voltage for the load: it was not in the setup then, it has no copper
     path to its VRM (#88), or no VRM drives it."""
     from kipi.dc.pi.results import drop_or_boost
     for r in getattr(dc_result, "loads", None) or []:
         if r.name != name or not r.nominal or not math.isfinite(r.v_effective):
             continue
-        v, kind = drop_or_boost(r.nominal - r.v_effective)
-        return LoadDrop(name, r.nominal, r.v_effective, v, kind) if kind else None
+        nominal = r.nominal if r.load_nominal is None else r.load_nominal
+        v, kind = drop_or_boost(nominal - r.v_effective)
+        return LoadDrop(name, nominal, r.v_effective, v, kind) if kind else None
     return None
 
 
@@ -307,14 +299,12 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         group = net_groups(setup, [load.supply.net])[load.supply.net]
         vrm = next((v for v in setup.vrms if v.voltage
                     and any(ph.output.net in group for ph in v.all_phases())), None)
-        nominal = (load.nominal_v if load.nominal_v is not None
-                   else (vrm.output_nominal_v() if vrm else None))
         tol = (LoadTolerance.of(load, vrm.output_nominal_v())
                if load.has_tolerance() and vrm else None)
         exact = _same_pins(load.supply, rail) and (load.ground is None
                                                    or _same_pins(load.ground, ground))
         out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact,
-                             load_drop(dc_result, load.name), nominal_v=nominal))
+                             load_drop(dc_result, load.name)))
     for name, v, k in vrm_inputs(setup):
         ph = v.all_phases()[k]
         if ph.input.ref != rail.ref or (ground and ph.ground and ph.ground.ref != ground.ref):
@@ -325,8 +315,7 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         exact = _same_pins(ph.input, rail) and (ph.ground is None
                                                 or _same_pins(ph.ground, ground))
         out.append(ProbeLoad(name, tol or None, abs(i_in or 0.0), exact,
-                             vrm_input_drop(dc_result, name, v.name, k, nominal), True,
-                             nominal_v=nominal))
+                             vrm_input_drop(dc_result, name, v.name, k, nominal), True))
     out.sort(key=lambda p: not p.exact)
     return out
 

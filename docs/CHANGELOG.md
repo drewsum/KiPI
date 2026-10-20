@@ -4,7 +4,17 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.1 (in development)
+## 0.9.2 (in development)
+
+### Fixed
+- **Subtract VRM DC accuracy with a VRM targeted away from nominal** (#172). The button
+  now takes the larger side of the VRM's accuracy about its target voltage, the amount its
+  label shows, and **Subtract DC drop at the load** measures the solved voltage against
+  the load's nominal (or the VRM's nominal output) instead of the VRM's target. A VRM
+  targeted above nominal to make up for the copper drop no longer has that offset taken
+  off the AC tolerance twice.
+
+## 0.9.1
 
 ### Added
 - **AC fitted-pole and Touchstone export** (#86). Export a probe's impedance curve as a

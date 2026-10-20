@@ -65,7 +65,7 @@ class LoadReport:
     status: str = ""                     # why the load was not judged, or was failed outright
     limit_low: Optional[float] = None    # the tolerance in volts, either end None if not set
     limit_high: Optional[float] = None
-    load_nominal: Optional[float] = None  # load's own nominal, or the VRM set point
+    load_nominal: Optional[float] = None  # load's own nominal, or the VRM's nominal output
 
     def __setstate__(self, state):
         # Results files saved before boosts were reported: only the lowest pin is known,
