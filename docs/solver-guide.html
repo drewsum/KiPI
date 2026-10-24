@@ -841,7 +841,9 @@ KiPI offers it, ticked, the first time it starts (or sets up, standalone) on a c
 that can have it, and it can be turned down there or removed later under
 <i>About → Manage dependencies…</i>. KiPI falls back to SuperLU on its own if PARDISO
 is missing, cannot load, or returns an inaccurate result, and the results are the same either
-way. Because PARDISO utilizes all cores, the machine running the simulation will really stretch its legs. Expect high CPU utilization and higher junction temperatures, at the gain of simulation speed. <i>About → Copy version info</i> says which solver is in use. </p>
+way. Each factorization is checked by its backward error, the smallest relative change to
+the system that would make the solution exact; a working solve gives about 1e-16 however
+stiff the board's copper and vias make the system. Because PARDISO utilizes all cores, the machine running the simulation will really stretch its legs. Expect high CPU utilization and higher junction temperatures, at the gain of simulation speed. <i>About → Copy version info</i> says which solver is in use. </p>
 
 <h2 id="uses">What PI simulation finds</h2>
 <p>Design problems KiPI typically exposes, and where to look for each:</p>

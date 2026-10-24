@@ -25,9 +25,13 @@ import scipy.sparse as sp
 
 log = logging.getLogger("kipi")
 
-# A factorization is checked against one right-hand side; PARDISO results worse than this
-# relative residual are discarded in favor of SuperLU.
-CHECK_TOL = 1e-8
+# A factorization is checked against one right-hand side; PARDISO results with a normwise
+# backward error worse than this are discarded in favor of SuperLU. Not the relative
+# residual |b - Ax| / |b|: on a big board's copper, with vias and series links far stiffer
+# than the sheets, rounding alone leaves 1e-8 of it in a solution exact to machine
+# precision (backward error ~1e-16), and SuperLU does no better (#163). A failed
+# factorization is off by far more: zero or garbage gives about 1.
+CHECK_TOL = 1e-12
 # The same check for complex (AC) systems. PARDISO solves them through an indefinite real
 # system with pivot perturbation, which lands around 1e-8; impedances need far less.
 CHECK_TOL_COMPLEX = 1e-6
@@ -83,6 +87,16 @@ def backend_note() -> str:
     return f"SuperLU (single-threaded; PARDISO unavailable: {_pardiso_problem})"
 
 
+def backward_error(A: sp.spmatrix, x: np.ndarray, b: np.ndarray) -> float:
+    """The normwise backward error of ``x`` as a solution of A x = b,
+    |b - Ax| / (|A| |x| + |b|) in the infinity norm: the smallest relative change to A and b
+    that makes ``x`` exact. A stable solve gives about the machine precision, however badly
+    conditioned A is."""
+    r = np.abs(b - A @ x).max()
+    a = float(abs(A).sum(axis=1).max())
+    return float(r / (a * np.abs(x).max() + np.abs(b).max()))
+
+
 class DirectFactor:
     """A factorization of A; call it with a right-hand side to get the solution."""
 
@@ -127,11 +141,10 @@ def factorize(A: sp.spmatrix, warn: Optional[Callable[[str], None]] = None) -> D
         try:
             factor = _pardiso_factor(pypardiso, A)
             b = np.ones(A.shape[0])
-            x = factor(b)
-            rel = float(np.linalg.norm(b - A @ x) / np.linalg.norm(b))
-            if np.isfinite(rel) and rel <= CHECK_TOL:
+            err = backward_error(A, factor(b), b)
+            if np.isfinite(err) and err <= CHECK_TOL:
                 return factor
-            reason = f"relative residual {rel:.1e}"
+            reason = f"backward error {err:.1e}"
         except Exception as e:
             reason = f"{type(e).__name__}: {e}"
         msg = f"PARDISO factorization failed ({reason}); using SuperLU for this system"

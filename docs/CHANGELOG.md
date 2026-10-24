@@ -45,6 +45,13 @@ milestones rather than versions that were ever set.
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
+- **False PARDISO failures on big DC solves** (#163). On a large board, especially in the
+  electro-thermal loop, PARDISO was refused with "relative residual 1.0e-08" and the
+  system was solved again with the slower SuperLU, whose result was no more accurate.
+  With vias and series links far stiffer than the copper sheets, rounding alone leaves
+  that residual in an exact solve. Each factorization is now judged by its normwise
+  backward error, which was about 1e-16 for every system of the board that showed this.
+  A broken or inaccurate factorization still falls back to SuperLU.
 - **AC probes on a ground tied to GND by a series link** (#171). A probe whose ground
   pins are on an analog ground (GNDA joined to GND by a net tie, 0 Ω resistor or ferrite)
   was refused, as its ground was not the one being simulated. The AC ground now takes in

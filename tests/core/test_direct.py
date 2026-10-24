@@ -107,6 +107,62 @@ def test_inaccurate_pardiso_result_falls_back_to_superlu(monkeypatch):
     assert direct.factorize(_poisson()).name == "superlu"
 
 
+def _stiff_sheet(n=40, contrast=1e12):
+    """A sheet held at one corner whose couplings grow 1e12 across it, like a board's
+    copper with vias and series links far stiffer than the planes: an exact solve leaves a
+    relative residual above 1e-8 from rounding alone."""
+    t = sp.diags_array([-1.0, 2.0, -1.0], offsets=[-1, 0, 1], shape=(n, n)).tolil()
+    t[0, 0] = t[n - 1, n - 1] = 1.0
+    eye = sp.identity(n)
+    A = (sp.kron(t, eye) + sp.kron(eye, t)).tolil()
+    A[0, 0] += 1.0
+    d = sp.diags_array(np.sqrt(np.geomspace(1.0, contrast, n * n)))
+    return (d @ A.tocsr() @ d).tocsr()
+
+
+def test_an_exact_solve_of_a_stiff_system_is_kept(monkeypatch):
+    # #163: PARDISO's result is judged by its backward error, not the relative residual,
+    # which rounding pushes past 1e-8 on a big board though the solve is exact (SuperLU's
+    # is no better).
+    from scipy.sparse.linalg import splu
+
+    class Exact:                       # PARDISO stood in for by an exact factorization
+        def __init__(self, *a, **k):
+            pass
+
+        def factorize(self, upper):
+            full = upper + sp.triu(upper, 1).T
+            self.lu = splu(sp.csc_matrix(full), permc_spec="COLAMD")
+
+        def solve(self, upper, b):
+            return self.lu.solve(b)
+
+        def free_memory(self, everything=False):
+            pass
+
+    class FakeModule:
+        PyPardisoSolver = Exact
+    monkeypatch.setattr(direct, "_pardiso", FakeModule)
+    monkeypatch.setattr(direct, "_pardiso_problem", None)
+    A = _stiff_sheet()
+    b = np.ones(A.shape[0])
+    warnings = []
+    f = direct.factorize(A, warnings.append)
+    x = f(b)
+    assert _rel(A, x, b) > 1e-8                     # what the old check refused
+    assert direct.backward_error(A, x, b) < 1e-15
+    assert f.name == "pardiso" and not warnings
+
+
+def test_backward_error_flags_a_wrong_solution():
+    A = _poisson()
+    b = np.ones(A.shape[0])
+    assert direct.backward_error(A, np.zeros_like(b), b) == 1.0
+    x = direct._superlu(A)(b)
+    assert direct.backward_error(A, x, b) < 1e-15
+    assert direct.backward_error(A, x * (1 + 1e-6), b) > direct.CHECK_TOL
+
+
 def test_pardiso_when_installed():
     if direct.backend() != "pardiso":
         pytest.skip("PARDISO not available here")
