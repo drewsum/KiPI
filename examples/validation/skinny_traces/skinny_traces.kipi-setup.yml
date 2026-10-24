@@ -19,11 +19,15 @@ vrms:
   vin_min: null
   vin_max: null
   vin_pct: false
+  vin_dv: false
   acc_min: null
   acc_max: null
   acc_pct: true
+  acc_dv: false
   load_line_mohm: 0.0
-  bandwidth_khz: null
+  bandwidth_khz: 50.0
+  mesh_sense: false
+  sense_points: []
 - name: J2
   output:
     ref: J2
@@ -44,11 +48,15 @@ vrms:
   vin_min: null
   vin_max: null
   vin_pct: false
+  vin_dv: false
   acc_min: null
   acc_max: null
   acc_pct: true
+  acc_dv: false
   load_line_mohm: 0.0
-  bandwidth_khz: null
+  bandwidth_khz: 50.0
+  mesh_sense: false
+  sense_points: []
 - name: J3
   output:
     ref: J3
@@ -69,11 +77,15 @@ vrms:
   vin_min: null
   vin_max: null
   vin_pct: false
+  vin_dv: false
   acc_min: null
   acc_max: null
   acc_pct: true
+  acc_dv: false
   load_line_mohm: 0.0
-  bandwidth_khz: null
+  bandwidth_khz: 50.0
+  mesh_sense: false
+  sense_points: []
 loads:
 - name: U1
   supply:
@@ -86,8 +98,16 @@ loads:
   tol_min: null
   tol_max: null
   tol_pct: true
+  tol_dv: false
+  dc_tol_min: null
+  dc_tol_max: null
+  dc_tol_pct: true
+  dc_tol_dv: false
+  ac_tol_min: null
+  ac_tol_max: null
+  ac_tol_pct: true
+  ac_tol_dv: false
   groups: []
-  dissipation_w: null
 - name: U2
   supply:
     ref: U2
@@ -99,8 +119,16 @@ loads:
   tol_min: null
   tol_max: null
   tol_pct: true
+  tol_dv: false
+  dc_tol_min: null
+  dc_tol_max: null
+  dc_tol_pct: true
+  dc_tol_dv: false
+  ac_tol_min: null
+  ac_tol_max: null
+  ac_tol_pct: true
+  ac_tol_dv: false
   groups: []
-  dissipation_w: null
 - name: U3
   supply:
     ref: U3
@@ -112,8 +140,16 @@ loads:
   tol_min: null
   tol_max: null
   tol_pct: true
+  tol_dv: false
+  dc_tol_min: null
+  dc_tol_max: null
+  dc_tol_pct: true
+  dc_tol_dv: false
+  ac_tol_min: null
+  ac_tol_max: null
+  ac_tol_pct: true
+  ac_tol_dv: false
   groups: []
-  dissipation_w: null
 links: []
 settings:
   max_edge_mm: 0.5
@@ -183,11 +219,13 @@ thermal:
   max_temp_c: null
   max_rise_c: null
 html_report: false
+report_format: html
 nets: null
 excluded_nets: []
 stackup: null
 caps: []
 probes: []
+packages: []
 ac:
   f_start_hz: 1000.0
   f_stop_hz: 300000000.0
@@ -196,15 +234,38 @@ ac:
   max_edge_mm: 1.0
   grading: 0.3
   min_edge_mm: 0.03
+  grade_near_rail_only: true
   loss_tangent: 0.02
   default_er: 4.3
   rail: ''
   ground: ''
   html_report: false
+  report_format: html
   dc_bias: true
   mfg_tolerance: false
   aging: false
   aging_hours: 87600.0
   temperature: none
   temperature_c: 25.0
-format_version: 1
+aggressors: []
+victims: []
+noise:
+  aggressor: ''
+  f_max_hz: null
+  max_harmonics: 4000
+  periods_shown: 2
+  dead_time_ns: 20.0
+  segment_mm: 0.5
+  window_mm: 3.0
+  board_model: true
+  field_per_decade: 10
+  victims: all
+  scan: false
+  scan_radius_mm: 10.0
+  scan_top_n: 10
+  scan_preset: hiz
+  scan_driver_ohm: 33.0
+  scan_logic_v: 3.3
+  html_report: false
+  report_format: html
+format_version: 2

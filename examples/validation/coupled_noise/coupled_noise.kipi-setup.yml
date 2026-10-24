@@ -29,7 +29,9 @@ vrms:
   acc_pct: true
   acc_dv: false
   load_line_mohm: 0.0
-  bandwidth_khz: null
+  bandwidth_khz: 50.0
+  mesh_sense: false
+  sense_points: []
 - name: U1
   output:
     ref: L1
@@ -64,7 +66,9 @@ vrms:
   acc_pct: true
   acc_dv: false
   load_line_mohm: 0.0
-  bandwidth_khz: null
+  bandwidth_khz: 50.0
+  mesh_sense: false
+  sense_points: []
 loads:
 - name: U2
   supply:
@@ -82,6 +86,14 @@ loads:
   tol_max: null
   tol_pct: true
   tol_dv: false
+  dc_tol_min: null
+  dc_tol_max: null
+  dc_tol_pct: true
+  dc_tol_dv: false
+  ac_tol_min: null
+  ac_tol_max: null
+  ac_tol_pct: true
+  ac_tol_dv: false
   groups: []
 links: []
 settings:
@@ -168,6 +180,7 @@ caps:
   dielectric: ''
   aging_pct_per_decade: 0.0
   mfg_tolerance_pct: null
+  spice: null
 - name: 47u
   capacitance_f: 4.7e-05
   esl_h: 6.0e-10
@@ -179,7 +192,9 @@ caps:
   dielectric: ''
   aging_pct_per_decade: 0.0
   mfg_tolerance_pct: null
+  spice: null
 probes: []
+packages: []
 ac:
   f_start_hz: 1000.0
   f_stop_hz: 300000000.0
@@ -231,9 +246,13 @@ aggressors:
     output_caps:
     - C2
     coss_f: 3.0e-10
+    qrr_c: null
     rds_on_hs_ohm: null
     rds_on_ls_ohm: null
     package_l_h: 0.0
+  ripple_probes: []
+  min_ring_zeta: 0.05
+  soft_edge_zeta: 0.5
 victims:
 - net: SIG_SW
   name: SIG_SW
@@ -254,6 +273,7 @@ victims:
   termination_ohm: null
   logic_v: 3.3
   noise_margin_v: null
+  driver_low_ohm: null
 - net: SIG_LOOP
   name: SIG_LOOP
   preset: cmos
@@ -273,6 +293,7 @@ victims:
   termination_ohm: null
   logic_v: 3.3
   noise_margin_v: null
+  driver_low_ohm: null
 - net: SIG_BURIED
   name: SIG_BURIED
   preset: cmos
@@ -292,12 +313,13 @@ victims:
   termination_ohm: null
   logic_v: 3.3
   noise_margin_v: null
+  driver_low_ohm: null
 noise:
   aggressor: U1
   f_max_hz: null
   max_harmonics: 4000
   periods_shown: 2
-  min_ring_zeta: 0.05
+  dead_time_ns: 20.0
   segment_mm: 0.5
   window_mm: 3.0
   board_model: true
@@ -306,8 +328,9 @@ noise:
   scan: false
   scan_radius_mm: 10.0
   scan_top_n: 10
+  scan_preset: hiz
   scan_driver_ohm: 33.0
   scan_logic_v: 3.3
   html_report: false
   report_format: html
-format_version: 1
+format_version: 2
