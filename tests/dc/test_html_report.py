@@ -84,7 +84,7 @@ def test_narrow_voltage_maps_show_the_drop(monkeypatch, drop, label):
     from kipi.dc.report import html
     from kipi.dc.report.html import _has_offset, _layer_map
 
-    monkeypatch.setattr(html, "_png", lambda fig: fig)
+    monkeypatch.setattr(html, "_png", lambda fig, dpi=110: fig)
     g = np.mgrid[0:20:21j, 0:10:11j].reshape(2, -1).T
     lr = SimpleNamespace(pts2=g, tris=Triangulation(g[:, 0], g[:, 1]).triangles)
     fig = _layer_map(lr, 3.3 - drop * g[:, 0] / 20, False, "F.Cu: voltage", "turbo", "V",

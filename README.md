@@ -535,7 +535,7 @@ Once there are results, after a solve or with saved results opened, click **Repo
 write `<board>_kipi_report_<date>_<time>.html` of them next to the board (the time stamp
 keeps each report rather than overwriting the last). It opens in your web browser when it
 is written, and **Open report** opens it again later. Choose **PDF** beside it for a `.pdf` to print or attach instead: the same
-tables and maps, with the interactive 3D views in a web page attached inside the PDF
+tables and maps (the layer maps one to a row, a layer's pair to a page), with the interactive 3D views in a web page attached inside the PDF
 (`<report>_3d.html`; its **3D Results View** link, or the paperclip beside it, opens it in
 your browser). Its User notes box is a form field:
 type in it in Acrobat, a web browser, Preview or most other PDF viewers and save the PDF to

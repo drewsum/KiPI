@@ -23,7 +23,7 @@ import html
 import io
 import math
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -68,11 +68,19 @@ def _verdict(passed: Optional[bool], text: str = "") -> str:
     return f'<span class="pass">{label}</span>' if passed else f'<span class="fail">{label}</span>'
 
 
-def _png(fig) -> str:
+# A PDF report's layer maps (#184): one to a row, two to a page, drawn bigger and sharper
+# than the web page's. The box is in the 96 dpi pixels of the PDF's layout, the page's width
+# (A4 or Letter less its margins) by a little under half its height.
+PDF_MAP_DPI = 250                    # about 210 dpi on the page, once cropped
+PDF_MAP_SIZE = (7.0, 5.6)            # inches, about the box's size, so the text keeps its size
+PDF_MAP_BOX = (690, 440)
+
+
+def _png(fig, dpi: int = 110) -> str:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     FigureCanvasAgg(fig)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="white")
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", facecolor="white")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
@@ -82,18 +90,20 @@ def _png(fig) -> str:
 
 def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
                clip_pct: Optional[float] = None, outline=None,
-               v_ref: Optional[float] = None) -> str:
+               v_ref: Optional[float] = None, pdf: bool = False) -> str:
     """Top-down tripcolor of one layer (KiCad y down, drawn the same way as in KiCad).
 
     A voltage map passes its target voltage ``v_ref``. When its spread is so narrow that the
     colorbar would label ticks against an offset ("1e-5+3.2999", #145), it is redrawn as
     the drop from ``v_ref`` in V, mV or µV, the absolute range moving into the title.
-    Maps whose colorbar reads plainly are left as they are."""
+    Maps whose colorbar reads plainly are left as they are. A PDF's map (``pdf``) is drawn
+    bigger, at a higher resolution."""
     vals = np.asarray(values, dtype=float)
     finite = vals[np.isfinite(vals)]
     if len(finite) == 0:
         return ""
-    fig, cb = _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline)
+    size = PDF_MAP_SIZE if pdf else (5.2, 4.2)
+    fig, cb = _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline, size)
     if v_ref is not None and _has_offset(fig, cb):
         lo, hi = float(finite.min()), float(finite.max())
         rail = v_ref != 0
@@ -104,9 +114,10 @@ def _layer_map(lr, values, cell: bool, title: str, cmap: str, unit: str,
         label = (f"Drop from {v_ref:g} V ({prefix}V)" if rail
                  else f"Offset from 0 V ({prefix}V)")
         fig, cb = _draw_map(lr, shift, shift[np.isfinite(shift)], cell,
-                            f"{title}, {lo:.6f} to {hi:.6f} V", cmap, label, clip_pct, outline)
+                            f"{title}, {lo:.6f} to {hi:.6f} V", cmap, label, clip_pct, outline,
+                            size)
         cb.formatter.set_useOffset(False)
-    return _png(fig)
+    return _png(fig, PDF_MAP_DPI if pdf else 110)
 
 
 def _has_offset(fig, cb) -> bool:
@@ -117,11 +128,11 @@ def _has_offset(fig, cb) -> bool:
     return bool(getattr(fmt, "get_offset", lambda: "")())
 
 
-def _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline):
+def _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline, size=(5.2, 4.2)):
     from matplotlib.figure import Figure
     from matplotlib.tri import Triangulation
     pts, tris = lr.pts2, lr.tris
-    fig = Figure(figsize=(5.2, 4.2))
+    fig = Figure(figsize=size)
     ax = fig.add_subplot(111)
     tri = Triangulation(pts[:, 0], pts[:, 1], tris)
     vmin, vmax = float(finite.min()), float(finite.max())
@@ -151,20 +162,20 @@ def _draw_map(lr, vals, finite, cell, title, cmap, unit, clip_pct, outline):
     return fig, cb
 
 
-def _thermal_maps(th, snap: BoardSnapshot, outline) -> List[str]:
+def _thermal_maps(th, snap: BoardSnapshot, outline, pdf: bool = False) -> List[str]:
     """One map per copper layer of the result, on one color scale; a result without
-    layers is one board map."""
+    layers is one board map. A PDF's (``pdf``) are drawn bigger, at a higher resolution."""
     names = {cu.id: cu.name for cu in snap.stackup.copper}
     layers = [lid for lid in th.layers if lid in names] if len(th.layers) == len(th.temps)         else []
     lo, hi = float(np.nanmin(th.temps)), float(np.nanmax(th.temps))
     if not layers:
-        return [_thermal_map(th, outline, None, "Board temperature", lo, hi)]
-    return [_thermal_map(th, outline, lid, names[lid], lo, hi) for lid in layers]
+        return [_thermal_map(th, outline, None, "Board temperature", lo, hi, pdf)]
+    return [_thermal_map(th, outline, lid, names[lid], lo, hi, pdf) for lid in layers]
 
 
-def _thermal_map(th, outline, layer, title, vmin, vmax) -> str:
+def _thermal_map(th, outline, layer, title, vmin, vmax, pdf: bool = False) -> str:
     from matplotlib.figure import Figure
-    fig = Figure(figsize=(6.0, 4.8))
+    fig = Figure(figsize=PDF_MAP_SIZE if pdf else (6.0, 4.8))
     ax = fig.add_subplot(111)
     ext = [th.x[0], th.x[-1], th.y[-1], th.y[0]]
     m = ax.imshow(th.layer_temps(layer), extent=ext, cmap="inferno", origin="upper",
@@ -182,7 +193,7 @@ def _thermal_map(th, outline, layer, title, vmin, vmax) -> str:
     ax.tick_params(labelsize=7)
     cb = fig.colorbar(m, ax=ax, shrink=0.85)
     cb.set_label("°C", fontsize=8)
-    return _png(fig)
+    return _png(fig, PDF_MAP_DPI if pdf else 110)
 
 
 def _decimate(sheet, keep: float):
@@ -450,15 +461,45 @@ def report_name(board_stem: str, when: Optional[_dt.datetime] = None, fmt: str =
     return f"{board_stem}_kipi_report_{timestamp(when)}.{fmt}"
 
 
-def maps_html(images: List[str], pdf: bool, tags: Optional[List[tuple]] = None) -> str:
-    """Figures side by side: wrapped by the browser, two to a row on a PDF page. ``tags``
-    give each image's (3D view, layer), for the layer tickboxes (#181)."""
+def png_size(data_url: str) -> Optional[Tuple[int, int]]:
+    """(width, height) in pixels of a PNG ``data:`` URL, from its header; None if it is
+    not one."""
+    head = data_url.partition("base64,")[2][:44]
+    try:
+        raw = base64.b64decode(head + "=" * (-len(head) % 4))
+    except ValueError:
+        return None
+    if len(raw) < 24 or raw[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
+
+
+def _fit_width(image: str, box=PDF_MAP_BOX) -> int:
+    """The width to show ``image`` at on a PDF page so it fills ``box`` (w, h) without
+    overflowing it."""
+    size = png_size(image)
+    if not size or not size[1]:
+        return box[0]
+    return int(min(box[0], box[1] * size[0] / size[1]))
+
+
+def maps_html(images: List[str], pdf: bool, tags: Optional[List[tuple]] = None,
+              large: bool = False) -> str:
+    """Figures side by side: wrapped by the browser, two to a row on a PDF page, or with
+    ``large``, one to a row and two to a page (#184). ``tags`` give each image's (3D view,
+    layer), for the layer tickboxes (#181)."""
     tagged = [(m, t) for m, t in zip(images, tags or [None] * len(images)) if m]
     images = [m for m, _t in tagged]
     if not pdf:
         return "<div class='maps'>" + "".join(
             f"<figure data-plot='{_e(t[0])}' data-layer='{_e(t[1])}'><img src='{m}'></figure>"
             if t else f"<figure><img src='{m}'></figure>" for m, t in tagged) + "</div>"
+    if large:
+        # From the top of a page, so each page holds a pair: a layer's voltage and current
+        # density maps.
+        return "<table class='maps' style='page-break-before: always'>" + "".join(
+            f"<tr><td><img src='{m}' width='{_fit_width(m)}'></td></tr>" for m in images
+        ) + "</table>"
     width = 330 if len(images) > 1 else 440
     rows = [images[i:i + 2] for i in range(0, len(images), 2)]
     return "<table class='maps'>" + "".join(
@@ -698,7 +739,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             parts.append("<p class='note'>The hottest solved copper on each layer. "
                          + (f"Limits: {lim}; overall {_verdict(verdict)}." if lim
                             else "No temperature limits were set.") + "</p>")
-        parts.append(maps_html(_thermal_maps(th, snap, outline), pdf))
+        parts.append(maps_html(_thermal_maps(th, snap, outline, pdf), pdf, large=True))
         if th.dielectrics:
             from kipi.dc.thermal.materials import coating_k
             coat = [[_e(c.name), _num(c.thickness_mm, ".3f"),
@@ -765,11 +806,11 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         for lid, lr in scene.layers.items():
             lname = names.get(lid, str(lid))
             maps.append(_layer_map(lr, lr.node_v, False, f"{lname}: voltage", "turbo", "V",
-                                   outline=outline, v_ref=scene.v_ref))
+                                   outline=outline, v_ref=scene.v_ref, pdf=pdf))
             maps.append(_layer_map(lr, lr.tri_j, True, f"{lname}: current density", "inferno",
-                                   "A/mm²", clip_pct=99.5, outline=outline))
+                                   "A/mm²", clip_pct=99.5, outline=outline, pdf=pdf))
             tags += [(f"plot{gi}", lname)] * 2
-        parts.append(maps_html(maps, pdf, tags))
+        parts.append(maps_html(maps, pdf, tags, large=True))
         parts.append("<p class='note'>Current-density maps clip at the 99.5th percentile; pad "
                      "corners are singular and would otherwise wash out the map.</p>")
 

@@ -93,6 +93,9 @@ milestones rather than versions that were ever set.
   not have on the net with the pins it does. Blank, every pin, stays blank.
 
 ### Changed
+- **Bigger, sharper layer maps in the DC PDF report** (#184). The voltage, current
+  density and temperature maps go one to a row, two to a page, at about 200 dpi: each
+  page holds a layer's voltage and current density maps. They were six or more to a page.
 - **Reports on demand** (#185). In DC, AC and Coupled Noise mode, the **Report** button
   writes a report of the shown results, in the format picked beside it, and opens it. It
   is enabled once there are results: after a solve, or with saved results opened. This
