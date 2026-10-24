@@ -34,6 +34,10 @@ milestones rather than versions that were ever set.
 - **Layer tickboxes in the DC report** (#181). Over each net group's 3D view, a tickbox
   per copper layer (and one for the vias) hides or shows that layer in the view and its
   voltage and current-density maps. A PDF report's attached 3D views have them too.
+- **Full screen and minimize for detached panes** (#186). Floated out of the main window,
+  the Board, setup and Log panels get their own minimize and maximize buttons, and F11
+  toggles the clicked panel full screen (floating it first if it is docked). Window
+  managers that do not show the buttons still have F11.
 - **Max rail drop per VRM** (#188). The DC results' VRMs table and the HTML report's VRM
   table give the largest drop anywhere on the copper of the rail each VRM drives, in mV
   and in % of its target voltage.

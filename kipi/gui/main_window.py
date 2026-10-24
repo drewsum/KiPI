@@ -29,6 +29,7 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import PIPanel
 from kipi.dc.pi.tree import fmt_drop
+from kipi.gui.docks import make_detachable
 from kipi.gui.heartbeat import Heartbeat, busy_cursor
 from kipi.gui.stackup_window import StackupWindow
 from kipi.gui.tooltip_art import art_tip
@@ -627,6 +628,7 @@ class MainWindow(QMainWindow):
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         dock.setWidget(_scrolling(panel))
         dock.setMinimumWidth(300)
+        make_detachable(dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
 
     def _build_solve_dock(self):
@@ -694,6 +696,7 @@ class MainWindow(QMainWindow):
         dock.setWidget(holder)
         self.solve_dock = dock
         dock.setMinimumWidth(420)
+        make_detachable(dock)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self._result = None
 
@@ -729,6 +732,7 @@ class MainWindow(QMainWindow):
         dock.setObjectName("log_dock")
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         dock.setWidget(w)
+        make_detachable(dock)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.resizeDocks([dock], [200], Qt.Vertical)
         self.heartbeat = Heartbeat(self)          # turns while any task runs (#111)
