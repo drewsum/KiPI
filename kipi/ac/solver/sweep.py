@@ -19,7 +19,7 @@ import numpy as np
 
 from kipi.ac.bias import apply_derating, dc_volts, part_temperatures, temperature_source
 from kipi.ac.board_map import ACMap, MapMesh, build_map
-from kipi.ac.checks import rail_caps, rail_nets, validate_ac
+from kipi.ac.checks import ground_nets, rail_caps, rail_nets, validate_ac
 from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
 from kipi.ac.target import judged_from, target_at
 from kipi.core.model.board import BoardSnapshot
@@ -84,7 +84,7 @@ class ProbeCurve:
 class ACResult:
     rail: str                             # VRM name
     rail_nets: List[str]
-    ground: str
+    ground: str                           # its nets, " + " between them (#171)
     freqs: np.ndarray
     probes: List[ProbeCurve]
     field_freqs: np.ndarray
@@ -131,16 +131,17 @@ def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str):
     """Ports, merged short links, and notes for the rail driven by ``vrm_name``."""
     vrm = next(v for v in setup.vrms if v.name == vrm_name)
     rail = rail_nets(setup, vrm, gnd)
+    grounds = ground_nets(setup, vrm, gnd)
     pads = _Pads(snap)
     ports: List[PortDef] = []
     probes = [p for p in setup.probes if p.rail.net in rail]
     for p in probes:
         ports.append(PortDef(p.name, "probe", pads(p.rail), pads(p.ground), p))
-    caps, missing = rail_caps(snap, setup, rail, gnd)
+    caps, missing = rail_caps(snap, setup, rail, grounds)
     for ref, model, _net, a, b in caps:
         ports.append(PortDef(ref, "cap", a, b, model))
     shorts, links, notes = [], [], []
-    inside = set(rail) | {gnd}
+    inside = set(rail) | grounds
     for k in setup.links:
         on = (k.side_a.net in inside, k.side_b.net in inside)
         if not any(on):
@@ -248,6 +249,9 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     for n in notes:
         progress.warn(n)
     vrm = next(v for v in setup.vrms if v.name == vrm_name)
+    # The ground picked first, then the ground nets series links tie to it (#171).
+    grounds = [gnd, *sorted(ground_nets(setup, vrm, gnd) - {gnd})]
+    ground = " + ".join(grounds)
     volts = {}
     if s.dc_bias and dc_result is not None:
         volts = dc_volts(snap, dc_result, [(p.name, p.element, None, p.plus_pads, p.minus_pads)
@@ -262,19 +266,19 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                                           temp_text)
     for n in bias_notes:
         progress.info(n)
-    progress.info(f"Rail {vrm_name}: {', '.join(sorted(rail))} against {gnd}; "
+    progress.info(f"Rail {vrm_name}: {', '.join(sorted(rail))} against {ground}; "
                   f"{len(caps)} capacitor(s) with models, {len(missing)} without, "
                   f"{len(links)} series link(s), "
                   f"{sum(p.kind == 'probe' for p in ports)} probe(s)")
     if missing:
-        progress.warn(f"{len(missing)} capacitor(s) between the rail and {gnd} have no model "
+        progress.warn(f"{len(missing)} capacitor(s) between the rail and {ground} have no model "
                       f"and are left out: {', '.join(missing[:20])}"
                       f"{'…' if len(missing) > 20 else ''}")
     # The board map, handed to the GUI as it fills: the parts now, the mesh once meshed.
-    board_map = build_map(snap, setup, vrm_name, rail, gnd, caps, missing,
+    board_map = build_map(snap, setup, vrm_name, rail, ground, caps, missing,
                           [p.name for p in ports if p.kind == "probe"])
     progress.partial(board_map)
-    system = ACSystem(snap, sorted(rail), gnd, ports, shorts, setup.settings, s, progress,
+    system = ACSystem(snap, sorted(rail), grounds, ports, shorts, setup.settings, s, progress,
                       temperature=temperature)
     if system.stats.t_copper is not None:
         lo, hi = system.stats.t_copper
@@ -325,7 +329,7 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
         verdict = {None: "", True: " PASS", False: " FAIL"}[c.passed(freqs)]
         progress.info(f"  {c.name}: |Z| {np.min(c.mag) * 1e3:.3g} to {np.max(c.mag) * 1e3:.4g} mΩ; "
                       f"worst {zmax * 1e3:.4g} mΩ at {fmax / 1e6:.4g} MHz{verdict}")
-    return ACResult(rail=vrm_name, rail_nets=sorted(rail), ground=gnd, freqs=freqs,
+    return ACResult(rail=vrm_name, rail_nets=sorted(rail), ground=ground, freqs=freqs,
                     probes=curves, field_freqs=f_field, caps=caps, missing_caps=missing,
                     links=links, plane_capacitance_f=system.total_plane_capacitance,
                     stats=system.stats, warnings=notes + system.warnings,

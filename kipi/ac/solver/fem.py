@@ -121,7 +121,8 @@ def _boundary_nodes(tris: np.ndarray) -> np.ndarray:
 
 
 class ACSystem:
-    """The assembled AC model of one rail (``rail_nets``) against ``gnd_net``.
+    """The assembled AC model of one rail (``rail_nets``) against ``gnd_net``: a net, or
+    the ground's nets (#171), joined by the series links among the ports and shorts.
 
     ``ports`` lists the parts and probes; ``short_links`` are pairs of pad lists merged
     into one node (series links with neither resistance nor inductance). The minus side
@@ -132,7 +133,7 @@ class ACSystem:
     settings' reference temperature.
     """
 
-    def __init__(self, snap: BoardSnapshot, rail_nets: Sequence[str], gnd_net: str,
+    def __init__(self, snap: BoardSnapshot, rail_nets: Sequence[str], gnd_net,
                  ports: List[PortDef], short_links: List[Tuple[List[str], List[str]]],
                  dc_settings, ac_settings, progress: ProgressReporter = NULL,
                  reference_port: int = 0,
@@ -141,7 +142,8 @@ class ACSystem:
         self.temperature = temperature
         self.snap, self.ports = snap, ports
         self.rail_nets = list(rail_nets)
-        self.gnd = gnd_net
+        self.gnd_nets = [gnd_net] if isinstance(gnd_net, str) else list(gnd_net)
+        self.gnd = self.gnd_nets[0]
         self.dc, self.ac = dc_settings, ac_settings
         self.stats = ACStats(n_ports=len(ports))
         self.warnings: List[str] = []
@@ -154,7 +156,7 @@ class ACSystem:
             [pid for p in ports for pid in (*p.plus_pads, *p.minus_pads)]
             + [pid for a, b in short_links for pid in (*a, *b)]))
         pad_net = {p.id: p.net for p in snap.pads}
-        nets = [*self.rail_nets, gnd_net]
+        nets = [*self.rail_nets, *self.gnd_nets]
         stray = [pid for pid in terminal_ids if pad_net.get(pid) not in nets]
         if stray:
             raise ACError(f"Pads are not on the rail or its ground: {stray}")
@@ -177,7 +179,7 @@ class ACSystem:
                     circle_quad_segs=dc_settings.circle_quad_segs,
                     min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
                     progress=progress, graded=graded))
-                kinds.append(1 if net == gnd_net else 0)
+                kinds.append(1 if net in self.gnd_nets else 0)
         mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in st.copper])
         self.mesh = mesh
         node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)
@@ -460,7 +462,7 @@ class ACSystem:
                     shapely.prepare(g)
                     out[cu.id] = g
             return out
-        geom = (side_geom(self.rail_nets), side_geom([self.gnd]))
+        geom = (side_geom(self.rail_nets), side_geom(self.gnd_nets))
 
         h_far = max(st.board_thickness_mm, 0.5)
         h_ext = np.full((len(tris), 2), h_far)

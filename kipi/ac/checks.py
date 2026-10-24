@@ -1,8 +1,10 @@
 """What an AC solve covers, and whether the setup allows it.
 
 An AC solve covers one *rail*: the net group driven by one VRM (its output nets, plus
-nets joined to them by series links), against one ground net. VRMs carry no impedance
-in the AC model; they say which nets are supplies.
+nets joined to them by series links), against one ground: the ground net picked, plus the
+ground nets series links join to it (#171), such as an analog ground tied to GND by a net
+tie or a ferrite. VRMs carry no impedance in the AC model; they say which nets are
+supplies.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.parts import is_capacitor_ref
-from kipi.dc.pi.model import PISetup, Vrm, net_groups
+from kipi.dc.pi.model import PISetup, Vrm
 
 
 @dataclass
@@ -50,11 +52,37 @@ def _ref_key(ref: str):
 
 def rail_nets(setup: PISetup, vrm: Vrm, gnd: str = "") -> frozenset:
     """The nets of the rail driven by ``vrm``: its output net plus the nets series links
-    join to it. Links to the ground net ``gnd`` are parts across the rail, not joins."""
-    import copy
-    joined = copy.copy(setup)
-    joined.links = [k for k in setup.links if gnd not in (k.side_a.net, k.side_b.net)]
-    return net_groups(joined)[vrm.output.net]
+    join to it. Links to the ground (:func:`ground_nets` of ``gnd``) are parts across the
+    rail, not joins."""
+    return _joined(setup, vrm.output.net, ground_nets(setup, vrm, gnd))
+
+
+def ground_nets(setup: PISetup, vrm: Vrm, gnd: str) -> frozenset:
+    """``gnd`` and the nets series links join to it (#171): an analog ground tied to GND by
+    a net tie, a 0 Ω resistor or a ferrite returns the rail's current too. The rail's own
+    nets and every VRM's output and input nets are supplies, never ground."""
+    if not gnd:
+        return frozenset()
+    supplies = {v.output.net for v in setup.vrms} | {v.input.net for v in setup.vrms
+                                                      if v.input}
+    rail = _joined(setup, vrm.output.net, {gnd})
+    return _joined(setup, gnd, (rail | supplies) - {gnd})
+
+
+def _joined(setup: PISetup, net: str, stop) -> frozenset:
+    """``net`` and the nets series links join to it, through no link that touches a net
+    in ``stop``."""
+    links = [(k.side_a.net, k.side_b.net) for k in setup.links
+             if k.side_a.net not in stop and k.side_b.net not in stop]
+    out, todo = {net}, [net]
+    while todo:
+        n = todo.pop()
+        for a, b in links:
+            other = b if a == n else a if b == n else None
+            if other is not None and other not in out:
+                out.add(other)
+                todo.append(other)
+    return frozenset(out)
 
 
 def default_ground(vrm: Optional[Vrm]) -> str:
@@ -62,10 +90,12 @@ def default_ground(vrm: Optional[Vrm]) -> str:
 
 
 def rail_caps(snap: BoardSnapshot, setup: PISetup, rail: frozenset,
-              gnd: str) -> Tuple[List[tuple], List[str]]:
+              gnd) -> Tuple[List[tuple], List[str]]:
     """Capacitors in the solve: [(ref, model, rail net, pads rail side, pads ground side)],
-    and the references of capacitors between the rail and ground that have no model."""
+    and the references of capacitors between the rail and ground that have no model.
+    ``gnd`` is the ground net, or the ground's nets."""
     from kipi.ac.model import caps_dict
+    grounds = {gnd} if isinstance(gnd, str) else set(gnd)
     models = caps_dict(setup.caps)
     pads_by_ref: Dict[str, list] = {}
     for p in snap.pads:
@@ -74,7 +104,7 @@ def rail_caps(snap: BoardSnapshot, setup: PISetup, rail: frozenset,
     used, missing = [], []
     for ref, pads in sorted(pads_by_ref.items(), key=lambda t: _ref_key(t[0])):
         a = [p for p in pads if p.net in rail]
-        b = [p for p in pads if p.net == gnd]
+        b = [p for p in pads if p.net in grounds]
         if not a or not b or len(a) + len(b) != len(pads):
             continue
         if ref in models:
@@ -126,14 +156,17 @@ def validate_ac(setup: PISetup, vrm_name: str, gnd: str) -> List[str]:
     if dupes:
         errors.append(f"Probe names must be unique: {', '.join(dupes)}")
     rail = rail_nets(setup, vrm, gnd)
+    grounds = ground_nets(setup, vrm, gnd)
     on_rail = [p for p in setup.probes if p.rail and p.rail.net in rail]
     for p in setup.probes:
         if p.rail is None or p.ground is None:
             errors.append(f"Probe {p.name}: set both its supply pins and its ground pins")
     for p in on_rail:
-        if p.ground and gnd and p.ground.net != gnd:
+        if p.ground and gnd and p.ground.net not in grounds:
             errors.append(f"Probe {p.name}: its ground pins are on {p.ground.net}, not on "
-                          f"the ground being simulated ({gnd})")
+                          f"the ground being simulated ({gnd}). If {p.ground.net} is tied "
+                          f"to {gnd} (a net tie, a 0 Ω resistor, a ferrite), add a series "
+                          "link between them")
         if p.target_custom:
             fs = [f for f, _ in p.target_points]
             if not p.target_points:

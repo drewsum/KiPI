@@ -68,7 +68,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     """The board model of the aggressor's rails at the waveforms' harmonics.
     ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids;
     ``probes``, AC probes to give the rails' ripple at (#157)."""
-    from kipi.ac.checks import rail_caps, rail_nets
+    from kipi.ac.checks import ground_nets, rail_caps, rail_nets
     from kipi.ac.solver.fem import ACError, ACSystem, PortDef
     from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
     from kipi.dc.solver.setup import SHORT_OHMS
@@ -82,7 +82,8 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     groups = net_groups(setup, [vin_net] if vin_net else [])
     out_rail = rail_nets(setup, vrm, gnd)
     in_rail = groups.get(vin_net, frozenset([vin_net])) if vin_net else frozenset()
-    rail = frozenset(out_rail | in_rail) - {gnd}
+    grounds = ground_nets(setup, vrm, gnd)        # tied to gnd by series links (#171)
+    rail = frozenset(out_rail | in_rail) - grounds
     buck = op.topology == "buck"
 
     ports: List[PortDef] = []
@@ -104,7 +105,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
             ports.append(PortDef(f"I_L{i}", "probe", ls, ind))
         src += [len(ports) - 2, len(ports) - 1]
         currents += [pw.pulsed.c, pw.inductor.c]
-    caps, missing = rail_caps(snap, setup, rail, gnd)
+    caps, missing = rail_caps(snap, setup, rail, grounds)
     # A capacitor without a model gets its value from the board and typical parasitics,
     # as in the waveforms' own split (kipi.noise.parasitics).
     from kipi.ac.model import CapModel
@@ -114,7 +115,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     for ref in missing:
         pads = [p for p in snap.pads if p.footprint == ref]
         a = [p for p in pads if p.net in rail]
-        b = [p for p in pads if p.net == gnd]
+        b = [p for p in pads if p.net in grounds]
         c = parse_capacitance(values.get(ref, "")) or FALLBACK_C_F
         caps.append((ref, CapModel(ref, c, FALLBACK_ESL_H, FALLBACK_ESR_OHM, [ref]),
                      a[0].net, [p.id for p in a], [p.id for p in b]))
@@ -126,7 +127,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
         ports.append(PortDef(ref, "cap", a, b, model))
         cap_rail[ref] = "in" if net in in_rail else "out"
     shorts = []
-    inside = set(rail) | {gnd}
+    inside = set(rail) | grounds
     for k in setup.links:
         if k.side_a.net in inside and k.side_b.net in inside:
             a, b = _pads(snap, k.side_a), _pads(snap, k.side_b)
@@ -143,7 +144,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
             where = pr.rail.net if pr.rail else "(none)"
             notes.append(f"Probe {pr.name}: its rail {where} is not one of the aggressor's "
                          "rails: no ripple shown there")
-        elif pr.ground is None or pr.ground.net != gnd:
+        elif pr.ground is None or pr.ground.net not in grounds:
             notes.append(f"Probe {pr.name}: its ground pins are not on {gnd}: no ripple "
                          "shown there")
         elif not plus or not minus:
@@ -168,7 +169,8 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     pad_net = {p.id: p.net for p in snap.pads}
     ref_port = next((i for i, p in enumerate(ports)
                      if p.minus_pads and pad_net.get(p.minus_pads[0]) == gnd), 0)
-    system = ACSystem(snap, sorted(rail), gnd, ports, shorts, setup.settings, setup.ac,
+    system = ACSystem(snap, sorted(rail), [gnd, *sorted(grounds - {gnd})], ports, shorts,
+                      setup.settings, setup.ac,
                       progress, reference_port=ref_port)
     freqs = wf.freqs()
     f0, f1 = float(freqs[0]), float(freqs[-1])

@@ -30,6 +30,12 @@ milestones rather than versions that were ever set.
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
+- **AC probes on a ground tied to GND by a series link** (#171). A probe whose ground
+  pins are on an analog ground (GNDA joined to GND by a net tie, 0 Ω resistor or ferrite)
+  was refused, as its ground was not the one being simulated. The AC ground now takes in
+  every ground net series links tie to it: both are meshed as one return, with the link
+  in it, and capacitors to either ground count. Noise mode's board model does the same.
+  Without such a link, the error says to add one.
 - **VRM bandwidth is required in AC mode** (#183). An AC sweep of a rail whose VRM has no
   control loop bandwidth is refused, with a note to enter it: without one the open-loop
   impedance was judged where the converter's loop holds the rail. The VRM editor marks the

@@ -672,7 +672,9 @@ series links with DC mode (every VRM field can be edited in either mode) and add
 |---|---|
 | ![Capacitors tab](docs/images/ac_capacitors.png) | ![Target impedance calculator](docs/images/ac_target_calc.png) |
 
-Pick the **Rail** (by its VRM) and **Ground** under the tabs and click **Solve rail**. The copper
+Pick the **Rail** (by its VRM) and **Ground** under the tabs and click **Solve rail**. The
+ground takes in every ground net a series link ties to it, so a probe on an analog ground
+(GNDA joined to GND by a net tie or a ferrite) is solved with that link in its return. The copper
 of the rail and its ground is field-solved as a 2.5D model with both faces of every sheet:
 plane resistance with skin effect, spreading inductance, plane-pair capacitance and cavity
 resonances, and via inductance all come out of the mesh. The capacitors and series links are

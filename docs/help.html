@@ -1395,7 +1395,11 @@ are required.</p>
     part by default.</td></tr>
   <tr><td>Supply pins</td><td class="wrap">The device's power pins. Picking a part also picks
     its ground pins if it has any.</td></tr>
-  <tr><td>Ground pins</td><td class="wrap">Must be on the ground net being simulated.</td></tr>
+  <tr><td>Ground pins</td><td class="wrap">On the ground net being simulated, or on another
+    ground a series link ties to it: an analog ground joined to GND by a net tie, a 0 Ω
+    resistor or a ferrite. Add that part as a series link between the two grounds; the
+    solve then meshes both grounds as one return, with the link in it (a link with no
+    resistance or ESL joins them outright).</td></tr>
   <tr><td>Target</td><td class="wrap"><b>Flat, up to a frequency</b>, or <b>Custom (piecewise
     linear)</b>.</td></tr>
   <tr><td>Target |Z| / Target frequency</td><td class="wrap">Flat target: PASS if |Z| stays at

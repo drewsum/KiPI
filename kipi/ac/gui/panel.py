@@ -426,8 +426,10 @@ class ProbeEditor(_Editor):
         for w, text in (
                 (self.name, "A name for this probe, shown in the plot legend and the table"),
                 (self.rail, "The device's supply pins: where the impedance is looked into"),
-                (self.ground, "The device's ground pins, on the ground net being simulated. "
-                              "Picking the supply pins fills in the same part's ground pins."),
+                (self.ground, "The device's ground pins, on the ground net being simulated "
+                              "or on a ground a series link ties to it (an analog ground "
+                              "behind a net tie or a ferrite). Picking the supply pins fills "
+                              "in the same part's ground pins."),
                 (self.target_kind, "Flat: one impedance up to a frequency. Custom: a target "
                                    "mask through frequency/impedance points."),
                 (self.target, "Target impedance: PASS if |Z| stays at or below this from "
