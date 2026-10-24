@@ -46,6 +46,7 @@ from kipi.noise.model import (
 
 FORMAT_VERSION = 2
 VRM_KINDS = ("source", "ldo", "smps")
+DEFAULT_BANDWIDTH_KHZ = 50.0
 
 
 @dataclass
@@ -111,8 +112,8 @@ class Vrm:
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
     load_line_mohm: float = 0.0
-    # AC only: control loop bandwidth, kHz (None = not given).
-    bandwidth_khz: Optional[float] = None
+    # AC only: control loop bandwidth, kHz (None = not given); 50 kHz for a new VRM (#190).
+    bandwidth_khz: Optional[float] = DEFAULT_BANDWIDTH_KHZ
     # Mesh remote sense (#93, DC only, off by default): every sense point's pins are held
     # at the target voltage (less the load line, above that point's ground sense pins), the
     # VRM's current entering there; its output pins only measure. Point 1 is sense and
@@ -371,7 +372,7 @@ class PISetup:
                       acc_min=v.get("acc_min"), acc_max=v.get("acc_max"),
                       acc_pct=v.get("acc_pct", True), acc_dv=v.get("acc_dv", False),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
-                      bandwidth_khz=v.get("bandwidth_khz"),
+                      bandwidth_khz=v.get("bandwidth_khz", DEFAULT_BANDWIDTH_KHZ),
                       mesh_sense=v.get("mesh_sense", False),
                       sense_points=[SensePoint(pin(sp.get("sense")),
                                                pin(sp.get("ground_sense")))

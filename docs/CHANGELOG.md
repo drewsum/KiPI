@@ -65,6 +65,9 @@ milestones rather than versions that were ever set.
   not have on the net with the pins it does. Blank, every pin, stays blank.
 
 ### Changed
+- **New VRMs default to a 50 kHz control loop bandwidth** (#190), a typical figure for a
+  point-of-load converter, so a new rail can be swept in AC mode straight away. Edit it to
+  the converter's datasheet figure; setups saved with no bandwidth keep none.
 - **Victims sit at their output levels** (#179). Held high, a victim's line is at the
   supply through its driver's resistance into the receiver and termination; held low, at
   ground. These replace the JESD8 minimum VOH and VOL, so the noise margin is the gap from

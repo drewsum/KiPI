@@ -93,3 +93,12 @@ def test_a_rail_whose_vrm_has_no_bandwidth_is_not_solved():
                for e in validate_ac(setup, "VRM1", "GND"))
     with pytest.raises(ACError, match="control loop bandwidth"):
         solve_ac(snap, setup, "VRM1", "GND")
+
+
+def test_a_new_vrm_starts_at_50_khz():
+    from kipi.dc.pi.model import PinRef, PISetup, Vrm
+    assert Vrm("U1", PinRef("U1", "+3V3"), 3.3).bandwidth_khz == 50.0      # #190
+    d = PISetup(vrms=[Vrm("U1", PinRef("U1", "+3V3"), 3.3, bandwidth_khz=None)]).to_dict()
+    assert PISetup.from_dict(d).vrms[0].bandwidth_khz is None              # kept as saved
+    del d["vrms"][0]["bandwidth_khz"]
+    assert PISetup.from_dict(d).vrms[0].bandwidth_khz == 50.0

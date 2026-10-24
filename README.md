@@ -647,7 +647,7 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   sits from the target voltage of the VRM driving it (solve the power tree first, or the
   button is disabled).
   Targets apply only above the rail's VRM **Control loop bandwidth**, which a rail needs
-  before it can be solved: the AC solve leaves
+  before it can be solved (a new VRM starts at 50 kHz): the AC solve leaves
   the VRM out of circuit (the open-loop PDN impedance, capacitive only), and below its bandwidth the
   converter's control loop is assumed to hold the rail. If the bandwidth is at or above the target frequency,
   the target across all swept frequencies are judged and the results say so. The method follows Smith et al.,
