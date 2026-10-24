@@ -150,6 +150,14 @@ class Vrm:
         sides = [abs(x - self.voltage) for x in (lo, hi) if x is not None]
         return max(sides) if sides else None
 
+    def accuracy_sides(self) -> Tuple[float, float]:
+        """How far (below, above) the target voltage the DC accuracy lets the output sit,
+        volts, 0 for an end not set or on the far side of the target."""
+        lo, hi = range_volts(self.voltage, self.acc_min, self.acc_max,
+                             range_unit(self.acc_pct, self.acc_dv))
+        return (0.0 if lo is None else max(0.0, self.voltage - lo),
+                0.0 if hi is None else max(0.0, hi - self.voltage))
+
 
 @dataclass
 class PinGroup:

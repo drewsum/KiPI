@@ -45,6 +45,12 @@ class TargetCalculator(QDialog):
             s.setKeyboardTracking(True)       # update the results while typing
             s.setValue(v)
             s.valueChanged.connect(self._update)
+        # Volts left (below, above) the DC value once a load's tolerance is copied, so the
+        # VRM accuracy and the DC drop each come off their own side (#172); None until then,
+        # or once the tolerance is typed in, when they come off the one value.
+        self._room: Optional[Tuple[float, float]] = None
+        self._filling = False
+        self.v_ac.valueChanged.connect(self._typed)
 
         # Copy the AC tolerance (#87) and the load step from the DC load on the probe's
         # pins; with none exactly on them, a dropdown picks among the loads on its part.
@@ -72,8 +78,10 @@ class TargetCalculator(QDialog):
         self.btn_accuracy = _copy_button(
             "Subtract VRM DC accuracy", self.accuracies, self.subtract_accuracy,
             "Take the DC accuracy of the VRM driving this rail off the AC voltage tolerance: "
-            "the larger side of it, which the output may sit away from its target voltage "
-            "before any load step. Each click subtracts it again.",
+            "how far the output may sit from its target voltage before any load step. With "
+            "the tolerance copied from a DC load, each side of the accuracy comes off the "
+            "same side of the load's tolerance; otherwise its larger side comes off. Each "
+            "click subtracts it again.",
             "No LDO or switcher driving this probe's rail has a DC accuracy set")
         self.btn_current = QPushButton("Copy current from DC load")
         self.btn_current.clicked.connect(lambda: self.copy_current(self.selected_load()))
@@ -161,14 +169,35 @@ class TargetCalculator(QDialog):
 
     def copy_tolerance(self, load: Optional[ProbeLoad]):
         if load and load.tolerance:
-            self.v_ac.setValue(load.tolerance.v_ac_v * 1e3)
+            self._fill(load.tolerance.room())
 
     def subtract_drop(self, load: Optional[ProbeLoad]):
-        if load and load.drop:
-            self.v_ac.setValue(max(0.0, self.v_ac.value() - load.drop.v * 1e3))
+        if not (load and load.drop):
+            return
+        v = load.drop.v
+        self._take((v, 0.0) if load.drop.kind == "drop" else (0.0, v), v)
 
     def subtract_accuracy(self, a: VrmAccuracy):
-        self.v_ac.setValue(max(0.0, self.v_ac.value() - a.v * 1e3))
+        self._take(a.sides(), a.v)
+
+    def _take(self, sides: Tuple[float, float], v: float):
+        """Take ``sides`` (volts below, above) off the room left, or ``v`` off the AC
+        tolerance with no room known."""
+        if self._room is None:
+            self._fill(None, max(0.0, self.v_ac.value() * 1e-3 - v))
+        else:
+            self._fill((self._room[0] - sides[0], self._room[1] - sides[1]))
+
+    def _fill(self, room: Optional[Tuple[float, float]], v_ac: Optional[float] = None):
+        """Set the AC tolerance to the smaller side of ``room``, or to ``v_ac`` volts."""
+        self._filling = True
+        self.v_ac.setValue(max(0.0, min(room)) * 1e3 if room else v_ac * 1e3)
+        self._filling = False
+        self._room = room
+
+    def _typed(self, *_):
+        if not self._filling:
+            self._room = None
 
     def copy_current(self, load: Optional[ProbeLoad]):
         if load and load.current_a:

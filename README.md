@@ -359,7 +359,7 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Load line | Optional, in mΩ: the VRM regulates to its regulated voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the regulated voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
 | Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the target voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its regulated voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
-| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V; the DC Accuracy Calculator can work it out from the feedback divider. The target calculator can subtract its larger side from the AC voltage tolerance. |
+| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V; the DC Accuracy Calculator can work it out from the feedback divider. The target calculator subtracts each side of it from the same side of a copied load tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
 | Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
 | Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its regulated voltage relative to these pins instead of 0 V (needs ground pins) |

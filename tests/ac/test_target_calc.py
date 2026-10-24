@@ -218,6 +218,50 @@ def test_dialog_subtracts_a_vrm_accuracy(app, monkeypatch):
     assert d.v_ac.value() == 0                                 # never below zero
 
 
+def test_each_side_of_the_accuracy_comes_off_its_own_side_of_the_tolerance(app, monkeypatch):
+    # #172: a load allowed -5 / +3 % of 1 V behind a VRM that may sit -3 / +1 % off it has
+    # 50 - 30 = 20 mV left below and 30 - 10 = 20 mV above, not 30 - 30 = 0 mV.
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import LoadDrop, ProbeLoad, probe_loads, vrm_accuracies
+    from kipi.dc.pi.model import PinRef
+    monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
+    s = _setup()
+    soc, vr1 = s.loads[1], s.vrms[0]
+    soc.tol_min, soc.tol_max = -5.0, 3.0
+    vr1.kind, vr1.acc_min, vr1.acc_max = "ldo", -3.0, 1.0
+    rail = PinRef("U1", "+1V0")
+    load, acc = probe_loads(s, rail)[0], vrm_accuracies(s, rail)[0]
+    assert load.tolerance.room() == (pytest.approx(0.05), pytest.approx(0.03))
+    assert acc.sides() == (pytest.approx(0.03), pytest.approx(0.01))
+    d = TargetCalculator(loads=[load], accuracies=[acc])
+    d.btn_copy.click()
+    assert d.v_ac.value() == pytest.approx(30)
+    d.btn_accuracy.click()
+    assert d.v_ac.value() == pytest.approx(20)
+    # A drop uses up room below (20 -> 15 mV), a boost room above (20 -> 16 mV)
+    d.subtract_drop(ProbeLoad("SoC", None, 2.0, drop=LoadDrop("SoC", 1.0, 0.995, 0.005,
+                                                              "drop")))
+    assert d.v_ac.value() == pytest.approx(15)
+    d.btn_copy.click()
+    d.btn_accuracy.click()
+    d.subtract_drop(ProbeLoad("SoC", None, 2.0, drop=LoadDrop("SoC", 1.0, 1.004, 0.004,
+                                                              "boost")))
+    assert d.v_ac.value() == pytest.approx(16)
+    # Typed in: the room is unknown, so the larger side comes off the value
+    d.v_ac.setValue(40)
+    d.btn_accuracy.click()
+    assert d.v_ac.value() == pytest.approx(10)                # 40 - 30 mV
+
+
+def test_an_accuracy_with_one_end_uses_up_one_side():
+    from kipi.dc.pi.model import PinRef, Vrm
+    v = Vrm("VR1", PinRef("U9", "+1V0"), 1.0, kind="smps")
+    v.acc_min, v.acc_max = -2.0, None
+    assert v.accuracy_sides() == (pytest.approx(0.02), 0.0)
+    v.acc_min, v.acc_max, v.acc_pct = 0.99, 1.03, False       # volts
+    assert v.accuracy_sides() == (pytest.approx(0.01), pytest.approx(0.03))
+
+
 # --- Subtract the solved DC drop at the load's pins ----------------------------------------
 
 def _tree(*loads):

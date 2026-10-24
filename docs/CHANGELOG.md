@@ -30,6 +30,12 @@ milestones rather than versions that were ever set.
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
+- **Subtract VRM DC accuracy** (#172). The target calculator subtracted the larger side
+  of the VRM's accuracy from the tighter side of the load's tolerance, even when the two
+  were on opposite sides of the target. A load allowed -5 / +3 % of 1 V behind a VRM
+  accurate to -3 / +1 % got 0 mV instead of the 20 mV left on each side. With a
+  tolerance copied from a DC load, the accuracy and the DC drop now come off their own
+  sides; a drop takes room below the target, a boost room above.
 - **Noise waveform legends.** Each view has one legend: the tickbox list beside the plot,
   each curve's name in its colour. Under the plot, each shown curve's peak-to-peak and rms
   as plotted, through the 20 MHz bandwidth limit when it is ticked; a hidden curve's
