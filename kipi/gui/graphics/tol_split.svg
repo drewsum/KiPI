@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160" viewBox="0 0 320 160">
+  <rect x="0" y="0" width="320" height="160" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <rect x="16" y="22" width="180" height="104" fill="{grid}"/>
+    <path d="M16,22 H196 M16,126 H196" stroke="{muted}" stroke-width="1.2" stroke-dasharray="5,3"/>
+    <text x="20" y="17" fill="{muted}">total tolerance</text>
+    <path d="M16,74 H196" stroke="{muted}" stroke-width="1"/>
+    <text x="20" y="70" fill="{muted}" font-size="10">nominal</text>
+    <rect x="16" y="58" width="180" height="40" fill="none" stroke="{dc}" stroke-width="1.6" stroke-dasharray="3,2"/>
+    <path d="M16,87 H56 Q60,85 62,92 L66,104 Q70,112 74,96 L80,84 Q86,78 92,86 L98,90 Q106,88 116,87 H122"
+          fill="none" stroke="{ac}" stroke-width="2"/>
+    <path d="M122,87 l4,-3 l4,6 l4,-6 l4,6 l4,-6 l4,6 l4,-6 l4,6 l4,-6 l4,6 l4,-6 l4,6 l4,-6 l4,6 l4,-6 l4,6 l4,-6 l4,3 H196"
+          fill="none" stroke="{ac}" stroke-width="1.4"/>
+    <path d="M208,58 V98 M204,58 H212 M204,98 H212" stroke="{dc}" stroke-width="1.6"/>
+    <text x="218" y="74" fill="{dc}">DC: VRM</text>
+    <text x="218" y="88" fill="{dc}">accuracy + drop</text>
+    <text x="218" y="110" fill="{ac}">AC: ripple +</text>
+    <text x="218" y="124" fill="{ac}">transient</text>
+    <text x="78" y="120" fill="{ac}" font-size="10">step</text>
+    <text x="158" y="80" fill="{ac}" font-size="10" text-anchor="middle">ripple</text>
+    <text x="160" y="148" fill="{muted}" text-anchor="middle" font-size="10">AC swings about the steady (DC) voltage</text>
+  </g>
+</svg>

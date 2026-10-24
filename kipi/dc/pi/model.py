@@ -182,6 +182,17 @@ class Load:
     tol_max: Optional[float] = None
     tol_pct: bool = True
     tol_dv: bool = False
+    # Optional DC and AC shares of that tolerance, for parts that give them apart (#174),
+    # saved in the same units: DC is the VRM's accuracy plus the copper's drop, AC the
+    # ripple and transient on top, in ±V or % from nominal. Nothing reads them yet.
+    dc_tol_min: Optional[float] = None
+    dc_tol_max: Optional[float] = None
+    dc_tol_pct: bool = True
+    dc_tol_dv: bool = False
+    ac_tol_min: Optional[float] = None
+    ac_tol_max: Optional[float] = None
+    ac_tol_pct: bool = True
+    ac_tol_dv: bool = False
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
@@ -201,6 +212,14 @@ class Load:
 
     def tolerance_label(self) -> str:
         return tolerance_label(self.tol_min, self.tol_max, self.tol_pct, self.tol_dv)
+
+    def dc_tolerance_label(self) -> str:
+        return tolerance_label(self.dc_tol_min, self.dc_tol_max, self.dc_tol_pct,
+                               self.dc_tol_dv)
+
+    def ac_tolerance_label(self) -> str:
+        return tolerance_label(self.ac_tol_min, self.ac_tol_max, self.ac_tol_pct,
+                               self.ac_tol_dv)
 
     def __setstate__(self, state):
         # Setups pickled in results files before asymmetric tolerances: +/- one %.
@@ -508,11 +527,18 @@ def find_setup(board_file_or_name: str, project_dir: str) -> Optional[Path]:
 
 def _load_tolerance(d: dict) -> dict:
     """A load's tolerance fields from a setup file; older files have +/- one %."""
+    out = {}
+    for p in ("dc_", "ac_"):                        # the DC and AC shares (#174)
+        if p + "tol_min" in d or p + "tol_max" in d:
+            out.update({p + "tol_min": d.get(p + "tol_min"),
+                        p + "tol_max": d.get(p + "tol_max"),
+                        p + "tol_pct": d.get(p + "tol_pct", True),
+                        p + "tol_dv": d.get(p + "tol_dv", False)})
     if "tol_min" in d or "tol_max" in d:
-        return {"tol_min": d.get("tol_min"), "tol_max": d.get("tol_max"),
+        return {**out, "tol_min": d.get("tol_min"), "tol_max": d.get("tol_max"),
                 "tol_pct": d.get("tol_pct", True), "tol_dv": d.get("tol_dv", False)}
     t = d.get("tolerance_pct")
-    return {} if t is None else {"tol_min": -t, "tol_max": t}
+    return out if t is None else {**out, "tol_min": -t, "tol_max": t}
 
 
 def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
@@ -674,8 +700,11 @@ def validate(setup: PISetup) -> List[str]:
 
     rail_groups = set(by_group)
     for l in setup.loads:
-        if l.tol_min is not None and l.tol_max is not None and l.tol_min > l.tol_max:
-            errors.append(f"Load {l.name}: tolerance minimum is above its maximum")
+        for what, lo, hi in (("tolerance", l.tol_min, l.tol_max),
+                             ("DC tolerance", l.dc_tol_min, l.dc_tol_max),
+                             ("AC tolerance", l.ac_tol_min, l.ac_tol_max)):
+            if lo is not None and hi is not None and lo > hi:
+                errors.append(f"Load {l.name}: {what} minimum is above its maximum")
         if l.groups:
             seen_pins: Dict[str, int] = {}
             for gi, g in enumerate(l.groups):

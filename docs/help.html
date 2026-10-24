@@ -962,6 +962,12 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     +0.15 V) or in <b>V</b> (e.g. 3.135 to 3.465 V). Either
     may be left "not set". PASS if every supply pin is within it. Switching the unit
     converts the values when a VRM drives the load's rail.</td></tr>
+  <tr><td>DC tolerance, AC tolerance</td><td class="wrap">Optional, for a part that gives its
+    tolerance in two shares as well as in total: the DC share, where the pin's steady voltage
+    may sit (the VRM's accuracy and the copper's DC drop together), in the same units as
+    the tolerance; and the AC share, how far ripple and load transients may swing it from
+    there, in <b>±V</b> or <b>%</b>. They are saved with the setup for a later analysis; no
+    solve reads them yet, and PASS still follows the tolerance above.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
 <p><b>Split across nets…</b> under the list shares one part's total current over several of

@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.9.2 (in development)
 
 ### Added
+- **DC and AC tolerances for loads** (#174). A load can also give its tolerance in two
+  optional shares: DC (the VRM's accuracy plus the DC drop) and AC (ripple and transient,
+  in ±V or %). They are saved with the setup for a later tolerance analysis; nothing reads
+  them yet.
 - **SPICE models for capacitors and series links** (#51). **Import SPICE model…** in a
   capacitor model or series link reads the maker's model of the part, a two-pin
   `.SUBCKT` of resistors, inductors and capacitors. Pick its subcircuit, and it is saved

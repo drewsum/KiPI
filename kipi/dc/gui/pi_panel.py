@@ -88,17 +88,17 @@ class RangeRow(QWidget):
     values, or clears them where that needs the nominal voltage and it is unknown."""
     changed = Signal()
 
-    def __init__(self, nominal: Callable[[], Optional[float]], parent=None):
+    def __init__(self, nominal: Callable[[], Optional[float]], parent=None,
+                 units=(VOLTS, DELTA_VOLTS, PERCENT)):
         super().__init__(parent)
         self._nominal = nominal
         self._quiet = False
         self.min = _optional_volts()
         self.max = _optional_volts()
         self.unit = QComboBox()
-        self.unit.addItem("V", VOLTS)
-        self.unit.addItem("±V", DELTA_VOLTS)
-        self.unit.addItem("%", PERCENT)
-        self._unit = VOLTS                      # the unit the values are in
+        for u in units:
+            self.unit.addItem(u, u)
+        self._unit = units[0]                   # the unit the values are in
         h = QHBoxLayout(self)
         h.setContentsMargins(0, 0, 0, 0)
         h.addWidget(QLabel("min"))
@@ -128,6 +128,9 @@ class RangeRow(QWidget):
         quiet, self._quiet = self._quiet, True
         try:
             self._unit = range_unit(pct, dv)
+            if self.unit.findData(self._unit) < 0:      # a unit this row does not offer
+                self._unit, lo, hi = self.unit.itemData(0), None, None
+            pct = self._unit == PERCENT
             self.unit.setCurrentIndex(self.unit.findData(self._unit))
             step = {PERCENT: 1.0, DELTA_VOLTS: 0.01}.get(self._unit, 0.1)
             for s in (self.min, self.max):
@@ -929,6 +932,10 @@ class LoadEditor(_Editor):
         self.ground = self._picker(optional=True)
         # Tolerance, in % or volts from the rail's target voltage, or in volts.
         self.tol = RangeRow(self._rail_nominal)
+        # Optional DC and AC shares of it (#174), saved for later use. AC is a swing about
+        # the DC voltage, so only from nominal.
+        self.dc_tol = RangeRow(self._rail_nominal)
+        self.ac_tol = RangeRow(self._rail_nominal, units=(DELTA_VOLTS, PERCENT))
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -938,11 +945,16 @@ class LoadEditor(_Editor):
         f.addRow("Total", self.lbl_total)
         f.addRow("Ground pins", self.ground)
         f.addRow("Tolerance", self.tol)
+        f.addRow("DC tolerance", self.dc_tol)
+        f.addRow("AC tolerance", self.ac_tol)
         # Drawings under the tooltips (#116), the field's part picked out.
         art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
                self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
                self.tol.max: ("tolerance", "max"),
                self.tol.unit: ("tolerance", "volts", "dv", "pct")}
+        for row, part in ((self.dc_tol, "dc"), (self.ac_tol, "ac")):
+            for w in (row, *row.fields()):
+                art[w] = ("tol_split", part)
         for w, text in (
                 (self.name, "A name for this load, used in the results tables"),
                 (self.supply, "The pins the load draws its current from"),
@@ -968,12 +980,24 @@ class LoadEditor(_Editor):
                                 "the rail.\n%: in % from that target voltage."
                                 "\nSwitching converts the values when that VRM is known.")):
             tip(f, w, text, art.get(w))
+        dc_text = ("Optional, for a part that gives its tolerance in two shares: the DC "
+                   "share, where the pin's steady voltage may sit, from the VRM's accuracy "
+                   "and the copper's DC drop together. In V, or ±V or % from the VRM "
+                   "target voltage. Saved with the setup; no solve uses it yet.")
+        ac_text = ("Optional, for a part that gives its tolerance in two shares: the AC "
+                   "share, how far ripple and load transients may swing the pin about its "
+                   "steady voltage. In ±V or % from it. Saved with the setup; no solve uses "
+                   "it yet.")
+        for row, text in ((self.dc_tol, dc_text), (self.ac_tol, ac_text)):
+            for w in (row, *row.fields()):
+                tip(f, w, text, art[w])
         self.groups.setToolTip(art_tip(
             "Pin groups: an optional name, the pin numbers (e.g. 15,28) and the current into "
             "those pins. Click a column header to sort by it.", "current_split", "groups"))
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
         self._watch(self.name, self.current, self.mode)
-        self.tol.changed.connect(self._store)
+        for row in (self.tol, self.dc_tol, self.ac_tol):
+            row.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
         self._gb_widgets = (self.btn_group, self.btn_each)
         self._legend()
@@ -982,7 +1006,8 @@ class LoadEditor(_Editor):
     def _mode_rows(self, *_):
         grouped = self.mode.currentData() == "groups"
         self._mark({self.name: REQUIRED, self.supply: REQUIRED, self.mode: REQUIRED,
-                    self.current: REQUIRED, self.ground: OPTIONAL, self.tol: OPTIONAL})
+                    self.current: REQUIRED, self.ground: OPTIONAL, self.tol: OPTIONAL,
+                    self.dc_tol: OPTIONAL, self.ac_tol: OPTIONAL})
         self.form.setRowVisible(self.current, not grouped)
         self.form.setRowVisible(self.groups, grouped)
         self.form.setRowVisible(self.lbl_total, grouped)
@@ -1063,6 +1088,8 @@ class LoadEditor(_Editor):
         self.mode.setCurrentIndex(1 if l.groups else 0)
         self.ground.set_value(l.ground)
         self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct, l.tol_dv)
+        self.dc_tol.set_values(l.dc_tol_min, l.dc_tol_max, l.dc_tol_pct, l.dc_tol_dv)
+        self.ac_tol.set_values(l.ac_tol_min, l.ac_tol_max, l.ac_tol_pct, l.ac_tol_dv)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
@@ -1100,6 +1127,10 @@ class LoadEditor(_Editor):
                 self._show(self.ground, gnd)
         l.tol_min, l.tol_max = self.tol.values()
         l.tol_pct, l.tol_dv = self.tol.pct(), self.tol.dv()
+        l.dc_tol_min, l.dc_tol_max = self.dc_tol.values()
+        l.dc_tol_pct, l.dc_tol_dv = self.dc_tol.pct(), self.dc_tol.dv()
+        l.ac_tol_min, l.ac_tol_max = self.ac_tol.values()
+        l.ac_tol_pct, l.ac_tol_dv = self.ac_tol.pct(), self.ac_tol.dv()
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 
