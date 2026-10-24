@@ -133,6 +133,9 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     # open drain) is solved again. Each state is judged on the noise toward its threshold.
     totals = {victim.driver_ohm: res.receiver_v[TOTAL]}
     for st in victim.states():
+        if st.name == "high" and st.level_v < st.threshold_v:
+            warnings.append(f"Driven high through {st.driver_ohm:.4g} Ω it reaches only "
+                            f"{st.level_v:.3g} V, under its {st.threshold_v:.3g} V threshold")
         if st.driver_ohm not in totals:
             o = solve(st.driver_ohm)
             totals[st.driver_ohm] = Spectrum(f"{victim.name} {st.name}", "V", 0.0,

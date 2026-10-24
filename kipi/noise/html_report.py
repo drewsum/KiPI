@@ -184,16 +184,16 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     parts.append("<h2 id='noise'>Victim noise</h2>")
     worst = sorted(result.victims, key=lambda v: -v.ratio)[:MAX_VICTIM_PLOTS]
     for v in worst:
-        scale = 100.0 / max(v.margin_v, 1e-15)
+        # In millivolts (#179), against the ±margin where it fits beside the noise.
         from kipi.noise.waveforms import Spectrum
-        curves = [(label, Spectrum(sp.name, "% margin", sp.mean * scale, sp.c * scale))
+        curves = [(label, Spectrum(sp.name, "mV", sp.mean * 1e3, sp.c * 1e3))
                   for label, sp in ([(f"{v.receiver} total", v.receiver_v["total"])] +
                                     [(k, sp) for k, sp in v.receiver_v.items()
                                      if k != "total"])]
-        margin = 100.0 if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
+        margin = v.margin_v * 1e3 if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
         parts.append(f"<h3>{_e(v.name)}</h3>")
-        plot(curves, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of its "
-                     "margin", "% margin", margin)
+        plot(curves, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak against its "
+                     f"±{v.margin_v * 1e3:.4g} mV margin", "mV", margin)
     if len(result.victims) > len(worst):
         parts.append(f"<p class='note'>The {len(worst)} victims nearest their margin are "
                      "plotted.</p>")

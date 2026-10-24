@@ -30,11 +30,24 @@ def _setup(snap, victims):
 
 
 def test_a_cmos_line_is_judged_against_vih_high_and_vil_low():
+    # The output levels, not VOH and VOL (#179): the supply and ground through the driver
+    # into the receiver's 1 MΩ.
     hi, lo = Victim("X").states()
-    assert (hi.name, hi.level_v, hi.threshold_v, hi.driver_ohm) == ("high", 2.4, 2.0, 33.0)
-    assert (lo.name, lo.level_v, lo.threshold_v, lo.driver_ohm) == ("low", 0.4, 0.8, 33.0)
+    assert (hi.name, hi.threshold_v, hi.driver_ohm) == ("high", 2.0, 33.0)
+    assert hi.level_v == pytest.approx(3.3 * 1e6 / (1e6 + 33.0))
+    assert (lo.name, lo.level_v, lo.threshold_v, lo.driver_ohm) == ("low", 0.0, 0.8, 33.0)
     assert hi.toward == -1 and lo.toward == 1
-    assert hi.margin_v == pytest.approx(0.4) and lo.margin_v == pytest.approx(0.4)
+    assert hi.margin_v == pytest.approx(1.3, abs=1e-3) and lo.margin_v == pytest.approx(0.8)
+    assert Victim("X").margin() == pytest.approx(0.8)
+
+
+def test_the_high_level_follows_the_drive_strength_into_the_load():
+    v = Victim("X", logic_v=1.8)
+    v.apply_preset("parallel")              # 25 Ω into a 50 Ω termination
+    hi, lo = v.states()
+    assert hi.level_v == pytest.approx(1.8 * 50 / 75, rel=1e-4) and lo.level_v == 0.0
+    v.apply_preset("open_drain")            # a 4.7 kΩ pull-up into 1 MΩ
+    assert v.states()[0].level_v == pytest.approx(3.3 * 1e6 / 1.0047e6 * 1.8 / 3.3)
 
 
 def test_an_open_drain_pulls_low_through_its_switch():
@@ -48,8 +61,8 @@ def test_an_open_drain_pulls_low_through_its_switch():
 
 def test_a_margin_set_by_hand_moves_the_thresholds():
     hi, lo = Victim("X", logic_v=1.8, noise_margin_v=0.05).states()
-    assert hi.threshold_v == pytest.approx(1.35 - 0.05)
-    assert lo.threshold_v == pytest.approx(0.45 + 0.05)
+    assert hi.threshold_v == pytest.approx(hi.level_v - 0.05)
+    assert lo.threshold_v == pytest.approx(0.05)
     assert logic_levels(0.9) == pytest.approx((0.315, 0.585, 0.18, 0.72))   # off the table
 
 
@@ -114,8 +127,8 @@ def test_the_plot_shows_the_line_held_high_and_low(app):
     (lh, th, yh, _, ah), (ll, tl, yl, _, al) = plot._curves
     assert ah is plot.axes[0] and al is plot.axes[1]
     assert "held high" in lh and "held low" in ll
-    assert np.mean(yh) == pytest.approx(2.4, abs=0.05)
-    assert np.mean(yl) == pytest.approx(0.4, abs=0.05)
+    assert np.mean(yh) == pytest.approx(3.28, abs=0.05)     # the pull-up into 1 MΩ
+    assert np.mean(yl) == pytest.approx(0.0, abs=0.05)
     assert "held high" in plot.axes[0].get_title()
     plot.chk_spectrum.setChecked(True)
     assert len(plot.axes) == 1 and len(plot._curves) == 2
@@ -134,7 +147,7 @@ def test_the_editor_sets_the_driving_low_resistance(app):
     p.victim_list._add()
     v = p.setup.victims[0]
     ed = p.victim_list.editor
-    assert _get_optional(ed.driver_low_ohm) is None and "low: 0.4 V" in ed.lbl_margin.text()
+    assert _get_optional(ed.driver_low_ohm) is None and "low: 0 V" in ed.lbl_margin.text()
     ed.preset.setCurrentIndex(ed.preset.findData("open_drain"))
     assert v.driver_low_ohm == 20.0 and ed.driver_low_ohm.value() == 20.0
     ed.driver_low_ohm.setValue(8.0)

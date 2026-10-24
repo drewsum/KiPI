@@ -21,7 +21,7 @@ class StateResult:
     """The victim held high or low (#156): its receiver's noise in that state, around the
     driver's level, against the threshold the noise must not cross."""
     name: str                           # "high" or "low"
-    level_v: float                      # VOH or VOL
+    level_v: float                      # the driver's output, loaded (#179)
     threshold_v: float                  # VIH or VIL
     driver_ohm: float
     receiver_v: Optional[Spectrum] = None   # the superposition, about the level

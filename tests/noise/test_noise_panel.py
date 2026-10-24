@@ -183,7 +183,7 @@ def test_a_new_victim_is_a_signal_net_with_its_ends(vpanel):
     (v,) = vpanel.setup.victims
     assert v.net == "SIG" and {v.driver.ref, v.receiver.ref} == {"U3", "U4"}
     ed = vpanel.victim_list.editor
-    assert ed.preset.currentData() == "cmos" and "400 mV" in ed.lbl_margin.text()
+    assert ed.preset.currentData() == "cmos" and "800 mV" in ed.lbl_margin.text()
 
 
 def test_another_driver_or_receiver_part_takes_its_own_pin_on_the_net(vpanel):
@@ -213,7 +213,8 @@ def test_a_preset_fills_the_terminations_and_edits_make_it_custom(vpanel):
     ed.driver_ohm.setValue(10.0)
     assert ed.preset.currentData() == "custom" and v.driver_ohm == 10.0
     ed.logic.setCurrentIndex(ed.logic.findData(1.8))
-    assert v.logic_v == 1.8 and v.margin() == pytest.approx(0.18)
+    # 10 Ω into 50 Ω reaches 1.5 V, 0.33 V over VIH; low is 0.63 V under VIL
+    assert v.logic_v == 1.8 and v.margin() == pytest.approx(0.33, abs=1e-3)
 
 
 def test_victim_results_fill_the_table_and_plot(vpanel, window):

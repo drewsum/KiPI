@@ -230,12 +230,6 @@ class NoisePlot(QWidget):
         if key != "victim":
             spectra = [(_name(label), label, s) for label, s in spectra]
         spectra = [(k, label, self._limited(s)) for k, label, s in spectra]
-        normalized_victim = key == "victim" and self._victim() is not None
-        if normalized_victim:
-            from kipi.noise.waveforms import Spectrum
-            scale = 100.0 / max(self._victim().margin_v, 1e-15)
-            spectra = [(k, label, Spectrum(s.name, "% margin", s.mean * scale, s.c * scale))
-                       for k, label, s in spectra]
         if self.result is None or not spectra:
             self.curve_scroll.setVisible(False)
             self.lbl_figures.clear()
@@ -296,13 +290,10 @@ class NoisePlot(QWidget):
                 self._curves.append((label, t, y, unit, ax))
             ax.set_xlim(0, t[-1] * 1e6)
             v = self._victim() if self.cmb_view.currentData() == "victim" else None
-            # The margin lines are drawn where they fit; far above small noise they would
-            # flatten it, so the axis then follows the noise.
-            if normalized_victim:
-                _level(ax, 100.0, "noise margin", "#ff6060", "--")
-                _level(ax, -100.0, None, "#ff6060", "--")
-            elif v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
-                _level(ax, v.margin_v, "noise margin", "#ff6060", "--")
+            # In volts (#179). The margin lines are drawn where they fit; far above small
+            # noise they would flatten it, so the axis then follows the noise.
+            if v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
+                _level(ax, v.margin_v, f"noise margin ±{_eng(v.margin_v, 'V')}", "#ff6060", "--")
                 _level(ax, -v.margin_v, None, "#ff6060", "--")
             elif v is not None:
                 ax.set_ylim(-1.3 * v.peak_v, 1.3 * v.peak_v)
@@ -312,8 +303,9 @@ class NoisePlot(QWidget):
         op = self.result.operating
         v = self._victim() if self.cmb_view.currentData() in ("victim", "states") else None
         if v is not None:
-            ax.set_title(f"{v.name}: {v.peak_v * 1e3:.4g} mV peak, {v.ratio * 100:.3g} % of "
-                         f"its margin, from {self.result.aggressor}", fontsize=10)
+            ax.set_title(f"{v.name}: {v.peak_v * 1e3:.4g} mV peak against its "
+                         f"±{v.margin_v * 1e3:.4g} mV margin, from {self.result.aggressor}",
+                         fontsize=10)
         else:
             ax.set_title(f"{self.result.aggressor} ({op.topology}, {op.vin:g} V → {op.vout:g} V, "
                          f"{op.iout:.3g} A, {wf.fsw_hz / 1e3:g} kHz, D = {op.duty:.3f})",
@@ -392,7 +384,7 @@ class NoisePlot(QWidget):
         t = wf.time(periods)
         n = wf.samples_per_period()
         off = []
-        names = {"high": ("VOH", "VIH"), "low": ("VOL", "VIL")}
+        names = {"high": ("output high", "VIH"), "low": ("output low", "VIL")}
         states = [st for st in v.states if st.receiver_v is not None]
         for ax, (i, (label, sp)) in zip(self.axes, shown):
             st = states[i]
@@ -416,7 +408,7 @@ class NoisePlot(QWidget):
             ax.grid(True, color="#444", lw=0.5)
             ax.set_title(f"{v.name} held {st.name} (driver {st.driver_ohm:.4g} Ω): "
                          f"{st.excursion_v * 1e3:.4g} mV toward {in_name}, "
-                         f"{st.ratio * 100:.3g} % of its {st.margin_v * 1e3:.4g} mV margin",
+                         f"{st.margin_v * 1e3:.4g} mV away",
                          fontsize=9)
         self.axes[-1].set_xlabel("Time (µs)")
         hint = "Hover to read the curves"
@@ -451,7 +443,7 @@ def _level(ax, y: float, text: Optional[str], color: str, ls: str, lw: float = 1
 
 
 def _figure(x: float, unit: str) -> str:
-    """A p-p or rms figure: with an SI prefix in volts and amps, plain in % margin."""
+    """A p-p or rms figure: with an SI prefix in volts and amps, plain otherwise."""
     return _eng(x, unit) if unit in ("V", "A") else f"{x:.4g} {unit}"
 
 

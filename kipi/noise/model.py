@@ -12,6 +12,7 @@ Nothing here imports the DC model, so the setup can import this module.
 from __future__ import annotations
 
 import dataclasses
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, List, Optional
 
@@ -115,7 +116,7 @@ class LogicState:
     """The victim held high or low (#156): the driver's level, the receiver's threshold
     that noise must not cross, and the driver's resistance in that state."""
     name: str                       # "high" or "low"
-    level_v: float                  # VOH or VOL
+    level_v: float                  # the driver's output, loaded
     threshold_v: float              # VIH or VIL
     driver_ohm: float
 
@@ -195,20 +196,31 @@ class Victim:
         return None
 
     def margin(self) -> float:
-        m = self._set_margin()
-        return logic_margin(self.logic_v) if m is None else m
+        """The smaller of the high and low states' margins."""
+        return min(st.margin_v for st in self.states())
+
+    def load_ohm(self) -> float:
+        """What the driver's output drives at DC: the receiver beside its termination."""
+        y = 1.0 / self.receiver_ohm if self.receiver_ohm > 0 else 0.0
+        if self.termination_ohm:
+            y += 1.0 / self.termination_ohm
+        return 1.0 / y if y > 0 else math.inf
 
     def states(self) -> List[LogicState]:
-        """The line held high and held low: the logic family's output level, the input
-        threshold on the far side of the margin (a margin set by hand or by the type
-        moves the threshold) and the driver's resistance in that state."""
-        vil, vih, vol, voh = logic_levels(self.logic_v)
+        """The line held high and held low (#179): the level the driver's output sits at
+        with its drive strength into the load (the supply or ground through its resistance
+        in that state, against the receiver and termination to ground), the input
+        threshold it must not cross, and that resistance. A margin set by hand or by the
+        type puts the threshold that far from the level."""
+        vil, vih, _, _ = logic_levels(self.logic_v)
+        low = self.driver_ohm if self.driver_low_ohm is None else self.driver_low_ohm
+        load = self.load_ohm()
+        high = self.logic_v if math.isinf(load) else self.logic_v * load / (self.driver_ohm + load)
         m = self._set_margin()
         if m is not None:
-            vih, vil = voh - m, vol + m
-        low = self.driver_ohm if self.driver_low_ohm is None else self.driver_low_ohm
-        return [LogicState("high", voh, vih, self.driver_ohm),
-                LogicState("low", vol, vil, low)]
+            vih, vil = high - m, m
+        return [LogicState("high", high, vih, self.driver_ohm),
+                LogicState("low", 0.0, vil, low)]
 
     def apply_preset(self, key: str):
         """Take a preset's terminations (custom keeps the values)."""

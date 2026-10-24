@@ -33,6 +33,12 @@ milestones rather than versions that were ever set.
   not have on the net with the pins it does. Blank, every pin, stays blank.
 
 ### Changed
+- **Victims sit at their output levels** (#179). Held high, a victim's line is at the
+  supply through its driver's resistance into the receiver and termination; held low, at
+  ground. These replace the JESD8 minimum VOH and VOL, so the noise margin is the gap from
+  the real levels to VIH and VIL (800 mV for lightly loaded 3.3 V CMOS, 400 mV before). A
+  driver too weak to reach VIH is noted. The victim plots, here and in the HTML report,
+  are in volts against the margin instead of a percentage of it.
 - **"Set voltage" is now "Target voltage"** everywhere: the VRM editor, tooltips, reports,
   help and README. The DC loads CSV column is `vrm_target_V`.
 

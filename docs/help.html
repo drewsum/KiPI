@@ -1825,8 +1825,11 @@ receiver guessed as the net's two pads farthest apart. For each victim:</p>
     low</b> (where it differs: an open drain's switch, 20 Ω; blank is the same as driving
     high), <b>Receiver resistance</b>, <b>Receiver capacitance</b> and <b>Termination</b> (a
     parallel termination at the receiver).</li>
-  <li><b>Logic level</b>: the family's supply; its JESD8 levels give the noise margin,
-    min(VIL − VOL, VOH − VIH), 400 mV for 3.3 V CMOS. <b>Noise margin</b> overrides it.</li>
+  <li><b>Logic level</b>: the family's supply. Held high, the line sits at the supply
+    through the driver's resistance into the receiver and termination; held low, at
+    ground. The noise margin is the smaller gap from those levels to the family's JESD8
+    VIH and VIL: 800 mV for lightly loaded 3.3 V CMOS. <b>Noise margin</b> overrides it,
+    putting each threshold that far from its level.</li>
 </ul>
 <p>With <b>PI Models</b> shown, each victim's driver and receiver pins are marked in orange
 in the 3D view ("<i>victim</i> driver", "<i>victim</i> receiver"; the guessed ones where
@@ -1917,15 +1920,16 @@ RMS ripple at each AC probe ticked.</p>
 <p>The <b>results table</b> lists each victim: its receiver's peak noise over a switching
 period, its noise margin, the share of the margin used, the coupling mechanism that
 dominates, and <b>PASS</b> or <b>FAIL</b>. The worst victim is selected; select one to plot
-its noise under <b>Victim noise</b> in the Waveforms tab, against its margin (in time, or as
-a spectrum). By default the plot shows the <b>Superposition</b>, the receiver's noise from
+its noise under <b>Victim noise</b> in the Waveforms tab, in volts against its ±margin (in
+time, or as a spectrum). By default the plot shows the <b>Superposition</b>, the receiver's noise from
 every mechanism added up, and the <b>Driver end</b>; tick <b>Capacitive</b>,
 <b>Inductive</b> or <b>Common ground</b> to add that mechanism's own curve. The log gives
 each victim's mutual capacitance to the switch node, the length of trace beside it, and
 its mutual inductance to the capacitor loops.</p>
-<p><b>Victim held high and low</b> plots the receiver's line as it sits: at VOH with VIH
-below it, and at VOL with VIL above it, with the noise on each. Each plot's title gives how
-far the noise reaches toward that threshold and the share of that state's margin it uses.
+<p><b>Victim held high and low</b> plots the receiver's line as it sits: at the driver's
+output high (the supply, less what its resistance drops into the load) with VIH below it,
+and at its output low with VIL above it, with the noise on each. Each plot's title gives
+how far the noise reaches toward that threshold and how far away the threshold is.
 A victim whose driver holds the line differently each way (an open drain: the pull-up
 high, the switch low) is solved once per state. The verdict takes the larger noise of the
 two against the smaller margin.</p>

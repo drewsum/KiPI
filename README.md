@@ -733,8 +733,10 @@ layer, behind the ground plane. Open its snapshot to try it.
   series or parallel terminated, an LVDS leg, an analog input, or high impedance
   (undriven: a tri-stated or floating net). The type fills in the driver and receiver
   resistances, the receiver capacitance and any termination. An open drain has a separate **Driving low** resistance: the line is held by its 4.7 kΩ pull-up
-  when high, and by the switch when low. The **Logic level** gives the JESD8 levels and so
-  the noise margin (400 mV for 3.3 V CMOS), unless you enter one.
+  when high, and by the switch when low. The **Logic level** sets the output levels (the
+  supply through the driver's resistance into the load, and ground) and the JESD8 input
+  thresholds, and so the noise margin (800 mV for lightly loaded 3.3 V CMOS), unless you
+  enter one.
 * **Capacitors tab**: the same capacitor models as AC mode.
 * **Settings tab**: the harmonics kept, the ringing's least damping (and the soft edge's),
   how finely victim traces are cut into cross-sections, and the **Board model**: AC mode's field model of the
@@ -762,12 +764,14 @@ own curve, and **Driver end** for the noise at the other end of the line.
 
 ![Victim noise for SIG_SW: the superposition at the receiver with its capacitive and inductive parts, and the results table](docs/images/noise_victim.png)
 
-**Victim held high and low** draws the receiver's line as it really sits: at VOH with VIH
-below it, and at VOL with VIL above it, with the noise on each. Each plot gives how far the
-noise reaches toward its threshold and what share of that state's margin it uses. An
+**Victim held high and low** draws the receiver's line as it really sits: at the driver's
+output high, the supply less what its resistance drops into the load, with VIH below it,
+and at its output low with VIL above it, with the noise on each. Each plot gives how far
+the noise reaches toward its threshold and how far away that threshold is. The victim
+plots are in volts. An
 open-drain line is solved once per state, as its driver holds it far harder low than high.
 
-![SIG_SW held high at 2.4 V and low at 0.4 V, with the noise riding on each level](docs/images/noise_states.png)
+![SIG_SW held high and low, with the noise riding on each level](docs/images/noise_states.png)
 
 **Coupling in 3D**, under the results table, shows where the selected victim's peak noise
 couples in. Each piece of its traces is colored by its share of the receiver's peak: red

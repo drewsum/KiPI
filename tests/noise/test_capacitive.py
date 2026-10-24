@@ -124,7 +124,7 @@ def test_the_driver_holds_the_line_down():
     strong, weak = r.victims
     assert weak.peak_v > 5 * strong.peak_v
     assert strong.passed and strong.dominant == "capacitive"
-    assert strong.ratio == pytest.approx(strong.peak_v / 0.4)
+    assert strong.ratio == pytest.approx(strong.peak_v / 0.8)     # VIL over ground
 
 
 def test_victims_save_and_reopen(tmp_path):
@@ -155,11 +155,11 @@ def test_noise_margins():
     assert logic_margin(1.8) == pytest.approx(0.18)
     assert logic_margin(0.9) == pytest.approx(0.135)          # off the table: 15 %
     v = Victim("X", logic_v=1.8)
-    assert v.margin() == pytest.approx(0.18)
+    assert v.margin() == pytest.approx(0.63, abs=1e-3)      # 1.8 V less VIH, VIL less 0 V
     v.apply_preset("lvds")
-    assert v.margin() == 0.1 and v.termination_ohm == 50.0
+    assert v.margin() == pytest.approx(0.1) and v.termination_ohm == 50.0
     v.noise_margin_v = 0.02
-    assert v.margin() == 0.02
+    assert v.margin() == pytest.approx(0.02)
     assert set(VICTIM_PRESETS) >= {"cmos", "open_drain", "series", "parallel", "lvds",
                                    "analog"}
 
