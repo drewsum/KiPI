@@ -43,18 +43,17 @@ def _time_png(curves, wf, title: str, unit: str, margin: Optional[float] = None,
     t = wf.time(periods) * 1e6
     n = wf.samples_per_period()
     for i, (label, sp) in enumerate(curves):
+        # The legend is each curve's one p-p and rms: of the curve as drawn, so a
+        # bandwidth-limited plot's are limited too.
+        y = sp.samples(n, periods)
+        label = (f"{label}: {np.ptp(y):.4g} {unit} p-p, "
+                 f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} {unit} rms")
         if spectrum:
             amp = sp.amplitude()
             ax.loglog(wf.freqs(), amp, marker="o", ms=2.5, lw=0.8,
                       color=COLORS[i % len(COLORS)], label=label)
         else:
-            y = sp.samples(n, periods)
             ax.plot(t, y, lw=0.9, color=COLORS[i % len(COLORS)], label=label)
-            ax.text(.99, .98 - i * .11,
-                    f"{label}: {np.ptp(y):.4g} {unit} p-p, "
-                    f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} {unit} rms",
-                    transform=ax.transAxes, ha="right", va="top", fontsize=7,
-                    color=COLORS[i % len(COLORS)])
     if margin is not None:
         for sign in (1, -1):
             ax.axhline(sign * margin, color="#d62728", lw=0.8, ls="--",
@@ -169,7 +168,7 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
                         (wf.output_caps, "Output capacitor currents")):
         if caps:
             top = sorted(caps.items(), key=lambda kv: -kv[1].ac_rms())[:6]
-            plot([(f"{r} ({s.ac_rms():.3g} A rms)", s) for r, s in top], title, "A")
+            plot(top, title, "A")
     ripple = [(s.name, s) for s in (wf.input_ripple, wf.output_ripple) if s is not None]
     if ripple:
         plot(ripple, "Rail ripple", "V")

@@ -126,7 +126,7 @@ def test_results_table_shows_a_disconnected_load(qapp):
     panel.show_results(tree, next(iter(tree.groups)))
     t = panel.tbl_loads
     row = next(r for r in range(t.rowCount()) if t.item(r, 0).text() == "U3")
-    assert t.item(row, 9).text() == DISCONNECTED and t.item(row, 3).text() == ""
+    assert t.item(row, 8).text() == DISCONNECTED and t.item(row, 3).text() == ""
     assert "U3 1 on +3V3" in panel.txt_notes.toPlainText()
 
 

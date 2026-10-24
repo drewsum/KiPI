@@ -8,8 +8,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor, QIcon, QPixmap
-from qtpy.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QScrollArea,
-                            QVBoxLayout, QWidget)
+from qtpy.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout,
+                            QWidget)
 
 from kipi.ac.gui.plot import COLORS, _eng, _eng_hz
 from kipi.gui.tooltip_art import art_tip
@@ -26,7 +26,7 @@ VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("states", "Victim held high and low"))
 
 # The victim view's curves (#154): the superposition of the mechanisms is shown, each
-# mechanism on its own only when ticked.
+# mechanism on its own only when ticked in the curve list.
 VICTIM_CURVES = (("total", "Superposition", True,
                   "The noise at the receiver from every mechanism added up",
                   ("coupling", "cap", "ind", "gnd")),
@@ -79,27 +79,15 @@ class NoisePlot(QWidget):
         self.chk_bw.setToolTip(art_tip(
             "Plot every waveform as an oscilloscope with its 20 MHz bandwidth limit on shows "
             "it: through a single-pole low-pass filter, 3 dB down at 20 MHz. The edges' "
-            "ringing and fast spikes shrink to what such a measurement would see. The results "
-            "table and notes are unchanged.", "bw_limit", "bw"))
+            "ringing and fast spikes shrink to what such a measurement would see, and so do "
+            "the p-p and rms figures beside the plot. The results table and notes are "
+            "unchanged.", "bw_limit", "bw"))
         top.addWidget(self.chk_bw)
         top.addStretch(1)
         lay.addLayout(top)
-        self.victim_row = QWidget(self)
-        grid = QGridLayout(self.victim_row)            # three across, to fit a small screen
-        grid.setContentsMargins(0, 0, 0, 0)
-        self.chk_curves = {}
-        for i, (key, text, on, tip, art) in enumerate(VICTIM_CURVES):
-            chk = QCheckBox(text, self.victim_row)
-            chk.setChecked(on)
-            chk.setToolTip(art_tip(tip, *art))
-            chk.toggled.connect(lambda _: self._draw())
-            grid.addWidget(chk, i // 3, i % 3)
-            self.chk_curves[key] = chk
-        grid.setColumnStretch(3, 1)
-        self.victim_row.setVisible(False)
-        lay.addWidget(self.victim_row)
         lay.addWidget(self.lbl)
-        # Beside the plot, a tickbox per curve to show or hide it, in the curve's colour.
+        # Beside the plot, the legend: a tickbox per curve to show or hide it, in the
+        # curve's colour.
         self.curve_box = QWidget()
         self.curve_lay = QVBoxLayout(self.curve_box)
         self.curve_lay.setContentsMargins(2, 2, 2, 2)
@@ -115,8 +103,15 @@ class NoisePlot(QWidget):
         row.addWidget(self.canvas, 1)
         row.addWidget(self.curve_scroll)
         lay.addLayout(row, 1)
+        # Under the plot, each shown curve's p-p and rms as plotted (through the bandwidth
+        # limit when it is ticked), in the curve's colour.
+        self.lbl_figures = QLabel(self)
+        self.lbl_figures.setWordWrap(True)
+        self.lbl_figures.setTextFormat(Qt.RichText)
+        lay.addWidget(self.lbl_figures)
         self.chk_shown: List[QCheckBox] = []
-        self._hidden = {}               # view -> the names of the curves hidden in it
+        # view -> the names of the curves hidden in it; a victim's mechanisms start hidden.
+        self._hidden = {"victim": {key for key, _, on, _, _ in VICTIM_CURVES if not on}}
         self._ticks_for = (None, [])    # the view and curves the tickboxes are for
         self.cmb_view.currentIndexChanged.connect(lambda _: self._draw())
         self.chk_spectrum.toggled.connect(lambda _: self._draw())
@@ -154,6 +149,7 @@ class NoisePlot(QWidget):
         self.result = None
         self._curves = []
         self.curve_scroll.setVisible(False)
+        self.lbl_figures.clear()
         self.lbl.setText(EMPTY)
         self._layout(1)
         self.canvas.draw_idle()
@@ -181,7 +177,8 @@ class NoisePlot(QWidget):
 
     # ------------------------------------------------------------------ drawing
     def _spectra(self):
-        """[(label, Spectrum)] of the chosen view."""
+        """[(label, Spectrum)] of the chosen view; the victim view's are
+        [(mechanism, label, Spectrum)], every mechanism the victim has."""
         wf = self.result.waveforms
         key = self.cmb_view.currentData()
         if key == "sw":
@@ -203,13 +200,14 @@ class NoisePlot(QWidget):
             v = self._victim()
             if v is None:
                 return []
-            shown = {k for k, chk in self.chk_curves.items() if chk.isChecked()}
-            out = [(f"{v.receiver} {k}", sp) for k, sp in v.receiver_v.items()
-                   if k != "total" and k in shown]
-            if "total" in v.receiver_v and "total" in shown:
-                out.insert(0, (f"{v.receiver} (receiver)", v.receiver_v["total"]))
-            if "total" in v.driver_v and "driver" in shown:
-                out.append((f"{v.driver} (driver)", v.driver_v["total"]))
+            out = []
+            for k, *_ in VICTIM_CURVES:
+                if k == "total" and "total" in v.receiver_v:
+                    out.append((k, f"{v.receiver} (receiver)", v.receiver_v["total"]))
+                elif k == "driver" and "total" in v.driver_v:
+                    out.append((k, f"{v.driver} (driver)", v.driver_v["total"]))
+                elif k in v.receiver_v and k != "total":
+                    out.append((k, f"{v.receiver} {k}", v.receiver_v[k]))
             return out
         out = []
         if wf.input_ripple is not None:
@@ -228,47 +226,42 @@ class NoisePlot(QWidget):
         self._curves = []
         key = self.cmb_view.currentData()
         spectrum = self.chk_spectrum.isChecked()
-        self.victim_row.setVisible(key == "victim")
         spectra = self._spectra() if self.result is not None else []
-        spectra = [(label, self._limited(s)) for label, s in spectra]
+        if key != "victim":
+            spectra = [(_name(label), label, s) for label, s in spectra]
+        spectra = [(k, label, self._limited(s)) for k, label, s in spectra]
         normalized_victim = key == "victim" and self._victim() is not None
         if normalized_victim:
             from kipi.noise.waveforms import Spectrum
             scale = 100.0 / max(self._victim().margin_v, 1e-15)
-            spectra = [(label, Spectrum(s.name, "% margin", s.mean * scale, s.c * scale))
-                       for label, s in spectra]
-        states = key == "states" and not spectrum and len(spectra) > 1
-        if states or key == "victim" or not spectra:     # the victim view has its own
+            spectra = [(k, label, Spectrum(s.name, "% margin", s.mean * scale, s.c * scale))
+                       for k, label, s in spectra]
+        if self.result is None or not spectra:
             self.curve_scroll.setVisible(False)
-        self._layout(len(spectra) if states else 1)
-        ax = self.ax
-        if self.result is None:
+            self.lbl_figures.clear()
+            self._layout(1)
+            if self.result is not None:
+                victim = "No victims were solved: add them in the Victims tab"
+                if key == "states" and self._victim() is not None:
+                    victim = "This result has no high and low states: solve it again"
+                self.lbl.setText({"victim": victim, "states": victim,
+                                  "sw": EMPTY}.get(key, "Nothing to plot: no capacitors are "
+                                                        "set for this rail"))
             self.canvas.draw_idle()
             return
         wf = self.result.waveforms
-        if states:
-            self._draw_states(self._victim(), wf)
-            return
-        if key == "victim":
-            v = self._victim()
-            for k, chk in self.chk_curves.items():       # mechanisms this victim lacks
-                chk.setEnabled(v is None or k in ("total", "driver") or k in v.receiver_v)
-        if not spectra:
-            victim = ("No victims were solved: add them in the Victims tab"
-                      if self._victim() is None else "Tick a curve to plot")
-            if key == "states" and self._victim() is not None:
-                victim = "This result has no high and low states: solve it again"
-            self.lbl.setText({"victim": victim, "states": victim,
-                              "sw": EMPTY}.get(key, "Nothing to plot: no capacitors are set "
-                                                    "for this rail"))
-            self.canvas.draw_idle()
-            return
-        unit = spectra[0][1].unit
+        unit = spectra[0][2].unit
         # Each curve keeps its colour when others are hidden.
-        shown = self._curve_ticks(key, spectra)
+        shown = self._curve_ticks(key, spectra, wf)
+        states = key == "states" and not spectrum
+        self._layout(len(shown) if states else 1)
+        ax = self.ax
         if not shown:
             self.lbl.setText("Tick a curve to plot")
             self.canvas.draw_idle()
+            return
+        if states:
+            self._draw_states(self._victim(), wf, shown)
             return
         if spectrum:
             # A periodic waveform has nothing between its harmonics: each is drawn as a
@@ -297,26 +290,20 @@ class NoisePlot(QWidget):
             periods = max(1, int(self.periods))
             t = wf.time(periods)
             n = wf.samples_per_period()
-            for row, (i, (label, s)) in enumerate(shown):
+            for i, (label, s) in shown:
                 y = s.samples(n, periods)
-                color = COLORS[i % len(COLORS)]
-                ax.plot(t * 1e6, y, color=color, lw=1.0, label=label)
+                ax.plot(t * 1e6, y, color=COLORS[i % len(COLORS)], lw=1.0, label=label)
                 self._curves.append((label, t, y, unit, ax))
-                ax.text(.99, .98 - row * .08,
-                        f"{label}: {np.ptp(y):.4g} {unit} p-p, "
-                        f"{np.sqrt(np.mean((y - np.mean(y)) ** 2)):.4g} {unit} rms",
-                        transform=ax.transAxes, ha="right", va="top", fontsize=7, color=color)
             ax.set_xlim(0, t[-1] * 1e6)
             v = self._victim() if self.cmb_view.currentData() == "victim" else None
             # The margin lines are drawn where they fit; far above small noise they would
             # flatten it, so the axis then follows the noise.
             if normalized_victim:
-                ax.axhline(100.0, color="#ff6060", lw=1.0, ls="--", label="noise margin")
-                ax.axhline(-100.0, color="#ff6060", lw=1.0, ls="--")
+                _level(ax, 100.0, "noise margin", "#ff6060", "--")
+                _level(ax, -100.0, None, "#ff6060", "--")
             elif v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
-                for sign in (1, -1):
-                    ax.axhline(sign * v.margin_v, color="#ff6060", lw=1.0, ls="--",
-                               label="noise margin" if sign > 0 else None)
+                _level(ax, v.margin_v, "noise margin", "#ff6060", "--")
+                _level(ax, -v.margin_v, None, "#ff6060", "--")
             elif v is not None:
                 ax.set_ylim(-1.3 * v.peak_v, 1.3 * v.peak_v)
             ax.set_xlabel("Time (µs)")
@@ -331,9 +318,6 @@ class NoisePlot(QWidget):
             ax.set_title(f"{self.result.aggressor} ({op.topology}, {op.vin:g} V → {op.vout:g} V, "
                          f"{op.iout:.3g} A, {wf.fsw_hz / 1e3:g} kHz, D = {op.duty:.3f})",
                          fontsize=10)
-        leg = ax.legend(loc="best", fontsize=8, facecolor="#2a2a2a", edgecolor="#555")
-        for txt in leg.get_texts():
-            txt.set_color("#ddd")
         hint = "Hover to read the curves"
         if (v is not None and key == "victim" and not spectrum
                 and v.margin_v > 4 * max(v.peak_v, 1e-15)):
@@ -351,36 +335,46 @@ class NoisePlot(QWidget):
             return sp
         return bandwidth_limited(sp, self.result.waveforms.fsw_hz, BW_LIMIT_HZ)
 
-    def _curve_ticks(self, key, spectra):
-        """A tickbox per curve of ``spectra`` beside the plot (several curves; not the
-        victim view, which has its own). Returns [(colour index, (label, Spectrum))] of
-        those ticked."""
-        names = [_name(label) for label, _ in spectra]
+    def _curve_ticks(self, key, spectra, wf):
+        """The legend beside the plot, a tickbox per curve of ``spectra`` [(name, label,
+        Spectrum)], and the p-p and rms of those ticked under it. Returns [(colour index,
+        (label, Spectrum))] of those ticked."""
         hidden = self._hidden.setdefault(key, set())
-        listed = key != "victim" and len(spectra) > 1
-        labels = (key, [label for label, _ in spectra] if listed else [])
+        labels = (key, [label for _, label, _ in spectra])
         if labels != self._ticks_for:
             self._ticks_for = labels
             for chk in self.chk_shown:
                 self.curve_lay.removeWidget(chk)
                 chk.deleteLater()
             self.chk_shown = []
-            if listed:
-                for i, (label, _) in enumerate(spectra):
-                    chk = QCheckBox(label, self.curve_box)
-                    chk.setProperty("curve", names[i])
-                    chk.setChecked(names[i] not in hidden)
-                    chk.setToolTip(f"Show {label}")
-                    pix = QPixmap(12, 12)
-                    pix.fill(QColor(COLORS[i % len(COLORS)]))
-                    chk.setIcon(QIcon(pix))
-                    chk.toggled.connect(lambda on, n=names[i]: self._show_curve(n, on))
-                    self.curve_lay.insertWidget(i, chk)
-                    self.chk_shown.append(chk)
-        self.curve_scroll.setVisible(listed)
-        if not listed:
-            return list(enumerate(spectra))
-        return [(i, c) for i, c in enumerate(spectra) if names[i] not in hidden]
+            tips = {k: art_tip(tip, *art) for k, _, _, tip, art in VICTIM_CURVES}
+            for i, (name, label, _) in enumerate(spectra):
+                chk = QCheckBox(label, self.curve_box)
+                chk.setProperty("curve", name)
+                chk.setChecked(name not in hidden)
+                chk.setToolTip(tips[name] if key == "victim" else f"Show {label}")
+                pix = QPixmap(12, 12)
+                pix.fill(QColor(COLORS[i % len(COLORS)]))
+                chk.setIcon(QIcon(pix))
+                chk.toggled.connect(lambda on, n=name: self._show_curve(n, on))
+                self.curve_lay.insertWidget(i, chk)
+                self.chk_shown.append(chk)
+        self.curve_scroll.setVisible(True)
+        shown = [(i, (label, s)) for i, (name, label, s) in enumerate(spectra)
+                 if name not in hidden]
+        # The figures follow the bandwidth limit, so they are refreshed on every draw.
+        n = wf.samples_per_period()
+        figures = []
+        for i, (_, s) in shown:
+            y = s.samples(n)
+            rms = float(np.sqrt(np.mean((y - np.mean(y)) ** 2)))
+            figures.append(f"<span style='color:{COLORS[i % len(COLORS)]}'>"
+                           f"{_figure(float(np.ptp(y)), s.unit)}&nbsp;p-p, "
+                           f"{_figure(rms, s.unit)}&nbsp;rms</span>")
+        bw = "20 MHz limit" if self.chk_bw.isChecked() else "Full bandwidth"
+        self.lbl_figures.setText(f"<span style='color:#999'>{bw}:</span> "
+                                 + " &nbsp; ".join(figures) if figures else "")
+        return shown
 
     def _show_curve(self, name: str, on: bool):
         hidden = self._hidden.setdefault(self.cmb_view.currentData(), set())
@@ -390,28 +384,29 @@ class NoisePlot(QWidget):
             hidden.add(name)
         self._draw()
 
-    def _draw_states(self, v, wf):
-        """The victim's line held high (top) and low (#156): the driver's level with the
-        receiver's noise on it, against the input threshold it must not cross."""
+    def _draw_states(self, v, wf, shown):
+        """The victim's line held high (top) and low (#156), those ticked: the driver's
+        level with the receiver's noise on it, against the input threshold it must not
+        cross."""
         periods = max(1, int(self.periods))
         t = wf.time(periods)
         n = wf.samples_per_period()
         off = []
         names = {"high": ("VOH", "VIH"), "low": ("VOL", "VIL")}
-        for i, (ax, st) in enumerate(zip(self.axes, v.states)):
-            noise = self._limited(st.receiver_v).samples(n, periods)
-            label = f"{v.receiver} held {st.name}"
+        states = [st for st in v.states if st.receiver_v is not None]
+        for ax, (i, (label, sp)) in zip(self.axes, shown):
+            st = states[i]
+            noise = sp.samples(n, periods)
             ax.plot(t * 1e6, st.level_v + noise, color=COLORS[i % len(COLORS)], lw=1.0,
                     label=label)
             self._curves.append((label, t, st.level_v + noise, "V", ax))
             out_name, in_name = names.get(st.name, ("level", "threshold"))
-            ax.axhline(st.level_v, color="#999", lw=0.8, ls=":",
-                       label=f"{out_name} {st.level_v:.3g} V")
+            _level(ax, st.level_v, f"{out_name} {st.level_v:.3g} V", "#999", ":", lw=0.8)
             peak = max(float(np.max(np.abs(noise))), 1e-15)
             # As in the noise view: the threshold is drawn where it fits beside the noise.
             if st.margin_v <= 4 * peak:
-                ax.axhline(st.threshold_v, color="#ff6060", lw=1.0, ls="--",
-                           label=f"{in_name} {st.threshold_v:.3g} V")
+                _level(ax, st.threshold_v, f"{in_name} {st.threshold_v:.3g} V", "#ff6060",
+                       "--")
             else:
                 ax.set_ylim(st.level_v - 1.3 * peak, st.level_v + 1.3 * peak)
                 off.append(f"{in_name} {st.threshold_v:.3g} V")
@@ -423,9 +418,6 @@ class NoisePlot(QWidget):
                          f"{st.excursion_v * 1e3:.4g} mV toward {in_name}, "
                          f"{st.ratio * 100:.3g} % of its {st.margin_v * 1e3:.4g} mV margin",
                          fontsize=9)
-            leg = ax.legend(loc="best", fontsize=8, facecolor="#2a2a2a", edgecolor="#555")
-            for txt in leg.get_texts():
-                txt.set_color("#ddd")
         self.axes[-1].set_xlabel("Time (µs)")
         hint = "Hover to read the curves"
         if off:
@@ -447,6 +439,20 @@ class NoisePlot(QWidget):
                 parts.append(_eng_hz(xs[k]) if spectrum else _eng(xs[k], "s"))
             parts.append(f"{label.split(' (')[0]}: {_eng(float(ys[k]), unit)}")
         self.lbl.setText("   ".join(parts))
+
+
+def _level(ax, y: float, text: Optional[str], color: str, ls: str, lw: float = 1.0):
+    """A horizontal reference line (a noise margin, a logic level), named at its left end
+    rather than in a legend: the curve list beside the plot is the legend."""
+    ax.axhline(y, color=color, lw=lw, ls=ls)
+    if text:
+        ax.annotate(text, (0, y), xycoords=("axes fraction", "data"), xytext=(3, 2),
+                    textcoords="offset points", fontsize=7, color=color, va="bottom")
+
+
+def _figure(x: float, unit: str) -> str:
+    """A p-p or rms figure: with an SI prefix in volts and amps, plain in % margin."""
+    return _eng(x, unit) if unit in ("V", "A") else f"{x:.4g} {unit}"
 
 
 def _name(label: str) -> str:

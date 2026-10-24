@@ -186,6 +186,23 @@ def test_a_new_victim_is_a_signal_net_with_its_ends(vpanel):
     assert ed.preset.currentData() == "cmos" and "400 mV" in ed.lbl_margin.text()
 
 
+def test_another_driver_or_receiver_part_takes_its_own_pin_on_the_net(vpanel):
+    vpanel.victim_list._add()
+    v = vpanel.setup.victims[0]
+    ed = vpanel.victim_list.editor
+    for picker, attr in ((ed.driver, "driver"), (ed.receiver, "receiver")):
+        other = "U4" if getattr(v, attr).ref == "U3" else "U3"
+        picker.txt_pins.setText("7")              # a pin the other part lacks on SIG
+        picker.cmb_part.setCurrentIndex(picker.cmb_part.findData(other))
+        assert picker.txt_pins.text() == "1"
+        assert (getattr(v, attr).ref, getattr(v, attr).pins) == (other, ["1"])
+    # Blank, every pin of the part on the net, stays blank.
+    ed.driver.txt_pins.clear()
+    ed.driver.cmb_part.setCurrentIndex(ed.driver.cmb_part.findData(
+        "U3" if v.driver.ref == "U4" else "U4"))
+    assert ed.driver.txt_pins.text() == ""
+
+
 def test_a_preset_fills_the_terminations_and_edits_make_it_custom(vpanel):
     vpanel.victim_list._add()
     v = vpanel.setup.victims[0]
@@ -224,19 +241,23 @@ def test_the_victim_plot_shows_the_superposition_and_ticked_mechanisms(vpanel, w
     plot = window.noise_plot
     plot.set_result(r)
     plot.set_victim("SIG")
-    assert not plot.victim_row.isHidden()
+    # The mechanisms are in the one curve list beside the plot, unticked at first.
+    assert not plot.curve_scroll.isHidden()
+    chk = {c.property("curve"): c for c in plot.chk_shown}
+    assert {"total", "capacitive", "driver"} <= set(chk)
+    assert not chk["capacitive"].isChecked() and "/coupling-" in chk["capacitive"].toolTip()
     labels = [c[0] for c in plot._curves]
     assert labels == [f"{r.victims[0].receiver} (receiver)",
                       f"{r.victims[0].driver} (driver)"]
-    plot.chk_curves["capacitive"].setChecked(True)
-    plot.chk_curves["driver"].setChecked(False)
+    chk["capacitive"].setChecked(True)
+    chk["driver"].setChecked(False)
     assert [c[0] for c in plot._curves] == [f"{r.victims[0].receiver} (receiver)",
                                             f"{r.victims[0].receiver} capacitive"]
-    plot.chk_curves["total"].setChecked(False)
-    plot.chk_curves["capacitive"].setChecked(False)
+    chk["total"].setChecked(False)
+    chk["capacitive"].setChecked(False)
     assert plot._curves == [] and "Tick a curve" in plot.lbl.text()
     plot.set_view("sw")
-    assert plot.victim_row.isHidden()
+    assert "total" not in {c.property("curve") for c in plot.chk_shown}
 
 
 def test_a_curve_is_hidden_by_its_tickbox(vpanel, window):
@@ -261,9 +282,36 @@ def test_a_curve_is_hidden_by_its_tickbox(vpanel, window):
     assert plot._curves == [] and "Tick a curve" in plot.lbl.text()
     plot.chk_shown[0].setChecked(True)
     assert [c[0] for c in plot._curves] == ["Vin ripple"]
-    # The victim view has its own tickboxes.
-    plot.set_view("victim")
-    assert plot.curve_scroll.isHidden()
+    # The list is the one legend: no matplotlib legend, no figures written on the plot.
+    assert plot.ax.get_legend() is None and len(plot.ax.texts) == 0
+
+
+def test_the_curve_list_shows_p_p_and_rms_as_plotted(vpanel, window):
+    from kipi.noise.solver import solve_noise
+    r = solve_noise(vpanel.snapshot, vpanel.setup, vpanel.setup.aggressors[0].name)
+    plot = window.noise_plot
+    plot.chk_bw.setChecked(False)
+    plot.set_result(r)
+    plot.set_view("sw")
+    assert len(plot.chk_shown) == len(r.waveforms.phases)     # one curve is listed too
+    # The legend is the name only; the figures are under the plot.
+    assert plot.chk_shown[0].text() == r.waveforms.phases[0].switch_node.name
+    full = plot.lbl_figures.text()
+    assert "p-p" in full and "rms" in full and "Full bandwidth" in full
+    assert full.count("p-p") == len(r.waveforms.phases)
+    plot.chk_bw.setChecked(True)
+    limited = plot.lbl_figures.text()
+    assert limited != full and "20 MHz limit" in limited
+    plot.chk_bw.setChecked(False)
+    plot.set_view("ripple")                       # Vin and Vout: a hidden curve's figures go
+    assert plot.lbl_figures.text().count("p-p") == 2
+    plot.chk_shown[0].setChecked(False)
+    assert plot.lbl_figures.text().count("p-p") == 1
+    for chk in plot.chk_shown:
+        chk.setChecked(False)
+    assert plot.lbl_figures.text() == ""
+    for chk in plot.chk_shown:
+        chk.setChecked(True)
 
 
 def test_the_bandwidth_limit_filters_every_view(vpanel, window):
@@ -336,7 +384,7 @@ def test_the_visual_settings_show_a_drawing(panel):
         "scan_radius": (panel.spin_radius, panel.spin_top, panel.chk_scan),
         "spectrum": (panel.spin_fmax, panel.spin_harm, plot.chk_spectrum),
         "interp": (panel.spin_fpd,),
-        "coupling": (panel.cmb_coupling, *plot.chk_curves.values()),
+        "coupling": (panel.cmb_coupling,),
         "bw_limit": (plot.chk_bw,),
     }
     for name, widgets in drawn.items():

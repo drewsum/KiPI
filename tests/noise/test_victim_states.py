@@ -110,7 +110,7 @@ def test_the_plot_shows_the_line_held_high_and_low(app):
     plot.set_result(r)
     plot.set_victim("SIG")
     plot.set_view("states")
-    assert len(plot.axes) == 2 and plot.victim_row.isHidden()
+    assert len(plot.axes) == 2 and len(plot.chk_shown) == 2
     (lh, th, yh, _, ah), (ll, tl, yl, _, al) = plot._curves
     assert ah is plot.axes[0] and al is plot.axes[1]
     assert "held high" in lh and "held low" in ll

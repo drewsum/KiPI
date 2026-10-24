@@ -352,15 +352,14 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 | Field | Meaning |
 |---|---|
 | Type | **Source** (ideal supply), **LDO** (I_in = I_out + I_q) or **Switcher** (P_in = P_out / efficiency) |
-| Output pins, Target voltage | Where it drives, and the rail's target voltage: what loads without their own nominal are judged against, and what the VRM regulates to unless Nominal is set |
-| Nominal | Optional (LDO and switcher, on the DC accuracy row): what the VRM actually regulates to when that differs from the target, e.g. its feedback divider's nominal. Blank regulates to the target. The DC Accuracy Calculator fills it in |
+| Output pins, Target voltage | Where it drives, and the rail's target voltage: what the VRM regulates to and what its loads are judged against |
 | Input pins | LDO and switcher only. The pins it draws from, which ties this VRM to its upstream net and defines the power tree. |
 | Efficiency / Quiescent | Switcher efficiency, LDO quiescent current |
 | Output current limit | Optional: the VRM PASSes if its total output current (all phases) is at most this. Leave at **no limit** to skip the check. |
 | Load line | Optional, in mΩ: the VRM regulates to its regulated voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the regulated voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
 | Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the target voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its regulated voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
-| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the regulated voltage (Nominal, else Target), or in V. The target calculator can subtract its larger side from the AC voltage tolerance. |
+| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V; the DC Accuracy Calculator can work it out from the feedback divider. The target calculator can subtract its larger side from the AC voltage tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
 | Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
 | Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its regulated voltage relative to these pins instead of 0 V (needs ground pins) |
@@ -644,7 +643,8 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   It can copy the tolerance and the load step from the DC load on the probe's pins, and
   subtract from the tolerance both the DC accuracy of the VRM driving the rail and, from the
   last DC solve, the **DC drop at the load** itself: how far that load's effective voltage
-  sits from its nominal voltage (solve the power tree first, or the button is disabled).
+  sits from the target voltage of the VRM driving it (solve the power tree first, or the
+  button is disabled).
   Targets apply only above the rail's VRM **Control loop bandwidth**: the AC solve leaves
   the VRM out of circuit (the open-loop PDN impedance, capacitive only), and below its bandwidth the
   converter's control loop is assumed to hold the rail. If the bandwidth is at or above the target frequency,

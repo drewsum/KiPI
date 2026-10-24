@@ -878,14 +878,9 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Type</td><td class="wrap"><b>Source</b>: an ideal supply with no input (connector,
     bench supply, battery). <b>LDO</b>: I<sub>in</sub> = I<sub>out</sub> + I<sub>q</sub>.
     <b>Switcher</b>: P<sub>in</sub> = P<sub>out</sub> / efficiency.</td></tr>
-  <tr><td>Target voltage</td><td class="wrap">The rail's target: loads without a nominal of
-    their own are judged against it. The VRM regulates to it at its output (or sense) pins
-    unless a nominal output voltage is set. Read from the net name when you pick the output
-    net (see <a href="#autofill">pre-filled fields</a>).</td></tr>
-  <tr><td>Nominal</td><td class="wrap">LDO and switcher only, optional, on the DC accuracy
-    row. What the VRM actually regulates to when that differs from the target, e.g. a
-    feedback divider's nominal output or a rail set high to make up for its copper drop.
-    Blank regulates to the target. The <b>DC Accuracy Calculator</b> fills it in.</td></tr>
+  <tr><td>Target voltage</td><td class="wrap">The rail's target: the VRM regulates to it at
+    its output (or sense) pins, and loads are judged against it. Read from the net name when
+    you pick the output net (see <a href="#autofill">pre-filled fields</a>).</td></tr>
   <tr><td>Efficiency</td><td class="wrap">Switcher only.</td></tr>
   <tr><td>Quiescent</td><td class="wrap">LDO and switcher: extra input current.</td></tr>
   <tr><td>Output current limit</td><td class="wrap">Optional. The VRM row shows PASS if its total
@@ -1463,13 +1458,11 @@ whole range, as if the VRM had no bandwidth, and a note in the results says so.<
   <li><b>Subtract DC drop at the load</b> takes the DC drop the copper causes at the
     selected load's own pins off the AC voltage tolerance, so what is left is the budget for
     the transient. It reads the last DC solve: its effective voltage there (supply pins minus
-    ground pins) against the load's nominal voltage (or, without one, the target voltage of
-    the VRM driving it), so <b>solve the power tree on
+    ground pins) against the target voltage of the VRM driving it, so <b>solve the power tree on
     the DC tab first</b> &mdash; without a result for that load the button stays disabled and
-    says so. A load above its nominal (a remote-sensed VRM raises pins near it) has its
-    boost subtracted just the same, since it eats the same symmetric window. A VRM whose
-    nominal output sits above its target to make up for the copper drop leaves less of a drop
-    here. Each click subtracts again.</li>
+    says so. A load above that target (a remote-sensed VRM raises pins near it) has its
+    boost subtracted just the same, since it eats the same symmetric window. Each click
+    subtracts again.</li>
   <li><b>Subtract VRM DC accuracy</b> takes the DC accuracy of the LDO or switcher driving
     the probe's rail off the AC voltage tolerance: the larger side of it (20 mV for
     -1 % / +2 % of 1 V), as the output may already sit that far from its regulated voltage. It

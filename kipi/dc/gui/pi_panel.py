@@ -323,12 +323,26 @@ class PinPicker(QWidget):
         if self._loading:
             return
         self._fill_parts()
+        self._follow_part()
         self.changed.emit()
 
     def _part_changed(self, _):
         self._update_hint()
         if not self._loading:
+            self._follow_part()
             self.changed.emit()
+
+    def _follow_part(self):
+        """Typed pins that are not all the picked part's pins on the net were the last
+        part's: they become this part's pins on the net. Blank (every pin) stays blank."""
+        typed = [t for t in re.split(r"[,\s]+", self.txt_pins.text().strip()) if t]
+        ref = self.cmb_part.currentData()
+        if not typed or not ref or self.panel.snapshot is None:
+            return
+        pins = next((p for r, _, p in parts_on_net(self.panel.snapshot, self.net())
+                     if r == ref), [])
+        if pins and not set(typed) <= set(pins):
+            self.txt_pins.setText(",".join(pins))
 
     def set_value(self, ref: Optional[PinRef]):
         self._loading = True
@@ -585,10 +599,10 @@ class VrmEditor(_Editor):
                                     "is known."),
                 (self.acc_row, "Optional DC accuracy of the target voltage (also called DC "
                                "error or DC tolerance), from the datasheet, or from the DC "
-                               "Accuracy Calculator. It comes from the regulator's reference accuracy, the feedback resistor "
-                               "tolerances, leakage into the FB pin, and line and load "
-                               "regulation. The target calculator can take it off the AC "
-                               "voltage tolerance."),
+                               "Accuracy Calculator. It comes from the regulator's reference "
+                               "accuracy, the feedback resistor tolerances, leakage into the "
+                               "FB pin, and line and load regulation. The target calculator "
+                               "can take it off the AC voltage tolerance."),
                 (self.acc_row.min, "How far below the target voltage the output may sit, e.g. "
                                    "-1 % or -0.01 V (±V), or in V, the lowest output voltage"),
                 (self.acc_row.max, "How far above the target voltage the output may sit, e.g. "

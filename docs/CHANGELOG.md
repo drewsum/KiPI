@@ -10,35 +10,27 @@ milestones rather than versions that were ever set.
 - **AC fitted-pole and Touchstone export** (#86). Export a probe's impedance curve as a
   fitted HyperLynx PLS one-port model or as sampled Touchstone Z1P data. Probes export
   separately because the solve stores driving-point impedance, not mutual impedances.
-- **Nominal output voltage per load** (#168). Each load can set the voltage its tolerance
-  is specified around, independently of the VRM's nominal set point. Blank keeps using
-  the driving VRM voltage. The value is saved in setup and reusable load-model YAML.
 - **DC Accuracy Calculator** (#168). An LDO or switcher's VRM editor can calculate its
-  nominal, minimum and maximum output from feedback reference limits, divider resistor
-  values and tolerances, and its feedback pin leakage: a signed nominal, and a maximum
-  that may flow either way. The result fills the VRM's nominal output (what it
-  regulates to) and absolute output accuracy limits.
+  minimum and maximum output from feedback reference limits, divider resistor values and
+  tolerances, and its maximum feedback pin leakage, which may flow either way. The result
+  fills the VRM's DC accuracy as absolute output limits; the target voltage is unchanged.
 - **Diode series links** (#161). Enter the diode's constant forward drop with side A as
   its anode, alongside its nonzero series resistance. DC solves include the drop and its
   dissipation; AC solves use the resistance and ESL as the small-signal series model.
   Reverse blocking is not modeled.
-- **Nominal output voltage per VRM.** A VRM can regulate to a nominal output that differs
-  from the rail's target voltage, e.g. a feedback divider's nominal, or a rail set high to
-  make up for its copper drop. The DC solve regulates to the nominal, and drops are
-  measured from it; loads without their own nominal are still judged against the target.
-  Blank regulates to the target.
 - **Show all copper in the geometry view.** Every net's copper is drawn for context; the
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
-- **Subtract VRM DC accuracy with a VRM regulating away from its target** (#172). The
-  button now takes the larger side of the VRM's accuracy about the voltage it regulates
-  to, the amount its label shows, and **Subtract DC drop at the load** measures the solved
-  voltage against the load's nominal (or the VRM's target voltage). A VRM regulating above
-  its target to make up for the copper drop no longer has that offset taken off the AC
-  tolerance twice.
-- **Noise waveform legends.** A capacitor's rms current is no longer in its legend entry;
-  each curve's peak-to-peak and rms are labelled on the plot instead.
+- **Noise waveform legends.** Each view has one legend: the tickbox list beside the plot,
+  each curve's name in its colour. Under the plot, each shown curve's peak-to-peak and rms
+  as plotted, through the 20 MHz bandwidth limit when it is ticked; a hidden curve's
+  figures are hidden with it. The victim view's mechanisms are ticked in the same list,
+  and noise margins and logic levels are named on their lines. The HTML report's plots
+  have one legend each, with the same figures.
+- **Pins follow a newly picked part.** Picking another part for a victim's driver or
+  receiver (or any load, VRM or link pin row) replaces typed pin numbers that part does
+  not have on the net with the pins it does. Blank, every pin, stays blank.
 
 ### Changed
 - **"Set voltage" is now "Target voltage"** everywhere: the VRM editor, tooltips, reports,
