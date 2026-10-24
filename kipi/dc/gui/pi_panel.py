@@ -986,8 +986,8 @@ class LoadEditor(_Editor):
                    "target voltage. Saved with the setup; no solve uses it yet.")
         ac_text = ("Optional, for a part that gives its tolerance in two shares: the AC "
                    "share, how far ripple and load transients may swing the pin about its "
-                   "steady voltage. In ±V or % from it. Saved with the setup; no solve uses "
-                   "it yet.")
+                   "steady voltage. In ±V or % from it. Saved with the setup; the AC target "
+                   "calculator can copy it, but no solve uses it.")
         for row, text in ((self.dc_tol, dc_text), (self.ac_tol, ac_text)):
             for w in (row, *row.fields()):
                 tip(f, w, text, art[w])

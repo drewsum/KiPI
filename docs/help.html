@@ -966,8 +966,9 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     tolerance in two shares as well as in total: the DC share, where the pin's steady voltage
     may sit (the VRM's accuracy and the copper's DC drop together), in the same units as
     the tolerance; and the AC share, how far ripple and load transients may swing it from
-    there, in <b>±V</b> or <b>%</b>. They are saved with the setup for a later analysis; no
-    solve reads them yet, and PASS still follows the tolerance above.</td></tr>
+    there, in <b>±V</b> or <b>%</b>. They are saved with the setup for a later analysis, and
+    the AC target calculator can copy the AC one; no solve reads them, and PASS still follows
+    the tolerance above.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
 <p><b>Split across nets…</b> under the list shares one part's total current over several of
@@ -1529,6 +1530,10 @@ whole range, and a note in the results says so.</p>
     tolerance: ± its tighter side, from the voltage of the VRM feeding it (2 % for
     -2 % / +5 %). A DC tolerance is the whole budget, and the DC drop
     uses up part of it, so lower the value if the AC part is smaller.</li>
+  <li><b>Copy AC tolerance from DC load</b> fills it from the load's own <b>AC
+    tolerance</b>, where it has one (it is greyed out otherwise): ± its tighter side. That
+    is already the swing allowed about the DC voltage, so there is no DC drop or VRM accuracy
+    to subtract from it.</li>
   <li><b>Subtract DC drop at the load</b> takes the DC drop the copper causes at the
     selected load's own pins off the AC voltage tolerance, so what is left is the budget for
     the transient. It reads the last DC solve: its effective voltage there (supply pins minus

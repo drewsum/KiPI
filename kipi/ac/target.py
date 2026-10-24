@@ -153,6 +153,27 @@ class LoadTolerance:
                     *_room(nominal_v, lo, hi)) if v_ac else None)
 
     @classmethod
+    def of_ac(cls, load: "Load", nominal_v: Optional[float]) -> Optional["LoadTolerance"]:
+        """A DC load's own AC tolerance (#174): how far ripple and transients may swing
+        it about its DC voltage, its min below and its max above. None if it has none, if
+        it is in % and ``nominal_v`` is unknown, or if either side leaves no room."""
+        if load.ac_tol_min is None and load.ac_tol_max is None:
+            return None
+        if load.ac_tol_pct:
+            if not nominal_v:
+                return None
+            scale = abs(nominal_v) / 100
+        else:
+            scale = 1.0                                 # ±V: volts already
+        below = math.inf if load.ac_tol_min is None else -load.ac_tol_min * scale
+        above = math.inf if load.ac_tol_max is None else load.ac_tol_max * scale
+        v_ac = min(below, above)
+        if not 0 < v_ac < math.inf:
+            return None
+        return cls(load.name, "AC " + load.ac_tolerance_label(), nominal_v or 0.0, v_ac,
+                   below, above)
+
+    @classmethod
     def of_vrm_input(cls, name: str, vrm: "Vrm", nominal_v: float, lo: Optional[float],
                      hi: Optional[float]) -> Optional["LoadTolerance"]:
         """The AC tolerance a regulator's input range ``lo`` to ``hi`` volts allows on its
@@ -230,6 +251,7 @@ class ProbeLoad:
     drop: Optional[LoadDrop] = None     # its DC drop, once the power tree is solved
     vrm_input: bool = False             # an LDO's or switcher's input, not a DC load:
                                         # its current is known only from a DC solve
+    ac_tolerance: Optional[LoadTolerance] = None    # its own AC tolerance (#174), if set
 
     def label(self) -> str:
         return self.name
@@ -318,16 +340,15 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
         if load.supply.ref != rail.ref or (ground and load.ground
                                            and load.ground.ref != ground.ref):
             continue
-        tol = None
-        if load.has_tolerance():
-            group = net_groups(setup, [load.supply.net])[load.supply.net]
-            vrm = next((v for v in setup.vrms if v.voltage
-                        and any(ph.output.net in group for ph in v.all_phases())), None)
-            tol = vrm and LoadTolerance.of(load, vrm.voltage)
+        group = net_groups(setup, [load.supply.net])[load.supply.net]
+        vrm = next((v for v in setup.vrms if v.voltage
+                    and any(ph.output.net in group for ph in v.all_phases())), None)
+        tol = vrm and load.has_tolerance() and LoadTolerance.of(load, vrm.voltage)
         exact = _same_pins(load.supply, rail) and (load.ground is None
                                                    or _same_pins(load.ground, ground))
         out.append(ProbeLoad(load.name, tol or None, abs(load.total_current()), exact,
-                             load_drop(dc_result, load.name)))
+                             load_drop(dc_result, load.name),
+                             ac_tolerance=LoadTolerance.of_ac(load, vrm and vrm.voltage)))
     for name, v, k in vrm_inputs(setup):
         ph = v.all_phases()[k]
         if ph.input.ref != rail.ref or (ground and ph.ground and ph.ground.ref != ground.ref):

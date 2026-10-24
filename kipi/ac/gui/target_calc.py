@@ -74,6 +74,10 @@ class TargetCalculator(QDialog):
         self.load.currentIndexChanged.connect(self._load_changed)
         self.btn_copy = QPushButton("Copy tolerance from DC load")
         self.btn_copy.clicked.connect(lambda: self.copy_tolerance(self.selected_load()))
+        # Or the load's own AC tolerance (#174), where it has one: greyed out otherwise.
+        self.btn_copy_ac = QPushButton("Copy AC tolerance from DC load")
+        self.btn_copy_ac.setEnabled(False)
+        self.btn_copy_ac.clicked.connect(lambda: self.copy_ac_tolerance(self.selected_load()))
         # Take the DC drop at the load's own pins, out of the last DC solve, off the
         # tolerance: the copper has used up that much of it before any load step.
         self.btn_drop = QPushButton("Subtract DC drop at the load")
@@ -100,6 +104,7 @@ class TargetCalculator(QDialog):
         form.addRow("DC load", self.load)
         form.addRow("AC voltage tolerance", self.v_ac)
         form.addRow("", self.btn_copy)
+        form.addRow("", self.btn_copy_ac)
         form.addRow("", self.btn_drop)
         form.addRow("", self.btn_accuracy)
         form.addRow("Load step (ΔI)", self.i_step)
@@ -144,6 +149,20 @@ class TargetCalculator(QDialog):
         else:
             tip = "No DC load on this probe's part"
         self.btn_copy.setToolTip(tip)
+        ac = load and load.ac_tolerance
+        self.btn_copy_ac.setEnabled(bool(ac))
+        if ac:
+            tip = (f"Fill in the AC voltage tolerance from {ac.label()}: ± its tighter side. "
+                   "It is the swing allowed about the DC voltage, so the VRM accuracy and DC "
+                   "drop are already outside it: no need to subtract them.")
+        elif load and not load.vrm_input:
+            tip = (f"{load.name} has no AC tolerance: enter one in its DC load, or in % with "
+                   "a VRM feeding its rail")
+        elif load:
+            tip = f"{load.name} is a regulator's input, which has no AC tolerance"
+        else:
+            tip = "No DC load on this probe's part"
+        self.btn_copy_ac.setToolTip(art_tip(tip, "tol_split", "ac"))
         drop = load.drop if load else None
         self.btn_drop.setEnabled(bool(drop and drop.v > 0))
         if drop and drop.v > 0:
@@ -175,6 +194,10 @@ class TargetCalculator(QDialog):
     def copy_tolerance(self, load: Optional[ProbeLoad]):
         if load and load.tolerance:
             self._fill(load.tolerance.room())
+
+    def copy_ac_tolerance(self, load: Optional[ProbeLoad]):
+        if load and load.ac_tolerance:
+            self._fill(load.ac_tolerance.room())
 
     def subtract_drop(self, load: Optional[ProbeLoad]):
         if not (load and load.drop):

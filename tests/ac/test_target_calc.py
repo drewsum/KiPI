@@ -486,3 +486,45 @@ def test_dialog_asks_for_a_dc_solve_for_a_regulators_current(app, monkeypatch):
     assert "in the last DC solve, 0.501 A" in d.btn_current.toolTip()
     d.btn_current.click()
     assert d.i_step.value() == pytest.approx(0.501)
+
+
+def test_a_loads_own_ac_tolerance_is_offered_apart():
+    """#174: the load's AC tolerance, its min below and its max above the DC voltage."""
+    from kipi.ac.target import probe_loads
+    from kipi.dc.pi.model import PinRef
+    s = _setup()
+    soc = s.loads[1]
+    assert probe_loads(s, PinRef("U1", "+1V0"))[0].ac_tolerance is None
+    soc.ac_tol_min, soc.ac_tol_max = -1.5, 2.0                 # % of VR1's 1 V
+    t = probe_loads(s, PinRef("U1", "+1V0"))[0].ac_tolerance
+    assert t.v_ac_v == pytest.approx(0.015) and t.room() == pytest.approx((0.015, 0.02))
+    assert t.label() == "SoC: AC -1.5 / +2 % of 1 V"
+    soc.ac_tol_min, soc.ac_tol_max, soc.ac_tol_pct, soc.ac_tol_dv = None, 0.03, False, True
+    t = probe_loads(s, PinRef("U1", "+1V0"))[0].ac_tolerance
+    assert t.v_ac_v == pytest.approx(0.03) and t.label() == "SoC: AC max +0.03 V (±30 mV)"
+    soc.ac_tol_max = -0.01                                    # no room: nothing
+    assert probe_loads(s, PinRef("U1", "+1V0"))[0].ac_tolerance is None
+    s.vrms.clear()                    # ±V needs no VRM; % does
+    soc.ac_tol_max = 0.02
+    assert probe_loads(s, PinRef("U1", "+1V0"))[0].ac_tolerance.v_ac_v == pytest.approx(0.02)
+    soc.ac_tol_pct, soc.ac_tol_dv = True, False
+    assert probe_loads(s, PinRef("U1", "+1V0"))[0].ac_tolerance is None
+
+
+def test_dialog_copies_the_ac_tolerance_only_when_there_is_one(app, monkeypatch):
+    from kipi.ac.gui.target_calc import TargetCalculator
+    from kipi.ac.target import LoadTolerance, ProbeLoad
+    monkeypatch.setattr(TargetCalculator, "last", (0.0, 0.0, 0.0))
+    assert not TargetCalculator().btn_copy_ac.isEnabled()      # greyed out by default
+    total = LoadTolerance("A", "±5 %", 1.0, 0.05)
+    ac = LoadTolerance("A", "AC -2 / +3 %", 1.0, 0.02, 0.02, 0.03)
+    a = ProbeLoad("A", total, 1.0, ac_tolerance=ac)
+    b = ProbeLoad("B", total, 1.0)
+    d = TargetCalculator(loads=[b, a])
+    assert not d.btn_copy_ac.isEnabled() and "B has no AC tolerance" in d.btn_copy_ac.toolTip()
+    d.load.setCurrentIndex(1)
+    assert d.btn_copy_ac.isEnabled() and "<img" in d.btn_copy_ac.toolTip()
+    d.btn_copy_ac.click()
+    assert d.v_ac.value() == pytest.approx(20)                 # its tighter side
+    d.btn_copy.click()
+    assert d.v_ac.value() == pytest.approx(50)                 # the total, as before

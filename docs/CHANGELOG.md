@@ -13,7 +13,9 @@ milestones rather than versions that were ever set.
   solve's PASS still follows the total tolerance. Load model files carry them as
   `dc_tolerance` and `ac_tolerance`, written like `tolerance`. A probe's target from a
   model's load step uses the tighter side of the AC tolerance. The old
-  `load_step: {ac_tolerance_mv: …}` is still read, as ± that many mV.
+  `load_step: {ac_tolerance_mv: …}` is still read, as ± that many mV. The target
+  calculator's **Copy AC tolerance from DC load** fills in the load's AC tolerance; it is
+  greyed out when the load has none.
 - **SPICE models for capacitors and series links** (#51). **Import SPICE model…** in a
   capacitor model or series link reads the maker's model of the part, a two-pin
   `.SUBCKT` of resistors, inductors and capacitors. Pick its subcircuit, and it is saved
