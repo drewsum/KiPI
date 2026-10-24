@@ -13,16 +13,20 @@ A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
         ground_pins: [A1, A10]      # its ground pins (optional)
         current_a: 1.2              # or pin_groups, each drawing its own current
         pin_groups: [{name: core, pins: [F7, F9], current_a: 0.8}]
-        tolerance: {min: -3, max: 3, unit: "%"}     # unit V, ±V or %
+        tolerance: {min: -3, max: 3, unit: "%"}     # total; unit V, ±V or %
+        dc_tolerance: {min: -1.5, max: 1.5, unit: "%"}    # VRM accuracy + drop; V, ±V or %
+        ac_tolerance: {min: -0.03, max: 0.03, unit: "±V"} # ripple + transient; ±V or %
         target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[hz, ohm], ...]}
-        load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}
+        load_step: {step_a: 0.6, slew_a_per_us: 5}
 
 Every key but ``name`` is optional, and only the ones given are applied. The DC loads take
-the current, pin groups and tolerance; the AC probes the target, or one worked out
-from the load step as the target calculator does (with the AC tolerance given, else the
-tighter side of the DC tolerance). A model exported from a setup holds every load and probe
-on one reference designator, one supply each, so a part with several supplies keeps them
-all. Pins make a model usable to add the loads and probes for another copy of the part.
+the current, pin groups and the three tolerances (#174); the AC probes the target, or one
+worked out from the load step as the target calculator does (with the tighter side of the
+AC tolerance, else of the total tolerance). Older models gave the AC tolerance as
+``ac_tolerance_mv`` in ``load_step``, read as that many mV either way. A model exported
+from a setup holds every load and probe on one reference designator, one supply each, so
+a part with several supplies keeps them all. Pins make a model usable to add the loads
+and probes for another copy of the part.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ FORMAT = 1
 KEY = "kipi_load_model"
 SUFFIX = ".kipi-load.yml"
 UNITS = (VOLTS, DELTA_VOLTS, PERCENT)
+AC_UNITS = (DELTA_VOLTS, PERCENT)                  # a swing about the DC voltage
 
 
 class ModelError(ValueError):
@@ -62,10 +67,22 @@ class SupplyModel:
     target_points: List[Tuple[float, float]] = field(default_factory=list)
     step_a: Optional[float] = None
     slew_a_per_us: Optional[float] = None
-    ac_tolerance_mv: Optional[float] = None
+    # The DC and AC shares of the tolerance (#174), as a load has them.
+    dc_tol_min: Optional[float] = None
+    dc_tol_max: Optional[float] = None
+    dc_tol_unit: str = PERCENT
+    ac_tol_min: Optional[float] = None
+    ac_tol_max: Optional[float] = None
+    ac_tol_unit: str = PERCENT
 
     def has_tolerance(self) -> bool:
         return self.tol_min is not None or self.tol_max is not None
+
+    def has_dc_tolerance(self) -> bool:
+        return self.dc_tol_min is not None or self.dc_tol_max is not None
+
+    def has_ac_tolerance(self) -> bool:
+        return self.ac_tol_min is not None or self.ac_tol_max is not None
 
     def has_target(self) -> bool:
         return bool(self.target_points) or self.target_ohm is not None or (
@@ -80,9 +97,14 @@ class SupplyModel:
                         f"{len(self.groups)} groups")
         elif self.current_a is not None:
             bits.append(f"{self.current_a:g} A")
-        if self.has_tolerance():
-            bits.append(tolerance_label(self.tol_min, self.tol_max, self.tol_unit == PERCENT,
-                                        self.tol_unit == DELTA_VOLTS))
+        for what, lo, hi, unit in (("", self.tol_min, self.tol_max, self.tol_unit),
+                                   ("DC ", self.dc_tol_min, self.dc_tol_max,
+                                    self.dc_tol_unit),
+                                   ("AC ", self.ac_tol_min, self.ac_tol_max,
+                                    self.ac_tol_unit)):
+            if lo is not None or hi is not None:
+                bits.append(what + tolerance_label(lo, hi, unit == PERCENT,
+                                                   unit == DELTA_VOLTS))
         if self.target_points:
             bits.append(f"target mask ({len(self.target_points)} points)")
         elif self.target_ohm is not None:
@@ -171,6 +193,26 @@ def _pins(v, where: str) -> List[str]:
     return [str(p) for p in v]
 
 
+def _range(d: dict, key: str, where: str, units=UNITS):
+    """A tolerance's (min, max, unit) from ``d[key]``, or None if it has none."""
+    tol = d.get(key)
+    if tol is None:
+        return None
+    if not isinstance(tol, dict):
+        raise ModelError(f"{where}: {key} needs min and/or max")
+    unit = str(tol.get("unit", PERCENT)).replace("+/-", "±").strip()
+    if unit not in units:
+        raise ModelError(f"{where}: {key} unit must be {', '.join(units[:-1])} or "
+                         f"{units[-1]}")
+    return _num(tol, "min", where), _num(tol, "max", where), unit
+
+
+def _range_dict(lo: Optional[float], hi: Optional[float], unit: str) -> dict:
+    out: Dict[str, object] = {k: v for k, v in (("min", lo), ("max", hi)) if v is not None}
+    out["unit"] = unit
+    return out
+
+
 def _supply(d, i: int) -> SupplyModel:
     if not isinstance(d, dict) or not str(d.get("name") or "").strip():
         raise ModelError(f"supply {i + 1} needs a name")
@@ -183,14 +225,15 @@ def _supply(d, i: int) -> SupplyModel:
         cur = _num(g, "current_a", where)
         s.groups.append(PinGroup(_pins(g.get("pins"), where), cur or 0.0,
                                  str(g.get("name") or "")))
-    tol = d.get("tolerance")
+    tol = _range(d, "tolerance", where)
     if tol is not None:
-        if not isinstance(tol, dict):
-            raise ModelError(f"{where}: tolerance needs min and/or max")
-        s.tol_min, s.tol_max = _num(tol, "min", where), _num(tol, "max", where)
-        s.tol_unit = str(tol.get("unit", PERCENT)).replace("+/-", "±").strip()
-        if s.tol_unit not in UNITS:
-            raise ModelError(f"{where}: tolerance unit must be V, ±V or %")
+        s.tol_min, s.tol_max, s.tol_unit = tol
+    tol = _range(d, "dc_tolerance", where)
+    if tol is not None:
+        s.dc_tol_min, s.dc_tol_max, s.dc_tol_unit = tol
+    tol = _range(d, "ac_tolerance", where, AC_UNITS)
+    if tol is not None:
+        s.ac_tol_min, s.ac_tol_max, s.ac_tol_unit = tol
     target = d.get("target")
     if isinstance(target, dict):
         s.target_ohm = _num(target, "ohm", where)
@@ -203,7 +246,10 @@ def _supply(d, i: int) -> SupplyModel:
     if isinstance(step, dict):
         s.step_a = _num(step, "step_a", where)
         s.slew_a_per_us = _num(step, "slew_a_per_us", where)
-        s.ac_tolerance_mv = _num(step, "ac_tolerance_mv", where)
+        mv = _num(step, "ac_tolerance_mv", where)       # older models' AC tolerance
+        if mv is not None and not s.has_ac_tolerance():
+            s.ac_tol_min, s.ac_tol_max, s.ac_tol_unit = -abs(mv) / 1e3, abs(mv) / 1e3, \
+                DELTA_VOLTS
     return s
 
 
@@ -219,16 +265,18 @@ def _supply_dict(s: SupplyModel) -> dict:
     elif s.current_a is not None:
         d["current_a"] = s.current_a
     if s.has_tolerance():
-        d["tolerance"] = {k: v for k, v in (("min", s.tol_min), ("max", s.tol_max))
-                          if v is not None}
-        d["tolerance"]["unit"] = s.tol_unit
+        d["tolerance"] = _range_dict(s.tol_min, s.tol_max, s.tol_unit)
+    if s.has_dc_tolerance():
+        d["dc_tolerance"] = _range_dict(s.dc_tol_min, s.dc_tol_max, s.dc_tol_unit)
+    if s.has_ac_tolerance():
+        d["ac_tolerance"] = _range_dict(s.ac_tol_min, s.ac_tol_max, s.ac_tol_unit)
     if s.target_points:
         d["target"] = {"points": [[f, z] for f, z in s.target_points]}
     elif s.target_ohm is not None:
         d["target"] = {"ohm": s.target_ohm,
                        **({"up_to_hz": s.target_hz} if s.target_hz else {})}
-    step = {k: v for k, v in (("step_a", s.step_a), ("slew_a_per_us", s.slew_a_per_us),
-                              ("ac_tolerance_mv", s.ac_tolerance_mv)) if v is not None}
+    step = {k: v for k, v in (("step_a", s.step_a), ("slew_a_per_us", s.slew_a_per_us))
+            if v is not None}
     if step:
         d["load_step"] = step
     return d
@@ -261,7 +309,11 @@ def model_of(setup: PISetup, ref: str, part: str = "") -> LoadModel:
                         list(l.ground.pins) if l.ground and l.ground.ref == ref else [],
                         None if l.groups else l.current,
                         [PinGroup(list(g.pins), g.current, g.name) for g in l.groups],
-                        l.tol_min, l.tol_max, range_unit(l.tol_pct, l.tol_dv))
+                        l.tol_min, l.tol_max, range_unit(l.tol_pct, l.tol_dv),
+                        dc_tol_min=l.dc_tol_min, dc_tol_max=l.dc_tol_max,
+                        dc_tol_unit=range_unit(l.dc_tol_pct, l.dc_tol_dv),
+                        ac_tol_min=l.ac_tol_min, ac_tol_max=l.ac_tol_max,
+                        ac_tol_unit=range_unit(l.ac_tol_pct, l.ac_tol_dv))
         model.supplies.append(s)
         by_net.setdefault(l.supply.net, s)
     for p in setup.probes:
@@ -319,18 +371,41 @@ def apply_to_load(load: Load, s: SupplyModel) -> List[str]:
         load.tol_min, load.tol_max = s.tol_min, s.tol_max
         load.tol_pct, load.tol_dv = s.tol_unit == PERCENT, s.tol_unit == DELTA_VOLTS
         done.append("tolerance")
+    if s.has_dc_tolerance():
+        load.dc_tol_min, load.dc_tol_max = s.dc_tol_min, s.dc_tol_max
+        load.dc_tol_pct, load.dc_tol_dv = (s.dc_tol_unit == PERCENT,
+                                           s.dc_tol_unit == DELTA_VOLTS)
+        done.append("DC tolerance")
+    if s.has_ac_tolerance():
+        load.ac_tol_min, load.ac_tol_max = s.ac_tol_min, s.ac_tol_max
+        load.ac_tol_pct, load.ac_tol_dv = (s.ac_tol_unit == PERCENT,
+                                           s.ac_tol_unit == DELTA_VOLTS)
+        done.append("AC tolerance")
     return done
 
 
-def ac_tolerance_v(s: SupplyModel, nominal: Optional[float]) -> Optional[float]:
-    """The AC tolerance, volts: as given, else the tighter side of the DC tolerance."""
-    if s.ac_tolerance_mv is not None:
-        return s.ac_tolerance_mv / 1e3
-    if not (nominal and s.has_tolerance()):
+def _tighter_side(nominal: Optional[float], lo: Optional[float], hi: Optional[float],
+                  unit: str) -> Optional[float]:
+    """The tighter side of a range, volts from ``nominal``; None if it has none, or needs
+    the nominal voltage and it is unknown."""
+    if unit == DELTA_VOLTS:                         # volts from nominal already
+        sides = [abs(x) for x in (lo, hi) if x is not None]
+    elif not nominal:
         return None
-    lo, hi = range_volts(nominal, s.tol_min, s.tol_max, s.tol_unit)
-    sides = [abs(x - nominal) for x in (lo, hi) if x is not None]
+    else:
+        lo, hi = range_volts(nominal, lo, hi, unit)
+        sides = [abs(x - nominal) for x in (lo, hi) if x is not None]
     return min(sides) if sides else None
+
+
+def ac_tolerance_v(s: SupplyModel, nominal: Optional[float]) -> Optional[float]:
+    """The AC tolerance, volts: the tighter side of the AC tolerance, else of the total
+    tolerance."""
+    if s.has_ac_tolerance():
+        return _tighter_side(nominal, s.ac_tol_min, s.ac_tol_max, s.ac_tol_unit)
+    if not s.has_tolerance():
+        return None
+    return _tighter_side(nominal, s.tol_min, s.tol_max, s.tol_unit)
 
 
 def apply_to_probe(probe, s: SupplyModel, setup: Optional[PISetup] = None) -> List[str]:

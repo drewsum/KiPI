@@ -996,8 +996,9 @@ AC Probes list) has:</p>
     keeps them all.</li>
 </ul>
 <p>On the Probes list the same menu sets targets: the model's flat target or custom points,
-or one from its load step, slew rate and AC tolerance, as the target calculator works it out
-(without an AC tolerance, the tighter side of the DC tolerance of the rail's VRM voltage).
+or one from its load step and slew rate, as the target calculator works it out, with the
+tighter side of the supply's AC tolerance (without one, of its total tolerance of the rail's
+VRM voltage).
 A model file, by hand:</p>
 <pre>kipi_load_model: 1
 part: XC7A35T-1CSG324C
@@ -1006,10 +1007,15 @@ supplies:
     pins: [F7, F9, H7]
     ground_pins: [A1, A10]
     current_a: 1.2              # or pin_groups: [{name: core, pins: [F7], current_a: 0.8}, ...]
-    tolerance: {min: -3, max: 3, unit: "%"}     # V, ±V or %
+    tolerance: {min: -3, max: 3, unit: "%"}     # total: V, ±V or %
+    dc_tolerance: {min: -1.5, max: 1.5, unit: "%"}     # VRM accuracy + DC drop: V, ±V or %
+    ac_tolerance: {min: -0.03, max: 0.03, unit: "±V"}  # ripple + transient: ±V or %
     target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[1.0e3, 0.01], [1.0e8, 0.1]]}
-    load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}</pre>
-<p>Every key but <code>name</code> is optional.</p>
+    load_step: {step_a: 0.6, slew_a_per_us: 5}</pre>
+<p>Every key but <code>name</code> is optional. <code>dc_tolerance</code> and
+<code>ac_tolerance</code> are a load's <b>DC tolerance</b> and <b>AC tolerance</b>. Models
+from before 0.9.2 gave the AC tolerance as <code>ac_tolerance_mv</code> in
+<code>load_step</code>; that is still read, as that many mV either way.</p>
 </div>
 </details>
 

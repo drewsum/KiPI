@@ -422,8 +422,10 @@ To try it without a design of your own, open the example board in
     - name: VCCINT
       pins: [F7, F9, H7]
       current_a: 1.2
-      tolerance: {min: -3, max: 3, unit: "%"}     # V, ±V or %
-      load_step: {step_a: 0.6, slew_a_per_us: 5, ac_tolerance_mv: 30}
+      tolerance: {min: -3, max: 3, unit: "%"}           # total: V, ±V or %
+      dc_tolerance: {min: -1.5, max: 1.5, unit: "%"}    # VRM accuracy + DC drop
+      ac_tolerance: {min: -0.03, max: 0.03, unit: "±V"} # ripple + transient: ±V or %
+      load_step: {step_a: 0.6, slew_a_per_us: 5}
   ```
 
 ![Load editor](docs/images/setup_loads.png)

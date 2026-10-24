@@ -86,3 +86,38 @@ def test_editor_dc_and_ac_tolerance_rows():
     for w in (ed.dc_tol, ed.dc_tol.min, ed.ac_tol.unit):
         assert "<img" in w.toolTip()                                 # the drawing (#116)
     panel.close()
+
+
+def test_load_models_carry_both_and_read_the_old_ac_tolerance_mv(tmp_path):
+    from kipi.dc.pi.load_model import LoadModel, ModelError, apply_to_load, model_of
+    s = setup("ldo")
+    u2 = s.loads[0]
+    u2.dc_tol_min, u2.dc_tol_max = -1.5, 1.5
+    u2.ac_tol_min, u2.ac_tol_max, u2.ac_tol_pct, u2.ac_tol_dv = -0.03, 0.02, False, True
+    m = LoadModel.load(model_of(s, "U2").save(tmp_path / "u2.yml"))
+    text = (tmp_path / "u2.yml").read_text(encoding="utf-8")
+    assert "dc_tolerance" in text and "ac_tolerance:" in text and "ac_tolerance_mv" not in text
+    sup = m.supplies[0]
+    assert (sup.dc_tol_min, sup.dc_tol_max, sup.dc_tol_unit) == (-1.5, 1.5, "%")
+    assert (sup.ac_tol_min, sup.ac_tol_max, sup.ac_tol_unit) == (-0.03, 0.02, "±V")
+    assert "DC ±1.5 %" in sup.summary() and "AC -0.03 / +0.02 V" in sup.summary()
+    fresh = setup("ldo").loads[0]
+    assert apply_to_load(fresh, sup) == ["current", "tolerance", "DC tolerance",
+                                         "AC tolerance"]
+    assert (fresh.dc_tol_min, fresh.dc_tol_pct) == (-1.5, True)
+    assert (fresh.ac_tol_max, fresh.ac_tol_pct, fresh.ac_tol_dv) == (0.02, False, True)
+    # An older model's load step AC tolerance: ± that many mV.
+    old = LoadModel.from_dict({"kipi_load_model": 1, "supplies": [
+        {"name": "A", "load_step": {"step_a": 1, "slew_a_per_us": 1, "ac_tolerance_mv": 25}},
+        {"name": "B", "ac_tolerance": {"max": 2, "unit": "%"},
+         "load_step": {"ac_tolerance_mv": 25}}]})          # the new key wins
+    a, b = old.supplies
+    assert (a.ac_tol_min, a.ac_tol_max, a.ac_tol_unit) == (-0.025, 0.025, "±V")
+    assert (b.ac_tol_min, b.ac_tol_max, b.ac_tol_unit) == (None, 2.0, "%")
+    assert "ac_tolerance_mv" not in str(old.to_dict())
+    with pytest.raises(ModelError, match="ac_tolerance unit must be ±V or %"):
+        LoadModel.from_dict({"kipi_load_model": 1, "supplies": [
+            {"name": "A", "ac_tolerance": {"max": 0.03, "unit": "V"}}]})
+    with pytest.raises(ModelError, match="dc_tolerance unit must be V, ±V or %"):
+        LoadModel.from_dict({"kipi_load_model": 1, "supplies": [
+            {"name": "A", "dc_tolerance": {"max": 1, "unit": "mV"}}]})

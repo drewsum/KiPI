@@ -128,9 +128,12 @@ def test_a_probe_target_from_the_load_step():
     assert (p.step_a, p.slew_a_per_us) == (0.5, 10.0)          # for its transient (#166)
     assert p.target_ohm == pytest.approx(0.02 / 0.5)        # the tighter side: 2 % of 1 V
     assert p.target_hz == pytest.approx(1 / (3.141592653589793 * 0.05e-6))
-    sup.ac_tolerance_mv = 10.0
+    sup.ac_tol_min, sup.ac_tol_max, sup.ac_tol_unit = -0.01, 0.02, "±V"   # #174
     apply_to_probe(p, sup, s)
-    assert p.target_ohm == pytest.approx(0.02)
+    assert p.target_ohm == pytest.approx(0.02)                # the tighter side: 10 mV
+    sup.ac_tol_min, sup.ac_tol_max, sup.ac_tol_unit = -1.5, 1.5, "%"
+    apply_to_probe(p, sup, s)
+    assert p.target_ohm == pytest.approx(0.03)                # 1.5 % of 1 V
     unknown = Probe("Q", PinRef("U7", "+5V", []), PinRef("U7", "GND", []))
     got = apply_to_probe(unknown, SupplyModel("X", step_a=1, slew_a_per_us=1), s)
     assert got == ["load step"]                           # no tolerance: no target
