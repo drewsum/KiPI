@@ -164,6 +164,7 @@ ol.steps > li { margin-bottom: 6px; }
         <li><a href="#ac-vrms">VRMs and series links</a></li>
         <li><a href="#ac-caps">Capacitors</a></li>
         <li><a href="#ac-probes">Probes and targets</a></li>
+        <li><a href="#ac-packages">Package models</a></li>
         <li><a href="#ac-calc">Target calculator</a></li>
         <li><a href="#ac-bandwidth">Targets and the VRM bandwidth</a></li>
         <li><a href="#ac-sweep">Sweep</a></li>
@@ -1489,6 +1490,38 @@ device does.</p>
 once, adds a model's probes for the parts ticked, or exports a part's model.</p>
 <p>A rail can have several probes, e.g. one per device; they are all solved together and each
 sees the others as open circuits.</p>
+<p><b>From package model…</b> reads a device's <a href="#ac-packages">package model</a> and
+adds probes on its die.</p>
+</div>
+</details>
+
+<details id="ac-packages">
+<summary>Packages tab <span class="hint">package PI models, for probes on the die</span></summary>
+<div class="body">
+<p>Vendors give a device's package as an N-port Touchstone file (<code>.sNp</code>): ports
+on the package balls, where it meets the board, and ports on the die. <b>Add</b> (or
+<b>From package model…</b> in the Probes tab) reads one, Touchstone 1 or 2 with S, Y or Z
+data, and asks which board part it is the package of. The whole file is kept in the setup
+file. Port names found in the file's comments (<code>! Port[1] = VCCINT_BGA</code>) connect
+the ports: a port named for one of the part's nets goes to that net, on the die if its name
+says so (<i>die</i>, <i>bump</i>), else to the PCB. <b>Connect ports by their names</b>
+does that again.</p>
+<p>In the ports table, each port connects to:</p>
+<ul>
+  <li><b>PCB pins</b>: the part's pins on its <b>Net</b> (the <b>Pins</b> listed, or every
+    one) against its pins on the <b>Ground net</b>. The solve joins the package to the board
+    there.</li>
+  <li><b>Die probe</b>: a probe in the Probes tab, named after the port, on the rail of its
+    net. It has no place on the board: its impedance is looked into at the die, through the
+    package. Its targets and load step are set like any probe's. Removing it leaves the port
+    open.</li>
+  <li><b>Open</b> or <b>Shorted</b>: left unconnected, or shorted to its reference.</li>
+</ul>
+<p>The package also loads the board's own probes, which see its die through the balls. PCB
+ports on another rail are left open when this rail is solved. Outside the file's frequency
+range the model is held at its first and last frequency, and the solve says so. The
+Coupled Noise mode shows a die probe's ripple at the part's pins, without the
+package.</p>
 </div>
 </details>
 

@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from kipi.ac.model import (
-    DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, Probe, report_format,
+    DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, PackageModel, Probe, report_format,
 )
 from kipi.core.model.spice import SpiceRef
 from kipi.dc.solver.setup import SHORT_OHMS, SolveSettings
@@ -347,6 +347,7 @@ class PISetup:
     # AC analysis
     caps: List[CapModel] = field(default_factory=list)
     probes: List[Probe] = field(default_factory=list)
+    packages: List[PackageModel] = field(default_factory=list)     # #53
     ac: ACSettings = field(default_factory=ACSettings)
     # Coupled Noise analysis (#69)
     aggressors: List[Aggressor] = field(default_factory=list)
@@ -363,13 +364,14 @@ class PISetup:
         return {r.net for r in refs}
 
     def part_refs(self) -> set:
-        """Footprints given a model: VRMs, loads, series links and capacitor models."""
+        """Footprints given a model: VRMs, loads, series links, capacitor and package models."""
         refs = [r for v in self.vrms for r in v.pin_refs()]
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
         refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
         refs += self._aggressor_pins()
         out = {r.ref for r in refs} | {ref for m in self.caps for ref in m.refs}
         out |= {ph.inductor for a in self.aggressors for ph in a.phases}
+        out |= {k.ref for k in self.packages}
         out.discard("")
         return out
 
@@ -445,8 +447,10 @@ class PISetup:
             probes=[Probe(p["name"], pin(p["rail"]), pin(p["ground"]), p.get("target_ohm"),
                           p.get("target_hz"), bool(p.get("target_custom", False)),
                           [(float(f), float(z)) for f, z in p.get("target_points", [])],
-                          p.get("step_a"), p.get("slew_a_per_us"))
+                          p.get("step_a"), p.get("slew_a_per_us"),
+                          str(p.get("package", "")), int(p.get("die_port", 0)))
                     for p in d.get("probes", [])],
+            packages=[PackageModel.from_dict(k) for k in d.get("packages", [])],
             ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
                              if k in {f.name for f in dataclasses.fields(ACSettings)}}),
             aggressors=[aggressor_from_dict(a, pin, d.get("noise"))

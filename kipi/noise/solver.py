@@ -69,6 +69,11 @@ def _ripple_probes(setup, agg, result, progress):
             msg = f"No AC probe named {name}: no ripple shown there"
             result.warnings.append(msg)
             progress.warn(msg)
+        elif by_name[name].on_die:
+            msg = (f"AC probe {name} is on a package's die; its ripple is shown at "
+                   "the package part's pins, without the package")
+            result.warnings.append(msg)
+            progress.warn(msg)
     return [by_name[n] for n in agg.ripple_probes if n in by_name]
 
 

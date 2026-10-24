@@ -155,10 +155,76 @@ class Probe:
     # (#166); None when not set.
     step_a: Optional[float] = None
     slew_a_per_us: Optional[float] = None
+    # A die port of a package model (#53): the package's name and the port's number. Such
+    # a probe has no place on the board; ``rail`` and ``ground`` are kept as the package
+    # part's pins on that port's nets (kipi.ac.package.sync_die_probes), which put it on
+    # its rail.
+    package: str = ""
+    die_port: int = 0
+
+    @property
+    def on_die(self) -> bool:
+        return bool(self.package)
 
     def target_mask(self) -> Optional[List[Tuple[float, float]]]:
         """The custom mask's points, sorted by frequency, when it is in use."""
         return sorted(self.target_points) if self.target_custom and self.target_points             else None
+
+
+# What a package model's port connects to (#53): the board, through the package part's
+# pins; a die probe; or nothing, left open or shorted.
+PCB, DIE, OPEN, SHORT = "pcb", "die", "open", "short"
+PORT_ROLES = (PCB, DIE, OPEN, SHORT)
+
+
+@dataclass
+class PackagePort:
+    """One port of a package model, by its number in the file (from 1). On the PCB, its
+    plus side is the part's pins on ``net`` (``pins``, or every one) and its reference side
+    those on ``ground_net``; a die port's nets say which rail and ground it is on."""
+    number: int
+    name: str = ""
+    role: str = OPEN
+    net: str = ""
+    pins: List[str] = field(default_factory=list)
+    ground_net: str = ""
+    ground_pins: List[str] = field(default_factory=list)
+
+    @property
+    def label(self) -> str:
+        plain = f"Port {self.number}"
+        return f"{plain} ({self.name})" if self.name and self.name != plain else plain
+
+
+@dataclass
+class PackageModel:
+    """A package PI model (#53): an N-port Touchstone file, kept whole in the setup, on
+    the board part ``ref``."""
+    name: str
+    ref: str = ""
+    touchstone: str = ""                # the file's text
+    n_ports: Optional[int] = None       # from a Touchstone 1 file's name (.sNp)
+    file: str = ""                      # the file it came from, for the user to see
+    ports: List[PackagePort] = field(default_factory=list)
+
+    def network(self):
+        from kipi.core.model.touchstone import parse
+        return parse(self.touchstone, self.n_ports)
+
+    def port(self, number: int) -> Optional[PackagePort]:
+        return next((p for p in self.ports if p.number == number), None)
+
+    @staticmethod
+    def from_dict(d: dict) -> "PackageModel":
+        return PackageModel(
+            str(d["name"]), str(d.get("ref", "")), str(d.get("touchstone", "")),
+            d.get("n_ports"), str(d.get("file", "")),
+            [PackagePort(int(p["number"]), str(p.get("name", "")),
+                         p.get("role", OPEN) if p.get("role") in PORT_ROLES else OPEN,
+                         str(p.get("net", "")), [str(x) for x in p.get("pins", [])],
+                         str(p.get("ground_net", "")),
+                         [str(x) for x in p.get("ground_pins", [])])
+             for p in d.get("ports", [])])
 
 
 @dataclass

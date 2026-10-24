@@ -179,6 +179,8 @@ def validate_ac(setup: PISetup, vrm_name: str, gnd: str) -> List[str]:
                               "frequency")
         elif p.target_ohm is not None and not p.target_ohm > 0:
             errors.append(f"Probe {p.name}: the target impedance must be positive")
+    from kipi.ac.package import validate as validate_packages
+    errors += validate_packages(setup)
     if not on_rail:
         errors.append(f"Add a probe on {' / '.join(sorted(rail))} (the device whose supply "
                       "impedance you want)")

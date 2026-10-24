@@ -114,7 +114,8 @@ def build_map(snap: BoardSnapshot, setup, rail: str, rail_nets, ground: str,
                 for r in missing if r in fp]
     names = set(probe_names)
     probes = [MapPart(p.name, fp[p.rail.ref].position[0], fp[p.rail.ref].position[1],
-                      f"probe {p.name} at {p.rail.ref}")
+                      f"probe {p.name} on the die of {p.rail.ref}" if p.on_die
+                      else f"probe {p.name} at {p.rail.ref}")
               for p in setup.probes if p.name in names and p.rail.ref in fp]
     return ACMap(rail=rail, rail_nets=sorted(rail_nets), ground=ground, outline=outline,
                  layers=[(cu.id, cu.name) for cu in snap.stackup.copper],

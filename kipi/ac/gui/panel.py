@@ -27,7 +27,9 @@ from qtpy.QtWidgets import (
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
 from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
+from kipi.ac.gui.packages import PackageEditor, describe as describe_package, new_package
 from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel, Probe
+from kipi.ac.package import open_removed_dies, sync_die_probes
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import (
@@ -473,7 +475,15 @@ class ProbeEditor(_Editor):
                                  "last point's |Z| above it.")
         self.lbl_points.setWordWrap(True)
         self.lbl_points.setStyleSheet("color: #999;")
+        # A die port of a package model (#53): no pins of its own to pick.
+        self.lbl_die = QLabel()
+        self.lbl_die.setWordWrap(True)
+        self.lbl_die.setToolTip(art_tip("A die port of a package model: the impedance is "
+                                        "looked into at the die, through the package from "
+                                        "the board. Its connections are set in the Packages "
+                                        "tab.", "package_ports", "die"))
         f.addRow("Name", self.name)
+        f.addRow("Die port", self.lbl_die)
         f.addRow("Supply pins", self.rail)
         f.addRow("Ground pins", self.ground)
         f.addRow("Target", self.target_kind)
@@ -601,6 +611,13 @@ class ProbeEditor(_Editor):
         self.name.setText(p.name)
         self.rail.set_value(p.rail)
         self.ground.set_value(p.ground)
+        for w in (self.rail, self.ground):
+            self.form.setRowVisible(w, not p.on_die)
+        self.form.setRowVisible(self.lbl_die, p.on_die)
+        if p.on_die:
+            self.lbl_die.setText(f"Port {p.die_port} of package {p.package}, on "
+                                 f"{p.rail.net} against {p.ground.net}. Connect its ports "
+                                 "in the Packages tab.")
         self.target.setValue((p.target_ohm or 0.0) * 1e3)
         self.target_f.setValue((p.target_hz or 0.0) / 1e3)
         self.step.setValue(p.step_a or 0.0)
@@ -613,6 +630,10 @@ class ProbeEditor(_Editor):
         self._target_rows()
 
     def _save(self, p: Probe):
+        if p.on_die:                          # its pins follow its package's port
+            p.name = self.name.text().strip() or p.name
+            self._save_target(p)
+            return
         old = p.rail
         new_rail = self.rail.value() or p.rail
         typed = self.name.text().strip() or p.name
@@ -630,6 +651,9 @@ class ProbeEditor(_Editor):
             if gnd is not None and gnd != p.ground:
                 p.ground = gnd
                 self._show(self.ground, gnd)
+        self._save_target(p)
+
+    def _save_target(self, p: Probe):
         p.target_ohm = self.target.value() / 1e3 or None
         p.target_hz = self.target_f.value() * 1e3 or None
         p.step_a = self.step.value() or None
@@ -691,6 +715,18 @@ class ACPanel(QWidget, PartSelection):
         menu.aboutToShow.connect(lambda: self._fill_load_menu(menu))
         b_load.setMenu(menu)
         self.probe_list.buttons.insertWidget(1, b_load)
+        # Package models (#53): their die ports become probes.
+        b_pkg = QPushButton("From package model…")
+        b_pkg.setToolTip(art_tip("Read a package PI model (a Touchstone file) onto a part, "
+                                 "for probes on the die: its ports are connected in the "
+                                 "Packages tab", "package_ports", "die"))
+        b_pkg.clicked.connect(self.add_package)
+        self.probe_list.buttons.insertWidget(2, b_pkg)
+        self.package_list = ItemList(lambda: self.setup.packages, PackageEditor(self),
+                                     lambda: new_package(self), describe_package,
+                                     noun="package model")
+        self.package_list.changed.connect(self._packages_changed)
+        self.probe_list.changed.connect(self._probes_changed)
         # Load models (#17): a part's targets in a file, for many probes at once.
         self.probe_list.buttons.addWidget(model_button(
             self, "probe", self.apply_load_model, self.add_probes_from_model,
@@ -699,6 +735,7 @@ class ACPanel(QWidget, PartSelection):
         self.tabs.addTab(self.link_list, "Series links")
         self.tabs.addTab(self.cap_list, "Capacitors")
         self.tabs.addTab(self.probe_list, "Probes")
+        self.tabs.addTab(self.package_list, "Packages")
         self.tabs.addTab(self._sweep_tab(), "Sweep")
         self.tabs.addTab(self._mesh_tab(), "Mesh")
         for i, text in enumerate((
@@ -707,6 +744,7 @@ class ACPanel(QWidget, PartSelection):
                 "RLC models for the decoupling capacitors, and which parts use each",
                 "Where the impedance is looked into (usually a device's power pins), "
                 "with its target",
+                "Package PI models (Touchstone files) on board parts, for probes on the die",
                 "Frequency range and resolution of the sweep; capacitor DC bias, "
                 "temperature and aging",
                 "Mesh density and dielectric losses for the AC field solve")):
@@ -810,7 +848,8 @@ class ACPanel(QWidget, PartSelection):
         self.setEnabled(False)
 
     def _lists(self):
-        return (self.vrm_list, self.link_list, self.cap_list, self.probe_list)
+        return (self.vrm_list, self.link_list, self.cap_list, self.probe_list,
+                self.package_list)
 
     def _part_lists(self):
         return {"vrm": self.vrm_list, "link": self.link_list, "cap": self.cap_list,
@@ -1030,6 +1069,7 @@ class ACPanel(QWidget, PartSelection):
         self.snapshot = snap
         self.setup = setup
         self.dc_result = None
+        sync_die_probes(setup)
         self._load_ac_settings()
         self.clear_results()
         self.setEnabled(True)
@@ -1154,6 +1194,23 @@ class ACPanel(QWidget, PartSelection):
 
     def _new_cap(self):
         return new_cap(self.setup)
+
+    def add_package(self):
+        """Read a package model from a file onto a part, and show it in the Packages tab."""
+        k = new_package(self)
+        if k is not None:
+            self.tabs.setCurrentWidget(self.package_list)
+            self.package_list.add(k)
+
+    def _probes_changed(self):
+        """A die probe removed leaves its port open."""
+        if open_removed_dies(self.setup):
+            self.package_list.reload()
+
+    def _packages_changed(self):
+        """Give the packages' die ports their probes, and only those."""
+        if sync_die_probes(self.setup):
+            self.probe_list.reload()
 
     def _new_probe(self):
         vrm = self._vrm()
@@ -1295,6 +1352,9 @@ class ACPanel(QWidget, PartSelection):
             target = f", custom target ({n} point{'s' if n != 1 else ''})"
         else:
             target = f", target {p.target_ohm * 1e3:g} mΩ" if p.target_ohm else ""
+        if p.on_die:
+            return (f"{p.name}: {p.rail.net} / {p.ground.net} (die port {p.die_port} of "
+                    f"{p.package}){target}")
         return f"{p.name}: {p.rail.net} / {p.ground.net} ({p.rail.label()}){target}"
 
     # ------------------------------------------------------------------ results

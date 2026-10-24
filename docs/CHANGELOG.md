@@ -7,6 +7,13 @@ milestones rather than versions that were ever set.
 ## 0.9.2 (in development)
 
 ### Added
+- **Package PI models** (#53). The AC setup's new **Packages** tab reads a device's package
+  model, an N-port Touchstone file (Touchstone 1 or 2, S, Y or Z data), onto a board part
+  and keeps it in the setup file. Each port connects to the part's pins on a net and its
+  ground, to a die probe, or to nothing (open or shorted); ports named for the part's nets
+  are connected for you. Die probes appear in the Probes tab with no place on the board, and
+  their impedance is solved through the package from the board. The package also loads the
+  board's own probes. **From package model…** in the Probes tab adds one too.
 - **DC and AC tolerances for loads** (#174). A load can also give its tolerance in two
   optional shares: DC (the VRM's accuracy plus the DC drop) and AC (ripple and transient,
   in ±V or %). They are saved with the setup for a later tolerance analysis; the DC
