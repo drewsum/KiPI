@@ -93,6 +93,13 @@ milestones rather than versions that were ever set.
   not have on the net with the pins it does. Blank, every pin, stays blank.
 
 ### Changed
+- **Clearer DC voltage results** (#177). A **Voltages** list beside the results tables
+  shows every voltage in mV from the target voltage, in % from it, or in volts. The web
+  report has the same list at its top, and a PDF report shows all three. The Loads table
+  now gives each load's mean, lowest pin, highest pin, tolerance (in the same unit) and
+  **margin**, how far its pins are inside the tolerance. This replaces the separate drop,
+  worst pin and worst % columns. The VRMs table gives the rail's lowest voltage in place of
+  its max drop in mV and %. The CSV export gains each load's margin.
 - **Bigger, sharper layer maps in the DC PDF report** (#184). The voltage, current
   density and temperature maps go one to a row, two to a page, at about 200 dpi: each
   page holds a layer's voltage and current density maps. They were six or more to a page.

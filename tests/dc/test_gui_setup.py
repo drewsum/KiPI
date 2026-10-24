@@ -49,13 +49,18 @@ def test_vrm_current_limit_edits_and_shows_in_results(app):
     panel.show_results(tree, next(iter(tree.groups)))
     t = panel.tbl_vrms
     row = {t.item(r, 0).text(): r for r in range(t.rowCount())}
-    assert t.item(row["U1"], 10).text() == "1.5" and t.item(row["U1"], 11).text() == "FAIL"
-    assert t.item(row["J1"], 11).text() == ""
-    for v in tree.vrms:                          # the rail's largest drop, mV and % (#188)
-        drop, pct = tree.rail_drop(v)
-        assert drop > 0 and pct == pytest.approx(100 * drop / v.v_set)
-        assert t.item(row[v.name], 8).text() == f"{drop * 1e3:.3f}"
-        assert t.item(row[v.name], 9).text() == f"{pct:.3f}"
+    assert t.item(row["U1"], 9).text() == "1.5" and t.item(row["U1"], 10).text() == "FAIL"
+    assert t.item(row["J1"], 10).text() == ""
+    # The rail's lowest voltage (#188), from its target in mV, in % or in volts (#177).
+    for unit, shown in (("mV", lambda d, ref: f"{-d * 1e3:+.3f}"),
+                        ("%", lambda d, ref: f"{-100 * d / ref:+.3f}"),
+                        ("V", lambda d, ref: f"{ref - d:.5f}")):
+        panel.cmb_vunit.setCurrentIndex(panel.cmb_vunit.findData(unit))
+        assert t.horizontalHeaderItem(8).text() == f"Rail lowest ({unit})"
+        for v in tree.vrms:
+            drop, _pct = tree.rail_drop(v)
+            assert drop > 0
+            assert t.item(row[v.name], 8).text() == shown(drop, tree.rail_target(v))
     ed.i_limit.setValue(0)
     assert setup.vrms[1].current_limit_a is None
     panel.close()

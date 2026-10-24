@@ -50,6 +50,7 @@ from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
 from kipi.gui.tooltip_art import add_text, art_tip
 from kipi.gui.unit_spin import UnitSpinBox
+from kipi.dc.pi import vunits
 from kipi.dc.pi.tree import fmt_drop
 from kipi.dc.viz.results import FIELDS, scale_decimals
 
@@ -1621,20 +1622,27 @@ class PIPanel(QWidget, PartSelection):
         lr.addLayout(row)
         lr.addLayout(self._scale_row(g_res))
         self.res_tabs = QTabWidget(g_res)
-        self.tbl_loads = self._table(["Load", "Group", "I (A)", "V eff (V)",
-                                      "Drop / boost (mV)", "Worst pin (mV)", "Worst %",
-                                      "Tolerance", ""], sortable=True)
-        self.tbl_loads.setToolTip("Drop: below the VRM target voltage. Boost: above it, e.g. "
-                                  "near a remote-sensed VRM's output pins. The worst pin is the "
-                                  "one furthest from the target voltage either way.")
-        self.tbl_vrms = self._table(["VRM", "Type", "V out", "I out (A)", "V in", "I in (A)",
-                                     "P in (W)", "Loss (W)", "Max drop (mV)", "Max drop %",
-                                     "I limit (A)", ""], sortable=True)
+        # The results' voltages in volts, or in mV or % from the target voltage (#177).
+        self.cmb_vunit = QComboBox(g_res)
+        for unit, label in vunits.UNITS:
+            self.cmb_vunit.addItem(label, unit)
+        self.cmb_vunit.setToolTip(
+            "Show the voltages in the Loads and VRMs tables in mV from the target voltage "
+            "(the VRM's), in % of it from the target, or in volts. From the target, negative "
+            "is a drop below it and positive a boost above it.")
+        self.cmb_vunit.currentIndexChanged.connect(self._vunit_changed)
+        self.res_tabs.setCornerWidget(self.cmb_vunit)
+        self.tbl_loads = self._table(self._load_headers(), sortable=True)
+        self.tbl_loads.setToolTip(
+            "Each load's mean voltage, its lowest and highest supply pins (less the ground "
+            "pins), its tolerance and its margin: how far its pins are inside the tolerance, "
+            "negative when outside. A load passes when every pin is within its tolerance.")
+        self.tbl_vrms = self._table(self._vrm_headers(), sortable=True)
         self.tbl_vrms.setToolTip("Each VRM's solved output and input, conversion loss, the "
-                                 "largest drop anywhere on the copper of the rail it drives "
-                                 "(below its target voltage, in mV and % of it; the ground's "
-                                 "own drop not included), and PASS/FAIL against its output "
-                                 "current limit; a row per phase under a multi-phase VRM")
+                                 "lowest voltage anywhere on the copper of the rail it drives "
+                                 "(the ground's own drop not included), and PASS/FAIL against "
+                                 "its output current limit; a row per phase under a "
+                                 "multi-phase VRM")
         self.tbl_links = self._table(["Part", "Group", "R (mΩ)", "I (A)", "P (mW)"],
                                       sortable=True)
         self.tbl_links.setToolTip("Current through, and power in, each series link")
@@ -2351,50 +2359,76 @@ class PIPanel(QWidget, PartSelection):
                                "<br><br>To solve the other nets first, untick the net group "
                                "with the problem in the Solve tab.")
 
-    def show_results(self, tree, initial_group: str):
-        for t in (self.tbl_loads, self.tbl_vrms, self.tbl_links):
-            reset_sort(t)                         # new results show in their natural order
+    def vunit(self) -> str:
+        """The unit the results tables show voltages in (#177)."""
+        return self.cmb_vunit.currentData() or vunits.DEFAULT
+
+    def _load_headers(self) -> List[str]:
+        u = self.vunit() if hasattr(self, "cmb_vunit") else vunits.DEFAULT
+        return ["Load", "Group", "I (A)",
+                *[vunits.header(n, u) for n in vunits.LOAD_COLUMNS], ""]
+
+    def _vrm_headers(self) -> List[str]:
+        u = self.vunit() if hasattr(self, "cmb_vunit") else vunits.DEFAULT
+        return ["VRM", "Type", vunits.header("V out", u), "I out (A)", "V in", "I in (A)",
+                "P in (W)", "Loss (W)", vunits.header("Rail lowest", u), "I limit (A)", ""]
+
+    def _vunit_changed(self, *_):
+        self.tbl_loads.setHorizontalHeaderLabels(self._load_headers())
+        self.tbl_vrms.setHorizontalHeaderLabels(self._vrm_headers())
+        if getattr(self, "_tree", None) is not None:
+            self._fill_loads_vrms(self._tree)
+
+    def _fill_loads_vrms(self, tree):
+        """The Loads and VRMs tables, their voltages in the chosen unit."""
+        u = self.vunit()
+        for t in (self.tbl_loads, self.tbl_vrms):
+            reset_sort(t)
+        key = lambda text: (text, float(text) if text else None)  # noqa: E731
         t = self.tbl_loads
         t.setRowCount(len(tree.loads))
         for r, l in enumerate(tree.loads):
-            status = l.verdict
-            v_eff = "" if math.isnan(l.v_effective) else f"{l.v_effective:.5f}"
-            # Drop and boost sort as one signed value: largest boost ... largest drop.
-            set_row(t, r, [l.name, l.group, f"{l.current:.4g}", v_eff,
-                           (fmt_drop(l.drop, unit=""), l.drop * 1e3),
-                           (fmt_drop(l.drop_worst, unit=""), l.drop_worst * 1e3),
-                           ("" if math.isnan(l.drop_worst_pct)
-                            else f"{abs(l.drop_worst_pct):.3f}", l.drop_worst_pct),
-                           l.tolerance, status])
+            mean, low, high, tol, margin = vunits.load_cells(l, u)
+            set_row(t, r, [l.name, l.group, f"{l.current:.4g}", key(mean), key(low),
+                           key(high), tol, key(margin), l.verdict])
             color = (("#ffb040" if l.status else None) if l.passed is None
                      else ("#60d060" if l.passed else "#ff6060"))
             if color:
                 t.item(r, 8).setForeground(QColor(color))
-        f = lambda x, fmt: "" if x is None else format(x, fmt)
+            m = vunits.margin(l)
+            if m is not None and m < 0:
+                t.item(r, 7).setForeground(QColor("#ff6060"))
+        f = lambda x, fmt: "" if x is None else format(x, fmt)  # noqa: E731
         t = self.tbl_vrms
         t.setRowCount(sum(1 + len(v.phases) for v in tree.vrms))
         r = 0
         for v in tree.vrms:                       # each VRM, then a row per phase under it
             kind = v.kind if not v.phases else f"{v.kind}, {len(v.phases)} phases"
             status = "" if v.passed is None else ("PASS" if v.passed else "FAIL")
-            drop, pct = tree.rail_drop(v)          # the rail's largest drop (#188)
-            set_row(t, r, [v.name, kind, f"{v.v_out:.5f}", f"{v.i_out:.4g}", f(v.v_in, ".5f"),
-                           f(v.i_in, ".4g"), f(v.p_in, ".4g"), f(v.p_loss, ".4g"),
-                           ("" if drop is None else f"{drop * 1e3:.3f}",
-                            -1.0 if drop is None else drop),
-                           (f(pct, ".3f"), -1.0 if pct is None else pct),
+            target = tree.rail_target(v)
+            drop, _pct = tree.rail_drop(v)         # the rail's largest drop (#188)
+            ref = v.v_set if target is None else target
+            lowest = None if drop is None else ref - drop
+            set_row(t, r, [v.name, kind, key(vunits.show(v.v_out, ref, u)), f"{v.i_out:.4g}",
+                           f(v.v_in, ".5f"), f(v.i_in, ".4g"), f(v.p_in, ".4g"),
+                           f(v.p_loss, ".4g"), key(vunits.show(lowest, ref, u)),
                            f(v.current_limit_a, "g"), status])
             if v.passed is not None:
-                t.item(r, 11).setForeground(QColor("#60d060" if v.passed else "#ff6060"))
+                t.item(r, 10).setForeground(QColor("#60d060" if v.passed else "#ff6060"))
             parent = r
             for p in v.phases:
                 r += 1
-                set_row(t, r, [f"    phase {p.index}", "", f"{p.v_out:.5f}", f"{p.i_out:.4g}",
-                               f(p.v_in, ".5f"), f(p.i_in, ".4g"), f(p.p_in, ".4g"),
-                               f(p.p_loss, ".4g")], parent_row=parent, sub=p.index)
+                set_row(t, r, [f"    phase {p.index}", "", vunits.show(p.v_out, ref, u),
+                               f"{p.i_out:.4g}", f(p.v_in, ".5f"), f(p.i_in, ".4g"),
+                               f(p.p_in, ".4g"), f(p.p_loss, ".4g")],
+                        parent_row=parent, sub=p.index)
                 for c in range(t.columnCount()):
                     t.item(r, c).setForeground(QColor("#a0a0a0"))
             r += 1
+
+    def show_results(self, tree, initial_group: str):
+        reset_sort(self.tbl_links)                # new results show in their natural order
+        self._fill_loads_vrms(tree)
         rows = [(g.name, s) for g in tree.groups.values() for s in g.result.fields.series]
         self.tbl_links.setRowCount(len(rows))
         for r, (gname, s) in enumerate(rows):

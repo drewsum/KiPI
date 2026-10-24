@@ -171,6 +171,14 @@ class TreeResult:
     thermal: Optional[object] = None          # kipi.dc.thermal.cosim.ThermalResult, if run
     report_path: Optional[object] = None      # HTML report written for this solve, if any
 
+    def rail_target(self, vrm: VrmReport) -> Optional[float]:
+        """The target voltage of the rail ``vrm`` drives, as its solve measured drops
+        from; None if the rail was not solved."""
+        g = self.groups.get(vrm.group)
+        if g is None or g.kind != "rail":
+            return None
+        return g.result.fields.summary["v_ref"]
+
     def rail_drop(self, vrm: VrmReport) -> Tuple[Optional[float], Optional[float]]:
         """The largest drop anywhere on the copper of the rail ``vrm`` drives, below its
         target voltage: volts and % of it (#188). None, None if the rail was not solved."""

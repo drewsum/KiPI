@@ -151,8 +151,18 @@ def test_load_pin_groups_sort(app):
 
 _DOM = """
 const handlers = [];
-global.document = {addEventListener: (type, f) => handlers.push(f)};
-function cell(text) { return {textContent: text}; }
+const rootAttrs = {};
+global.document = {addEventListener: (type, f) => handlers.push(f),
+                   documentElement: {getAttribute: k => rootAttrs[k] === undefined ? null
+                                                                     : rootAttrs[k]}};
+%(root)s
+// A cell is its text, or {unit: text} for a voltage in each unit (#177), its spans.
+function cell(c) {
+  if (typeof c === "string") return {textContent: c, querySelector: () => null};
+  return {textContent: Object.values(c).join(""),
+          querySelector: sel => { const u = sel.replace(".vu-", "");
+                                  return u in c ? {textContent: c[u]} : null; }};
+}
 const rows = %(rows)s.map(r => ({cells: r.map(cell)}));
 const body = {rows: rows, appendChild(r) { rows.splice(rows.indexOf(r), 1); rows.push(r); }};
 const ths = %(heads)s.map((h, i) => {
@@ -167,23 +177,43 @@ const table = {tBodies: [body], querySelectorAll: () => ths};
 const out = [];
 for (const col of %(clicks)s) {
   handlers[0]({target: ths[col]});
-  out.push(rows.map(r => r.cells[col].textContent));
+  out.push(rows.map(r => r.cells[0].textContent + ":" + r.cells[col].textContent));
 }
 console.log(JSON.stringify(out));
 """
 
 
 def test_report_tables_sort_in_the_browser():
-    from kipi.dc.report.html import SORT_JS
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is not installed")
     rows = [["C10", "100nF", ""], ["C9", "10 µF", "2"], ["C2", "", "1.5"], ["R1", "1n", "-3"]]
-    script = _DOM % dict(rows=json.dumps(rows), heads=json.dumps(["Ref", "C", "x"]),
-                         js=SORT_JS, clicks=json.dumps([0, 0, 1, 1, 2]))
+    out = _sorted_in_node(node, rows, ["Ref", "C", "x"], [0, 0, 1, 1, 2])
+    col = lambda k, i: [s.split(":")[i] for s in out[k]]  # noqa: E731
+    assert [col(k, 0 if k < 2 else 1) for k in range(5)] == [
+        ["C2", "C9", "C10", "R1"], ["R1", "C10", "C9", "C2"],
+        ["1n", "100nF", "10 µF", ""], ["10 µF", "100nF", "1n", ""], ["-3", "1.5", "2", ""]]
+
+
+def _sorted_in_node(node, rows, heads, clicks, unit=None):
+    from kipi.dc.report.html import SORT_JS
+    root = "" if unit is None else f"rootAttrs['data-vunit'] = {json.dumps(unit)};"
+    script = _DOM % dict(rows=json.dumps(rows), heads=json.dumps(heads), js=SORT_JS,
+                         clicks=json.dumps(clicks), root=root)
     run = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True,
                          encoding="utf-8", stdin=subprocess.DEVNULL)
-    out = json.loads(run.stdout)
-    assert out == [["C2", "C9", "C10", "R1"], ["R1", "C10", "C9", "C2"],
-                   ["1n", "100nF", "10 µF", ""], ["10 µF", "100nF", "1n", ""],
-                   ["-3", "1.5", "2", ""]]
+    return json.loads(run.stdout)
+
+
+def test_report_voltages_sort_in_the_unit_shown():
+    """A voltage cell holds its value in each unit (#177): it sorts on the one shown, here
+    -30 mV on a 3.3 V rail against -20 mV on a 1 V rail."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed")
+    rows = [["A", {"mv": "-30.000", "pct": "-0.909", "v": "3.27000"}],
+            ["B", {"mv": "-20.000", "pct": "-2.000", "v": "0.98000"}]]
+    names = lambda out: [s.split(":")[0] for s in out[0]]  # noqa: E731
+    assert names(_sorted_in_node(node, rows, ["Load", "Mean"], [1])) == ["A", "B"]   # mV
+    assert names(_sorted_in_node(node, rows, ["Load", "Mean"], [1], "pct")) == ["B", "A"]
+    assert names(_sorted_in_node(node, rows, ["Load", "Mean"], [1], "v")) == ["B", "A"]

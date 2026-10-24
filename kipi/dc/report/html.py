@@ -31,7 +31,7 @@ from kipi import __version__
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.stackup import summary as stackup_summary
 from kipi.core.naming import timestamp
-from kipi.dc.pi.tree import fmt_drop
+from kipi.dc.pi import vunits
 
 TRIANGLE_BUDGET = 60_000      # per group's 3D view
 VIEW_NOTE = ("Drag to rotate, scroll to zoom, double-click to reset; hover for values. The 3D "
@@ -54,8 +54,13 @@ def _num(x, fmt=".4g") -> str:
     return format(x, fmt)
 
 
+class _Html(str):
+    """A table header already written as HTML."""
+
+
 def _table(headers: List[str], rows: List[List[str]], cls: str = "") -> str:
-    head = "".join(f"<th title='Click to sort'>{_e(h)}</th>" for h in headers)
+    head = "".join(f"<th title='Click to sort'>{h if isinstance(h, _Html) else _e(h)}</th>"
+                   for h in headers)
     body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     return f'<table class="{cls}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
 
@@ -82,6 +87,53 @@ def _png(fig, dpi: int = 110) -> str:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", facecolor="white")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+# A voltage in the unit the reader picks (#177): mV or % from the target voltage, or
+# volts. The web page has the value in each, one shown at a time; a PDF shows all three.
+VUNIT_KEYS = {vunits.MV: "mv", vunits.PCT: "pct", vunits.VOLTS: "v"}
+
+
+def _units(texts: Dict[str, str], pdf: bool) -> str:
+    """A cell's ``texts`` ({unit: text}): spans the unit selector picks between, or in a
+    PDF, the three on lines of their own with their units."""
+    if pdf:
+        return "<br>".join(f"{_e(t)} {_e(u)}" for u, t in texts.items() if t)
+    return "".join(f"<span class='vu vu-{VUNIT_KEYS[u]}'>{_e(t)}</span>"
+                   for u, t in texts.items())
+
+
+def _vcell(v: Optional[float], target: Optional[float], pdf: bool) -> str:
+    """The voltage ``v`` in each unit, from ``target``."""
+    return _units({u: vunits.show(v, target, u) for u, _ in vunits.UNITS}, pdf)
+
+
+def _vhead(name: str, pdf: bool) -> str:
+    """A column header whose unit follows the selector (a PDF's cells give their own)."""
+    if pdf:
+        return name
+    return _Html(f"{_e(name)} (" + "".join(f"<span class='vu vu-{VUNIT_KEYS[u]}'>{_e(u)}</span>"
+                                           for u, _ in vunits.UNITS) + ")")
+
+
+def vunit_selector() -> str:
+    """The web page's unit selector, in mV from the target until changed."""
+    opts = "".join(f"<option value='{VUNIT_KEYS[u]}'>{_e(label)}</option>"
+                   for u, label in vunits.UNITS)
+    return (f"<p class='vunit'><label><b>Voltages:</b> <select id='vunit'>{opts}</select>"
+            "</label> <span class='note'>From the target voltage, negative is a drop below "
+            "it and positive a boost above it.</span></p>")
+
+
+VUNIT_JS = r"""
+(function () {
+  var sel = document.getElementById("vunit");
+  if (!sel) return;
+  sel.addEventListener("change", function () {
+    document.documentElement.setAttribute("data-vunit", sel.value);
+  });
+})();
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +345,11 @@ th { background: #f0f0f0; } td:first-child, th:first-child { text-align: left; }
 .maps img { width: 520px; max-width: 100%; }
 .note { color: #666; font-size: 12px; }
 nav a { margin-right: 12px; }
+.vu { display: none; }
+html:not([data-vunit]) .vu-mv, html[data-vunit=mv] .vu-mv, html[data-vunit=pct] .vu-pct,
+html[data-vunit=v] .vu-v { display: inline; }
+.vunit { position: sticky; top: 0; background: #fafafa; padding: 6px 0; margin: 8px 0;
+         z-index: 2; }
 .layer-toggles { font-size: 13px; margin: 6px 0; }
 .layer-toggles label { margin-right: 12px; white-space: nowrap; cursor: pointer; }
 details > summary { cursor: pointer; margin: 6px 0; }
@@ -440,9 +497,10 @@ SORT_JS = r"""
     var col = th.cellIndex, desc = th.getAttribute("data-sort") === "asc";
     table.querySelectorAll("thead th").forEach(function (h) { h.removeAttribute("data-sort"); });
     th.setAttribute("data-sort", desc ? "desc" : "asc");
+    var unit = document.documentElement.getAttribute("data-vunit") || "mv";
     var rows = Array.prototype.map.call(body.rows, function (r, i) {
-      var c = r.cells[col];
-      return {row: r, i: i, k: key(c ? c.textContent : "")};
+      var c = r.cells[col], shown = c && c.querySelector(".vu-" + unit);
+      return {row: r, i: i, k: key(shown ? shown.textContent : c ? c.textContent : "")};
     });
     rows.sort(function (a, b) {
       var blank = (a.k[0] === 2) - (b.k[0] === 2);
@@ -528,7 +586,7 @@ def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool,
         return write_pdf(f"<html><head><meta charset='utf-8'><title>{_e(title)}</title>"
                          f"</head><body>{body}</body></html>", path, title,
                          attachments=attachments)
-    path.write_text(page(title, body, css, SORT_JS + LAYERS_JS), encoding="utf-8")
+    path.write_text(page(title, body, css, SORT_JS + LAYERS_JS + VUNIT_JS), encoding="utf-8")
     return path
 
 
@@ -588,6 +646,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     nav.append("<a href='#user-notes'>User notes</a>")
     if not pdf:
         parts.append("<nav>" + " ".join(nav) + "</nav>")
+        parts.append(vunit_selector())
     s = setup.settings
     parts.append(f"<p class='note'>Mesh: max edge {s.max_edge_mm:g} mm, via grading "
                  f"{s.grading:g}, copper resistivity {s.rho_ohm_mm * 1e-3:.4g} Ω·m at 20 °C "
@@ -605,40 +664,48 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
 
     # ---------------- tables
     parts.append("<h2 id='loads'>Loads</h2>")
-    parts.append(_table(
-        ["Load", "Group", "I (A)", "Nominal (V)", "V effective (V)", "Drop / boost (mV)", "%",
-         "Worst pin (V)", "Worst pin (mV)", "Worst %", "Tolerance", "Result"],
-        [[_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
-          _num(l.v_effective, ".6f"), fmt_drop(l.drop, unit=""), _num(abs(l.drop_pct), ".3f"),
-          _num(l.v_worst, ".6f"), fmt_drop(l.drop_worst, unit=""),
-          _num(abs(l.drop_worst_pct), ".3f"),
-          _e(l.tolerance),
-          _verdict(l.passed, l.status)]
-         for l in tree.loads]))
-    parts.append("<p class='note'>Drop: below the VRM target voltage. Boost: above it, e.g. near a "
-                 "remote-sensed VRM's output pins. The worst pin is the one furthest from the "
-                 "target voltage either way. A load passes when every pin is within its tolerance.</p>")
-    pg = [[_e(l.name), _e(n), _num(a), _num(vm, ".6f"), _num(vmin, ".6f"), _num(vmax, ".6f")]
+
+    def load_row(l):
+        cells = {u: vunits.load_cells(l, u) for u, _ in vunits.UNITS}
+        return [_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
+                *[_units({u: cells[u][k] for u in cells}, pdf) for k in range(5)],
+                _verdict(l.passed, l.status)]
+
+    parts.append(_table(["Load", "Group", "I (A)", "Target (V)",
+                         *[_vhead(n, pdf) for n in vunits.LOAD_COLUMNS], "Result"],
+                        [load_row(l) for l in tree.loads]))
+    parts.append("<p class='note'>Each load's mean voltage and its lowest and highest supply "
+                 "pins (less the ground pins), "
+                 + ("each in mV and % from the target voltage and in volts. " if pdf else "")
+                 + "From the target, negative is a drop below it and positive a boost above "
+                 "it, e.g. near a remote-sensed VRM's output pins. The margin is how far the "
+                 "pins are inside the tolerance, negative when outside. A load passes when "
+                 "every pin is within its tolerance.</p>")
+    pg = [[_e(l.name), _e(n), _num(a), _vcell(vm, l.nominal, pdf), _vcell(vmin, l.nominal, pdf),
+           _vcell(vmax, l.nominal, pdf)]
           for l in tree.loads for n, a, vm, vmin, vmax in l.pin_groups]
     if pg:
         parts.append("<h3>Load pin groups</h3>" +
-                     _table(["Load", "Pin group", "I (A)", "V mean", "V lowest pin",
-                             "V highest pin"], pg))
+                     _table(["Load", "Pin group", "I (A)", _vhead("Mean", pdf),
+                             _vhead("Lowest pin", pdf), _vhead("Highest pin", pdf)], pg))
     parts.append("<h2 id='vrms'>VRMs</h2>")
     parts.append(_table(
-        ["VRM", "Type", "Group", "V set", "Load line (mΩ)", "V target", "V out", "V sense",
-         "V gnd sense", "I out (A)",
-         "V in", "I in (A)", "P out (W)", "P in (W)", "Loss (W)", "Max drop (mV)",
-         "Max drop %", "I limit (A)", "Result"],
+        ["VRM", "Type", "Group", "V set", "Load line (mΩ)", "V target", _vhead("V out", pdf),
+         "V sense", "V gnd sense", "I out (A)",
+         "V in", "I in (A)", "P out (W)", "P in (W)", "Loss (W)", _vhead("Rail lowest", pdf),
+         "I limit (A)", "Result"],
         [[_e(v.name), _e(v.kind), _e(v.group), _num(v.v_set, ".5g"),
-          _num(v.load_line_mohm or None, "g"), _num(v.v_target, ".5f"), _num(v.v_out, ".5f"),
+          _num(v.load_line_mohm or None, "g"), _num(v.v_target, ".5f"),
+          _vcell(v.v_out, ref, pdf),
           _num(v.v_sense, ".5f"), _num(v.v_ground_sense, ".5f"), _num(v.i_out),
           _num(v.v_in, ".5f"), _num(v.i_in), _num(v.p_out), _num(v.p_in), _num(v.p_loss),
-          _num(None if d is None else d * 1e3, ".3f"), _num(pct, ".3f"),
+          _vcell(None if d is None else ref - d, ref, pdf),
           _num(v.current_limit_a, "g"), _verdict(v.passed)]
-         for v in tree.vrms for d, pct in [tree.rail_drop(v)]]))
-    parts.append("<p class='note'>Max drop: the largest drop anywhere on the copper of the "
-                 "rail the VRM drives, below its target voltage.</p>")
+         for v in tree.vrms for d, _pct in [tree.rail_drop(v)]
+         for ref in [v.v_set if tree.rail_target(v) is None else tree.rail_target(v)]]))
+    parts.append("<p class='note'>Rail lowest: the lowest voltage anywhere on the copper of "
+                 "the rail the VRM drives. V out and it are from the rail's target voltage, "
+                 "the target V set less the load line's droop.</p>")
     phases = [[_e(v.name), str(p.index), _num(p.v_out, ".5f"), _num(p.i_out), _num(p.v_in, ".5f"),
                _num(p.i_in), _num(p.p_loss)] for v in tree.vrms for p in v.phases]
     if phases:
@@ -661,12 +728,11 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             title = f"<b>{_e(name)}</b>: {len(rows)} pin(s)"
             parts.append(
                 (f"<h3>{title}</h3>" if pdf else f"<details><summary>{title}</summary>") +
-                _table(["Terminal", "Role", "Pin", "x (mm)", "y (mm)", "V", "Drop / boost (mV)",
-                        "%", "I (mA)", "I is"],
+                _table(["Terminal", "Role", "Pin", "x (mm)", "y (mm)", _vhead("V", pdf),
+                        "I (mA)", "I is"],
                        [[_e(r.terminal), _e(r.role),
                          _e(f"{r.part}.{r.pin}" if r.part else r.pin), _num(r.x, ".3f"),
-                         _num(r.y, ".3f"), _num(r.v, ".6f"), fmt_drop(r.deviation, unit=""),
-                         _num(abs(100.0 * r.deviation / r.nominal), ".3f") if r.nominal else "",
+                         _num(r.y, ".3f"), _vcell(r.v, r.nominal, pdf),
                          _num(None if r.current is None else r.current * 1e3, ".4g"),
                          _e(r.current_is)] for r in rows]) +
                 ("" if pdf else "</details>"))
@@ -676,8 +742,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      "negative is delivered into it (a VRM output, or a DC connection's far "
                      "side). VRM output pin currents are solved; a load's current is shared "
                      "equally by its pins, as the solver applies it, and a DC connection's by "
-                     "the pins on each side. Drop and boost are from the VRM target voltage (0 V "
-                     "for a ground).</p>")
+                     "the pins on each side. V is from the VRM target voltage (0 V for a "
+                     "ground), or in volts.</p>")
     else:
         parts.append("<p class='note'>These results were saved before KiPI kept each pin "
                      "(0.7.2); solve again to list them.</p>")
@@ -787,20 +853,17 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             area = float(f.tri_area[sel].sum())
             j = lr.tri_j[np.isfinite(lr.tri_j)]
             rows.append([_e(names.get(lid, lid)), _num(area, ".1f"),
-                         _num(v.min() if len(v) else None, ".6f"),
-                         _num(v.max() if len(v) else None, ".6f"),
-                         _num(max(scene.v_ref - v.min(), 0) * 1e3 if len(v) else None, ".3f"),
-                         _num(max(v.max() - scene.v_ref, 0) * 1e3 if len(v) else None, ".3f"),
+                         _vcell(float(v.min()) if len(v) else None, scene.v_ref, pdf),
+                         _vcell(float(v.max()) if len(v) else None, scene.v_ref, pdf),
                          _num(np.percentile(j, 99.5) if len(j) else None, ".3g"),
                          _num(j.max() if len(j) else None, ".3g"),
                          _num(float(f.tri_power[sel].sum()) * 1e3, ".3f")])
-        below, above = (("Max drop (mV)", "Max boost (mV)") if g.kind == "rail"
-                        else ("Max below 0 V (mV)", "Max above 0 V (mV)"))
-        parts.append(_table(["Layer", "Copper (mm²)", "V min", "V max", below, above,
-                             "|J| p99.5 (A/mm²)", "|J| max", "Loss (mW)"], rows))
-        if g.kind == "rail":
-            parts.append(f"<p class='note'>Drop and boost are measured from the "
-                         f"{scene.v_ref:g} V target voltage.</p>")
+        parts.append(_table(["Layer", "Copper (mm²)", _vhead("V min", pdf),
+                             _vhead("V max", pdf), "|J| p99.5 (A/mm²)", "|J| max",
+                             "Loss (mW)"], rows))
+        parts.append(f"<p class='note'>V min and V max are from the {scene.v_ref:g} V "
+                     + ("target voltage" if g.kind == "rail" else "ground reference")
+                     + ", or in volts.</p>")
         maps, tags = [], []
         vmin, vmax = scene.ranges["voltage"]
         for lid, lr in scene.layers.items():

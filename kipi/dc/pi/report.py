@@ -29,6 +29,7 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.temperature import at as temperature_at
 from kipi.dc.pi.tree import drop_or_boost
+from kipi.dc.pi.vunits import margin
 
 RESULTS_FORMAT = 2          # 2: JSON and arrays (#99); 1: a gzipped pickle
 # The name says what was solved; files before 0.8.0 were all .kipi-results.
@@ -269,12 +270,12 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
                        "v_supply_min_V", "v_ground_mean_V", "v_effective_V", "v_lowest_pin_V",
                        "v_highest_pin_V", "mean_mV", "mean_pct", "mean_is", "worst_pin_V",
                        "worst_pin_mV", "worst_pin_pct", "worst_pin_is", "tolerance",
-                       "tolerance_min_V", "tolerance_max_V", "result"],
+                       "tolerance_min_V", "tolerance_max_V", "margin_V", "result"],
                       [[l.name, l.group, l.current, l.nominal, l.v_supply, l.v_supply_min,
                         l.v_ground, l.v_effective, l.v_low, l.v_high,
                         *dev(l.drop, l.drop_pct), l.v_worst,
                         *dev(l.drop_worst, l.drop_worst_pct), l.tolerance, l.limit_low,
-                        l.limit_high, l.verdict]
+                        l.limit_high, margin(l), l.verdict]
                        for l in tree.loads]))
     out.append(_write(folder / f"{stem}_load_pin_groups.csv",
                       ["load", "pin_group", "current_A", "v_mean_V", "v_min_V", "v_max_V"],

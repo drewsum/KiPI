@@ -1209,13 +1209,20 @@ scale, a minimum of zero or below falls back to four decades below the maximum.<
 <details open id="dc-tables">
 <summary>Results tables <span class="hint">click a header to sort; again to reverse</span></summary>
 <div class="body">
+<p>The <b>Voltages</b> list beside the tabs picks how the Loads and VRMs tables show their
+voltages: in <b>mV from target</b> (the default), in <b>% from target</b> or in <b>Volts</b>.
+The target is the regulated voltage of the VRM driving the rail. From the target, negative is
+a drop below it and positive a boost above it. The web report has the same list at its top;
+a PDF report shows each voltage in all three.</p>
 <table>
   <tr><th>Tab</th><th>Columns and use</th></tr>
-  <tr><td><b>Loads</b></td><td class="wrap">Current, effective voltage (supply − ground),
-    average drop/boost, worst pin, worst %, tolerance and verdict. Double-click a row to show
-    its group.</td></tr>
-  <tr><td><b>VRMs</b></td><td class="wrap">V/I out, V/I in, input power, conversion loss,
-    current limit and PASS/FAIL; a gray row per phase under multi-phase VRMs.</td></tr>
+  <tr><td><b>Loads</b></td><td class="wrap">Current; the mean effective voltage (supply −
+    ground); the lowest and highest supply pins; the tolerance; the <b>margin</b>, how far the
+    pins are inside the tolerance (negative when outside, in red); and the verdict.
+    Double-click a row to show its group.</td></tr>
+  <tr><td><b>VRMs</b></td><td class="wrap">V out, I out, V/I in, input power, conversion loss,
+    the rail's lowest voltage anywhere on its copper, current limit and PASS/FAIL; a gray row
+    per phase under multi-phase VRMs.</td></tr>
   <tr><td><b>Series links</b></td><td class="wrap">Resistance, current and power in each
     part.</td></tr>
   <tr><td><b>Vias</b></td><td class="wrap">Every via and PTH barrel, highest current first. The
@@ -1257,8 +1264,9 @@ scale, a minimum of zero or below falls back to four decades below the maximum.<
     pins. Compare it with the regulated voltage, not the raw plane voltage.</li>
   <li>A supply plane reading <em>above</em> its regulated voltage is normal with remote sense or when
     ground return is solved; see <a href="#dc-concepts">drop and boost</a>.</li>
-  <li><b>Worst pin</b> is the one furthest from the regulated voltage; with many pins, one far pin can
-    fail a load whose average looks fine.</li>
+  <li>The <b>lowest and highest pins</b> are what pass or fail a load; with many pins, one far
+    pin can fail a load whose mean looks fine. The <b>margin</b> says how close the nearer
+    one is to its tolerance.</li>
   <li>The color scale covers the whole result; type a minimum and maximum under it to look
     closer.</li>
   <li>Losses are I²R in the copper; VRM conversion loss is the difference between input and
