@@ -1888,7 +1888,10 @@ while you work on one route), or none (the aggressor's waveforms only).</p>
 with a trace within the scan radius of the aggressor's parts gets a quick estimate of its
 noise (capacitive from its distance to the switch-node copper, inductive from the full
 model), and the worst are solved in full as the scan's victim type, undriven by
-default, and its logic level (Settings). They are marked <b>(scan)</b> in the results table. Scan and a chosen victim
+default, and its logic level (Settings). They are marked <b>(scan)</b> in the results table. The <b>Scan radius</b> slider under
+it sets how far from the aggressor's parts the scan looks, from 0.5 mm to 500 mm, and
+shows how many signal nets are inside; it is the same value as Scan radius in Settings.
+Scan and a chosen victim
 work together: name the nets you know, scan for the ones you do not.</p>
 <p>Tick <b>Report</b> to write <code>&lt;board&gt;_&lt;aggressor&gt;_noise_report_&lt;date&gt;_&lt;time&gt;.html</code>
 (or <code>.pdf</code>) next to the board after each solve: the victims against their

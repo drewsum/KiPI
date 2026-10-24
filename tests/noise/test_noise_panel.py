@@ -203,6 +203,24 @@ def test_another_driver_or_receiver_part_takes_its_own_pin_on_the_net(vpanel):
     assert ed.driver.txt_pins.text() == ""
 
 
+def test_the_scan_radius_slider_sets_the_settings_radius(vpanel):
+    from kipi.noise.gui.panel import RADIUS_STEPS, radius_of_step, step_of_radius
+    assert radius_of_step(0) == 0.5 and radius_of_step(RADIUS_STEPS) == 500.0
+    assert all(abs(radius_of_step(step_of_radius(r)) - r) <= 0.05 * r for r in (1, 3.3, 10, 47))
+    sld, s = vpanel.sld_radius, vpanel.setup.noise
+    assert not sld.isEnabled()                  # the scan is off
+    vpanel.chk_scan.setChecked(True)
+    assert sld.isEnabled() and s.scan
+    sld.setValue(sld.maximum())
+    assert s.scan_radius_mm == 500.0 and vpanel.spin_radius.value() == 500.0
+    # SIG is the board's one signal net, beside the aggressor
+    assert vpanel.lbl_radius.text() == "500 mm, 1 net"
+    vpanel.spin_radius.setValue(2.0)
+    assert sld.value() == step_of_radius(2.0) and vpanel.lbl_radius.text().startswith("2 mm")
+    vpanel.chk_scan.setChecked(False)
+    assert not sld.isEnabled() and vpanel.lbl_radius.text() == "2 mm"
+
+
 def test_a_preset_fills_the_terminations_and_edits_make_it_custom(vpanel):
     vpanel.victim_list._add()
     v = vpanel.setup.victims[0]

@@ -747,7 +747,8 @@ layer, behind the ground plane. Open its snapshot to try it.
 Pick the **Aggressor** and click **Solve**. The waveforms are exact Fourier series of the
 converter's piecewise-linear shapes, so they appear in well under a second, and the victims
 follow. Tick **Scan nearby nets** to also estimate every signal net near the aggressor and
-solve the worst in full. Their real drivers are not known, so they are solved as undriven,
+solve the worst in full; the **Scan radius** slider under it sets how near, and shows how
+many nets that takes in. Their real drivers are not known, so they are solved as undriven,
 the worst case for capacitive coupling, unless **Scan: victim type** in Settings says
 otherwise; a net that is a victim already keeps its own type. The **Waveforms** tab plots the switch node of every phase with its
 ringing, the inductor currents, each capacitor's ripple current and the rails' ripple

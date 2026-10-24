@@ -11,6 +11,7 @@ and output capacitors. A solve covers one aggressor.
 from __future__ import annotations
 
 import html
+import math
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -20,7 +21,7 @@ from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-    QSpinBox, QTableWidget, QTabWidget, QVBoxLayout, QWidget,
+    QSlider, QSpinBox, QTableWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
@@ -724,6 +725,21 @@ class VictimEditor(_Editor):
             self.preset.blockSignals(False)
 
 
+# The scan radius slider (#175) runs logarithmically over the radius field's range, its
+# steps rounded to two figures.
+RADIUS_MIN_MM, RADIUS_MAX_MM, RADIUS_STEPS = 0.5, 500.0, 120
+
+
+def radius_of_step(step: int) -> float:
+    r = RADIUS_MIN_MM * (RADIUS_MAX_MM / RADIUS_MIN_MM) ** (step / RADIUS_STEPS)
+    return float(f"{r:.2g}")
+
+
+def step_of_radius(r: float) -> int:
+    r = min(max(r, RADIUS_MIN_MM), RADIUS_MAX_MM)
+    return round(RADIUS_STEPS * math.log(r / RADIUS_MIN_MM) / math.log(RADIUS_MAX_MM / RADIUS_MIN_MM))
+
+
 def _topology_or_buck(setup: PISetup, a: Aggressor) -> str:
     """The aggressor's topology, or a buck where its voltages do not say yet."""
     try:
@@ -837,6 +853,24 @@ class NoisePanel(QWidget, PartSelection):
         row.addWidget(self.cmb_victims, 2)
         row.addWidget(self.chk_scan)
         lay.addLayout(row)
+        # The scan radius at hand beside the scan (#175), the same value as in Settings.
+        row = QHBoxLayout()
+        self.sld_radius = QSlider(Qt.Horizontal, self)
+        self.sld_radius.setRange(0, RADIUS_STEPS)
+        self.lbl_radius = QLabel(self)
+        tip_radius = art_tip(
+            "How far from the aggressor's parts the scan looks: every signal net with a "
+            "trace this close is estimated. Shown with the number of nets inside it. The "
+            "same value as Scan radius in Settings.", "scan_radius", "radius")
+        lbl = QLabel("Scan radius", self)
+        for w in (lbl, self.sld_radius, self.lbl_radius):
+            w.setToolTip(tip_radius)
+        self.sld_radius.valueChanged.connect(self._radius_slid)
+        self.spin_radius.valueChanged.connect(self._show_radius)
+        row.addWidget(lbl)
+        row.addWidget(self.sld_radius, 2)
+        row.addWidget(self.lbl_radius, 1)
+        lay.addLayout(row)
         row = QHBoxLayout()
         self.report_option = ReportOption("waveforms, victims and scan, after each solve",
                                           self._report_changed, self)
@@ -947,7 +981,7 @@ class NoisePanel(QWidget, PartSelection):
         f.addRow("Coupling window", self.spin_window)
         f.addRow(self.chk_board)
         f.addRow("Field solves per decade", self.spin_fpd)
-        self.spin_radius = _spin(0.5, 500, s.scan_radius_mm, 1, " mm", 1)
+        self.spin_radius = _spin(RADIUS_MIN_MM, RADIUS_MAX_MM, s.scan_radius_mm, 1, " mm", 1)
         self.spin_top = QSpinBox()
         self.spin_top.setRange(1, 1000)
         self.spin_top.setValue(s.scan_top_n)
@@ -1078,6 +1112,7 @@ class NoisePanel(QWidget, PartSelection):
         self.cmb_scan_type.blockSignals(False)
         self.spin_scan_drv.setEnabled(s.scan_preset == CUSTOM)
         self.report_option.set_value(s.html_report, s.report_format)
+        self._show_radius()
 
     # ------------------------------------------------------------------ data
     def nets(self) -> List[str]:
@@ -1149,6 +1184,32 @@ class NoisePanel(QWidget, PartSelection):
     def _scan_toggled(self, on: bool):
         self.setup.noise.scan = on
         self.setup_changed.emit()
+        self._show_radius()
+
+    def _radius_slid(self, step: int):
+        self.spin_radius.setValue(radius_of_step(step))     # its change shows it
+
+    def _show_radius(self, *_):
+        """The slider and its readout at the scan radius, with the nets inside it."""
+        r = self.spin_radius.value()
+        self.sld_radius.blockSignals(True)
+        self.sld_radius.setValue(step_of_radius(r))
+        self.sld_radius.blockSignals(False)
+        on = self.chk_scan.isChecked()
+        self.sld_radius.setEnabled(on)
+        self.lbl_radius.setEnabled(on)
+        text = f"{r:g} mm"
+        agg = self._aggressor()
+        if on and agg is not None and self.snapshot is not None:
+            from kipi.noise.scan import candidates
+            exclude = [ph.switch_net for ph in agg.phases] + [v.net for v in self.setup.victims]
+            try:
+                n = len(candidates(self.snapshot, agg, r, exclude))
+            except Exception:                   # a board the scan cannot read: no count
+                n = None
+            if n is not None:
+                text += f", {n} net{'' if n == 1 else 's'}"
+        self.lbl_radius.setText(text)
 
     def _report_changed(self, on: bool, fmt: str):
         self.setup.noise.html_report, self.setup.noise.report_format = on, fmt
@@ -1167,6 +1228,7 @@ class NoisePanel(QWidget, PartSelection):
         self.setup.noise.aggressor = self.cmb_agg.currentData() or ""
         self._on_changed()
         self._show_aggressor_result()
+        self._show_radius()
 
     def _on_changed(self):
         self.setup_changed.emit()

@@ -18,6 +18,9 @@ milestones rather than versions that were ever set.
   its anode, alongside its nonzero series resistance. DC solves include the drop and its
   dissipation; AC solves use the resistance and ESL as the small-signal series model.
   Reverse blocking is not modeled.
+- **Scan radius slider** (#175). Under **Scan nearby nets**, a slider sets how far from
+  the aggressor's parts the scan looks, 0.5 mm to 500 mm on a log scale, and shows how many
+  signal nets fall inside. It is the same value as Scan radius in Settings.
 - **Show all copper in the geometry view.** Every net's copper is drawn for context; the
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
