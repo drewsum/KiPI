@@ -132,7 +132,8 @@ def test_a_probe_target_from_the_load_step():
     apply_to_probe(p, sup, s)
     assert p.target_ohm == pytest.approx(0.02)
     unknown = Probe("Q", PinRef("U7", "+5V", []), PinRef("U7", "GND", []))
-    assert apply_to_probe(unknown, SupplyModel("X", step_a=1, slew_a_per_us=1), s) ==         ["load step"]                                       # no tolerance: no target
+    got = apply_to_probe(unknown, SupplyModel("X", step_a=1, slew_a_per_us=1), s)
+    assert got == ["load step"]                           # no tolerance: no target
 
 
 def test_new_loads_for_another_copy_of_the_part():

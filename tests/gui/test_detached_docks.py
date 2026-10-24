@@ -79,7 +79,7 @@ def test_f11_toggles_full_screen(window):
     assert not dock.isWindow()
 
 
-def test_the_main_window_docks_are_detachable(app):
+def test_the_main_window_docks_are_detachable(app, no_3d):
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
     try:

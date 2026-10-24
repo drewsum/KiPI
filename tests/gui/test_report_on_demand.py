@@ -23,7 +23,7 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_the_dc_report_button_writes_and_opens_a_report(app, tmp_path, opened_in_browser):
+def test_the_dc_report_button_writes_and_opens_a_report(app, no_3d, tmp_path, opened_in_browser):
     from kipi.gui.main_window import MainWindow
     snap, s = board(), setup("ldo", iq=0.01, ground=True)
     tree = solve_tree(snap, s)

@@ -161,7 +161,7 @@ def test_the_probe_editor_saves_the_load_step(app):
     assert probe.step_a is None
 
 
-def test_the_main_window_has_a_transient_tab_in_ac_mode(app):
+def test_the_main_window_has_a_transient_tab_in_ac_mode(app, no_3d):
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
     try:
