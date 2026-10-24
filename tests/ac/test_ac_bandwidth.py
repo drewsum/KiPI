@@ -80,3 +80,16 @@ def test_report_shows_the_bandwidth(tmp_path):
     assert "VRM bandwidth 500 kHz" in text and "open-loop PDN impedance" in text
     assert "from 500 kHz to 50 MHz" in text
 
+
+
+def test_a_rail_whose_vrm_has_no_bandwidth_is_not_solved():
+    from kipi.ac.checks import validate_ac
+    from kipi.ac.solver.fem import ACError
+    snap = plane_pair()
+    setup = plane_setup(snap)
+    assert not any("bandwidth" in e for e in validate_ac(setup, "VRM1", "GND"))
+    setup.vrms[0].bandwidth_khz = None                      # #183
+    assert any("VRM1: enter its control loop bandwidth" in e
+               for e in validate_ac(setup, "VRM1", "GND"))
+    with pytest.raises(ACError, match="control loop bandwidth"):
+        solve_ac(snap, setup, "VRM1", "GND")

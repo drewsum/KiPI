@@ -19,11 +19,15 @@ vrms:
   vin_min: null
   vin_max: null
   vin_pct: false
+  vin_dv: false
   acc_min: null
   acc_max: null
   acc_pct: true
+  acc_dv: false
   load_line_mohm: 0.0
-  bandwidth_khz: null
+  bandwidth_khz: 0.1
+  mesh_sense: false
+  sense_points: []
 loads: []
 links:
 - name: FB1
@@ -39,6 +43,7 @@ links:
     - '2'
   resistance: 1.0
   esl_h: 1.0e-06
+  diode_vf: 0.0
 settings:
   max_edge_mm: 0.5
   min_angle_deg: 28.0
@@ -107,6 +112,7 @@ thermal:
   max_temp_c: null
   max_rise_c: null
 html_report: false
+report_format: html
 nets: null
 excluded_nets: []
 stackup: null
@@ -146,15 +152,38 @@ ac:
   max_edge_mm: 1.0
   grading: 0.3
   min_edge_mm: 0.03
+  grade_near_rail_only: true
   loss_tangent: 0.02
   default_er: 4.3
   rail: U1
   ground: GND
   html_report: false
+  report_format: html
   dc_bias: true
   mfg_tolerance: false
   aging: false
   aging_hours: 87600.0
   temperature: none
   temperature_c: 25.0
-format_version: 1
+aggressors: []
+victims: []
+noise:
+  aggressor: ''
+  f_max_hz: null
+  max_harmonics: 4000
+  periods_shown: 2
+  dead_time_ns: 20.0
+  segment_mm: 0.5
+  window_mm: 3.0
+  board_model: true
+  field_per_decade: 10
+  victims: all
+  scan: false
+  scan_radius_mm: 10.0
+  scan_top_n: 10
+  scan_preset: hiz
+  scan_driver_ohm: 33.0
+  scan_logic_v: 3.3
+  html_report: false
+  report_format: html
+format_version: 2

@@ -619,7 +619,7 @@ class VrmEditor(_Editor):
                                  "leaves the VRM out of circuit (the open-loop PDN "
                                  "impedance); below this frequency the loop holds the rail, "
                                  "so probe targets are drawn and judged only above it. "
-                                 "'none' judges the whole target."),
+                                 "Required to solve the rail it drives in AC mode."),
                 (self.n_phases, "Parallel phases of a multi-phase regulator. Each carries an "
                                 "equal share of the output current and has its own output, "
                                 "input and ground pins. A new phase takes the next parts in "
@@ -692,6 +692,9 @@ class VrmEditor(_Editor):
         needs[self.eff] = REQUIRED              # a switcher's input current follows from it
         needs[self.input] = REQUIRED if kind != "source" else OPTIONAL   # ties it into the tree
         needs.update({w: UNUSED for w in (ac_only if dc else (*dc_only, self.vin_row))})
+        if not dc:
+            needs[self.bandwidth] = REQUIRED    # the AC targets apply above it (#183)
+        self.bandwidth.setSpecialValueText("none" if dc else "required")
         self._mark(needs)
 
     def _input_nominal(self) -> Optional[float]:

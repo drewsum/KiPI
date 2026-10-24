@@ -42,8 +42,9 @@ def test_an_ac_vrm_marks_the_dc_fields_unused(app):
     p = ACPanel()
     ed = p.vrm_list.editor
     ed.load(Vrm("U2", PinRef("U2", "1V8", ["1"]), 1.8, kind="smps"))
-    assert _needs(ed, ed.name, ed.voltage, ed.output) == ["required"] * 3
-    assert _needs(ed, ed.bandwidth, ed.acc_row, ed.ground) == ["optional"] * 3
+    assert _needs(ed, ed.name, ed.voltage, ed.output, ed.bandwidth) == ["required"] * 4
+    assert ed.bandwidth.specialValueText() == "required"            # #183
+    assert _needs(ed, ed.acc_row, ed.ground) == ["optional"] * 2
     assert _needs(ed, ed.kind, ed.eff, ed.input, ed.vin_row, ed.dropout) == ["unused"] * 5
     link = p.link_list.editor
     assert _needs(link, link.a, link.b, link.r) == ["required"] * 3

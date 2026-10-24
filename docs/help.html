@@ -913,8 +913,8 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     total output capacitance and the loop tuning. The AC solve
     leaves the VRM out of circuit, so it gives the <i>open-loop</i> PDN impedance; below this
     frequency the converter's loop holds the rail. Probe targets are drawn and judged only
-    above it (see <a href="#ac-bandwidth">Targets and the VRM bandwidth</a>);
-    <i>none</i> judges the whole target.</td></tr>
+    above it (see <a href="#ac-bandwidth">Targets and the VRM bandwidth</a>).
+    Required in AC mode: a rail whose VRM has none cannot be solved.</td></tr>
   <tr><td>Phases / Edit phase</td><td class="wrap">Multi-phase regulators. See
     <a href="#wf-multiphase">the multi-phase workflow</a>.</td></tr>
   <tr><td>Output pins</td><td class="wrap">Where it drives the rail: the output pin, or for a
@@ -1423,8 +1423,9 @@ sees the others as open circuits.</p>
 <div class="body">
 <p>The AC solve leaves the VRM out of circuit: it gives the <b>open-loop</b> PDN impedance,
 which keeps rising toward low frequency. In the real circuit the converter's control loop
-holds the rail below its bandwidth. So when the rail's VRM has a <b>Control loop bandwidth</b>,
-a probe's target (flat or custom) applies only from that frequency up:</p>
+holds the rail below its bandwidth. So the rail's VRM needs a <b>Control loop bandwidth</b>
+before the rail can be solved, and a probe's target (flat or custom) applies only from that
+frequency up:</p>
 <ul>
   <li>the plot draws the target only above the bandwidth, and marks the bandwidth with a
     dotted line;</li>
@@ -1434,7 +1435,7 @@ a probe's target (flat or custom) applies only from that frequency up:</p>
 </ul>
 <p><b>Fallback:</b> if the bandwidth is at or above a flat target's frequency, or above the
 whole sweep, no frequencies are left to judge. That probe's target is then judged over its
-whole range, as if the VRM had no bandwidth, and a note in the results says so.</p>
+whole range, and a note in the results says so.</p>
 </div>
 </details>
 

@@ -51,8 +51,9 @@ def plane_setup(snap, **ac):
     from kipi.ac.model import Probe
     from kipi.dc.pi.model import PISetup, PinRef, Vrm
     setup = PISetup()
+    # A bandwidth below every test sweep, so targets apply across it (#183).
     setup.vrms.append(Vrm("VRM1", PinRef("U1", "+3V3", ["1"]), 3.3,
-                          ground=PinRef("U1", "GND", ["2"])))
+                          ground=PinRef("U1", "GND", ["2"]), bandwidth_khz=0.01))
     setup.probes.append(Probe("U1", PinRef("U1", "+3V3", ["1"]), PinRef("U1", "GND", ["2"])))
     for k, v in ac.items():
         setattr(setup.ac, k, v)

@@ -365,6 +365,8 @@ def _ac_board(name, size, parts, rail="+3V3"):
 
 
 def _ac_setup(vrms, probes, caps=(), links=(), **ac):
+    for v in vrms:      # an AC rail needs one (#183); below the sweep, it judges all of it
+        v.bandwidth_khz = 0.1
     s = PISetup(vrms, [], list(links), SolveSettings())
     s.caps, s.probes = list(caps), list(probes)
     s.ac.rail, s.ac.ground = vrms[0].name, "GND"

@@ -91,6 +91,11 @@ def validate_ac(setup: PISetup, vrm_name: str, gnd: str) -> List[str]:
     if vrm is None:
         return ["Pick the rail to simulate (add a VRM on it first)" if not setup.vrms
                 else "Pick the rail to simulate"]
+    if not (vrm.bandwidth_khz and vrm.bandwidth_khz > 0):
+        # The solve is open loop: without the bandwidth the targets would be judged where
+        # the converter's loop holds the rail (#183).
+        errors.append(f"VRM {vrm.name}: enter its control loop bandwidth (VRMs tab); probe "
+                      "targets apply above it")
     if not gnd:
         errors.append("Pick the ground net")
     s = setup.ac

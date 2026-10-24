@@ -30,6 +30,10 @@ milestones rather than versions that were ever set.
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
+- **VRM bandwidth is required in AC mode** (#183). An AC sweep of a rail whose VRM has no
+  control loop bandwidth is refused, with a note to enter it: without one the open-loop
+  impedance was judged where the converter's loop holds the rail. The VRM editor marks the
+  field required in AC mode.
 - **Subtract VRM DC accuracy** (#172). The target calculator subtracted the larger side
   of the VRM's accuracy from the tighter side of the load's tolerance, even when the two
   were on opposite sides of the target. A load allowed -5 / +3 % of 1 V behind a VRM
