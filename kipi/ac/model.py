@@ -138,6 +138,10 @@ class Probe:
     # by straight lines on the log-log plot. The flat values are kept while it is in use.
     target_custom: bool = False
     target_points: List[Tuple[float, float]] = field(default_factory=list)
+    # The device's load step and its slew rate, for the estimated transient response
+    # (#166); None when not set.
+    step_a: Optional[float] = None
+    slew_a_per_us: Optional[float] = None
 
     def target_mask(self) -> Optional[List[Tuple[float, float]]]:
         """The custom mask's points, sorted by frequency, when it is in use."""

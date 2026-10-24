@@ -7,6 +7,14 @@ milestones rather than versions that were ever set.
 ## 0.9.2 (in development)
 
 ### Added
+- **Estimated transient response in AC mode** (#166). A probe can have a **Load step** and
+  slew rate, filled in by the target calculator or a load model. The solve then estimates
+  the rail's dip when the load steps up and its rise when it steps back down. The
+  open-loop PDN impedance is used with the VRM's loop closed again at its control loop
+  bandwidth, by a typical proportional-integral compensation. The new **Transient** tab
+  plots the load step and the rail's deviation, with zoom, a **20 MHz limit** tickbox for
+  a scope's bandwidth limit, and ± target × ΔI dashed. The results table and the report
+  give each probe's undershoot and overshoot.
 - **AC fitted-pole and Touchstone export** (#86). Export a probe's impedance curve as a
   fitted HyperLynx PLS one-port model or as sampled Touchstone Z1P data. Probes export
   separately because the solve stores driving-point impedance, not mutual impedances.

@@ -178,20 +178,24 @@ class MainWindow(QMainWindow):
         self._asking_reload = False
         self._own_write_until = 0.0         # changes before this are KiPI's own saves
 
-        # The central area: the 3D view and, in AC mode, the impedance plot and the board
-        # map of the solve (#67); in Coupled Noise mode, the aggressor's waveforms (#69).
+        # The central area: the 3D view and, in AC mode, the impedance plot, the board map
+        # of the solve (#67) and the estimated transient (#166); in Coupled Noise mode, the
+        # aggressor's waveforms (#69).
         from kipi.ac.gui.board_map import BoardMap
         from kipi.ac.gui.plot import ImpedancePlot
+        from kipi.ac.gui.transient_plot import TransientPlot
         from kipi.noise.gui.plot import NoisePlot
         self.views = QTabWidget(self)
         self.views.setDocumentMode(True)
         self.viewer = Viewer3D(self.views)
         self.plot = ImpedancePlot(self.views)
         self.board_map = BoardMap(self.views)
+        self.transient_plot = TransientPlot(self.views)
         self.noise_plot = NoisePlot(self.views)
         self.views.addTab(self.viewer, "3D view")
         self.views.addTab(self.plot, "Impedance")
         self.views.addTab(self.board_map, "Board map")
+        self.views.addTab(self.transient_plot, "Transient")
         self.views.addTab(self.noise_plot, "Waveforms")
         self.setCentralWidget(self.views)
         self.viewer.on_click(self._on_click)
@@ -382,11 +386,11 @@ class MainWindow(QMainWindow):
             KEYS["results"]))
 
     def _set_plot_tabs(self, mode: str):
-        """Show each mode's plot tabs only in that mode: the impedance and board map in AC
-        mode, the waveforms in Coupled Noise mode. QTabWidget.setTabVisible needs Qt 5.15;
+        """Show each mode's plot tabs only in that mode: the impedance, board map and
+        transient in AC mode, the waveforms in Coupled Noise mode. QTabWidget.setTabVisible needs Qt 5.15;
         older Qt disables the tabs instead."""
         tabs = {self.plot: mode == "ac", self.board_map: mode == "ac",
-                self.noise_plot: mode == "noise"}
+                self.transient_plot: mode == "ac", self.noise_plot: mode == "noise"}
         for w, shown in tabs.items():
             i = self.views.indexOf(w)
             if hasattr(self.views, "setTabVisible"):
@@ -1005,7 +1009,8 @@ class MainWindow(QMainWindow):
     def save_screenshot(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save screenshot", "kipi.png", "PNG (*.png)")
         if path:
-            if self.views.currentWidget() in (self.plot, self.board_map, self.noise_plot):
+            if self.views.currentWidget() in (self.plot, self.board_map, self.transient_plot,
+                                              self.noise_plot):
                 self.views.currentWidget().save_png(path)
             else:
                 self.viewer.screenshot(path)
@@ -1443,6 +1448,7 @@ class MainWindow(QMainWindow):
         self._refresh_power_tree()
         self.plot.clear()
         self.board_map.clear()
+        self.transient_plot.clear()
         self.noise_plot.clear()
         return setup
 
@@ -1697,8 +1703,10 @@ class MainWindow(QMainWindow):
         if result is None:
             self.plot.clear()
             self.board_map.clear()
+            self.transient_plot.clear()
             return
         self.plot.set_result(result)
+        self.transient_plot.set_result(result)
         if self.board_map.board_map is not getattr(result, "board_map", None):
             self.board_map.set_map(getattr(result, "board_map", None))  # None: saved before 0.7.2
         self.views.setCurrentWidget(self.plot)

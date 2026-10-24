@@ -40,6 +40,9 @@ class ProbeCurve:
     # The VRM's control loop bandwidth when the target applies only above it (None: the
     # whole target applies; see kipi.ac.target.judged_from).
     above_hz: Optional[float] = None
+    # The probe's load step and its slew rate, for the estimated transient (#166).
+    step_a: Optional[float] = None
+    slew_a_per_us: Optional[float] = None
 
     @property
     def mag(self) -> np.ndarray:
@@ -71,6 +74,21 @@ class ProbeCurve:
             else:
                 i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel] / t[sel]))]
         return float(self.mag[i]), float(freqs[i])
+
+    def transient(self, freqs: np.ndarray, bandwidth_hz: Optional[float]):
+        """The estimated response to the probe's load step
+        (:func:`kipi.ac.transient.transient`); None without a step, slew rate or VRM
+        bandwidth."""
+        from kipi.ac.transient import transient
+        slew = self.slew_a_per_us * 1e6 if self.slew_a_per_us else None
+        return transient(freqs, self.z, bandwidth_hz, self.step_a, slew)
+
+    def allowed_v(self) -> Optional[float]:
+        """The AC tolerance the flat target implies, target |Z| times the load step
+        (Z_target = V_AC / I_step); None without both."""
+        if self.target_points or not (self.target_ohm and self.step_a):
+            return None
+        return self.target_ohm * self.step_a
 
     def passed(self, freqs: np.ndarray) -> Optional[bool]:
         t = self.target_at(freqs)
@@ -322,7 +340,7 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
             notes.append(f"Probe {p.name}: {why}")
             progress.warn(notes[-1])
         curves.append(ProbeCurve(p.name, z[:, i], pr.target_ohm, pr.target_hz,
-                                 pr.target_mask(), above))
+                                 pr.target_mask(), above, pr.step_a, pr.slew_a_per_us))
     if bandwidth:
         progress.info(f"Targets apply above the {vrm_name} control loop bandwidth, "
                       f"{fmt_hz(bandwidth)} (open-loop PDN impedance)")
@@ -331,6 +349,20 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
         verdict = {None: "", True: " PASS", False: " FAIL"}[c.passed(freqs)]
         progress.info(f"  {c.name}: |Z| {np.min(c.mag) * 1e3:.3g} to {np.max(c.mag) * 1e3:.4g} mΩ; "
                       f"worst {zmax * 1e3:.4g} mΩ at {fmax / 1e6:.4g} MHz{verdict}")
+        if not (c.step_a and c.slew_a_per_us):
+            continue
+        if not bandwidth:
+            notes.append(f"Probe {c.name}: no transient estimate, since {vrm_name} has no "
+                         "control loop bandwidth to close its loop with")
+            progress.warn(notes[-1])
+            continue
+        tr = c.transient(freqs, bandwidth)
+        progress.info(f"  {c.name}: a {c.step_a:g} A load step dips about "
+                      f"{tr.undershoot_v * 1e3:.4g} mV; its release rises about "
+                      f"{tr.overshoot_v * 1e3:.4g} mV (estimate)")
+        for note in tr.notes:
+            notes.append(f"Probe {c.name}: {note}")
+            progress.warn(notes[-1])
     return ACResult(rail=vrm_name, rail_nets=sorted(rail), ground=ground, freqs=freqs,
                     probes=curves, field_freqs=f_field, caps=caps, missing_caps=missing,
                     links=links, plane_capacitance_f=system.total_plane_capacitance,

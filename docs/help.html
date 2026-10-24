@@ -174,6 +174,7 @@ ol.steps > li { margin-bottom: 6px; }
       <ol>
         <li><a href="#ac-plot">Impedance plot and cursor</a></li>
         <li><a href="#ac-map">Board map</a></li>
+        <li><a href="#ac-transient">Transient</a></li>
         <li><a href="#ac-table">Results table</a></li>
         <li><a href="#ac-report">AC report</a></li>
         <li><a href="#ac-reading">Reading the curve</a></li>
@@ -1419,6 +1420,10 @@ are required.</p>
   <tr><td>Custom points</td><td class="wrap">Frequency/|Z| corner points, joined by straight
     lines on the log-log plot. Below the first point the first |Z| holds, above the last the
     last holds. <b>Add point</b> adds one a decade above the last; ✕ removes one.</td></tr>
+  <tr><td>Load step (ΔI) / Load step slew rate</td><td class="wrap">Optional. How far and how
+    fast the device's current steps. With both, and the VRM's control loop bandwidth, the
+    solve estimates the rail's <a href="#ac-transient">transient response</a> at this probe.
+    The calculator fills them in, and so does a load model with a load step.</td></tr>
 </table>
 <p><b>From DC load</b> adds a probe on the same supply and ground pins as a DC load picked from
 its dropdown. The dropdown also lists the input of every LDO and switcher, one entry per phase
@@ -1493,7 +1498,9 @@ whole range, and a note in the results says so.</p>
 </ul>
 <p>Then Z<sub>target</sub> = V<sub>AC</sub> / ΔI, flat up to f<sub>target</sub> = 1 / (π ·
 t<sub>rise</sub>), with t<sub>rise</sub> = ΔI / slew rate. <b>Use for probe</b> fills the probe's
-target fields; the inputs are remembered for next time. The target applies above the VRM's
+target fields and its load step (for the <a href="#ac-transient">transient</a>); the
+inputs are remembered for next time, and a probe that has a load step opens the calculator
+with it. The target applies above the VRM's
 control loop bandwidth (<a href="#ac-bandwidth">Targets and the VRM bandwidth</a>).</p>
 <p>The target impedance method was introduced by L. D. Smith,
 R. E. Anderson, D. W. Forehand, T. J. Pelc and T. Roy, "<a href="https://doi.org/10.1109/6040.784476">Power
@@ -1650,6 +1657,46 @@ saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
 </div>
 </details>
 
+<details open id="ac-transient">
+<summary>Transient <span class="hint">the estimated response to each probe's load step</span></summary>
+<div class="body">
+<p>The <b>Transient</b> tab estimates what the rail does at each probe that has a
+<b>Load step</b> and <b>slew rate</b>: the load steps up by ΔI, holds until the rail has
+settled, and steps back down. The top plot is the load current. The lower plot is the
+rail's deviation from its DC value: the <b>undershoot</b> when the load steps up and the
+<b>overshoot</b> when it steps back down. Each probe's step is worked out on its own, with
+the other probes drawing nothing extra. A circle marks each peak, and the legend gives them
+in mV. Dashed lines at ± target |Z| × ΔI show the AC tolerance a flat target stands for
+(Z<sub>target</sub> = V<sub>AC</sub> / ΔI).</p>
+<p>How it is worked out: the AC solve gives the <b>open-loop</b> impedance, with the VRM out of
+circuit, and a step into that alone would never recover. So the converter's loop is closed
+again from its <b>Control loop bandwidth</b>: the VRM drives the rail from its voltage error
+with a typical proportional-integral compensation, crossing over at the bandwidth with
+about 60° of phase margin. Above the bandwidth the rail sees the PDN's own impedance; at DC
+the loop holds it exactly (the DC solve gives the DC value). The load current's spectrum
+times that closed-loop impedance, back in time, is the response. Only the bandwidth comes
+from your setup, so treat the result as an estimate. The converter's real compensation,
+its output impedance and any load-line will change the slow part, while the fast part
+(ESL, plane and via inductance, capacitor resonances) comes from the solve. A linear model
+mirrors itself, so the overshoot on release matches the undershoot on the step.</p>
+<table>
+  <tr><th>Control</th><th>Does</th></tr>
+  <tr><td><b>20 MHz limit</b></td><td class="wrap">Shows the rail as an oscilloscope with its
+    20 MHz bandwidth limit on would: through a single pole, 3 dB down at 20 MHz. Fast spikes
+    and ringing shrink to what such a measurement sees, and so do the figures in the
+    legend. The results table and the report keep the full bandwidth.</td></tr>
+  <tr><td>Toolbar</td><td class="wrap">Zoom to a rectangle, pan, step back and forward, home.
+    The fast edges last nanoseconds and the loop's recovery tens of microseconds, so zoom in
+    to see the spikes.</td></tr>
+  <tr><td>Hover</td><td class="wrap">The time, and each probe's load current and deviation
+    there.</td></tr>
+</table>
+<p>A probe with a load step but no VRM bandwidth gets no estimate, and a note says so. A
+note also flags a load step that rises faster than the time step or the sweep covers,
+and a rail that has not settled before the load steps back down.</p>
+</div>
+</details>
+
 <details open id="ac-table">
 <summary>Results table and notes</summary>
 <div class="body">
@@ -1660,6 +1707,9 @@ saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
     or furthest over, the target (within the target's frequency range). Without one: the
     highest |Z| in the sweep.</td></tr>
   <tr><td>Target</td><td class="wrap">The flat level, or the custom mask's range.</td></tr>
+  <tr><td>Undershoot / Overshoot</td><td class="wrap">For a probe with a load step: the
+    estimated dip when its load steps up and rise when it steps back down, at full
+    bandwidth (see <a href="#ac-transient">Transient</a>).</td></tr>
   <tr><td>Verdict</td><td class="wrap"><span class="pass">PASS</span> if |Z| is at or below the
     target everywhere it applies.</td></tr>
 </table>
@@ -1679,9 +1729,9 @@ under its VRM in <b>Rail</b>. Rails whose VRM is no longer in the setup are left
 <details id="ac-report">
 <summary>AC report</summary>
 <div class="body">
-<p>With <b>Report</b> ticked, each rail's solve also writes
-<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the
-board; the time stamp keeps every solve's report. Like the DC report, it is a single offline file you can email. It holds:</p>
+<p><b>Report</b> writes
+<code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> of the shown
+rail's results next to the board; the time stamp keeps every report. Like the DC report, it is a single offline file you can email. It holds:</p>
 <ul>
   <li>a summary and the probe table: pins, minimum and worst |Z|, the target, the margin in dB
     at the worst point (positive passes), PASS/FAIL, and an overall verdict;</li>
@@ -1692,6 +1742,9 @@ board; the time stamp keeps every solve's report. Like the DC report, it is a si
   <li>a board map seen from the top: the board outline, the rail's copper on every layer
     merged, the probes as stars and each capacitor colored by its model. Capacitors left out
     for having no model show as grey crosses;</li>
+  <li>for probes with a load step, the transient: a table of each load step, its slew rate
+    and rise time, the undershoot and overshoot and ± target × ΔI, and the plot of the load
+    current and the rail's deviation;</li>
   <li>the capacitor models (C, ESL, ESR, self-resonance, how many parts and which), the series
     links, the sweep, mesh and copper settings, and the solver's size, backend and time;</li>
   <li>notes: capacitors left out and any warnings.</li>

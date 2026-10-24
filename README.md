@@ -691,10 +691,16 @@ probe, with its target dashed in the same color. Click a curve to place a cursor
 use ←/→ (Shift: ×10) to move along the curve, ↑/↓ to change curve, and Esc or right-click to
 remove it. The **Board map** tab beside it shows the solve from above while it runs and
 after: the mesh of the rail and its ground, layer by layer, with the probes and the
-capacitors marked by model. The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
+capacitors marked by model. The **Transient** tab estimates the rail's response at each
+probe that has a **Load step** and slew rate (set on the probe, or filled in by the target
+calculator): the undershoot when the load steps up and the overshoot when it steps back
+down. The VRM's loop is closed again from its control loop bandwidth with a typical
+compensation, so the slow part is an estimate, and the fast part comes from the solve.
+**20 MHz limit** shows it as a scope's bandwidth limit would. The Info box shows the cursor's frequency, |Z|, phase, R and X, the reactance as an
 equivalent L or C, PASS/FAIL against the target with the margin in dB at the cursor frequency, and every other
 probe's |Z| at that frequency. The results table gives each probe's minimum and worst |Z|
-(closest to, or furthest over, the target) and PASS/FAIL; the notes list the capacitors that
+(closest to, or furthest over, the target), its estimated undershoot and overshoot, and
+PASS/FAIL; the notes list the capacitors that
 were left out for having no model. Each rail keeps its last result, so switching **Rail** shows
 another rail's curves without solving again. **Export CSV…** writes |Z|, R and X at every
 frequency. **Save results…** writes every solved rail to a `.kipi-ac-results` file, which
@@ -935,7 +941,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/dc/report/` | Self-contained HTML report (Plotly 3D, matplotlib maps), or a PDF of it (`kipi/core/pdf.py`) |
 | `kipi/dc/viz/` | DC result meshes: voltage, drop, current density, power (no Qt) |
 | `kipi/dc/gui/` | The PI setup and results panel |
-| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the board map data (`board_map.py`), the AC setup panel, impedance plot and Board map tab (`gui/`) |
+| `kipi/ac/` | AC analysis: PDN impedance over frequency. Capacitor and probe model, target impedance, the 2.5D two-face field solver and sweep (`solver/`), the HTML report (`html_report.py`), the board map data (`board_map.py`), the estimated transient (`transient.py`), the AC setup panel, impedance plot, Board map and Transient tabs (`gui/`) |
 | `kipi/noise/` | Coupled Noise analysis: the aggressor and victim model, the converter's waveforms as Fourier series (`waveforms.py`), the hot loop's parasitics (`parasitics.py`), capacitive and inductive coupling extraction (`extract/`), the victim's line network (`network.py`) and solve (`victims.py`), the nearby-net scan, the 3D coupling overlay (`viz.py`), the HTML report, the setup panel and Waveforms tab (`gui/`) |
 | `kipi/gui/` | PySide6 application shell shared by every mode: main window, mode switch, 3D viewer, worker threads, About and Help |
 | `docs/help.html` | The user guide opened by **Help**; a single offline HTML file |

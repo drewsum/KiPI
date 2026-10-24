@@ -275,6 +275,8 @@ def model_of(setup: PISetup, ref: str, part: str = "") -> LoadModel:
             by_net[p.rail.net] = s
         if s.has_target():
             continue
+        if p.step_a and p.slew_a_per_us:
+            s.step_a, s.slew_a_per_us = p.step_a, p.slew_a_per_us
         if p.target_custom and p.target_points:
             s.target_points = sorted(p.target_points)
         elif p.target_ohm is not None:
@@ -332,15 +334,19 @@ def ac_tolerance_v(s: SupplyModel, nominal: Optional[float]) -> Optional[float]:
 
 
 def apply_to_probe(probe, s: SupplyModel, setup: Optional[PISetup] = None) -> List[str]:
-    """Set the target ``s`` gives (or works out from its load step) on ``probe``; the
-    names of the fields set."""
+    """Set the target ``s`` gives (or works out from its load step) on ``probe``, and its
+    load step (#166); the names of the fields set."""
+    step = []
+    if s.step_a and s.slew_a_per_us:
+        probe.step_a, probe.slew_a_per_us = s.step_a, s.slew_a_per_us
+        step = ["load step"]
     if s.target_points:
         probe.target_custom, probe.target_points = True, sorted(s.target_points)
-        return ["target mask"]
+        return ["target mask"] + step
     if s.target_ohm is not None:
         probe.target_custom = False
         probe.target_ohm, probe.target_hz = s.target_ohm, s.target_hz
-        return ["target"]
+        return ["target"] + step
     if s.step_a is None or s.slew_a_per_us is None:
         return []
     from kipi.ac.target import target_from_transient
@@ -349,10 +355,10 @@ def apply_to_probe(probe, s: SupplyModel, setup: Optional[PISetup] = None) -> Li
     v_ac = ac_tolerance_v(s, abs(nominal) if nominal else None)
     t = target_from_transient(v_ac or 0.0, s.step_a, s.slew_a_per_us * 1e6)
     if t is None:
-        return []
+        return step
     probe.target_custom = False
     probe.target_ohm, probe.target_hz = t.z_ohm, t.f_hz
-    return ["target from the load step"]
+    return ["target from the load step"] + step
 
 
 # ---------------------------------------------------------------------- new items

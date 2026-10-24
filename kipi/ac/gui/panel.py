@@ -37,6 +37,7 @@ from kipi.dc.gui.pi_panel import (
 from kipi.dc.pi.autofill import guess_ground_pins, part_nets
 from kipi.dc.pi.load_model import apply_to_probe, new_items
 from kipi.ac.target import vrm_input_name, vrm_inputs
+from kipi.ac.transient import transients
 from kipi.dc.pi.model import Load, PinRef, PISetup, Vrm
 from kipi.gui.load_model_dialogs import (
     ApplyDialog, PartsDialog, candidate_parts, export_model, model_button, open_model,
@@ -376,6 +377,11 @@ class ProbeEditor(_Editor):
         self.btn_calc.setToolTip("Work out a target impedance and frequency from the "
                                  "device's supply tolerance and transient current")
         self.btn_calc.clicked.connect(self._calculator)
+        # The load step behind the estimated transient response (#166).
+        self.step = _spin(0, 1e4, 0, 3, " A", 0.5)
+        self.step.setSpecialValueText("none")
+        self.slew = _spin(0, 1e6, 0, 3, " A/µs", 1)
+        self.slew.setSpecialValueText("none")
         self.target_kind = QComboBox()
         self.target_kind.addItem("Flat, up to a frequency", "flat")
         self.target_kind.addItem("Custom (piecewise linear)", "custom")
@@ -410,6 +416,8 @@ class ProbeEditor(_Editor):
         f.addRow(self.points)
         f.addRow(self.btn_point)
         f.addRow(self.lbl_points)
+        f.addRow("Load step (ΔI)", self.step)
+        f.addRow("Load step slew rate", self.slew)
         hint = QLabel("The PDN impedance solution is the impedance from the probe point "
                       "looking out into the power distribution network through all loop "
                       "paths (power planes, vias, capacitors, series links).")
@@ -419,10 +427,11 @@ class ProbeEditor(_Editor):
         self._legend()
         self._mark({self.name: REQUIRED, self.rail: REQUIRED, self.ground: REQUIRED,
                     self.target_kind: OPTIONAL, self.target: OPTIONAL,
-                    self.target_f: OPTIONAL})
+                    self.target_f: OPTIONAL, self.step: OPTIONAL, self.slew: OPTIONAL})
         # Drawings under the tooltips (#116): the flat and custom targets on the |Z| plot.
         art = {self.target_kind: ("target_types", "flat", "custom"),
-               self.target: ("target_types", "flat"), self.target_f: ("target_types", "tf")}
+               self.target: ("target_types", "flat"), self.target_f: ("target_types", "tf"),
+               self.step: ("load_step", "step"), self.slew: ("load_step", "slew")}
         for w, text in (
                 (self.name, "A name for this probe, shown in the plot legend and the table"),
                 (self.rail, "The device's supply pins: where the impedance is looked into"),
@@ -436,9 +445,15 @@ class ProbeEditor(_Editor):
                               "the VRM's control loop bandwidth (if set) up to the target "
                               "frequency"),
                 (self.target_f, "Frequency up to which the target impedance applies "
-                                "(none: the whole sweep)")):
+                                "(none: the whole sweep)"),
+                (self.step, "How far the device's current steps. With a slew rate and the "
+                            "VRM's control loop bandwidth, the solve estimates the rail's "
+                            "dip when the load steps up and its rise when it steps back "
+                            "down (the Transient tab)."),
+                (self.slew, "How fast the device's current steps, up and back down")):
             tip(f, w, text, art.get(w))
-        self._watch(self.name, self.target, self.target_f, self.target_kind)
+        self._watch(self.name, self.target, self.target_f, self.target_kind, self.step,
+                    self.slew)
         self.target_kind.currentIndexChanged.connect(self._target_rows)
         self._target_rows()
 
@@ -500,14 +515,20 @@ class ProbeEditor(_Editor):
         dlg = TargetCalculator(self, self.name.text().strip(),
                                probe_loads(self.panel.setup, rail, ground,
                                            self.panel.dc_result),
-                               vrm_accuracies(self.panel.setup, rail))
+                               vrm_accuracies(self.panel.setup, rail),
+                               (self.step.value(), self.slew.value()))
         if dlg.exec() and dlg.target() is not None:
-            self.apply_target(dlg.target())
+            self.apply_target(dlg.target(), dlg.i_step.value(), dlg.slew.value())
 
-    def apply_target(self, t):
-        """Fill the target fields from a calculator result (which saves them)."""
+    def apply_target(self, t, step_a: Optional[float] = None,
+                     slew_a_per_us: Optional[float] = None):
+        """Fill the target fields, and the load step it came from, from a calculator
+        result (which saves them)."""
         self.target.setValue(t.z_ohm * 1e3)
         self.target_f.setValue(t.f_hz / 1e3)
+        if step_a and slew_a_per_us:
+            self.step.setValue(step_a)
+            self.slew.setValue(slew_a_per_us)
 
     def _load(self, p: Probe):
         self.name.setText(p.name)
@@ -515,6 +536,8 @@ class ProbeEditor(_Editor):
         self.ground.set_value(p.ground)
         self.target.setValue((p.target_ohm or 0.0) * 1e3)
         self.target_f.setValue((p.target_hz or 0.0) / 1e3)
+        self.step.setValue(p.step_a or 0.0)
+        self.slew.setValue(p.slew_a_per_us or 0.0)
         self.points.setRowCount(0)
         reset_sort(self.points)
         for f_hz, z_ohm in sorted(p.target_points):
@@ -542,6 +565,8 @@ class ProbeEditor(_Editor):
                 self._show(self.ground, gnd)
         p.target_ohm = self.target.value() / 1e3 or None
         p.target_hz = self.target_f.value() * 1e3 or None
+        p.step_a = self.step.value() or None
+        p.slew_a_per_us = self.slew.value() or None
         p.target_custom = self.target_kind.currentData() == "custom"
         if p.target_custom and self.points.rowCount() == 0:
             # Switching to custom: start from the flat target's level.
@@ -666,16 +691,20 @@ class ACPanel(QWidget, PartSelection):
 
         g_res = QGroupBox("Results", self)
         lr = QVBoxLayout(g_res)
-        self.tbl_probes = QTableWidget(0, 6, g_res)
+        self.tbl_probes = QTableWidget(0, 8, g_res)
         self.tbl_probes.setHorizontalHeaderLabels(
-            ["Probe", "Min |Z| (mΩ)", "Worst |Z| (mΩ)", "at (MHz)", "Target (mΩ)", ""])
+            ["Probe", "Min |Z| (mΩ)", "Worst |Z| (mΩ)", "at (MHz)", "Target (mΩ)",
+             "Undershoot (mV)", "Overshoot (mV)", ""])
         self.tbl_probes.verticalHeader().setVisible(False)
         self.tbl_probes.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_probes.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_probes.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.tbl_probes.setToolTip("Worst |Z|: where the impedance comes closest to (or "
                                    "furthest over) the probe's target; the highest impedance "
-                                   "in the sweep without one")
+                                   "in the sweep without one. Undershoot and overshoot: the "
+                                   "estimated dip when the probe's load steps up and rise "
+                                   "when it steps back down (the Transient tab), for probes "
+                                   "with a load step")
         make_sortable(self.tbl_probes)
         self.txt_notes = QLabel(g_res)
         self.txt_notes.setWordWrap(True)
@@ -1263,15 +1292,19 @@ class ACPanel(QWidget, PartSelection):
         t = self.tbl_probes
         reset_sort(t)
         t.setRowCount(len(result.probes))
+        trs = transients(result)
         for r, c in enumerate(result.probes):
             zmax, fmax = c.worst(result.freqs)
             ok = c.passed(result.freqs)
+            tr = trs.get(c.name)
+            swing = ([(f"{v * 1e3:.4g}", v) for v in (tr.undershoot_v, tr.overshoot_v)]
+                     if tr else ["", ""])
             set_row(t, r, [c.name, (f"{np.min(c.mag) * 1e3:.4g}", float(np.min(c.mag))),
                            (f"{zmax * 1e3:.4g}", zmax), (f"{fmax / 1e6:.4g}", fmax),
-                           _target_text(c),
+                           _target_text(c), *swing,
                            {None: "", True: "PASS", False: "FAIL"}[ok]])
             if ok is not None:
-                t.item(r, 5).setForeground(QColor("#60d060" if ok else "#ff6060"))
+                t.item(r, 7).setForeground(QColor("#60d060" if ok else "#ff6060"))
         st = result.stats
         notes = [f"<b>{html.escape(result.rail)}</b>: {html.escape(', '.join(result.rail_nets))} "
                  f"against {html.escape(result.ground)}; {len(result.caps)} capacitor(s), "

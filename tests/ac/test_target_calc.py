@@ -92,6 +92,15 @@ def test_calculator_fills_the_probe_target(app, monkeypatch):
     ed.btn_calc.click()
     assert probe.target_ohm == pytest.approx(2e-3)
     assert probe.target_hz == pytest.approx(1 / (math.pi * 0.3e-6), rel=1e-4)
+    assert (probe.step_a, probe.slew_a_per_us) == (15, 50)    # its load step too (#166)
+    assert (ed.step.value(), ed.slew.value()) == (15, 50)
+    # Opened again, the calculator starts from the probe's own load step.
+    monkeypatch.setattr(target_calc.TargetCalculator, "last", (0.0, 1.0, 2.0))
+    seen = []
+    monkeypatch.setattr(target_calc.TargetCalculator, "exec",
+                        lambda dlg: seen.append((dlg.i_step.value(), dlg.slew.value())) or 0)
+    ed.btn_calc.click()
+    assert seen == [(15, 50)]
 
 
 # --- Copy tolerance and current from the probe's DC load (#87) -----------------------------

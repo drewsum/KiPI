@@ -124,14 +124,15 @@ def test_a_probe_target_from_the_load_step():
     s = _setup()
     sup = SupplyModel("VCCINT", step_a=0.5, slew_a_per_us=10.0, tol_min=-3.0, tol_max=2.0)
     p = Probe("P", PinRef("U7", "+1V0", []), PinRef("U7", "GND", []))
-    assert apply_to_probe(p, sup, s) == ["target from the load step"]
+    assert apply_to_probe(p, sup, s) == ["target from the load step", "load step"]
+    assert (p.step_a, p.slew_a_per_us) == (0.5, 10.0)          # for its transient (#166)
     assert p.target_ohm == pytest.approx(0.02 / 0.5)        # the tighter side: 2 % of 1 V
     assert p.target_hz == pytest.approx(1 / (3.141592653589793 * 0.05e-6))
     sup.ac_tolerance_mv = 10.0
     apply_to_probe(p, sup, s)
     assert p.target_ohm == pytest.approx(0.02)
     unknown = Probe("Q", PinRef("U7", "+5V", []), PinRef("U7", "GND", []))
-    assert apply_to_probe(unknown, SupplyModel("X", step_a=1, slew_a_per_us=1), s) == []
+    assert apply_to_probe(unknown, SupplyModel("X", step_a=1, slew_a_per_us=1), s) ==         ["load step"]                                       # no tolerance: no target
 
 
 def test_new_loads_for_another_copy_of_the_part():

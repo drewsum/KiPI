@@ -15,6 +15,7 @@ from kipi.ac.target import (
     ProbeLoad, Target, VrmAccuracy, target_from_transient,
 )
 from kipi.dc.gui.pi_panel import _spin
+from kipi.gui.tooltip_art import art_tip
 
 NOTE = ("Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>, flat up to "
         "f<sub>target</sub> = 1 / (π · t<sub>rise</sub>), where t<sub>rise</sub> = "
@@ -29,7 +30,8 @@ class TargetCalculator(QDialog):
 
     def __init__(self, parent: Optional[QWidget] = None, probe_name: str = "",
                  loads: Optional[List[ProbeLoad]] = None,
-                 accuracies: Optional[List[VrmAccuracy]] = None):
+                 accuracies: Optional[List[VrmAccuracy]] = None,
+                 step: Tuple[float, float] = (0.0, 0.0)):
         super().__init__(parent)
         self.setWindowTitle("Target Impedance/Frequency Calculator"
                             + (f": {probe_name}" if probe_name else ""))
@@ -37,10 +39,13 @@ class TargetCalculator(QDialog):
         self.v_ac.setToolTip("How far the supply may move from its DC value during a load "
                              "transient (the AC part of the device's supply tolerance)")
         self.i_step = _spin(0, 1e4, 0, 3, " A", 0.5)
-        self.i_step.setToolTip("Size of the device's load current step")
+        self.i_step.setToolTip(art_tip("Size of the device's load current step", "load_step",
+                                       "step"))
         self.slew = _spin(0, 1e6, 0, 3, " A/µs", 1)
-        self.slew.setToolTip("How fast the load current steps")
-        for s, v in zip((self.v_ac, self.i_step, self.slew), self.last):
+        self.slew.setToolTip(art_tip("How fast the load current steps", "load_step", "slew"))
+        # The probe's own load step (#166), where it has one, over the last one applied.
+        last = self.last[:1] + (tuple(step) if all(step) else self.last[1:])
+        for s, v in zip((self.v_ac, self.i_step, self.slew), last):
             s.setSpecialValueText("required")
             s.setKeyboardTracking(True)       # update the results while typing
             s.setValue(v)
