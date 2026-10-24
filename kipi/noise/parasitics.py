@@ -218,7 +218,7 @@ def _cap_branch(board: _Board, setup: PISetup, ref: str, volts: float,
     model = caps_dict(setup.caps).get(ref)
     if model and model.capacitance_f > 0:
         c = model.capacitance_at(volts if setup.ac.dc_bias else 0.0)
-        return CapBranch(ref, c, model.esr_ohm, model.esl_h)
+        return CapBranch(ref, c, model.esr_ohm, model.esl_h, model=model)
     c = parse_capacitance(board.value.get(ref, "")) or FALLBACK_C_F
     notes.append(f"{ref} has no capacitor model: taken as {c * 1e6:.3g} µF with "
                  f"{FALLBACK_ESR_OHM * 1e3:g} mΩ ESR and {FALLBACK_ESL_H * 1e9:g} nH ESL")

@@ -37,7 +37,8 @@ from typing import Dict, List, Optional, Tuple
 from kipi.ac.model import (
     DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, Probe, report_format,
 )
-from kipi.dc.solver.setup import SolveSettings
+from kipi.core.model.spice import SpiceRef
+from kipi.dc.solver.setup import SHORT_OHMS, SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
 from kipi.noise.model import (
     Aggressor, NoiseSettings, Victim, aggressor_from_dict, settings_from_dict as noise_settings,
@@ -279,6 +280,23 @@ class DcLink:
     resistance: float                       # ohms; 0 = short (DC and AC)
     esl_h: Optional[float] = None           # series inductance, henries (AC only)
     diode_vf: float = 0.0                   # DC forward drop, side A (anode) -> side B
+    # The part's SPICE model (#51): with it in use, AC takes the impedance from it, and
+    # the resistance and ESL are fitted to it.
+    spice: Optional[SpiceRef] = None
+
+    @property
+    def uses_spice(self) -> bool:
+        return self.spice is not None and self.spice.use
+
+    def impedance(self, omega):
+        """Small-signal impedance at angular frequency ``omega`` (an array)."""
+        if self.uses_spice:
+            return self.spice.impedance(omega)
+        return self.resistance + 1j * omega * (self.esl_h or 0.0) + 0 * omega
+
+    def is_short(self) -> bool:
+        """Whether the part is a short in AC as in DC (merged away)."""
+        return self.resistance <= SHORT_OHMS and not self.esl_h and not self.uses_spice
 
 
 DEFAULT_VIA_CURRENT_LIMIT_A = 1.0
@@ -385,7 +403,8 @@ class PISetup:
                    for l in d.get("loads", [])],
             links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                           resistance=k["resistance"], esl_h=k.get("esl_h"),
-                          diode_vf=k.get("diode_vf", 0.0))
+                          diode_vf=k.get("diode_vf", 0.0),
+                          spice=SpiceRef.from_dict(k.get("spice")))
                    for k in d.get("links", [])],
             via_current_limit_a=d.get("via_current_limit_a", DEFAULT_VIA_CURRENT_LIMIT_A),
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
@@ -402,7 +421,7 @@ class PISetup:
                            c.get("rated_v"),
                            c.get("kept_at_rated_pct", DEFAULT_KEPT_AT_RATED_PCT),
                            c.get("dielectric", ""), c.get("aging_pct_per_decade", 0.0),
-                           c.get("mfg_tolerance_pct"))
+                           c.get("mfg_tolerance_pct"), SpiceRef.from_dict(c.get("spice")))
                   for c in d.get("caps", [])],
             probes=[Probe(p["name"], pin(p["rail"]), pin(p["ground"]), p.get("target_ohm"),
                           p.get("target_hz"), bool(p.get("target_custom", False)),

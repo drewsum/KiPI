@@ -25,7 +25,7 @@ so the amplitude of harmonic k is 2|c_k|. Capacitor currents carry no DC.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -181,8 +181,13 @@ class CapBranch:
     esl_h: float
     path_l_h: float = 0.0
     path_r_ohm: float = 0.0
+    # The part's model, when its impedance is a SPICE model's (#51), at this capacitance.
+    model: Optional[object] = field(default=None, repr=False, compare=False)
 
     def impedance(self, omega: np.ndarray) -> np.ndarray:
+        if self.model is not None and self.model.uses_spice:
+            m = replace(self.model, capacitance_f=self.capacitance_f)
+            return m.impedance(omega) + self.path_r_ohm + 1j * omega * self.path_l_h
         return (self.esr_ohm + self.path_r_ohm + 1j * omega * (self.esl_h + self.path_l_h)
                 + 1.0 / (1j * omega * self.capacitance_f))
 

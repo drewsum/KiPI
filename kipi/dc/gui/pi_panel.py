@@ -48,6 +48,7 @@ from kipi.gui.load_model_dialogs import (
 )
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
+from kipi.gui.spice_dialog import LINK, import_spice, part_values, spice_text
 from kipi.gui.tooltip_art import add_text, art_tip
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi import vunits
@@ -1133,6 +1134,17 @@ class LinkEditor(_Editor):
         row.addWidget(self.btn_esl_package)
         row.addWidget(self.btn_esl_bead)
         f.addRow("Estimate ESL", est)
+        # Or both values from the part's SPICE model (#51).
+        self.btn_spice = QPushButton("Import SPICE model…", self)
+        self.btn_spice.clicked.connect(self._from_spice)
+        f.addRow("SPICE model", self.btn_spice)
+        self.chk_spice = QCheckBox("Use the SPICE model's impedance")
+        self.chk_spice.toggled.connect(self._spice_toggled)
+        f.addRow(self.chk_spice)
+        self.lbl_spice = QLabel()                   # which model, and whether it is used
+        self.lbl_spice.setWordWrap(True)
+        self.lbl_spice.setStyleSheet("color: #999;")
+        f.addRow(self.lbl_spice)
         self.lbl_esl = QLabel()                     # where the last estimate came from
         self.lbl_esl.setWordWrap(True)
         self.lbl_esl.setStyleSheet("color: #999;")
@@ -1141,7 +1153,8 @@ class LinkEditor(_Editor):
         # Drawings under the tooltips (#116): the part as a DCR and an ESL in series.
         art = {self.a: ("series_link", "a"), self.b: ("series_link", "b"),
                self.r: ("series_link", "r"), self.esl: ("series_link", "l"),
-               self.btn_esl_package: ("series_link", "l"), self.btn_esl_bead: ("bead_z", "l")}
+               self.btn_esl_package: ("series_link", "l"), self.btn_esl_bead: ("bead_z", "l"),
+               self.btn_spice: ("series_link", "r", "l")}
         for w, text in (
                 (self.name, "A name for this part, used in the results tables"),
                 (self.a, "The part's pins on one net"),
@@ -1166,7 +1179,18 @@ class LinkEditor(_Editor):
                  "Work out the ESL of a ferrite bead from its impedance at one frequency, "
                  "read off its datasheet's curve. Below its peak a bead is an inductor, "
                  "|Z| = √(DCR² + (2πf·L)²); at and above the peak it is a resistor, so a "
-                 "point well below the peak gives the inductance best.")):
+                 "point well below the peak gives the inductance best."),
+                (self.btn_spice,
+                 "Use the part's SPICE model, a .SUBCKT of resistors, inductors and "
+                 "capacitors from its maker: a ferrite bead's, say, with its resistive peak. "
+                 "It is saved with the setup, and the AC and Coupled Noise solves take the "
+                 "part's impedance from it at every frequency. The DCR (which the DC solve "
+                 "uses) is the model's resistance at DC, and the ESL its inductance at "
+                 "100 kHz, low on a bead's inductive slope, for the tables and reports."),
+                (self.chk_spice,
+                 "Take the impedance from the imported SPICE model. Untick to use the DCR "
+                 "and ESL as you enter them; the model is kept, and ticking again puts its "
+                 "fitted values back.")):
             tip(f, w, text, art.get(w))
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
                       "load switch or diode). For a diode, side A is the anode; enter its "
@@ -1208,12 +1232,53 @@ class LinkEditor(_Editor):
             self._estimated(f"ESL from the bead's {dlg.z.value():g} Ω at "
                             f"{dlg.freq.value():g} MHz: {dlg.esl_h * 1e9:.3g} nH")
 
+    def _from_spice(self):
+        k = self.obj
+        if k is None:
+            return
+        refs = dict.fromkeys(r.ref for r in (k.side_a, k.side_b) if r is not None)
+        got = import_spice(self, LINK, [k.name, *part_values(self.panel.snapshot, refs)])
+        if got is None:
+            return
+        k.spice = got[0]
+        self._fitted(k)
+
+    def _spice_toggled(self, on: bool):
+        k = self.obj
+        if self._loading or k is None or k.spice is None:
+            return
+        k.spice.use = on
+        if on:
+            self._fitted(k)
+        else:
+            self._spice_fields(k)
+            self.changed.emit()
+
+    def _fitted(self, k: DcLink):
+        """Put the values fitted to ``k``'s SPICE model in it and in the fields."""
+        k.resistance = k.spice.values.get("resistance", k.resistance)
+        k.esl_h = k.spice.values.get("esl_h")
+        self.load(k)
+        self.changed.emit()
+
+    def _spice_fields(self, k: DcLink):
+        """The SPICE model's line, and the DCR and ESL locked while it is in use."""
+        self.chk_spice.setVisible(k.spice is not None)
+        self.lbl_spice.setVisible(k.spice is not None)
+        self.chk_spice.setChecked(k.uses_spice)
+        self.lbl_spice.setText(spice_text(k.spice) if k.spice else "")
+        free = not k.uses_spice
+        self.r.setEnabled(free)
+        for w in (self.esl, self.btn_esl_package, self.btn_esl_bead):
+            w.setEnabled(free and self.mode == "ac")
+
     def _estimated(self, text: str):
         self.lbl_esl.setText(text)
         self.lbl_esl.setVisible(True)
 
     def _load(self, k: DcLink):
         self.lbl_esl.setVisible(False)
+        self._spice_fields(k)
         self.name.setText(k.name)
         self.a.set_value(k.side_a)
         self.b.set_value(k.side_b)
@@ -2326,6 +2391,7 @@ class PIPanel(QWidget, PartSelection):
     def _describe_link(k: DcLink) -> str:
         r = "short" if k.resistance <= 0 else f"{k.resistance * 1e3:g} mΩ"
         kind = f", diode {k.diode_vf:g} V A→B" if k.diode_vf else ""
+        kind += f", SPICE {k.spice.subckt}" if k.uses_spice else ""
         return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r}{kind})"
 
     # ------------------------------------------------------------------ results

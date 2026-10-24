@@ -86,6 +86,13 @@ def _hz(f: Optional[float]) -> str:
     return f"{f:.4g} Hz"
 
 
+def _spice_tag(item) -> str:
+    """" (SPICE <subcircuit>)" after a capacitor model or link that uses one (#51)."""
+    if not getattr(item, "uses_spice", False):
+        return ""
+    return f" <span class='note'>(SPICE {_e(item.spice.subckt)})</span>"
+
+
 def _si(x: float, unit: str) -> str:
     if not x or not math.isfinite(x):
         return ""
@@ -574,7 +581,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     for m, n in models:
         refs = sorted((r for r in result.caps if model_of.get(r) is m), key=_natural)
         srf = m.srf_hz()
-        row = [_e(m.name), _si(m.capacitance_f, "F"), _si(m.esl_h, "H"),
+        row = [_e(m.name) + _spice_tag(m), _si(m.capacitance_f, "F"), _si(m.esl_h, "H"),
                _si(m.esr_ohm, "Ω"), _hz(srf) if srf else "", str(n), _e(", ".join(refs))]
         if bias:
             at = [bias[r] for r in refs if r in bias]
@@ -586,6 +593,10 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         head.insert(5, "SRF derated")
         head.insert(2, "C derated")
     parts.append(_table(head, rows, "caps"))
+    if any(m.uses_spice for m, _n in models):
+        parts.append("<p class='note'>A model marked SPICE takes each part's impedance from "
+                     "its SPICE model at every frequency; its C, ESL and ESR are fitted to "
+                     "it. A derating scales every capacitor in the SPICE model alike.</p>")
     deratings = getattr(result, "deratings", None) or []
     if deratings:
         # Which deratings the sweep settings applied, and why the others were not (#180).
@@ -611,9 +622,12 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     if links:
         parts.append("<h3>Series links</h3>" + _table(
             ["Link", "Side A", "Side B", "R", "ESL"],
-            [[_e(k.name), _e(f"{k.side_a.label()} · {k.side_a.net}"),
+            [[_e(k.name) + _spice_tag(k), _e(f"{k.side_a.label()} · {k.side_a.net}"),
               _e(f"{k.side_b.label()} · {k.side_b.net}"), _ohms(k.resistance),
               _si(k.esl_h, "H") if k.esl_h else ""] for k in links]))
+        if any(k.uses_spice for k in links):
+            parts.append("<p class='note'>A link marked SPICE takes its impedance from its "
+                         "SPICE model at every frequency; its R and ESL are fitted to it.</p>")
     ff = result.field_freqs
     parts.append("<h3>Sweep and mesh</h3>" + _table(["Setting", "Value"], [
         ["Sweep", f"{_hz(freqs[0])} to {_hz(freqs[-1])}, {len(freqs)} points "

@@ -1032,6 +1032,23 @@ nets that are not grounds, if there is one.</p>
     bead acts as a resistor, so a point there (such as the 100 MHz headline figure of many
     beads) overstates the inductance.</li>
 </ul>
+<p><b>Import SPICE model…</b> uses the part's SPICE model from its maker, a ferrite bead's
+say. Pick its subcircuit from the file; the dialog shows the values fitted to it before you
+accept. The subcircuit is saved in the setup. With <b>Use the SPICE model's impedance</b>
+ticked, the AC and Coupled Noise solves take the link's impedance from the model at every
+frequency, so a bead keeps its resistive peak. The DCR and ESL are then fitted to it and
+locked: the DCR is its resistance at DC (which the DC solve uses), and the ESL its
+inductance at 100 kHz, low on a bead's inductive slope. Untick to use the values as you
+type them; the model is kept.</p>
+<p><b>What KiPI reads from a SPICE file.</b> A two-pin <code>.SUBCKT</code> of resistors,
+inductors and capacitors, which is how makers model capacitors, resistors and ferrite beads.
+It may call other subcircuits in the same file, use <code>.param</code> values and
+arithmetic, and use LTspice's <code>Rser</code>, <code>Lser</code>, <code>Rpar</code> and
+<code>Cpar</code>. 0 V sources (current probes) are read as shorts. Anything else (diodes,
+transistors, controlled or behavioral sources, coupled inductors) is refused with the
+element named, and <code>.include</code> lines are not followed. The file is only read,
+never run. Models of switching regulators and other active parts are not for this; give a
+VRM or load its own values instead.</p>
 <p>The nets a link joins are solved together as one group, so a group can only hold one
 VRM. A load pin with no copper path to its VRM is reported, not guessed at (see
 <a href="#ts-no-path">Loads not connected by copper</a>).</p>
@@ -1366,6 +1383,17 @@ are required.</p>
   <tr><td>ESL</td><td class="wrap">The part's own inductance (datasheet), not including
     mounting.</td></tr>
   <tr><td>ESR</td><td class="wrap">Per part.</td></tr>
+  <tr><td><b>Import SPICE model…</b></td><td class="wrap">Uses the part's SPICE model from its
+    maker (see below). Pick its subcircuit from the file; the dialog shows the values fitted
+    to it before you accept. The subcircuit is saved in the setup, so the setup file carries
+    it. With <b>Use the SPICE model's impedance</b> ticked, the AC and Coupled Noise solves
+    take each part's impedance from the model at every frequency, which follows a ladder
+    model's shape where a series RLC cannot. The capacitance, ESL and ESR are then fitted
+    to it and locked, for the tables and reports: C and ESL from its reactance 30 times
+    below and above its self-resonance, and ESR its resistance at resonance. DC bias, aging,
+    temperature and tolerance scale every capacitor in the model alike. Untick to use the
+    values as you type them; the model is kept, and ticking again puts its fitted values
+    back.</td></tr>
   <tr><td>Voltage rating</td><td class="wrap">The part's rated DC voltage. Class II ceramics
     (X5R, X7R, X6S…) lose capacitance with DC voltage; with a rating, each part's capacitance
     is derated by the DC voltage across it: what the last DC solve found across its pads, or

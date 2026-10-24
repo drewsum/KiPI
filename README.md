@@ -437,7 +437,9 @@ the resistance is read from its value field: `10m`, `0.005`, `4k7`, `0R1`, `5 m�
 all work, and anything after the value (`1% 0603`) is ignored. You can still type your own.
 Nets joined this way are solved together as one rail, and each rail may hold only one VRM.
 A net with no connection to its VRM is reported, not guessed at. **ESL** is only used by the AC
-analysis. I squared R losses in series links are calculated. **In order to assign a series link, the nets on either side must both be defined as power nets in the net selection pane**. In practice, 0 ohm resistors are never possible; Check your jumper's datasheet for max DCR.
+analysis. **Import SPICE model…** uses the maker's SPICE model of the part (a ferrite bead's,
+say): AC takes the link's impedance from it at every frequency, keeping a bead's resistive
+peak, and DC its resistance at DC. Only passive R, L and C subcircuits are read. I squared R losses in series links are calculated. **In order to assign a series link, the nets on either side must both be defined as power nets in the net selection pane**. In practice, 0 ohm resistors are never possible; Check your jumper's datasheet for max DCR.
 
 **Solve tab**: every combined rail, with a checkbox. Untick the rails that are not modeled or
 routed yet to solve the rest; only the ticked rails are validated, and the choice is saved.
@@ -624,7 +626,9 @@ series links with DC mode (every VRM field can be edited in either mode) and add
 * **Capacitors tab**: RLC models (capacitance, ESL, ESR) for the decoupling capacitors, each
   shared by a group of identical parts. **Models from values** makes one model per capacitor
   value that has none yet, reading the capacitance from the value; enter the ESL and ESR
-  from the datasheet. The table lists every capacitor between ticked nets: tick parts to
+  from the datasheet, or **Import SPICE model…** to use the maker's model of the part. Its
+  subcircuit is saved in the setup, and the AC and Coupled Noise solves take each part's
+  impedance from it at every frequency, with C, ESL and ESR fitted to it. The table lists every capacitor between ticked nets: tick parts to
   assign them to the selected model, with **Tick same value**, **Tick same footprint**,
   **Tick same value + footprint**, **Tick shown** and **Untick shown** for many at once.
   The table shows each part's footprint, so 0402 and 0603 parts of one value can get

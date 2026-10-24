@@ -71,7 +71,6 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     from kipi.ac.checks import ground_nets, rail_caps, rail_nets
     from kipi.ac.solver.fem import ACError, ACSystem, PortDef
     from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
-    from kipi.dc.solver.setup import SHORT_OHMS
     from kipi.noise.checks import find_vrm
     vrm = find_vrm(setup, agg)
     gnd = vrm.ground.net if vrm.ground else next(
@@ -131,7 +130,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     for k in setup.links:
         if k.side_a.net in inside and k.side_b.net in inside:
             a, b = _pads(snap, k.side_a), _pads(snap, k.side_b)
-            if k.resistance <= SHORT_OHMS and not k.esl_h:
+            if k.is_short():
                 shorts.append((a, b))
             else:
                 ports.append(PortDef(k.name, "link", a, b, k))

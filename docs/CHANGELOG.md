@@ -7,6 +7,15 @@ milestones rather than versions that were ever set.
 ## 0.9.2 (in development)
 
 ### Added
+- **SPICE models for capacitors and series links** (#51). **Import SPICE model…** in a
+  capacitor model or series link reads the maker's model of the part, a two-pin
+  `.SUBCKT` of resistors, inductors and capacitors. Pick its subcircuit, and it is saved
+  in the setup. The AC and Coupled Noise solves take the part's impedance from it at every
+  frequency: a capacitor's ladder model keeps its shape, and a ferrite bead its resistive
+  peak. The RLC values are fitted to it for the tables, reports and DC solve. DC bias,
+  aging, temperature and tolerance scale a capacitor model's capacitors alike. Untick
+  **Use the SPICE model's impedance** to go back to the typed values. Only passive
+  networks are read: other elements are refused and `.include` lines are not followed.
 - **Split a load across nets** (#182). **Split across nets…** under the Loads list shares
   one part's total current over several of its supply nets, as a load on each: for when
   only a part's total draw is known and some of its pins are on a ferrite bead filtered

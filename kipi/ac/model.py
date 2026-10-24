@@ -46,6 +46,7 @@ TEMP_CURVES = {
 TEMPERATURE_SOURCES = ("none", "fixed", "thermal")
 
 if TYPE_CHECKING:                       # PinRef lives in the setup model, which imports us
+    from kipi.core.model.spice import SpiceRef
     from kipi.dc.pi.model import PinRef
 
 
@@ -68,6 +69,13 @@ class CapModel:
     # not set). Worst case for a PDN is the low end, so the sweep settings apply it
     # subtractively: the model keeps 1 - tolerance of its capacitance.
     mfg_tolerance_pct: Optional[float] = None
+    # The part's SPICE model (#51): with it in use, the impedance is the model's, and the
+    # three values above are fitted to it.
+    spice: Optional["SpiceRef"] = None
+
+    @property
+    def uses_spice(self) -> bool:
+        return self.spice is not None and self.spice.use
 
     @property
     def dc_bias(self) -> bool:
@@ -115,7 +123,12 @@ class CapModel:
         return max(1.0 - loss, 0.0)
 
     def impedance(self, omega):
-        """Complex impedance at angular frequency ``omega`` (scalar or array)."""
+        """Complex impedance at angular frequency ``omega`` (scalar or array). From a SPICE
+        model, any derating of the capacitance (a copy with less of it) scales each of the
+        model's capacitors alike."""
+        if self.uses_spice:
+            fitted = self.spice.values.get("capacitance_f") or self.capacitance_f
+            return self.spice.impedance(omega, self.capacitance_f / fitted if fitted else 1.0)
         return self.esr_ohm + 1j * omega * self.esl_h + 1.0 / (1j * omega * self.capacitance_f)
 
     def srf_hz(self) -> Optional[float]:

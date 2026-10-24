@@ -46,6 +46,7 @@ from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import (
     SortItem, make_sortable, reset_sort, resort, set_row, sorted_rows,
 )
+from kipi.gui.spice_dialog import CAPACITOR, import_spice, part_values, spice_text
 from kipi.gui.tooltip_art import art_tip
 
 TITLE = "AC setup"
@@ -85,6 +86,17 @@ class CapEditor(_Editor):
         f.addRow("Capacitance", self.cap)
         f.addRow("ESL", self.esl)
         f.addRow("ESR", self.esr)
+        # The three from the part's SPICE model (#51).
+        self.btn_spice = QPushButton("Import SPICE model…", self)
+        self.btn_spice.clicked.connect(self._from_spice)
+        f.addRow("SPICE model", self.btn_spice)
+        self.chk_spice = QCheckBox("Use the SPICE model's impedance")
+        self.chk_spice.toggled.connect(self._spice_toggled)
+        f.addRow(self.chk_spice)
+        self.lbl_spice = QLabel()                   # which model, and whether it is used
+        self.lbl_spice.setWordWrap(True)
+        self.lbl_spice.setStyleSheet("color: #999;")
+        f.addRow(self.lbl_spice)
         self.rated = _spin(0, 1e4, 0, 3, " V", 1)
         self.rated.setSpecialValueText("not set")
         self.kept = _spin(1, 100, 40, 1, " %", 5)
@@ -107,7 +119,8 @@ class CapEditor(_Editor):
         # Drawings under the tooltips (#116): the series model and its impedance curve with
         # the field's element picked out, the DC bias curve and aging.
         art = {self.cap: ("cap_model", "c"), self.esl: ("cap_model", "l"),
-               self.esr: ("cap_model", "r"), self.rated: ("dc_bias", "rated"),
+               self.esr: ("cap_model", "r"), self.btn_spice: ("cap_model", "c", "l", "r"),
+               self.rated: ("dc_bias", "rated"),
                self.kept: ("dc_bias", "kept"), self.aging: ("aging", "aging"),
                self.dielectric: ("dielectric", "x7r")}
         for w, text in (
@@ -142,7 +155,19 @@ class CapEditor(_Editor):
                                 "a PDN: a ±10 % part keeps 90 % of its capacitance."),
                 (self.esl, "Equivalent series inductance of the part itself (from its "
                            "datasheet); the board's mounting inductance is simulated"),
-                (self.esr, "Equivalent series resistance of one part, from its datasheet")):
+                (self.esr, "Equivalent series resistance of one part, from its datasheet"),
+                (self.btn_spice,
+                 "Use the part's SPICE model, a .SUBCKT of resistors, inductors and "
+                 "capacitors from its maker (often a ladder of them, following the part's "
+                 "impedance closely). It is saved with the setup, and the AC and Coupled "
+                 "Noise solves take each part's impedance from it at every frequency. The "
+                 "capacitance, ESL and ESR are fitted to it, for the tables and reports. Its "
+                 "capacitance is at no DC bias: enter the voltage rating to derate it, which "
+                 "scales every capacitor in the model alike."),
+                (self.chk_spice,
+                 "Take the impedance from the imported SPICE model. Untick to use the "
+                 "capacitance, ESL and ESR as you enter them; the model is kept, and "
+                 "ticking again puts its fitted values back.")):
             tip(f, w, text, art.get(w))
         self._watch(self.name, self.cap, self.esl, self.esr, self.rated, self.kept,
                     self.mfg_tol)
@@ -207,7 +232,49 @@ class CapEditor(_Editor):
         self._store()
 
     # ------------------------------------------------------------ values
+    def _from_spice(self):
+        m = self.obj
+        if m is None:
+            return
+        snap = self.panel.snapshot
+        got = import_spice(self, CAPACITOR, [m.name, *part_values(snap, m.refs)])
+        if got is None:
+            return
+        m.spice = got[0]
+        if re.fullmatch(r"Model\d+", m.name):        # still the name it was made with
+            m.name = _unique(m.spice.subckt, [x.name for x in self.panel.setup.caps
+                                              if x is not m])
+        self._fitted(m)
+
+    def _spice_toggled(self, on: bool):
+        m = self.obj
+        if self._loading or m is None or m.spice is None:
+            return
+        m.spice.use = on
+        if on:
+            self._fitted(m)
+        else:
+            self._spice_fields(m)
+            self.changed.emit()
+
+    def _fitted(self, m: CapModel):
+        """Put the values fitted to ``m``'s SPICE model in it and in the fields."""
+        for k, v in m.spice.values.items():
+            setattr(m, k, v)
+        self.load(m)
+        self.changed.emit()
+
+    def _spice_fields(self, m: CapModel):
+        """The SPICE model's line, and the RLC fields locked while it is in use."""
+        self.chk_spice.setVisible(m.spice is not None)
+        self.lbl_spice.setVisible(m.spice is not None)
+        self.chk_spice.setChecked(m.uses_spice)
+        self.lbl_spice.setText(spice_text(m.spice) if m.spice else "")
+        for w in (self.cap, self.esl, self.esr):
+            w.setEnabled(not m.uses_spice)
+
     def _load(self, m: CapModel):
+        self._spice_fields(m)
         self.name.setText(m.name)
         self.cap.setValue(m.capacitance_f * 1e6)
         self.esl.setValue(m.esl_h * 1e9)

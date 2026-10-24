@@ -37,6 +37,7 @@ def describe_cap(m: CapModel) -> str:
     bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias else ""
     bias += f", {m.dielectric}" if m.dielectric else ""
     bias += f", ±{m.mfg_tolerance_pct:g} %" if m.mfg_tolerance_pct else ""
+    bias += f", SPICE {m.spice.subckt}" if m.uses_spice else ""
     return (f"{m.name}: {vals}{bias} "
             f"({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})")
 

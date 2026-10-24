@@ -26,7 +26,6 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.dc.pi.model import PISetup
 from kipi.dc.solver import pads_for
-from kipi.dc.solver.setup import SHORT_OHMS
 
 
 @dataclass
@@ -143,8 +142,7 @@ def fmt_hz(f: float) -> str:
 def element_impedance(port: PortDef, omega: np.ndarray) -> np.ndarray:
     if port.kind == "cap":
         return port.element.impedance(omega)
-    k = port.element                       # a series link
-    return k.resistance + 1j * omega * (k.esl_h or 0.0) + 0 * omega
+    return port.element.impedance(omega)   # a series link
 
 
 def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str):
@@ -170,7 +168,7 @@ def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str):
             notes.append(f"Series link {k.name} leads off the rail to "
                          f"{k.side_b.net if on[0] else k.side_a.net}; left out")
             continue
-        if k.resistance <= SHORT_OHMS and not k.esl_h:
+        if k.is_short():
             shorts.append((pads(k.side_a), pads(k.side_b)))
         else:
             ports.append(PortDef(k.name, "link", pads(k.side_a), pads(k.side_b), k))
