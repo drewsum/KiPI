@@ -93,3 +93,24 @@ def test_narrow_voltage_maps_show_the_drop(monkeypatch, drop, label):
     assert bar.get_ylabel() == label
     assert not _has_offset(fig, SimpleNamespace(ax=bar))
     assert ("3.299980 to 3.300000 V" in ax.get_title()) == (label != "V")
+
+
+def test_each_group_has_layer_tickboxes(tmp_path):
+    """A tickbox per copper layer over each group's 3D view hides or shows the layer in
+    the view and its maps (#181)."""
+    import re
+    snap = board()
+    s = setup("ldo", iq=0.01, ground=True)
+    tree = solve_tree(snap, s)
+    scenes = {n: build_result_scene(snap, g.result) for n, g in tree.groups.items()}
+    text = write_report(tmp_path / "r.html", tree, scenes, snap, s).read_text(encoding="utf-8")
+    assert text.count("class='layer-toggles'") == len(tree.groups)
+    names = {c.id: c.name for c in snap.stackup.copper}
+    for gi, scene in enumerate(scenes.values()):
+        bar = re.search(rf"<div class='layer-toggles' data-plot='plot{gi}'>(.*?)</div>",
+                        text).group(1)
+        assert re.findall(r"data-layer='([^']+)'", bar)[:len(scene.layers)] == [
+            names[lid] for lid in scene.layers]
+        for lid in scene.layers:      # its voltage and current-density maps
+            assert text.count(f"<figure data-plot='plot{gi}' data-layer='{names[lid]}'>") == 2
+    assert "Plotly.restyle" in text              # the tickboxes' script is in the page

@@ -3,7 +3,8 @@
 One ``.html`` file with:
 * a summary and the load / VRM / DC connection / pin / loss / via tables,
 * per net group: an interactive 3D view (Plotly, rotate and zoom in the browser), a
-  per-layer table and top-down voltage and current-density maps for every layer,
+  per-layer table and top-down voltage and current-density maps for every layer, with a
+  tickbox per layer that hides or shows it in the view and the maps (#181),
 * the board temperature map and iteration history when an electro-thermal solve ran.
 
 Plotly's JavaScript is embedded once, so the report works offline and can be shared
@@ -281,6 +282,8 @@ th { background: #f0f0f0; } td:first-child, th:first-child { text-align: left; }
 .maps img { width: 520px; max-width: 100%; }
 .note { color: #666; font-size: 12px; }
 nav a { margin-right: 12px; }
+.layer-toggles { font-size: 13px; margin: 6px 0; }
+.layer-toggles label { margin-right: 12px; white-space: nowrap; cursor: pointer; }
 details > summary { cursor: pointer; margin: 6px 0; }
 thead th { cursor: pointer; user-select: none; }
 thead th[data-sort=asc]::after { content: " \\25B2"; } thead th[data-sort=desc]::after { content: " \\25BC"; }
@@ -340,6 +343,40 @@ NOTES_JS = r"""
   });
 })();
 """
+
+
+# The layer tickboxes over a group's 3D view (#181): each hides or shows its layer's sheet
+# in the view (the vias too) and the layer's maps below it. The colour bar goes with the
+# first layer shown.
+LAYERS_JS = r"""
+document.addEventListener("change", function (e) {
+  var bar = e.target.closest ? e.target.closest(".layer-toggles") : null;
+  if (!bar) return;
+  var id = bar.getAttribute("data-plot"), hidden = {};
+  bar.querySelectorAll("input[data-layer]").forEach(function (b) {
+    if (!b.checked) hidden[b.getAttribute("data-layer")] = true;
+  });
+  var plot = document.getElementById(id);
+  if (plot && plot.data && window.Plotly) {
+    var shown = plot.data.map(function (t) { return !hidden[t.name]; });
+    var first = shown.findIndex(function (s, i) {
+      return s && plot.data[i].type === "mesh3d"; });
+    Plotly.restyle(plot, {visible: shown,
+                          showscale: plot.data.map(function (t, i) { return i === first; })});
+  }
+  document.querySelectorAll("figure[data-plot='" + id + "']").forEach(function (f) {
+    f.style.display = hidden[f.getAttribute("data-layer")] ? "none" : "";
+  });
+});
+"""
+
+
+def layer_toggles(div_id: str, layers: List[str], vias: bool) -> str:
+    """A tickbox per copper layer of the 3D view ``div_id`` (and its vias), all ticked."""
+    boxes = [(n, n) for n in layers] + ([("vias", "Vias")] if vias else [])
+    return (f"<div class='layer-toggles' data-plot='{_e(div_id)}'><b>Layers:</b> "
+            + "".join(f"<label><input type='checkbox' checked data-layer='{_e(key)}'> "
+                      f"{_e(text)}</label>" for key, text in boxes) + "</div>")
 
 
 def notes_section(pdf: bool = False) -> str:
@@ -413,12 +450,15 @@ def report_name(board_stem: str, when: Optional[_dt.datetime] = None, fmt: str =
     return f"{board_stem}_kipi_report_{timestamp(when)}.{fmt}"
 
 
-def maps_html(images: List[str], pdf: bool) -> str:
-    """Figures side by side: wrapped by the browser, two to a row on a PDF page."""
-    images = [m for m in images if m]
+def maps_html(images: List[str], pdf: bool, tags: Optional[List[tuple]] = None) -> str:
+    """Figures side by side: wrapped by the browser, two to a row on a PDF page. ``tags``
+    give each image's (3D view, layer), for the layer tickboxes (#181)."""
+    tagged = [(m, t) for m, t in zip(images, tags or [None] * len(images)) if m]
+    images = [m for m, _t in tagged]
     if not pdf:
         return "<div class='maps'>" + "".join(
-            f"<figure><img src='{m}'></figure>" for m in images) + "</div>"
+            f"<figure data-plot='{_e(t[0])}' data-layer='{_e(t[1])}'><img src='{m}'></figure>"
+            if t else f"<figure><img src='{m}'></figure>" for m, t in tagged) + "</div>"
     width = 330 if len(images) > 1 else 440
     rows = [images[i:i + 2] for i in range(0, len(images), 2)]
     return "<table class='maps'>" + "".join(
@@ -447,7 +487,7 @@ def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool,
         return write_pdf(f"<html><head><meta charset='utf-8'><title>{_e(title)}</title>"
                          f"</head><body>{body}</body></html>", path, title,
                          attachments=attachments)
-    path.write_text(page(title, body, css, SORT_JS), encoding="utf-8")
+    path.write_text(page(title, body, css, SORT_JS + LAYERS_JS), encoding="utf-8")
     return path
 
 
@@ -471,7 +511,7 @@ def views_page(title: str, meta: str, views: List[tuple]) -> bytes:
             f"<p class='note'>{_e(VIEW_NOTE)}</p>"]
     for name, view in views:
         body.append(f"<h2>{_e(name)}</h2>{view}")
-    return page(title, "".join(body), CSS).encode("utf-8")
+    return page(title, "".join(body), CSS, LAYERS_JS).encode("utf-8")
 
 
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,
@@ -684,12 +724,16 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         role = (f"driven by {_e(g.driver)}" if g.kind == "rail"
                 else f"ground, referenced at {_e(g.driver)}")
         parts.append(f"<p>{role}; nets: {_e(', '.join(g.nets))}.</p>")
+        toggles = layer_toggles(f"plot{gi}", [names.get(lid, str(lid)) for lid in scene.layers],
+                                bool(len(scene.via_segments)))
         if pdf:
-            views.append((name, _plotly_3d(scene, snap, f"plot{gi}")))
+            views.append((name, toggles + _plotly_3d(scene, snap, f"plot{gi}")))
             parts.append(f"<p class='note'>Interactive 3D view: {_views_link(path)}</p>")
         else:
+            parts.append(toggles)
             parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
-            parts.append(f"<p class='note'>{_e(VIEW_NOTE)}</p>")
+            parts.append(f"<p class='note'>{_e(VIEW_NOTE)} The tickboxes hide or show a "
+                         "layer in the view and its maps.</p>")
         rows = []
         tri_layer = g.result.mesh.tri_layer
         for lid, lr in scene.layers.items():
@@ -712,7 +756,7 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         if g.kind == "rail":
             parts.append(f"<p class='note'>Drop and boost are measured from the "
                          f"{scene.v_ref:g} V target voltage.</p>")
-        maps = []
+        maps, tags = [], []
         vmin, vmax = scene.ranges["voltage"]
         for lid, lr in scene.layers.items():
             lname = names.get(lid, str(lid))
@@ -720,7 +764,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                                    outline=outline, v_ref=scene.v_ref))
             maps.append(_layer_map(lr, lr.tri_j, True, f"{lname}: current density", "inferno",
                                    "A/mm²", clip_pct=99.5, outline=outline))
-        parts.append(maps_html(maps, pdf))
+            tags += [(f"plot{gi}", lname)] * 2
+        parts.append(maps_html(maps, pdf, tags))
         parts.append("<p class='note'>Current-density maps clip at the 99.5th percentile; pad "
                      "corners are singular and would otherwise wash out the map.</p>")
 

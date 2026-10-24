@@ -538,7 +538,8 @@ keep the notes (printed, it is a box to write in). The HTML report is a
 single portable file, containing:
 
 * the summary and every results table;
-* an interactive 3D view per rail (rotate, zoom, hover for values);
+* an interactive 3D view per rail (rotate, zoom, hover for values), with a tickbox per
+  copper layer (and the vias) that hides or shows it in the view and its maps;
 * per-layer statistics, with top-down voltage and current-density maps;
 * the board temperature map when thermal is on.
 
