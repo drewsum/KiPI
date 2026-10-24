@@ -26,6 +26,11 @@ milestones rather than versions that were ever set.
   drops, in full solves and in the scan's estimate. Each via is cut at the copper layers it
   passes, so a plane shields the pieces behind it, and its EMF adds in series to the trace
   that meets it. Before, a victim via was only a join between layers and picked up nothing.
+- **Capacitor deratings in the AC results** (#180). The results and the report list each
+  derating (DC bias, manufacturing tolerance, aging, dielectric temperature) and whether
+  the sweep applied it, or why not. The report's capacitor model table adds each model's
+  self-resonance at its derated capacitance and how far it moved. The Sweep tab groups the
+  deratings under **Capacitor derating**.
 - **Show all copper in the geometry view.** Every net's copper is drawn for context; the
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 

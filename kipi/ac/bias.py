@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from kipi.ac.model import AGING_REF_HOURS
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.temperature import at as temperature_at
 
@@ -145,7 +146,8 @@ def part_temperatures(snap: BoardSnapshot, ports, temperature) -> Dict[str, floa
 
 def apply_derating(ports, setup, vrm, volts: Dict[str, float],
                    temps: Optional[Dict[str, float]] = None, temp_text: str = ""
-                   ) -> Tuple[Dict[str, Tuple[Optional[float], float]], List[str]]:
+                   ) -> Tuple[Dict[str, Tuple[Optional[float], float]], List[str],
+                              List[Tuple[str, bool, str]]]:
     """Derate the capacitor ports, in place, for DC bias (models that estimate it, at the
     voltage across each part: ``volts``, else the VRM's target voltage), aging (#109, models
     with a dielectric, when the sweep settings age them), temperature (#77, models with
@@ -153,8 +155,8 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
     manufacturing tolerance (models that have one, when the sweep settings model it). Each
     derated part gets its own copy of its model.
 
-    Returns {reference: (DC volts or None, farads)} for the parts derated, and notes for
-    the log.
+    Returns {reference: (DC volts or None, farads)} for the parts derated, notes for the
+    log, and each derating (#180): (what, whether any part got it, how or why not).
     """
     s = setup.ac
     hours = s.aging_hours if s.aging else None
@@ -189,33 +191,58 @@ def apply_derating(ports, setup, vrm, volts: Dict[str, float],
         port.element = replace(m, capacitance_f=c)
         out[port.name] = (v, c)
         kept.append(c / m.capacitance_f if m.capacitance_f else 1.0)
+    what, rows = [], []
+    if n_bias:
+        if from_dc == n_bias:
+            where = "the voltages the last DC solve found across them"
+        elif from_dc:
+            where = (f"the last DC solve's voltages ({from_dc} of them) or else the "
+                     f"{vrm.name} target voltage, {vrm.voltage:g} V")
+        else:
+            where = (f"the {vrm.name} target voltage, {vrm.voltage:g} V (no DC solve of this "
+                     "rail)")
+        what.append(f"{n_bias} for DC bias at {where}")
+        rows.append(("DC bias", True, f"{n_bias} part(s), at {where}"))
+    else:
+        rows.append(("DC bias", False, "ticked, but no model here has a voltage rating"
+                     if s.dc_bias else "not ticked"))
+    if n_tol:
+        span = (f"{min(tols):g}" if max(tols) - min(tols) < 1e-9
+                else f"{min(tols):g} to {max(tols):g}")
+        what.append(f"{n_tol} at the low end of their {span} % manufacturing tolerance")
+        rows.append(("Manufacturing tolerance", True,
+                     f"{n_tol} part(s), at the low end of their {span} % tolerance"))
+    else:
+        rows.append(("Manufacturing tolerance", False,
+                     "ticked, but no model here has a tolerance" if s.mfg_tolerance
+                     else "not ticked"))
+    if n_aged:
+        what.append(f"{n_aged} aged {hours:g} hours")
+        rows.append(("Aging", True, f"{n_aged} part(s), {hours:g} hours operated "
+                                    f"({hours / 8760:.3g} years)"))
+    else:
+        rows.append(("Aging", False,
+                     "not ticked" if not s.aging else
+                     f"ticked, but parts do not age before {AGING_REF_HOURS:g} hours"
+                     if not (hours and hours > AGING_REF_HOURS) else
+                     "ticked, but no model here has a dielectric that ages"))
+    if n_temp:
+        ts = [temps[r] for r in out if r in temps]
+        span = (f"{min(ts):.3g} °C" if max(ts) - min(ts) < 0.05
+                else f"{min(ts):.3g} to {max(ts):.3g} °C")
+        what.append(f"{n_temp} at {temp_text or 'temperature'} ({span})"
+                    if temp_text and "°C" not in temp_text else f"{n_temp} at {span}")
+        rows.append(("Dielectric temperature", True, f"{n_temp} part(s), at {span}"))
+    else:
+        rows.append(("Dielectric temperature", False,
+                     "not modeled: capacitors at 25 °C" if not temps and
+                     s.temperature not in ("fixed", "thermal") else
+                     f"at {temp_text or 'temperature'}, but no model here has a dielectric "
+                     "whose capacitance changes there"))
     notes = []
     if out:
-        what = []
-        if n_bias:
-            if from_dc == n_bias:
-                where = "the voltages the last DC solve found across them"
-            elif from_dc:
-                where = (f"the last DC solve's voltages ({from_dc} of them) or else the "
-                         f"{vrm.name} target voltage, {vrm.voltage:g} V")
-            else:
-                where = (f"the {vrm.name} target voltage, {vrm.voltage:g} V (no DC solve of this "
-                         "rail)")
-            what.append(f"{n_bias} for DC bias at {where}")
-        if n_aged:
-            what.append(f"{n_aged} aged {hours:g} hours")
-        if n_tol:
-            span = (f"{min(tols):g}" if max(tols) - min(tols) < 1e-9
-                    else f"{min(tols):g} to {max(tols):g}")
-            what.append(f"{n_tol} at the low end of their {span} % manufacturing tolerance")
-        if n_temp:
-            ts = [temps[r] for r in out if r in temps]
-            span = (f"{min(ts):.3g} °C" if max(ts) - min(ts) < 0.05
-                    else f"{min(ts):.3g} to {max(ts):.3g} °C")
-            what.append(f"{n_temp} at {temp_text or 'temperature'} ({span})"
-                        if temp_text and "°C" not in temp_text else f"{n_temp} at {span}")
         lo, hi = min(kept), max(kept)
         span = f"{lo:.0%}" if hi - lo < 0.005 else f"{lo:.0%} to {hi:.0%}"
         notes.append(f"Capacitors derated: {'; '.join(what)}. They keep {span} of their "
                      "capacitance")
-    return out, notes
+    return out, notes, rows

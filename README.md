@@ -653,11 +653,14 @@ series links with DC mode (every VRM field can be edited in either mode) and add
   ["Power Distribution System Design Methodology and Capacitor Selection for Modern CMOS
   Technology"](https://doi.org/10.1109/6040.784476), IEEE Trans. Adv. Packaging, 1999.
 * **Sweep tab**: start and stop frequency, points per decade, and how many copper field
-  solves per decade (the copper's response is interpolated between them). **Capacitor DC
-  bias** turns the DC bias estimate on or off for every model at once. **Capacitor
-  manufacturing tolerance** solves every model that has a **Manufacturing tolerance** at the
-  low end of it (subtracting it: a ±10 % model keeps 90 %), the worst case for a PDN.
-  **Capacitor aging**
+  solves per decade (the copper's response is interpolated between them). The
+  **Capacitor derating** group holds the deratings; the results and the report list which
+  were applied, and the report's capacitor table gives each model's derated capacitance
+  and self-resonance. **DC bias** turns the DC bias estimate on or off for every model at
+  once. **Manufacturing tolerance** solves every model that has a **Manufacturing
+  tolerance** at the low end of it (subtracting it: a ±10 % model keeps 90 %), the worst
+  case for a PDN.
+  **Aging**
   ages every model with a dielectric by the **Hours operated** (ten years by default; type
   them, or drag the slider that shows while aging is ticked), on top
   of its DC bias: each loses its aging rate per decade of hours past 1000 hours.

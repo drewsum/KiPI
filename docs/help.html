@@ -1359,10 +1359,12 @@ are required.</p>
     value (<code>NP0</code> counts as C0G).</td></tr>
   <tr><td>Aging</td><td class="wrap">Capacitance lost per decade of hours operated, in % (X7R
     about 2, X5R about 3, Y5V about 7; C0G does not age). Enter the datasheet's rate if it
-    gives one. Used when <b>Capacitor aging</b> is ticked in the Sweep tab.</td></tr>
+    gives one. Used when <b>Aging</b> is ticked under Capacitor derating in the Sweep
+    tab.</td></tr>
   <tr><td>Manufacturing tolerance</td><td class="wrap">Optional: the part's capacitance
     tolerance, in % of nominal, from its datasheet or its value code (J is ±5 %, K ±10 %,
-    M ±20 %). Used when <b>Capacitor manufacturing tolerance</b> is ticked in the Sweep tab,
+    M ±20 %). Used when <b>Manufacturing tolerance</b> is ticked under Capacitor derating
+    in the Sweep tab,
     which solves the model at the low end of it. Leave it <b>not set</b> for a part whose
     entered capacitance is already the figure you want simulated.</td></tr>
   <tr><td>Kept at rating</td><td class="wrap">How much of its capacitance the part keeps at its
@@ -1507,10 +1509,15 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
     in between, its response is interpolated (smoothly, it varies slowly).
     <i>Every point</i> solves the copper at each sweep frequency: exact and slowest. Raise
     this if sharp plane resonances look under-resolved.</td></tr>
-  <tr><td>Capacitor DC bias</td><td class="wrap">Ticked (the default), the capacitor models
+  <tr><td>Capacitor derating</td><td class="wrap">DC bias, manufacturing tolerance,
+    temperature and aging, grouped together. The results and the report list each one and
+    whether it was applied (and why not: unticked, or no model on the rail has what it
+    needs); the report's capacitor model table gives each model's derated capacitance and
+    the self-resonance it moves to.</td></tr>
+  <tr><td>DC bias</td><td class="wrap">Ticked (the default), the capacitor models
     with a <b>Voltage rating</b> are derated by the DC voltage across each part. Untick it to
     solve with every model's capacitance as entered.</td></tr>
-  <tr><td>Capacitor manufacturing tolerance</td><td class="wrap">Ticked, every capacitor
+  <tr><td>Manufacturing tolerance</td><td class="wrap">Ticked, every capacitor
     model with a <b>Manufacturing tolerance</b> is solved at the low end of it: the tolerance
     is subtracted, so a ±10 % model keeps 90 % of its capacitance and a ±20 % model 80 %.
     That is the worst case for a PDN, where too little capacitance raises the impedance.
@@ -1526,7 +1533,7 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
     settings), and models with a dielectric follow its temperature curve.</td></tr>
   <tr><td>Board temperature</td><td class="wrap">The temperature when Fixed, and where the
     thermal co-simulation gives none.</td></tr>
-  <tr><td>Capacitor aging</td><td class="wrap">Ticked, every capacitor model with a dielectric
+  <tr><td>Aging</td><td class="wrap">Ticked, every capacitor model with a dielectric
     loses its aging rate for each decade of <b>Hours operated</b> past 1000 hours (the
     usual reference age of the rated capacitance): an X7R part at 2 %/decade keeps 96 % after
     100,000 hours. This multiplies with the DC bias estimate. Off by default.</td></tr>

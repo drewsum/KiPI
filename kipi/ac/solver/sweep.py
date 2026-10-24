@@ -102,6 +102,8 @@ class ACResult:
     # the parts derated, and what was done.
     cap_bias: Dict[str, Tuple[Optional[float], float]] = field(default_factory=dict)
     bias_note: str = ""
+    # Each capacitor derating (#180): (what, whether any part got it, how or why not).
+    deratings: List[Tuple[str, bool, str]] = field(default_factory=list)
 
 
 class _Pads:
@@ -261,7 +263,7 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     if temp_warning:
         notes.append(temp_warning)
         progress.warn(temp_warning)
-    cap_bias, bias_notes = apply_derating(ports, setup, vrm, volts,
+    cap_bias, bias_notes, deratings = apply_derating(ports, setup, vrm, volts,
                                           part_temperatures(snap, ports, temperature),
                                           temp_text)
     for n in bias_notes:
@@ -335,4 +337,4 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                     stats=system.stats, warnings=notes + system.warnings,
                     solve_s=time.perf_counter() - t0, bandwidth_hz=bandwidth,
                     board_map=board_map, cap_bias=cap_bias,
-                    bias_note=bias_notes[0] if bias_notes else "")
+                    bias_note=bias_notes[0] if bias_notes else "", deratings=deratings)

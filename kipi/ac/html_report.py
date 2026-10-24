@@ -475,12 +475,21 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         row = [_e(m.name), _si(m.capacitance_f, "F"), _si(m.esl_h, "H"),
                _si(m.esr_ohm, "Ω"), _hz(srf) if srf else "", str(n), _e(", ".join(refs))]
         if bias:
-            row.insert(2, _bias_text(m, [bias[r] for r in refs if r in bias]))
+            at = [bias[r] for r in refs if r in bias]
+            row.insert(5, _srf_text(m, at))
+            row.insert(2, _bias_text(m, at))
         rows.append(row)
     head = ["Model", "C", "ESL", "ESR", "Self-resonance", "Parts on rail", "References"]
     if bias:
+        head.insert(5, "SRF derated")
         head.insert(2, "C derated")
     parts.append(_table(head, rows, "caps"))
+    deratings = getattr(result, "deratings", None) or []
+    if deratings:
+        # Which deratings the sweep settings applied, and why the others were not (#180).
+        parts.append("<h3>Capacitor derating</h3>" + _table(
+            ["Derating", "Applied", "How"],
+            [[_e(what), "yes" if on else "no", _e(how)] for what, on, how in deratings]))
     if bias:
         parts.append(f"<p class='note'>{_e(result.bias_note)}. DC bias follows a typical "
                      "class II ceramic's curve through each model's capacitance kept at its "
@@ -569,6 +578,21 @@ def _bias_text(m, at: list) -> str:
     kept = span(min(cs) / m.capacitance_f, max(cs) / m.capacitance_f, lambda x: f"{x:.0%}")
     at_v = f" at {span(min(vs), max(vs), lambda v: f'{v:.3g} V')}" if vs else ""
     return f"{span(min(cs), max(cs), lambda c: _si(c, 'F'))}{at_v} ({kept})"
+
+
+def _srf_text(m, at: list) -> str:
+    """A model's self-resonance at its parts' derated capacitance, and how far it moved:
+    "11.3 MHz (+58 %)"; empty when not derated or without an ESL."""
+    srf = m.srf_hz()
+    if not (at and srf):
+        return ""
+    fs = [1.0 / (2 * math.pi * math.sqrt(c * m.esl_h)) for _v, c in at if c > 0]
+    if not fs:
+        return ""
+    lo, hi = min(fs), max(fs)
+    if hi - lo <= 1e-3 * hi:
+        return f"{_hz(lo)} ({lo / srf - 1:+.0%})"
+    return f"{_hz(lo)} to {_hz(hi)} ({lo / srf - 1:+.0%} to {hi / srf - 1:+.0%})"
 
 
 def _natural(ref: str):

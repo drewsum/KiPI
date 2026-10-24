@@ -745,18 +745,23 @@ class ACPanel(QWidget, PartSelection):
                               "sweep frequency (slowest, exact).")
         for wdg in (self.spin_fstart, self.spin_fstop, self.spin_ppd, self.spin_fpd):
             wdg.valueChanged.connect(self._ac_settings_changed)
-        self.chk_bias = QCheckBox("Capacitor DC bias")
+        # The capacitor deratings in one place (#180); the results and the report say which
+        # were applied.
+        self.g_derate = QGroupBox("Capacitor derating")
+        d = QFormLayout(self.g_derate)
+        f.addRow(self.g_derate)
+        self.chk_bias = QCheckBox("DC bias")
         self.chk_bias.setChecked(s.dc_bias)
-        f.addRow(self.chk_bias)
-        tip(f, self.chk_bias, "Derate the capacitor models that have a voltage rating "
+        d.addRow(self.chk_bias)
+        tip(d, self.chk_bias, "Derate the capacitor models that have a voltage rating "
                               "by the DC voltage across each part (from the last DC solve, "
                               "or else the rail's VRM target voltage). Untick to solve with every "
                               "model's capacitance as entered.")
         self.chk_bias.toggled.connect(self._ac_settings_changed)
-        self.chk_mfg = QCheckBox("Capacitor manufacturing tolerance")
+        self.chk_mfg = QCheckBox("Manufacturing tolerance")
         self.chk_mfg.setChecked(s.mfg_tolerance)
-        f.addRow(self.chk_mfg)
-        tip(f, self.chk_mfg, "Solve the capacitor models that have a Manufacturing tolerance "
+        d.addRow(self.chk_mfg)
+        tip(d, self.chk_mfg, "Solve the capacitor models that have a Manufacturing tolerance "
                              "at the low end of it, the worst case for a PDN: a model with a "
                              "±10 % tolerance keeps 90 % of its capacitance. Models without "
                              "one are unchanged.")
@@ -767,20 +772,20 @@ class ACPanel(QWidget, PartSelection):
             self.cmb_temp.addItem(text, key)
         self.cmb_temp.setCurrentIndex(max(self.cmb_temp.findData(s.temperature), 0))
         self.spin_temp = _spin(-55, 200, s.temperature_c, 1, " °C", 5)
-        f.addRow("Temperature", self.cmb_temp)
-        f.addRow("Board temperature", self.spin_temp)
-        tip(f, self.cmb_temp, "The temperature of the copper (its resistivity) and of the "
+        d.addRow("Temperature", self.cmb_temp)
+        d.addRow("Board temperature", self.spin_temp)
+        tip(d, self.cmb_temp, "The temperature of the copper (its resistivity) and of the "
                               "capacitors with a dielectric (their capacitance). Fixed: one "
                               "temperature for the whole board. From DC thermal "
                               "co-simulation: the copper temperatures of the last DC solve "
                               "with thermal co-simulation, or of DC results opened from a "
                               "file. Not modeled: copper at 20 °C and capacitors at their "
                               "rated values.")
-        tip(f, self.spin_temp, "The board's temperature when Fixed, and where the thermal "
+        tip(d, self.spin_temp, "The board's temperature when Fixed, and where the thermal "
                                "co-simulation has none")
         self.cmb_temp.currentIndexChanged.connect(self._ac_settings_changed)
         self.spin_temp.valueChanged.connect(self._ac_settings_changed)
-        self.chk_aging = QCheckBox("Capacitor aging")
+        self.chk_aging = QCheckBox("Aging")
         self.chk_aging.setChecked(s.aging)
         self.spin_hours = _spin(1, 1e7, s.aging_hours, 0, " h", 1000)
         self.spin_hours.setEnabled(s.aging)
@@ -793,14 +798,14 @@ class ACPanel(QWidget, PartSelection):
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(self.sld_hours, 1)
         row.addWidget(self.lbl_years)
-        f.addRow(self.chk_aging)
-        f.addRow("Hours operated", self.spin_hours)
-        f.addRow(self.w_hours)
+        d.addRow(self.chk_aging)
+        d.addRow("Hours operated", self.spin_hours)
+        d.addRow(self.w_hours)
         self.sld_hours.setToolTip("Drag to set the hours operated, from 1000 hours (no aging "
                                   "yet) to 1,000,000 on a log scale")
-        tip(f, self.chk_aging, "Age the capacitor models that have a dielectric: each loses "
+        tip(d, self.chk_aging, "Age the capacitor models that have a dielectric: each loses "
                                "its aging rate per decade of hours operated past 1000 hours")
-        tip(f, self.spin_hours, "How long the capacitors have operated (8760 hours a year; "
+        tip(d, self.spin_hours, "How long the capacitors have operated (8760 hours a year; "
                                 "87600 is ten years). Heating a ceramic past its Curie point, "
                                 "as in reflow, restarts its aging.")
         self.chk_aging.toggled.connect(self._show_aging)
@@ -1273,6 +1278,10 @@ class ACPanel(QWidget, PartSelection):
                  f"({st.method}), {len(result.freqs)} sweep points in {result.solve_s:.1f} s"]
         if getattr(result, "bias_note", ""):
             notes.append(html.escape(result.bias_note))
+        if getattr(result, "deratings", None):
+            notes.append("Capacitor deratings: " + ", ".join(
+                f"{html.escape(what)} {'✔' if on else '✘'}"
+                for what, on, _how in result.deratings))
         if result.missing_caps:
             notes.append(f"⚠ {len(result.missing_caps)} capacitor(s) on this rail have no "
                          f"model and were left out: "
