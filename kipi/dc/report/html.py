@@ -587,13 +587,17 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     parts.append(_table(
         ["VRM", "Type", "Group", "V set", "Load line (mΩ)", "V target", "V out", "V sense",
          "V gnd sense", "I out (A)",
-         "V in", "I in (A)", "P out (W)", "P in (W)", "Loss (W)", "I limit (A)", "Result"],
+         "V in", "I in (A)", "P out (W)", "P in (W)", "Loss (W)", "Max drop (mV)",
+         "Max drop %", "I limit (A)", "Result"],
         [[_e(v.name), _e(v.kind), _e(v.group), _num(v.v_set, ".5g"),
           _num(v.load_line_mohm or None, "g"), _num(v.v_target, ".5f"), _num(v.v_out, ".5f"),
           _num(v.v_sense, ".5f"), _num(v.v_ground_sense, ".5f"), _num(v.i_out),
           _num(v.v_in, ".5f"), _num(v.i_in), _num(v.p_out), _num(v.p_in), _num(v.p_loss),
+          _num(None if d is None else d * 1e3, ".3f"), _num(pct, ".3f"),
           _num(v.current_limit_a, "g"), _verdict(v.passed)]
-         for v in tree.vrms]))
+         for v in tree.vrms for d, pct in [tree.rail_drop(v)]]))
+    parts.append("<p class='note'>Max drop: the largest drop anywhere on the copper of the "
+                 "rail the VRM drives, below its target voltage.</p>")
     phases = [[_e(v.name), str(p.index), _num(p.v_out, ".5f"), _num(p.i_out), _num(p.v_in, ".5f"),
                _num(p.i_in), _num(p.p_loss)] for v in tree.vrms for p in v.phases]
     if phases:

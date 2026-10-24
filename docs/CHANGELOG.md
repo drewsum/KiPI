@@ -34,6 +34,9 @@ milestones rather than versions that were ever set.
 - **Layer tickboxes in the DC report** (#181). Over each net group's 3D view, a tickbox
   per copper layer (and one for the vias) hides or shows that layer in the view and its
   voltage and current-density maps. A PDF report's attached 3D views have them too.
+- **Max rail drop per VRM** (#188). The DC results' VRMs table and the HTML report's VRM
+  table give the largest drop anywhere on the copper of the rail each VRM drives, in mV
+  and in % of its target voltage.
 - **Show all copper in the geometry view.** Every net's copper is drawn for context; the
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 

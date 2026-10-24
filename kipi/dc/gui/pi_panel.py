@@ -1619,10 +1619,13 @@ class PIPanel(QWidget, PartSelection):
                                   "near a remote-sensed VRM's output pins. The worst pin is the "
                                   "one furthest from the target voltage either way.")
         self.tbl_vrms = self._table(["VRM", "Type", "V out", "I out (A)", "V in", "I in (A)",
-                                     "P in (W)", "Loss (W)", "I limit (A)", ""], sortable=True)
-        self.tbl_vrms.setToolTip("Each VRM's solved output and input, conversion loss, and "
-                                 "PASS/FAIL against its output current limit; a row per phase "
-                                 "under a multi-phase VRM")
+                                     "P in (W)", "Loss (W)", "Max drop (mV)", "Max drop %",
+                                     "I limit (A)", ""], sortable=True)
+        self.tbl_vrms.setToolTip("Each VRM's solved output and input, conversion loss, the "
+                                 "largest drop anywhere on the copper of the rail it drives "
+                                 "(below its target voltage, in mV and % of it; the ground's "
+                                 "own drop not included), and PASS/FAIL against its output "
+                                 "current limit; a row per phase under a multi-phase VRM")
         self.tbl_links = self._table(["Part", "Group", "R (mΩ)", "I (A)", "P (mW)"],
                                       sortable=True)
         self.tbl_links.setToolTip("Current through, and power in, each series link")
@@ -2333,11 +2336,15 @@ class PIPanel(QWidget, PartSelection):
         for v in tree.vrms:                       # each VRM, then a row per phase under it
             kind = v.kind if not v.phases else f"{v.kind}, {len(v.phases)} phases"
             status = "" if v.passed is None else ("PASS" if v.passed else "FAIL")
+            drop, pct = tree.rail_drop(v)          # the rail's largest drop (#188)
             set_row(t, r, [v.name, kind, f"{v.v_out:.5f}", f"{v.i_out:.4g}", f(v.v_in, ".5f"),
                            f(v.i_in, ".4g"), f(v.p_in, ".4g"), f(v.p_loss, ".4g"),
+                           ("" if drop is None else f"{drop * 1e3:.3f}",
+                            -1.0 if drop is None else drop),
+                           (f(pct, ".3f"), -1.0 if pct is None else pct),
                            f(v.current_limit_a, "g"), status])
             if v.passed is not None:
-                t.item(r, 9).setForeground(QColor("#60d060" if v.passed else "#ff6060"))
+                t.item(r, 11).setForeground(QColor("#60d060" if v.passed else "#ff6060"))
             parent = r
             for p in v.phases:
                 r += 1

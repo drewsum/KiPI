@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from kipi.dc.solver import NetResult
 
@@ -170,3 +170,13 @@ class TreeResult:
     solve_s: float = 0.0
     thermal: Optional[object] = None          # kipi.dc.thermal.cosim.ThermalResult, if run
     report_path: Optional[object] = None      # HTML report written for this solve, if any
+
+    def rail_drop(self, vrm: VrmReport) -> Tuple[Optional[float], Optional[float]]:
+        """The largest drop anywhere on the copper of the rail ``vrm`` drives, below its
+        target voltage: volts and % of it (#188). None, None if the rail was not solved."""
+        g = self.groups.get(vrm.group)
+        if g is None or g.kind != "rail":
+            return None, None
+        s = g.result.fields.summary
+        drop, ref = s["max_drop"], s["v_ref"]
+        return drop, (100.0 * drop / abs(ref) if ref else None)

@@ -594,7 +594,7 @@ tables sort the same way:
 | Tab | Shows |
 |---|---|
 | Loads | Each load's current, effective voltage, drop or boost, worst pin and PASS/FAIL. Double-click to show its group. |
-| VRMs | Output and input voltage, current and power, conversion loss, and PASS/FAIL against the output current limit, with a row per phase for multi-phase VRMs |
+| VRMs | Output and input voltage, current and power, conversion loss, the largest drop on the rail it drives (mV and % of its target voltage), and PASS/FAIL against the output current limit, with a row per phase for multi-phase VRMs |
 | Series links | Current and loss in each series part  (I squared R losses)|
 | Vias | Every via and PTH barrel ranked by current. The **Current limit** for PASS/FAIL starts at 1 A, a placeholder: set your own, or 0 for none. Double-click a row to fly to it. |
 | Losses | Copper loss per group and layer, vias, series links and VRM conversion |
