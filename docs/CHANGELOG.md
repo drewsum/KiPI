@@ -7,6 +7,12 @@ milestones rather than versions that were ever set.
 ## 0.9.2 (in development)
 
 ### Added
+- **Split a load across nets** (#182). **Split across nets…** under the Loads list shares
+  one part's total current over several of its supply nets, as a load on each: for when
+  only a part's total draw is known and some of its pins are on a ferrite bead filtered
+  net, say. Each net's share follows its pin count (every pin drawing the same) or is
+  equal. A net the part already has a load on gets that load's current set; the others
+  get a new load with the part's ground pins.
 - **Estimated transient response in AC mode** (#166). A probe can have a **Load step** and
   slew rate, filled in by the target calculator or a load model. The solve then estimates
   the rail's dip when the load steps up and its rise when it steps back down. The

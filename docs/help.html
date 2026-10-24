@@ -964,6 +964,13 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     converts the values when a VRM drives the load's rail.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
+<p><b>Split across nets…</b> under the list shares one part's total current over several of
+its supply nets, as a load on each: for when only the part's total draw is known and some of
+its pins are on a net of their own, behind a ferrite bead say. Pick the part, give its total
+current and tick the nets (its grounds are left out). <b>Equal per pin</b> gives each net its
+pins' share of the total; <b>Equal per net</b> the same to each. A net the part already has a
+load on gets that load's current set (its pin groups are cleared); the others get a new load,
+with the part's ground pins.</p>
 <h4 id="load-models">Load models</h4>
 <p>A <b>load model</b> is a part's supplies in a YAML file of their own: for each
 supply its pins, current or pin groups, tolerance and heat, and for the AC analysis its

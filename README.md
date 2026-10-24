@@ -388,6 +388,11 @@ To try it without a design of your own, open the example board in
   between splitting the current evenly over all pins and giving explicit **pin groups**,
   each with its own current (**Add pin group**, or **One group per pin**). Use groups when one
   part draws different currents on different rails or pins, e.g. a core and an I/O supply.
+* **Split across nets…** (under the list) shares one part's total current over several of
+  its supply nets, a load on each: e.g. when only a chip's total draw is known and some of
+  its pins are on a ferrite bead filtered net. Each net gets its pins' share (every pin
+  drawing the same) or an equal share. A net the part already has a load on gets that
+  load's current set; the others get a new load.
 * **Ground pins** (optional) include the ground return. KiPI superimposes all VRM and load return currents to form a comprehensive GND plane current model.
 * **Tolerance** is the PASS/FAIL limit: a min and a max, each optional, in % from the VRM
   target voltage (e.g. -3 % / +5 %), in volts from it (±V, e.g. -0.1 / +0.15 V) or in volts (e.g.

@@ -1528,6 +1528,14 @@ class PIPanel(QWidget, PartSelection):
         self.load_list.buttons.addWidget(model_button(
             self, "load", self.apply_load_model, self.add_loads_from_model,
             lambda: export_model(self, self.setup, self.snapshot)))
+        # One part's total current over several of its nets (#182).
+        b_split = QPushButton("Split across nets…", self)
+        b_split.setToolTip(art_tip(
+            "Share one part's total current out over several of its supply nets, as a "
+            "load on each: e.g. when only a chip's total draw is known and some of its "
+            "pins are on a ferrite bead filtered net", "split_nets", "nets"))
+        b_split.clicked.connect(lambda: self.split_load_across_nets())
+        self.load_list.buttons.addWidget(b_split)
         self.tabs.addTab(self.vrm_list, "VRMs")
         self.tabs.addTab(self.load_list, "Loads")
         self.tabs.addTab(self.link_list, "Series links")
@@ -2216,6 +2224,36 @@ class PIPanel(QWidget, PartSelection):
         supply = PinRef(ref, net)
         return Load(_unique(ref or "LOAD1", [x.name for x in self.setup.loads]), supply, 0.1,
                     ground=guess_ground_pins(self.snapshot, self.setup, self._nets, supply))
+
+    def split_load_across_nets(self, ref: Optional[str] = None, dialog=None):
+        """Share a part's total current over the supply nets the user ticks, as a load on
+        each (#182). ``dialog`` stands in for the dialog's run in tests."""
+        from kipi.dc.gui.split_load import SplitLoadDialog
+        from kipi.dc.pi.split import existing_load
+        if self.snapshot is None:
+            return
+        parts: Dict[str, str] = {}
+        for net in self._nets:
+            for r, value, _ in parts_on_net(self.snapshot, net):
+                parts.setdefault(r, value)
+        current = self.load_list.current()
+        ref = ref or (current.supply.ref if current is not None else None)
+        dlg = SplitLoadDialog(self.snapshot, self.setup, sorted(parts.items()), self._nets,
+                              ref, self)
+        if not (dialog(dlg) if dialog else dlg.exec()):
+            return
+        ref = dlg.ref()
+        for net, amps in dlg.chosen().items():
+            load = existing_load(self.setup, ref, net)
+            if load is None:
+                supply = PinRef(ref, net)
+                load = Load(_unique(f"{ref} {net}", [x.name for x in self.setup.loads]),
+                            supply, amps, ground=guess_ground_pins(
+                                self.snapshot, self.setup, self._nets, supply))
+                self.setup.loads.append(load)
+            load.current, load.groups = amps, []
+        self.load_list.reload()
+        self.load_list.changed.emit()
 
     def apply_load_model(self, model=None):
         """Apply a load model file (or ``model``) to the loads the user ticks."""
