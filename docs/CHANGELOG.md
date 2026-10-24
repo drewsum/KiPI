@@ -21,6 +21,11 @@ milestones rather than versions that were ever set.
 - **Scan radius slider** (#175). Under **Scan nearby nets**, a slider sets how far from
   the aggressor's parts the scan looks, 0.5 mm to 500 mm on a log scale, and shows how many
   signal nets fall inside. It is the same value as Scan radius in Settings.
+- **Via-to-via inductive coupling** (#173). A victim's vias between the layers its traces
+  use are now vertical conductors in the capacitor loops' field, beside the loops' own via
+  drops, in full solves and in the scan's estimate. Each via is cut at the copper layers it
+  passes, so a plane shields the pieces behind it, and its EMF adds in series to the trace
+  that meets it. Before, a victim via was only a join between layers and picked up nothing.
 - **Show all copper in the geometry view.** Every net's copper is drawn for context; the
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 

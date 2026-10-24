@@ -99,7 +99,7 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     if not sources:
         warnings.append("No capacitor loops (set the switching device's pins and the "
                         "capacitors): no inductive coupling")
-    emf, res.m_h = victim_emf(snap, sources, segs, freqs)
+    emf, res.m_h = victim_emf(snap, sources, segs, freqs, victim.net)
 
     def solve(driver_ohm: float, transfer: bool = False):
         terms = [Termination(d_xy, driver_ohm),

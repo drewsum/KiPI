@@ -788,7 +788,8 @@ induces most of it.
 The mechanisms point to different fixes. Capacitive noise comes from the switch node's
 dV/dt: keep victims away from its copper or behind a plane, and drive them harder.
 Inductive noise comes from the hot loop's dI/dt: keep the loop small and over a solid plane,
-and route victims away from it. Common noise comes from the switching current's return:
+and route victims away from it, their vias too: a victim via beside the loop's vias couples
+to their vertical current. Common noise comes from the switching current's return:
 give the hot loop its own short ground return and keep the victim's driver and receiver
 grounds out of it. Tick **Report** for an HTML or PDF report after each solve; **Save
 results…** writes a `.kipi-noise-results` file that **Open results…** reopens in this mode.

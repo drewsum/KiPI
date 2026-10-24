@@ -1716,7 +1716,9 @@ current and the rails' ripple voltage), then couples them onto the signal nets y
 Three coupling paths are modeled: <b>capacitive</b>, the switch node's copper charging
 the victim's traces through their mutual capacitance; <b>inductive</b>, the current loops
 through each input and output capacitor inducing a voltage along the victim's traces
-through their mutual inductance; and <b>common</b> (shared-ground) coupling, the switching
+through their mutual inductance, vias included: the loops' via drops and the victim's
+own vias between the layers its traces use are vertical conductors, so a victim via
+beside a hot loop's via picks up its dI/dt; and <b>common</b> (shared-ground) coupling, the switching
 currents' return through shared copper leaving the ground under the victim's driver at
 another voltage than its receiver's (the copper's resistance: the inductive part of that is
 the victim's own loop picking up the field, which the inductive path counts).</p>

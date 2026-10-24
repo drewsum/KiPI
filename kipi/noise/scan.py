@@ -139,7 +139,7 @@ def estimate(snap: BoardSnapshot, setup: PISetup, agg, wf, layouts,
         v_c = cm * r * dvdt * (-math.expm1(-t_edge / tau)) if tau > 0 else 0.0
         v_l = 0.0
         if sources and segs:
-            emf, _ = victim_emf(snap, sources, segs, freqs)
+            emf, _ = victim_emf(snap, sources, segs, freqs, net)
             from kipi.noise.waveforms import ifft_periodic
             v_l = float(np.max(np.abs(ifft_periodic(0.0, emf.sum(axis=1), n))))
         rows.append(ScanRow(net, v_c + v_l, v_c, v_l, dist))

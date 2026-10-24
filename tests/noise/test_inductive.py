@@ -141,3 +141,71 @@ def test_inductive_coupling_falls_with_distance():
         peaks.append(solve_noise(snap, _setup(snap, [Victim("SIG")]),
                                  "U1 buck").victims[0].peak_by["inductive"])
     assert peaks[0] > peaks[1] > peaks[2] > 0
+
+
+def _via_board(flip_top=False, flip_bottom=False):
+    """SIG on F.Cu from (0, 0) to a through via at (5, 0), then on B.Cu to (10, 0), with
+    no planes; either track can run the other way."""
+    from kipi.core.model.board import Net, Track, Via
+    from synthetic import B, IN1, make_board
+    snap = make_board()
+    snap.nets = [Net(0, ""), Net(1, "SIG")]
+    top = ((5.0, 0.0), (0.0, 0.0)) if flip_top else ((0.0, 0.0), (5.0, 0.0))
+    bottom = ((10.0, 0.0), (5.0, 0.0)) if flip_bottom else ((5.0, 0.0), (10.0, 0.0))
+    snap.tracks = [Track("SIG", F, 0.2, *top), Track("SIG", B, 0.2, *bottom)]
+    snap.vias = [Via("v1", "SIG", (5.0, 0.0), 0.3, 0.6, [F, IN1, IN2, B])]
+    snap.pads, snap.zones = [], []
+    snap.invalidate_index()
+    return snap
+
+
+def _drop_loop(snap):
+    """A loop standing in the y–z plane beside the via, its via drops 1 mm and 3 mm
+    from it: a hot loop's vertical current next to the victim's."""
+    from kipi.noise.extract.inductive import LoopSource
+    z = {c.id: c.z_mid_mm for c in snap.stackup.copper}
+    zt, zb = z[F], z[IN2]
+    pts = [[5, 1, zt], [5, 1, zb], [5, 3, zb], [5, 3, zt]]
+    return LoopSource("drop loop", polyline(pts, [0.3] * 4, 0.035), np.array([1.0, 1.0]))
+
+
+def _path_emf(snap, emf, segs):
+    """The EMF along the victim from (0, 0) to (10, 0), each segment as the path runs it."""
+    sign = [1.0 if s.b[0] > s.a[0] else -1.0 for s in segs]
+    return emf @ np.array(sign)
+
+
+def test_a_victim_via_links_a_loops_via_drops():
+    """#173: the via between the victim's layers is a vertical conductor in the loops'
+    field. Its EMF, −jω·I·Σ M(loop, via piece), adds to the path's, whichever way the
+    tracks run."""
+    from kipi.noise.extract.capacitive import split_tracks
+    from kipi.noise.extract.inductive import via_pieces, victim_emf
+    freqs = np.array([1e6, 1e7])
+    totals = []
+    for flips in ((False, False), (True, False), (False, True), (True, True)):
+        snap = _via_board(*flips)
+        segs = split_tracks(snap, "SIG", 1.0)
+        pieces = via_pieces(snap, "SIG", segs)
+        assert len(pieces) == 3                     # cut at In1.Cu and In2.Cu
+        assert all(segs[p.seg].layer == F for p in pieces)
+        src = _drop_loop(snap)
+        with_via, m = victim_emf(snap, [src], segs, freqs, "SIG")
+        flat, _ = victim_emf(snap, [src], segs, freqs)
+        via_m = mutual_matrix(src.segments, [p.piece for p in pieces]).sum()
+        extra = _path_emf(snap, with_via - flat, segs)
+        assert extra == pytest.approx(-1j * 2 * np.pi * freqs * via_m, rel=1e-9)
+        totals.append(_path_emf(snap, with_via, segs))
+    # The tracks cross the loop at right angles and link none of it: the via is it.
+    assert abs(via_m) > 50e-12 and np.allclose(_path_emf(snap, flat, segs), 0, atol=1e-15)
+    for t in totals[1:]:
+        assert t == pytest.approx(totals[0], rel=1e-9)
+
+
+def test_a_via_that_joins_one_layer_is_not_a_path():
+    from kipi.noise.extract.capacitive import split_tracks
+    from kipi.noise.extract.inductive import via_pieces
+    snap = _via_board()
+    snap.tracks = snap.tracks[:1]
+    snap.invalidate_index()
+    assert via_pieces(snap, "SIG", split_tracks(snap, "SIG", 1.0)) == []
