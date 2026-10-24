@@ -526,10 +526,10 @@ tab, Solve x of n will be displayed). Every rail is meshed and solved, the downs
 back towards the source, so each VRM's input current includes everything it feeds. Progress
 and solver residuals stream into the log; **Cancel** stops the run.
 
-Tick **Report** before solving to also write
-`<board>_kipi_report_<date>_<time>.html` next to the board (the time stamp keeps each
-solve's report rather than overwriting the last). It opens in your web browser when the solve finishes, and **Open report** opens it
-again later. Choose **PDF** beside it for a `.pdf` to print or attach instead: the same
+Once there are results, after a solve or with saved results opened, click **Report** to
+write `<board>_kipi_report_<date>_<time>.html` of them next to the board (the time stamp
+keeps each report rather than overwriting the last). It opens in your web browser when it
+is written, and **Open report** opens it again later. Choose **PDF** beside it for a `.pdf` to print or attach instead: the same
 tables and maps, with the interactive 3D views in a web page attached inside the PDF
 (`<report>_3d.html`; its **3D Results View** link, or the paperclip beside it, opens it in
 your browser). Its User notes box is a form field:
@@ -703,9 +703,10 @@ JSON and arrays in a zip, safe to share.
 
 ![The Board map of the core rail's solve: the VCORE and GND mesh, the probe and the capacitors by model](docs/images/ac_board_map.png)
 
-Tick **Report** next to **Solve rail** to also write
-`<board>_<rail>_ac_report_<date>_<time>.html` next to the board after each solve. It opens in your web browser when the solve
-finishes, and **Open report** opens it again later. Choose **PDF** for a `.pdf` instead,
+Click **Report** next to **Solve rail** to write
+`<board>_<rail>_ac_report_<date>_<time>.html` of the shown rail's results next to the board,
+after its solve or with saved results opened. It opens in your web browser when it is
+written, and **Open report** opens it again later. Choose **PDF** for a `.pdf` instead,
 with images of the |Z| plot and the board map. Like the DC report, it is one
 portable file you can share. It has the probe table with margins, an interactive |Z|
 plot with the targets and each capacitor model's own curve, a board map of the rail's copper
@@ -798,7 +799,7 @@ Inductive noise comes from the hot loop's dI/dt: keep the loop small and over a 
 and route victims away from it, their vias too: a victim via beside the loop's vias couples
 to their vertical current. Common noise comes from the switching current's return:
 give the hot loop its own short ground return and keep the victim's driver and receiver
-grounds out of it. Tick **Report** for an HTML or PDF report after each solve; **Save
+grounds out of it. Click **Report** for an HTML or PDF report of the shown aggressor's results; **Save
 results…** writes a `.kipi-noise-results` file that **Open results…** reopens in this mode.
 
 ### Tips and troubleshooting

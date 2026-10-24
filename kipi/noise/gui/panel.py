@@ -771,6 +771,7 @@ class NoisePanel(QWidget, PartSelection):
     coupling_changed = Signal()                    # the 3D coupling overlay to draw changed
     setup_changed = Signal()
     results_saved = Signal(str)
+    report_requested = Signal(object, str)         # the shown NoiseResult, "html" or "pdf"
     part_selected = Signal(str, str, bool)         # see ACPanel.part_selected
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -872,8 +873,10 @@ class NoisePanel(QWidget, PartSelection):
         row.addWidget(self.lbl_radius, 1)
         lay.addLayout(row)
         row = QHBoxLayout()
-        self.report_option = ReportOption("waveforms, victims and scan, after each solve",
-                                          self._report_changed, self)
+        self.report_option = ReportOption(
+            "the shown aggressor's waveforms, victims and scan",
+            lambda fmt: self.report_requested.emit(self.result, fmt), self._report_changed,
+            self)
         self.btn_report = QPushButton("Open report", self)
         self.btn_report.setToolTip("Open the shown aggressor's report")
         self.btn_report.setVisible(False)
@@ -1111,7 +1114,7 @@ class NoisePanel(QWidget, PartSelection):
         self.cmb_scan_type.setCurrentIndex(max(self.cmb_scan_type.findData(s.scan_preset), 0))
         self.cmb_scan_type.blockSignals(False)
         self.spin_scan_drv.setEnabled(s.scan_preset == CUSTOM)
-        self.report_option.set_value(s.html_report, s.report_format)
+        self.report_option.set_value(s.report_format)
         self._show_radius()
 
     # ------------------------------------------------------------------ data
@@ -1211,8 +1214,15 @@ class NoisePanel(QWidget, PartSelection):
                 text += f", {n} net{'' if n == 1 else 's'}"
         self.lbl_radius.setText(text)
 
-    def _report_changed(self, on: bool, fmt: str):
-        self.setup.noise.html_report, self.setup.noise.report_format = on, fmt
+    def _report_changed(self, fmt: str):
+        self.setup.noise.report_format = fmt
+
+    def set_report(self, result, path: str):
+        """A report just written of ``result``: the Open report button opens it while
+        ``result`` is shown."""
+        result.report_path = path
+        if result is self.result:
+            self.btn_report.setVisible(True)
 
     def _open_report(self):
         path = getattr(self.result, "report_path", "")
@@ -1309,6 +1319,8 @@ class NoisePanel(QWidget, PartSelection):
 
     def _clear_notes(self):
         self.result = None
+        self.btn_report.setVisible(False)
+        self.report_option.set_available(False)
         self.txt_notes.clear()
         reset_sort(self.tbl_victims)
         self.tbl_victims.setRowCount(0)
@@ -1359,6 +1371,7 @@ class NoisePanel(QWidget, PartSelection):
         self.txt_notes.setText("<br>".join(lines))
         self._fill_victims(result)
         self.btn_report.setVisible(bool(getattr(result, "report_path", "")))
+        self.report_option.set_available(True)
         self.result_selected.emit(result)
 
     def _fill_victims(self, result):

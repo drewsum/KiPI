@@ -167,7 +167,7 @@ class ACSettings:
     # Last rail (VRM name) and ground net chosen for a solve.
     rail: str = ""
     ground: str = ""
-    html_report: bool = False             # write a report after each rail's solve
+    html_report: bool = False             # unused: reports are written on demand (#185)
     report_format: str = "html"           # "html" or "pdf" (#119)
     # Derate the capacitor models that estimate DC bias (#74); off: every model as entered.
     dc_bias: bool = True

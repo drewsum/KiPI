@@ -68,6 +68,11 @@ milestones rather than versions that were ever set.
   not have on the net with the pins it does. Blank, every pin, stays blank.
 
 ### Changed
+- **Reports on demand** (#185). In DC, AC and Coupled Noise mode, the **Report** button
+  writes a report of the shown results, in the format picked beside it, and opens it. It
+  is enabled once there are results: after a solve, or with saved results opened. This
+  replaces the Report tickbox, which wrote one after every solve. A report of a solve
+  shows the setup it was solved with; one of opened results, the setup as it is now.
 - **New VRMs default to a 50 kHz control loop bandwidth** (#190), a typical figure for a
   point-of-load converter, so a new rail can be swept in AC mode straight away. Edit it to
   the converter's datasheet figure; setups saved with no bandwidth keep none.

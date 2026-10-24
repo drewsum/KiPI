@@ -1506,6 +1506,7 @@ class PIPanel(QWidget, PartSelection):
     # name, and whether the user picked it; ("", "", False) for none (#96).
     part_selected = Signal(str, str, bool)
     export_requested = Signal(str)         # "csv", "vtk" or "results"
+    report_requested = Signal(str)         # a report of the shown results, "html" or "pdf"
     setup_changed = Signal()               # any edit to the setup
 
     def __init__(self, parent=None):
@@ -1559,8 +1560,8 @@ class PIPanel(QWidget, PartSelection):
                                   "Problems that stop the solve are listed above in red.")
         self.btn_solve.clicked.connect(lambda: self.solve_requested.emit(self.setup))
         self.report_option = ReportOption("3D view, per-layer maps and tables",
-                                          self._report_changed, self)
-        self.chk_report = self.report_option.chk
+                                          self.report_requested.emit, self._report_changed,
+                                          self)
         self.btn_report = QPushButton("Open report", self)
         self.btn_report.setToolTip("Open the last report in your browser or PDF viewer")
         self.btn_report.setVisible(False)
@@ -1652,8 +1653,8 @@ class PIPanel(QWidget, PartSelection):
         self.report_path = path
         self.btn_report.setVisible(path is not None)
 
-    def _report_changed(self, on: bool, fmt: str):
-        self.setup.html_report, self.setup.report_format = on, fmt
+    def _report_changed(self, fmt: str):
+        self.setup.report_format = fmt
 
     def _open_report(self):
         if self.report_path:
@@ -2142,7 +2143,7 @@ class PIPanel(QWidget, PartSelection):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
             wdg.blockSignals(False)
-        self.report_option.set_value(setup.html_report, setup.report_format)
+        self.report_option.set_value(setup.report_format)
         self._thermal_changed()
         self.setEnabled(True)
         self._refresh_pickers()
@@ -2294,6 +2295,8 @@ class PIPanel(QWidget, PartSelection):
         self._tree = None
         if hasattr(self, "btn_export"):
             self.btn_export.setEnabled(False)
+        if hasattr(self, "report_option"):
+            self.report_option.set_available(False)
         for t in (self.tbl_loads, self.tbl_vrms, self.tbl_links, self.tbl_vias, self.tbl_losses,
                   self.tbl_temps):
             t.setRowCount(0)
@@ -2408,6 +2411,7 @@ class PIPanel(QWidget, PartSelection):
         self._fill_losses()
         self._fill_thermal()
         self.btn_export.setEnabled(True)
+        self.report_option.set_available(True)
         self.res_tabs.setCurrentWidget(self.tbl_loads)
 
     def _row_to_group(self, row, _col):

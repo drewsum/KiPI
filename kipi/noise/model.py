@@ -267,7 +267,7 @@ class NoiseSettings:
     scan_preset: str = "hiz"
     scan_driver_ohm: float = 33.0
     scan_logic_v: float = 3.3
-    html_report: bool = False           # write a report after each solve
+    html_report: bool = False           # unused: reports are written on demand (#185)
     report_format: str = "html"         # "html" or "pdf"
 
 

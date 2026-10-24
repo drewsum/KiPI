@@ -645,6 +645,7 @@ class MainWindow(QMainWindow):
         self.solve_panel.part_selected.connect(
             lambda *a: self._pi_part_selected(*a) if self.mode == "dc" else None)
         self.solve_panel.export_requested.connect(self._export)
+        self.solve_panel.report_requested.connect(self._dc_report)
         self._tree = None
         self._scenes = {}
         self._shown_group = ""
@@ -652,6 +653,7 @@ class MainWindow(QMainWindow):
         self._saved = None              # the setup as its file has it
         self.ac_panel = ACPanel(self)
         self.ac_panel.solve_requested.connect(self.run_ac_solve)
+        self.ac_panel.report_requested.connect(self._ac_report)
         self.ac_panel.result_selected.connect(self._show_ac_result)
         self.ac_panel.results_saved.connect(lambda path: self.log(f"Saved AC results to {path}"))
         self.ac_panel.part_selected.connect(
@@ -659,6 +661,7 @@ class MainWindow(QMainWindow):
         from kipi.noise.gui.panel import NoisePanel
         self.noise_panel = NoisePanel(self)
         self.noise_panel.solve_requested.connect(self.run_noise_solve)
+        self.noise_panel.report_requested.connect(self._noise_report)
         self.noise_panel.result_selected.connect(self._show_noise_result)
         self.noise_panel.victim_selected.connect(self._show_victim)
         self.noise_panel.coupling_changed.connect(self._show_coupling)
@@ -1520,11 +1523,6 @@ class MainWindow(QMainWindow):
             self.log("Solve queued until the current task finishes")
             return
         frozen = copy.deepcopy(setup)     # edits during the solve don't affect it
-        report_path = None
-        if frozen.html_report and self._setup_path is not None:
-            from kipi.dc.report.html import report_name
-            report_path = self._setup_path.parent / report_name(self._results_stem(),
-                                                                fmt=frozen.report_format)
 
         def work(progress):
             from kipi.core.mesh.mesher import MeshError
@@ -1542,14 +1540,7 @@ class MainWindow(QMainWindow):
                 return None, str(e)       # a setup problem, reported in the panel
             with progress.timed("Building result views"):
                 scenes = build_scenes(tree, snap, progress)
-            if report_path is not None:
-                from kipi.dc.report.html import write_report
-                try:
-                    tree.report_path = write_report_file(
-                        lambda p: write_report(p, tree, scenes, snap, frozen, progress),
-                        report_path, progress)
-                except OSError as e:
-                    progress.warn(f"Could not write the report: {e}")
+            tree.solved_setup = frozen         # what a report of it shows (#185)
             return tree, scenes
 
         def done(out):
@@ -1558,8 +1549,7 @@ class MainWindow(QMainWindow):
                 self.solve_panel.show_error(scenes)
                 return
             self._set_tree(tree, scenes)
-            self.solve_panel.set_report(getattr(tree, "report_path", None))
-            self._open_new_report(getattr(tree, "report_path", None))
+            self.solve_panel.set_report(None)
             first = tree.loads[0].group if tree.loads else next(iter(tree.groups))
             self.solve_panel.show_results(tree, first)
             self._show_group(first)
@@ -1570,8 +1560,83 @@ class MainWindow(QMainWindow):
         if self._run(work, done, "Solving power tree") is not None:
             self.solve_panel.set_busy(True)
 
+    # ------------------------------------------------------------ reports (#185)
+    def _report_setup(self, result, panel):
+        """The setup a report of ``result`` shows: the one it was solved with, or, for
+        results opened from a file, the setup as it is now."""
+        return getattr(result, "solved_setup", None) or copy.deepcopy(panel.setup)
+
+    def _report_path(self, name: str) -> Path:
+        """Where a report goes: next to the setup, else the board."""
+        if self._setup_path is not None:
+            return self._setup_path.parent / name
+        snap = self.snapshot
+        folder = snap.project_dir or (str(Path(snap.file).parent) if snap.file else "")
+        return Path(folder or ".") / name
+
+    def _write_report(self, what: str, write, path: Path, on_written):
+        """In the background, ``write(path, progress)`` a report of the shown results
+        (where a PDF cannot be made, as HTML), then ``on_written(path)`` and open it."""
+        def work(progress):
+            try:
+                return write_report_file(lambda p: write(p, progress), path, progress), None
+            except Exception as e:  # noqa: BLE001 - the results stand without a report
+                return None, f"{type(e).__name__}: {e}"
+
+        def done(out):
+            written, error = out
+            if written is None:
+                self.log(f"Could not write the report: {error}", logging.WARNING)
+                QMessageBox.warning(self, "KiPI", f"Could not write the report:\n{error}")
+                return
+            on_written(written)
+            self._open_new_report(written)
+
+        self._run(work, done, f"Writing the {what} report")
+
+    def _dc_report(self, fmt: str):
+        tree, scenes, snap = self._tree, self._scenes, self.snapshot
+        if tree is None or snap is None:
+            return
+        from kipi.dc.report.html import report_name, write_report
+        setup = self._report_setup(tree, self.solve_panel)
+
+        def written(path):
+            tree.report_path = path
+            self.solve_panel.set_report(path)
+
+        self._write_report("DC", lambda p, progress: write_report(p, tree, scenes, snap, setup,
+                                                                  progress),
+                           self._report_path(report_name(self._results_stem(), fmt=fmt)),
+                           written)
+
+    def _ac_report(self, result, fmt: str):
+        snap = self.snapshot
+        if result is None or snap is None:
+            return
+        from kipi.ac.html_report import report_name, write_ac_report
+        setup = self._report_setup(result, self.ac_panel)
+        self._write_report("AC", lambda p, progress: write_ac_report(p, result, snap, setup,
+                                                                     progress),
+                           self._report_path(report_name(self._results_stem(), result.rail,
+                                                         fmt=fmt)),
+                           lambda path: self.ac_panel.set_report(result, path))
+
+    def _noise_report(self, result, fmt: str):
+        snap = self.snapshot
+        if result is None or snap is None:
+            return
+        from kipi.noise.html_report import report_name, write_noise_report
+        setup = self._report_setup(result, self.noise_panel)
+        self._write_report("Coupled Noise",
+                           lambda p, progress: write_noise_report(p, result, snap, setup,
+                                                                  progress),
+                           self._report_path(report_name(self._results_stem(),
+                                                         result.aggressor, fmt=fmt)),
+                           lambda path: self.noise_panel.set_report(result, str(path)))
+
     def _open_new_report(self, path):
-        """Open a report a solve just wrote in the default browser."""
+        """Open a report just written in the default browser."""
         if path is None:
             return
         from kipi.gui.browser import open_in_browser
@@ -1592,11 +1657,6 @@ class MainWindow(QMainWindow):
             return
         frozen = copy.deepcopy(setup)
         dc_result = self._tree       # the last DC solve gives the capacitors' DC bias (#74)
-        report_path = None
-        if frozen.ac.html_report and self._setup_path is not None:
-            from kipi.ac.html_report import report_name
-            report_path = self._setup_path.parent / report_name(self._results_stem(), vrm_name,
-                                                                fmt=frozen.ac.report_format)
 
         def work(progress):
             from kipi.ac.solver import ACError, solve_ac
@@ -1607,14 +1667,7 @@ class MainWindow(QMainWindow):
             except (ACError, MeshError, SolveError) as e:
                 progress.warn(str(e))
                 return None, str(e)
-            if report_path is not None:
-                from kipi.ac.html_report import write_ac_report
-                try:
-                    result.report_path = write_report_file(
-                        lambda p: write_ac_report(p, result, snap, frozen, progress),
-                        report_path, progress)
-                except Exception as e:        # the solve's results stand without it
-                    progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+            result.solved_setup = frozen     # what a report of it shows (#185)
             return result, None
 
         def done(out):
@@ -1623,7 +1676,6 @@ class MainWindow(QMainWindow):
                 self.ac_panel.show_error(error)
                 return
             self.ac_panel.show_result(result)
-            self._open_new_report(getattr(result, "report_path", None))
 
         def partial(board_map):
             """The solve's board map as it fills: shown while the rail solves."""
@@ -1658,11 +1710,6 @@ class MainWindow(QMainWindow):
             self.log("Coupled Noise solve queued until the current task finishes")
             return
         frozen = copy.deepcopy(setup)
-        report_path = None
-        if frozen.noise.html_report and self._setup_path is not None:
-            from kipi.noise.html_report import report_name
-            report_path = self._setup_path.parent / report_name(
-                self._results_stem(), aggressor, fmt=frozen.noise.report_format)
 
         def work(progress):
             from kipi.noise.checks import NoiseError
@@ -1672,14 +1719,7 @@ class MainWindow(QMainWindow):
             except NoiseError as e:
                 progress.warn(str(e))
                 return None, str(e)
-            if report_path is not None:
-                from kipi.noise.html_report import write_noise_report
-                try:
-                    result.report_path = str(write_report_file(
-                        lambda p: write_noise_report(p, result, snap, frozen, progress),
-                        report_path, progress))
-                except Exception as e:        # the solve's results stand without it
-                    progress.warn(f"Could not write the report: {type(e).__name__}: {e}")
+            result.solved_setup = frozen     # what a report of it shows (#185)
             return result, None
 
         def done(out):
@@ -1688,7 +1728,6 @@ class MainWindow(QMainWindow):
                 self.noise_panel.show_error(error)
                 return
             self.noise_panel.show_result(result)
-            self._open_new_report(getattr(result, "report_path", "") or None)
 
         def partial(result):
             """The waveforms, shown while the coupling solves."""

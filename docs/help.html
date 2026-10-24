@@ -1111,9 +1111,10 @@ limits grade the last solve straight away when you change them.</p>
 <p><b>Solve all</b> saves the setup, meshes every ticked net group and solves the power tree.
 It is disabled while there are problems (listed in red). If you click it while the 3D view is
 still building nets, the solve is queued and starts as soon as that finishes.</p>
-<p>Tick <b>Report</b> before solving to also write
-<code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code> next to the board; the
-time stamp keeps each solve's report instead of overwriting the last one. It opens in your web browser when the solve finishes, and
+<p>Once there are results, after a solve or with saved results opened, click
+<b>Report</b> to write <code>&lt;board&gt;_kipi_report_&lt;date&gt;_&lt;time&gt;.html</code>
+of them next to the board; the time stamp keeps each report instead of overwriting the
+last one. It opens in your web browser when it is written, and
 <b>Open report</b> opens it again later. The report is a single offline file with every
 table, an interactive 3D view of each net group, per-layer statistics and maps, and the
 temperature map. Over each 3D view, a tickbox per copper layer (and one for the vias)
@@ -1579,11 +1580,11 @@ dielectric <b>Loss tangent</b> and <b>Default εr</b> from the
 nets with grounds first, defaulting to the VRM's ground pins' net. <b>Solve rail</b> saves the
 setup and runs the sweep; problems that stop it are listed in red above. The log shows the
 field solves as they go.</p>
-<p>Tick <b>Report</b> next to <b>Solve rail</b> to also write
+<p>Click <b>Report</b> next to <b>Solve rail</b> to write
 <code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code> (or, with
-<b>PDF</b> chosen, <code>.pdf</code>) next to the board after each rail's solve;
-the report opens when the rail finishes solving, and <b>Open report</b> opens
-the shown rail's report again later. See <a href="#ac-report">AC report</a>.</p>
+<b>PDF</b> chosen, <code>.pdf</code>) of the shown rail's results next to the board, once
+it is solved or its saved results are opened; the report opens when it is written, and
+<b>Open report</b> opens the shown rail's report again later. See <a href="#ac-report">AC report</a>.</p>
 <p>Each rail keeps its last result: switch <b>Rail</b> to look at another rail's curves
 without solving again. If you change the rail while a solve is running, the result is kept
 for its own rail and the notes say so.</p>
@@ -1913,8 +1914,8 @@ it sets how far from the aggressor's parts the scan looks, from 0.5 mm to 500 mm
 shows how many signal nets are inside; it is the same value as Scan radius in Settings.
 Scan and a chosen victim
 work together: name the nets you know, scan for the ones you do not.</p>
-<p>Tick <b>Report</b> to write <code>&lt;board&gt;_&lt;aggressor&gt;_noise_report_&lt;date&gt;_&lt;time&gt;.html</code>
-(or <code>.pdf</code>) next to the board after each solve: the victims against their
+<p>Click <b>Report</b> to write <code>&lt;board&gt;_&lt;aggressor&gt;_noise_report_&lt;date&gt;_&lt;time&gt;.html</code>
+(or <code>.pdf</code>) of the shown aggressor's results next to the board: the victims against their
 margins, the aggressor's parasitics, its waveforms, each victim's noise by mechanism, the
 scan's estimates and the notes. <b>Open report</b> opens it again. <b>Save results…</b> writes every solved aggressor to a
 <code>.kipi-noise-results</code> file that <b>Open results…</b> reopens in this mode.</p>
@@ -2107,8 +2108,8 @@ them a model or confirm they really do not belong on this rail.</p>
     snapshot…</b>, or with <b>Open…</b> in standalone KiPI, without KiCad or your design
     files.</li>
   <li>Keep <code>&lt;board&gt;.kipi-setup.yml</code> in version control next to the board.</li>
-  <li>Tick <b>HTML report</b> for a single file you can email: it needs nothing but a
-    browser.</li>
+  <li>Click <b>Report</b> with <b>HTML</b> chosen for a single file you can email: it needs
+    nothing but a browser.</li>
   <li><b>Export ▾ → Save results…</b> (DC) or <b>Save results…</b> (AC) lets you reopen a
     long solve later with <b>Open results…</b>.</li>
 </ul>
@@ -2147,7 +2148,7 @@ them a model or confirm they really do not belong on this rail.</p>
     earlier, as Python pickles, which can run code; KiPI asks before it opens one, and they
     are deprecated.</td></tr>
   <tr><td><code>*_noise_report_*.html</code>, <code>.pdf</code></td><td class="wrap">Coupled
-    Noise report, written after a solve with Report ticked</td></tr>
+    Noise report, written with the Report button</td></tr>
   <tr><td><code>*.kipi-noise-results</code></td><td class="wrap">Saved Coupled Noise results,
     every solved aggressor (Save results… / Open results… in Coupled Noise mode)</td></tr>
   <tr><td><code>*.kipi-ac-results</code></td><td class="wrap">Saved AC results, every rail

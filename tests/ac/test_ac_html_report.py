@@ -62,12 +62,12 @@ def test_report_name_is_safe_for_files():
     assert report_name("board", "///", when) == "board_rail_ac_report_2026-10-15_143012.html"
 
 
-def test_html_report_setting_is_saved(tmp_path):
+def test_report_format_is_saved(tmp_path):
     setup = PISetup()
-    setup.ac.html_report = True
+    setup.ac.report_format = "pdf"
     path = tmp_path / "s.kipi-setup.yml"
     setup.save(path)
-    assert PISetup.load(path).ac.html_report
+    assert PISetup.load(path).ac.report_format == "pdf"
 
 
 def test_panel_option_and_report_button(solved, tmp_path):
@@ -77,17 +77,15 @@ def test_panel_option_and_report_button(solved, tmp_path):
     from kipi.ac.gui.panel import ACPanel
     QApplication.instance() or QApplication([])
     snap, setup, result = solved
-    setup.ac.html_report = True
     p = ACPanel()
     p.set_board(snap, setup)
     p.set_nets(["+3V3", "GND"])
-    assert p.chk_report.isChecked()
-    p.chk_report.setChecked(False)
-    assert not setup.ac.html_report
+    assert not p.report_option.btn.isEnabled()
     result.report_path = None
     p.show_result(result)
-    assert p.btn_report.isHidden()
-    result.report_path = tmp_path / "r.html"
+    assert p.btn_report.isHidden() and p.report_option.btn.isEnabled()
+    p.set_report(result, tmp_path / "r.html")         # a report written on demand (#185)
+    assert not p.btn_report.isHidden() and result.report_path == tmp_path / "r.html"
     p.show_result(result)
     assert not p.btn_report.isHidden()
     p.close()

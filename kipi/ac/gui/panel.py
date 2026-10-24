@@ -558,6 +558,7 @@ class ACPanel(QWidget, PartSelection):
     result_selected = Signal(object)               # ACResult shown in the plot; None clears it
     setup_changed = Signal()                       # any edit to the setup
     results_saved = Signal(str)                    # path of a saved results file
+    report_requested = Signal(object, str)         # the shown ACResult, "html" or "pdf"
     # The VRM, series link, capacitor model or probe selected in the setup: kind ("vrm",
     # "link", "cap", "probe"), name, and whether the user picked it; ("", "", False) for
     # none (#96).
@@ -643,9 +644,10 @@ class ACPanel(QWidget, PartSelection):
                                   "this rail. Problems that stop the solve are listed above "
                                   "in red.")
         self.btn_solve.clicked.connect(self._solve)
-        self.report_option = ReportOption("impedance plot, board map and tables, after "
-                                          "each rail's solve", self._report_changed, self)
-        self.chk_report = self.report_option.chk
+        self.report_option = ReportOption(
+            "the shown rail's impedance plot, board map and tables",
+            lambda fmt: self.report_requested.emit(self.result, fmt), self._report_changed,
+            self)
         self.btn_report = QPushButton("Open report", self)
         self.btn_report.setToolTip("Open the shown rail's report in your browser or PDF "
                                    "viewer")
@@ -906,7 +908,7 @@ class ACPanel(QWidget, PartSelection):
             wdg.blockSignals(True)
             wdg.setValue(v)
             wdg.blockSignals(False)
-        self.report_option.set_value(s.html_report, s.report_format)
+        self.report_option.set_value(s.report_format)
         for chk, on in ((self.chk_bias, s.dc_bias),
                         (self.chk_mfg, s.mfg_tolerance), (self.chk_aging, s.aging),
                         (self.chk_near, s.grade_near_rail_only)):
@@ -1214,6 +1216,7 @@ class ACPanel(QWidget, PartSelection):
         self.btn_export.setEnabled(False)
         self.btn_export_model.setEnabled(False)
         self.btn_report.setVisible(False)
+        self.report_option.set_available(False)
 
     def show_error(self, message: str):
         self.txt_notes.setText(f'<span style="color:#ff7070"><b>Cannot solve:</b><br>'
@@ -1292,10 +1295,18 @@ class ACPanel(QWidget, PartSelection):
         self.btn_export.setEnabled(True)
         self.btn_export_model.setEnabled(True)
         self.btn_report.setVisible(getattr(result, "report_path", None) is not None)
+        self.report_option.set_available(True)
         self.result_selected.emit(result)
 
-    def _report_changed(self, on: bool, fmt: str):
-        self.setup.ac.html_report, self.setup.ac.report_format = on, fmt
+    def set_report(self, result, path):
+        """A report just written of ``result``: the Open report button opens it while
+        ``result`` is shown."""
+        result.report_path = path
+        if result is self.result:
+            self.btn_report.setVisible(True)
+
+    def _report_changed(self, fmt: str):
+        self.setup.ac.report_format = fmt
 
     def _open_report(self):
         path = getattr(self.result, "report_path", None)

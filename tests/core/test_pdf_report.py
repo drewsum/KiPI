@@ -261,28 +261,41 @@ def test_qt_failures_become_pdf_errors(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["dc", "ac"])
-def test_panel_report_option(mode, ac, dc):
+def test_panel_report_button(mode, ac, dc):
+    # The Report button writes a report of the shown results on demand (#185): only once
+    # there are results, in the format picked beside it.
     if mode == "dc":
         from kipi.dc.gui.pi_panel import PIPanel
         tree, scenes, snap, s = dc
-        s.html_report, s.report_format = True, "pdf"
+        s.report_format = "pdf"
         p = PIPanel()
         p.set_board(snap, s)
         settings = s
+        show = lambda: p.show_results(tree, next(iter(tree.groups)))       # noqa: E731
+        clear, shown = p.clear_results, ()
     else:
         from kipi.ac.gui.panel import ACPanel
         result, snap, s = ac
-        s.ac.html_report, s.ac.report_format = True, "pdf"
+        s.ac.report_format = "pdf"
         p = ACPanel()
         p.set_board(snap, s)
         p.set_nets(["+3V3", "GND"])
         settings = s.ac
+        show = lambda: p.show_result(result)                               # noqa: E731
+        clear, shown = p._clear_table, (result,)
+    asked = []
+    p.report_requested.connect(lambda *a: asked.append(a))
     opt = p.report_option
-    assert opt.chk.isChecked() and opt.fmt() == "pdf" and opt.cmb.isEnabled()
+    assert opt.fmt() == "pdf" and opt.cmb.isEnabled() and not opt.btn.isEnabled()
+    show()
+    assert opt.btn.isEnabled()
     opt.cmb.setCurrentIndex(opt.cmb.findData("html"))
-    assert settings.report_format == "html"
-    opt.chk.setChecked(False)
-    assert not settings.html_report and not opt.cmb.isEnabled()
+    assert settings.report_format == "html" and not asked
+    opt.btn.click()
+    assert asked == [(*shown, "html")]
+    clear()
+    assert not opt.btn.isEnabled()
+    p.close()
 
 
 def test_another_reader_fills_the_notes_and_keeps_them(dc, tmp_path):

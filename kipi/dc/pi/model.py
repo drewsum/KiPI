@@ -294,7 +294,7 @@ class PISetup:
     # typical 0.3 mm via (#114).
     via_current_limit_a: Optional[float] = DEFAULT_VIA_CURRENT_LIMIT_A
     thermal: ThermalSettings = field(default_factory=ThermalSettings)   # off by default
-    html_report: bool = False                     # write a report after solving
+    html_report: bool = False                     # unused: reports on demand (#185)
     report_format: str = "html"                   # "html" or "pdf" (#119)
     # Nets ticked in the Board panel (the nets in scope). None = never chosen, so the
     # GUI guesses the main power and ground planes; [] = the user unticked them all.
