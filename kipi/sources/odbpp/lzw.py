@@ -9,6 +9,8 @@ rest of the current group is skipped.
 
 from __future__ import annotations
 
+from typing import Optional
+
 MAGIC = b"\x1f\x9d"
 BLOCK_MODE = 0x80
 CLEAR = 256
@@ -23,8 +25,10 @@ def is_compressed(data: bytes) -> bool:
     return data[:2] == MAGIC
 
 
-def decompress(data: bytes) -> bytes:
-    """The contents of a ``.Z`` file."""
+def decompress(data: bytes, max_bytes: Optional[int] = None) -> bytes:
+    """The contents of a ``.Z`` file. One that would grow past ``max_bytes`` raises
+    :class:`LzwError` instead: LZW can expand a small file enormously, so a crafted one
+    could otherwise take all the memory there is."""
     if not is_compressed(data) or len(data) < 3:
         raise LzwError("not a Unix compress (.Z) stream")
     max_bits = data[2] & 0x1F
@@ -84,6 +88,8 @@ def decompress(data: bytes) -> bytes:
         stack.append(fin)
         stack.reverse()
         out += stack
+        if max_bytes is not None and len(out) > max_bytes:
+            raise LzwError(f"decompresses to more than {max_bytes} bytes")
 
         if free < max_code:
             prefix[free] = old

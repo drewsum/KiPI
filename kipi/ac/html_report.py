@@ -301,10 +301,11 @@ def _board_map(result, setup, snap: BoardSnapshot, div_id: str) -> str:
                 if m else "")
         traces.append(go.Scatter(
             x=[fp[r].position[0] for r in refs], y=[fp[r].position[1] for r in refs],
-            mode="markers", name=f"{name} ({len(refs)})",
+            mode="markers", name=f"{_e(name)} ({len(refs)})",
             marker=dict(size=8, color=COLORS[k % len(COLORS)], line=dict(width=0.5,
                                                                          color="#333")),
-            text=[f"{r} · {fp[r].value} · {fp[r].side}<br>model {name}: {desc}" for r in refs],
+            text=[f"{_e(r)} · {_e(fp[r].value)} · {_e(fp[r].side)}<br>model {_e(name)}: "
+                  f"{_e(desc)}" for r in refs],
             hovertemplate="%{text}<extra></extra>"))
     missing = [r for r in result.missing_caps if r in fp]
     if missing:

@@ -179,7 +179,7 @@ class Job:
         data = self._raw(name)
         if name.lower().endswith(COMPRESSED) and lzw.is_compressed(data):
             try:
-                data = lzw.decompress(data)
+                data = lzw.decompress(data, MAX_FILE_BYTES)
             except lzw.LzwError as e:
                 raise OdbError(f"{rel}.Z could not be decompressed ({e})") from e
         return data.decode("utf-8", errors="replace")

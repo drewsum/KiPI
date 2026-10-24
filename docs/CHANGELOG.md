@@ -59,6 +59,10 @@ milestones rather than versions that were ever set.
   new **Hide non-simulated copper** tickbox shows only the nets in the analysis.
 
 ### Fixed
+- **Safer file reading** (#137). A compressed (.Z) ODB++ file that would decompress past
+  1 GB is refused rather than filling memory. A damaged or wrongly shaped .pdn.json says
+  it is not valid instead of failing with an error. Part and layer names in the reports'
+  hover text are escaped.
 - **False PARDISO failures on big DC solves** (#163). On a large board, especially in the
   electro-thermal loop, PARDISO was refused with "relative residual 1.0e-08" and the
   system was solved again with the slower SuperLU, whose result was no more accurate.

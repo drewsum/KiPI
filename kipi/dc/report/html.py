@@ -305,7 +305,7 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
             # thin triangles left by thinning at random, a patchwork of dark ones (#122).
             lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0, fresnel=0.0),
             colorbar=dict(title="V", len=0.7),
-            hovertemplate=(f"{cu.name}<br>x %{{x:.2f}} mm<br>y %{{y:.2f}}"
+            hovertemplate=(f"{_e(cu.name)}<br>x %{{x:.2f}} mm<br>y %{{y:.2f}}"
                            "<br>V %{intensity:.5f}<extra></extra>")))
     if len(scene.via_segments):
         seg = scene.via_segments

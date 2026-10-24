@@ -269,3 +269,15 @@ def test_import_keeps_the_rest_of_the_setup(tmp_path):
     setup, _ = import_tomachie_pdn(path, board(), base)
     assert setup.html_report and setup.settings.max_edge_mm == 0.7
     assert [l.name for l in setup.loads] == ["U2"] and base.loads == []
+
+
+@pytest.mark.parametrize("text", ["[]", '{"schema": "tomachie-pdn", "schema_version": 1, '
+                                        '"rails": ["VIN"]}',
+                                  '{"schema": "tomachie-pdn", "schema_version": 1, '
+                                  '"rails": [{"name": "VIN", "source": []}]}'])
+def test_a_malformed_file_is_refused_not_a_crash(tmp_path, text):
+    """A file with fields of the wrong kind says it is not valid (#137)."""
+    path = tmp_path / "bad.pdn.json"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(PdnImportError):
+        import_tomachie_pdn(path, board())

@@ -445,3 +445,10 @@ def test_netless_copper_takes_its_net_pass_after_pass(tmp_path, snap):
         note = next((a for a in s.assumed if a.startswith("Copper drawings:")), "")
         return int(note.split()[2]) if note else 0
     assert guessed(got) == guessed(snap) + 2
+
+
+def test_a_z_stream_that_grows_too_large_is_refused():
+    """LZW can expand a small file enormously (#137): past the limit it stops."""
+    assert lzw.decompress(TOBEORNOT, max_bytes=24) == b"TOBEORNOTTOBEORTOBEORNOT"
+    with pytest.raises(lzw.LzwError, match="more than 10 bytes"):
+        lzw.decompress(TOBEORNOT, max_bytes=10)
