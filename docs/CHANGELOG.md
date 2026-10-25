@@ -15,6 +15,12 @@ milestones rather than versions that were ever set.
   refactorizing). AC and Coupled Noise use its small-signal resistance and capacitance at
   the current its side B loads draw. A reverse-biased diode with nothing else feeding its
   load stops the solve with a message.
+- **Isolated converters** (#170): a new VRM type, **Isolated**, for a flyback, a forward
+  converter or an isolated module. It draws its input as a switcher does; its output ground
+  pins are the 0 V reference of the ground on its output side, and its input current
+  returns through its new **Input ground pins** on the input side's ground, so both grounds
+  are solved in DC. AC solves its rails against its output ground and counts its input as a
+  load on the rail feeding it. Coupled Noise does not model isolated converters.
 
 ### Changed
 - **The series link's constant diode drop is gone** (#191): a diode is its SPICE model.

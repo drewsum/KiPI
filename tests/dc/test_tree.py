@@ -10,10 +10,10 @@ from kipi.dc.pi.model import (
     DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate, vin_range,
 )
 from kipi.core.model.spice import constant_drop_ref
-from kipi.dc.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, solve_tree
+from kipi.dc.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, _mean_v, solve_tree
 from kipi.dc.solver.fem import SolveError
 
-from tree_boards import R, board, by_name, pad, setup
+from tree_boards import R, board, by_name, isolated_board, isolated_setup, pad, setup
 
 
 def test_ldo_chain():
@@ -477,3 +477,43 @@ def test_a_diode_is_biased_by_the_loads_beyond_it():
     # Its small-signal resistance falls with its current.
     w = np.array([2 * np.pi * 1e3])
     assert abs(k.impedance(w)[0]) < abs(d.impedance(w)[0])
+
+
+def test_isolated_converter_references_its_own_output_ground():
+    s = isolated_setup()
+    assert validate(s) == []
+    res = solve_tree(isolated_board(), s)
+    u1, ld = by_name(res.vrms, "U1"), by_name(res.loads, "U2")
+    # Its input as a switcher's; its input current returns over PGND to J1 (9 mm).
+    assert u1.p_in == pytest.approx(u1.v_out * u1.i_out / 0.8, rel=1e-8)
+    pgnd = res.groups["PGND"].result.solution
+    u1_in_gnd = _mean_v(pgnd, ["u1_3"])
+    assert u1_in_gnd == pytest.approx(u1.i_in * R(9), rel=1e-8)
+    # The output side is referenced at U1.4: the load's 1 A returns over 8 mm of ISOGND.
+    assert ld.v_ground == pytest.approx(1.0 * R(8), rel=1e-8)
+    assert res.groups["ISOGND"].kind == "ground" and res.groups["ISOGND"].driver == "U1"
+
+
+def test_isolated_converter_validation():
+    s = isolated_setup()
+    s.vrms[1].input_ground = PinRef("U1", "ISOGND", ["4"])
+    assert any("not isolated" in e for e in validate(s))
+    s = isolated_setup()
+    s.vrms[1].ground = None                       # the output side has no reference
+    assert any("Ground ISOGND needs a reference" in e for e in validate(s))
+    s = isolated_setup()
+    s.vrms[1].phases = [s.vrms[1].all_phases()[0]]
+    assert any("one phase" in e for e in validate(s))
+    back = PISetup.from_dict(isolated_setup().to_dict())
+    assert back == isolated_setup()
+
+
+def test_isolated_converter_with_an_excluded_input_becomes_a_source():
+    from kipi.dc.pi.model import active_setup
+    s = isolated_setup()
+    s.excluded_nets = ["VIN"]
+    out, _ = active_setup(s)
+    u1 = by_name(out.vrms, "U1")
+    assert (u1.kind, u1.input, u1.input_ground) == ("source", None, None)
+    assert u1.ground == PinRef("U1", "ISOGND", ["4"])
+    assert validate(out) == []

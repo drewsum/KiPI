@@ -1293,7 +1293,7 @@ class ACPanel(QWidget, PartSelection):
         for load in self.setup.loads:
             menu.addAction(load.name, lambda load=load: self.probe_list.add(
                 self.probe_from_load(load)))
-        # An LDO's or switcher's input loads the rail feeding it (#117): one per phase.
+        # A regulator's input loads the rail feeding it (#117): one per phase.
         inputs = vrm_inputs(self.setup)
         if self.setup.loads and inputs:
             menu.addSeparator()
@@ -1315,7 +1315,7 @@ class ACPanel(QWidget, PartSelection):
         phases = vrm.all_phases()
         ph = phases[phase]
         return self._probe_on(vrm_input_name(vrm.name, phase, len(phases)), ph.input,
-                              ph.ground)
+                              vrm.input_return(ph))
 
     def _probe_on(self, name: str, supply: PinRef, ground: Optional[PinRef]) -> Probe:
         gnd = ground or guess_ground_pins(self.snapshot, self.setup, self._nets,

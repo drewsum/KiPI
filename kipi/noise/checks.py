@@ -51,6 +51,9 @@ def find_vrm(setup: PISetup, agg: Aggressor) -> Vrm:
     vrm = next((v for v in setup.vrms if v.name == agg.vrm), None)
     if vrm is None:
         raise NoiseError(f"Aggressor {agg.name}: choose its VRM")
+    if vrm.kind == "isolated":            # too open ended to model (#170)
+        raise NoiseError(f"Aggressor {agg.name}: VRM {vrm.name} is an isolated converter, "
+                         "which Coupled Noise does not model")
     if vrm.kind != "smps":
         raise NoiseError(f"Aggressor {agg.name}: VRM {vrm.name} is not a switcher")
     return vrm

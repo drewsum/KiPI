@@ -790,6 +790,15 @@ output current, efficiency or quiescent current) is applied as a load upstream. 
 <p>Voltages are measured against the source's ground (0 V). If ground pins are given, the
 ground return is solved too and a load's ground rises above 0 V. The figure to compare with
 the VRM's regulated voltage is the load's <b>effective voltage</b>: supply minus ground at the load.</p>
+<h4 id="vrm-isolated">Isolated converters</h4>
+<p>A VRM of type <b>Isolated</b> (a flyback, a forward converter or an isolated module) is a
+switcher whose output side has a ground of its own. Its <b>Output ground pins</b> hold that
+ground at 0 V: they are its reference, as a source's ground pins are on the input side, and
+the loads on its rails return their current to them. Its input current returns through its
+<b>Input ground pins</b>, on the ground of the side feeding it. The two grounds must not be
+joined by a DC connection; a converter whose grounds are tied is a switcher. An isolated
+converter has one phase. In AC mode its rails are solved against its output ground, and
+Coupled Noise does not model isolated converters as aggressors.</p>
 <h4>Drop and boost</h4>
 <p>A <b>drop</b> is a pin below the VRM's regulated voltage. A <b>boost</b> is a pin above it, which
 happens with remote sense: the VRM raises its output to hold a sense point further down the
@@ -883,12 +892,15 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
   <tr><td>Name</td><td class="wrap">Used in the results tables.</td></tr>
   <tr><td>Type</td><td class="wrap"><b>Source</b>: an ideal supply with no input (connector,
     bench supply, battery). <b>LDO</b>: I<sub>in</sub> = I<sub>out</sub> + I<sub>q</sub>.
-    <b>Switcher</b>: P<sub>in</sub> = P<sub>out</sub> / efficiency.</td></tr>
+    <b>Switcher</b>: P<sub>in</sub> = P<sub>out</sub> / efficiency. <b>Isolated</b>: a
+    switcher whose output side has its own ground (see <a href="#vrm-isolated">isolated
+    converters</a>).</td></tr>
   <tr><td>Target voltage</td><td class="wrap">The rail's target: the VRM regulates to it at
     its output (or sense) pins, and loads are judged against it. Read from the net name when
     you pick the output net (see <a href="#autofill">pre-filled fields</a>).</td></tr>
-  <tr><td>Efficiency</td><td class="wrap">Switcher only.</td></tr>
-  <tr><td>Quiescent</td><td class="wrap">LDO and switcher: extra input current.</td></tr>
+  <tr><td>Efficiency</td><td class="wrap">Switcher and isolated only.</td></tr>
+  <tr><td>Quiescent</td><td class="wrap">LDO, switcher and isolated: extra input
+    current.</td></tr>
   <tr><td>Output current limit</td><td class="wrap">Optional. The VRM row shows PASS if its total
     output current (all phases) is at most this.</td></tr>
   <tr><td>Load line</td><td class="wrap">Optional, DC only (adaptive voltage positioning). The
@@ -908,7 +920,7 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     solved input is outside its range (or an LDO below its dropout) cannot hold its output, and every load it
     feeds, directly or downstream, is marked <span class="fail">VRM OUT OF
     REGULATION</span>.</td></tr>
-  <tr><td>DC accuracy</td><td class="wrap">LDO and switcher only; used by the AC
+  <tr><td>DC accuracy</td><td class="wrap">LDO, switcher and isolated only; used by the AC
     <a href="#ac-calc">target calculator</a>. The output's DC error (DC accuracy or DC
     tolerance) from the datasheet: the regulator's reference accuracy, the feedback resistor
     tolerances, leakage into the FB pin, and line and load regulation. Min and max
@@ -925,11 +937,16 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     <a href="#wf-multiphase">the multi-phase workflow</a>.</td></tr>
   <tr><td>Output pins</td><td class="wrap">Where it drives the rail: the output pin, or for a
     switcher usually the inductor's output side.</td></tr>
-  <tr><td>Input pins</td><td class="wrap">LDO and switcher: where it draws its input. This
+  <tr><td>Input pins</td><td class="wrap">LDO, switcher and isolated: where it draws its
+    input. This
     links it into the power tree. Filled in from the output part when it has one other
     rail.</td></tr>
   <tr><td>Ground pins</td><td class="wrap">Optional: solve the ground return as well. Filled in
-    with the output part's ground pins.</td></tr>
+    with the output part's ground pins. On an isolated converter, <b>Output ground pins</b>:
+    the output side's ground, which they hold at 0 V.</td></tr>
+  <tr><td>Input ground pins</td><td class="wrap">Isolated only, optional: the input side's
+    ground pins, where its input current returns to the VRM feeding it. Filled in with the
+    output part's pins on its other ground net.</td></tr>
   <tr><td>Sense pins</td><td class="wrap">Optional remote sense (positive).</td></tr>
   <tr><td>Ground sense pins</td><td class="wrap">Optional negative remote sense on the ground net
     (needs ground pins).</td></tr>

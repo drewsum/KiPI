@@ -47,6 +47,7 @@ def setup_grounds(setup: Optional[PISetup]) -> List[str]:
     if setup is None:
         return []
     refs = [ph.ground for v in setup.vrms for ph in v.all_phases()]
+    refs += [v.input_ground for v in setup.vrms]
     refs += [sp.ground_sense for v in setup.vrms for sp in v.all_sense_points()]
     refs += [ld.ground for ld in setup.loads]
     refs += [p.ground for p in setup.probes]
@@ -261,6 +262,19 @@ def guess_input_pins(snap: Optional[BoardSnapshot], nets: Optional[Iterable[str]
     exclude = [output.net] + ([ground.net] if ground else [])
     net = input_net(snap, output.ref, exclude, nets)
     return PinRef(output.ref, net) if net else None
+
+
+def guess_input_ground(snap: Optional[BoardSnapshot], setup: Optional[PISetup],
+                       nets: Optional[Iterable[str]], output: Optional[PinRef],
+                       ground: Optional[PinRef],
+                       input: Optional[PinRef] = None) -> Optional[PinRef]:
+    """An isolated converter's input ground pins (#170): the output part's pins on a
+    ground net other than its output ground (see :func:`ground_net`)."""
+    if output is None or not output.ref:
+        return None
+    exclude = [r.net for r in (output, ground, input) if r]
+    gnd = ground_net(snap, output.ref, exclude, nets, setup_grounds(setup))
+    return PinRef(output.ref, gnd) if gnd else None
 
 
 def guess_other_side(snap: Optional[BoardSnapshot], side: Optional[PinRef],

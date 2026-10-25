@@ -282,11 +282,13 @@ def vrm_input_name(vrm: str, phase: int, phases: int) -> str:
 
 
 def vrm_inputs(setup: "PISetup") -> List[Tuple[str, "Vrm", int]]:
-    """The input pins of every LDO and switcher, one entry per phase that has them:
+    """The input pins of every LDO, switcher and isolated converter, one entry per phase
+    that has them:
     ``(name, vrm, phase)``, the phase counting from 0 (see :meth:`Vrm.all_phases`)."""
+    from kipi.dc.pi.model import REGULATOR_KINDS
     out = []
     for v in setup.vrms:
-        if v.kind not in ("ldo", "smps"):
+        if v.kind not in REGULATOR_KINDS:
             continue
         phases = v.all_phases()
         out += [(vrm_input_name(v.name, k, len(phases)), v, k)
@@ -351,13 +353,13 @@ def probe_loads(setup: "PISetup", rail: Optional["PinRef"],
                              ac_tolerance=LoadTolerance.of_ac(load, vrm and vrm.voltage)))
     for name, v, k in vrm_inputs(setup):
         ph = v.all_phases()[k]
-        if ph.input.ref != rail.ref or (ground and ph.ground and ph.ground.ref != ground.ref):
+        back = v.input_return(ph)             # where its input current returns
+        if ph.input.ref != rail.ref or (ground and back and back.ref != ground.ref):
             continue
         nominal = rail_nominal(setup, ph.input.net, v.name)
         tol = nominal and LoadTolerance.of_vrm_input(name, v, nominal, *vin_range(setup, v))
         i_in = _vrm_input_solved(dc_result, v.name, k)[1]
-        exact = _same_pins(ph.input, rail) and (ph.ground is None
-                                                or _same_pins(ph.ground, ground))
+        exact = _same_pins(ph.input, rail) and (back is None or _same_pins(back, ground))
         out.append(ProbeLoad(name, tol or None, abs(i_in or 0.0), exact,
                              vrm_input_drop(dc_result, name, v.name, k, nominal), True))
     out.sort(key=lambda p: not p.exact)

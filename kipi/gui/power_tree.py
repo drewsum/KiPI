@@ -22,8 +22,8 @@ from qtpy.QtWidgets import (
 from kipi.dc.pi.diagram import Block, Diagram, build_diagram, place, si
 
 FILL = {"rail": "#d9dde3", "link": "#fbe7b5", "load": "#f6c4c0", "cap": "#e2d4f3"}
-VRM_FILL = {"source": "#bfe3c0", "ldo": "#ffd29e", "smps": "#b9d7f5"}
-VRM_TAG = {"source": "SOURCE", "ldo": "LDO", "smps": "SMPS"}
+VRM_FILL = {"source": "#bfe3c0", "ldo": "#ffd29e", "smps": "#b9d7f5", "isolated": "#c9c3ef"}
+VRM_TAG = {"source": "SOURCE", "ldo": "LDO", "smps": "SMPS", "isolated": "ISOLATED"}
 EDGE = {"rail": "#59616b", "link": "#a07818", "load": "#b04a42", "cap": "#7a5aa8",
         "vrm": "#3d6e9e"}
 TEXT = QColor("#1b1f24")
@@ -203,7 +203,7 @@ class PowerTreeWindow(QDialog):
         item = QGraphicsPathItem(path)
         item.setBrush(QBrush(QColor(fill)))
         pen = QPen(QColor(EDGE.get(b.kind, "#555")), 1.4)
-        if b.kind == "vrm" and b.vrm_kind in ("ldo", "smps"):
+        if b.kind == "vrm" and b.vrm_kind in ("ldo", "smps", "isolated"):
             pen.setStyle(Qt.DashLine)
             pen.setWidthF(2.0)
         item.setPen(pen)
@@ -256,6 +256,7 @@ class PowerTreeWindow(QDialog):
     def _legend(self, font, small, fm):
         """Key along the top: what each colour and outline means."""
         items = [("SOURCE", "source"), ("LDO", "ldo"), ("SMPS", "smps"),
+                 ("ISOLATED", "isolated"),
                  ("Rail", "rail"), ("Series link", "link"), ("Load", "load"),
                  ("Capacitors", "cap")]
         bounds = self.scene.itemsBoundingRect()

@@ -57,5 +57,34 @@ def setup(kind="ldo", eff=0.9, iq=0.0, sense=False, ground=False, gsense=False):
     return PISetup([src, reg], [load], [], SolveSettings(max_edge_mm=0.3))
 
 
+def isolated_board():
+    """The board with its ground split under U1 (#170): PGND (x 0..11) on the input side,
+    ISOGND (x 12..22) on the output side, U1.4 at 12..13 its output ground."""
+    snap = board()
+    for p in snap.pads:
+        if p.id == "u2_2":
+            p.net = "ISOGND"
+        elif p.net == "GND":
+            p.net = "PGND"
+    snap.pads.append(pad("u1_4", "ISOGND", "U1", "4", box(12, 0, 13, 1), B))
+    snap.zones[2] = Zone("c", "PGND", "", 0, {B: [poly(box(0, 0, 11, 1))]})
+    snap.zones.append(Zone("d", "ISOGND", "", 0, {B: [poly(box(12, 0, 22, 1))]}))
+    snap.nets[2] = Net(3, "PGND")
+    snap.nets.append(Net(4, "ISOGND"))
+    return snap
+
+
+def isolated_setup():
+    """U1 an isolated converter: its input returns over PGND, ISOGND its own ground."""
+    s = setup("smps", eff=0.8, ground=True)
+    s.vrms[0].ground = PinRef("J1", "PGND", ["2"])
+    u1 = s.vrms[1]
+    u1.kind = "isolated"
+    u1.ground = PinRef("U1", "ISOGND", ["4"])
+    u1.input_ground = PinRef("U1", "PGND", ["3"])
+    s.loads[0].ground = PinRef("U2", "ISOGND", ["2"])
+    return s
+
+
 def by_name(items, name):
     return next(x for x in items if x.name == name)

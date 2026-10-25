@@ -351,17 +351,18 @@ as missing pins, or two VRMs on one group, are shown in red as you edit.
 
 | Field | Meaning |
 |---|---|
-| Type | **Source** (ideal supply), **LDO** (I_in = I_out + I_q) or **Switcher** (P_in = P_out / efficiency) |
+| Type | **Source** (ideal supply), **LDO** (I_in = I_out + I_q), **Switcher** (P_in = P_out / efficiency) or **Isolated** (a switcher whose output side has its own ground) |
 | Output pins, Target voltage | Where it drives, and the rail's target voltage: what the VRM regulates to and what its loads are judged against |
-| Input pins | LDO and switcher only. The pins it draws from, which ties this VRM to its upstream net and defines the power tree. |
-| Efficiency / Quiescent | Switcher efficiency, LDO quiescent current |
+| Input pins | LDO, switcher and isolated only. The pins it draws from, which ties this VRM to its upstream net and defines the power tree. |
+| Efficiency / Quiescent | Switcher and isolated efficiency, LDO quiescent current |
 | Output current limit | Optional: the VRM PASSes if its total output current (all phases) is at most this. Leave at **no limit** to skip the check. |
 | Load line | Optional, in mΩ: the VRM regulates to its regulated voltage less this times its output current (what its connected loads and downstream VRMs actually draw). Drops are still measured from the regulated voltage, so the droop counts against load tolerances. |
 | Dropout | LDO only. The least input-to-output difference it regulates at |
 | Input range | Optional input range it regulates over: min and max, in V, or in ±V or % from the input rail's nominal voltage (the target voltage of the VRM driving it). A VRM whose solved input voltage is outside its range, or an LDO below its dropout, cannot hold its regulated voltage: every load it feeds, directly or downstream, is marked **VRM OUT OF REGULATION** |
-| DC accuracy | LDO and switcher only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V; the DC Accuracy Calculator can work it out from the feedback divider. The target calculator subtracts each side of it from the same side of a copied load tolerance. |
+| DC accuracy | LDO, switcher and isolated only. Optional DC error of the output: min and max, in % or ±V from the target voltage, or in V; the DC Accuracy Calculator can work it out from the feedback divider. The target calculator subtracts each side of it from the same side of a copied load tolerance. |
 | Sense pins | Optional remote sense: the VRM regulates the voltage at these pins instead of at its output |
-| Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground |
+| Ground pins | Optional: also solve the ground return, so the drop is measured output-to-ground. On an isolated converter, **Output ground pins**: its output side's ground, which they hold at 0 V. |
+| Input ground pins | Isolated only, optional: the input side's ground pins, where its input current returns to the VRM feeding it |
 | Ground sense pins | Optional negative remote sense on the ground net: the VRM holds its regulated voltage relative to these pins instead of 0 V (needs ground pins) |
 | Phases | Parallel phases of a multi-phase regulator. **Edit phase** picks which phase the output, input and ground pins belong to. |
 
@@ -575,7 +576,8 @@ In the **Results** pane, choose a **net group** and a **field** to show in 3D:
 * **Via current**
 * **Temperature** (with thermal on)
 
-Voltages are measured against the source's ground pins (0 V). When ground returns are
+Voltages are measured against the source's ground pins (0 V), and on the output side of an
+isolated converter against its output ground pins. When ground returns are
 solved, the ground under a load rises above 0 V, so a supply plane can read above its VRM's regulated
 voltage even though a remotely sensed rail is exactly on target. The Loads tab's effective
 voltage (supply minus ground at the load) is the figure to compare with the load's voltage requirements.

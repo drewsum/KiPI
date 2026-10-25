@@ -1253,7 +1253,8 @@ class NoisePanel(QWidget, PartSelection):
         agg = self._aggressor()
         if agg is None:
             errors = (["Add a VRM of type Switcher (in DC or AC mode), then an aggressor "
-                       "for it"] if not smps_vrms(self.setup) else ["Add an aggressor"])
+                       "for it (isolated converters are not modeled here)"]
+                      if not smps_vrms(self.setup) else ["Add an aggressor"])
         else:
             errors = validate_noise(self.setup, self.snapshot, agg)
         self.lbl_errors.setText("\n".join(f"• {e}" for e in errors))

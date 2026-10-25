@@ -34,7 +34,7 @@ from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import guess_voltage, sorted_nets, voltage_from_name
 from kipi.core.model.parts import bead_esl_h, is_capacitor_ref, part_esl, resistor_ohms
 from kipi.dc.pi.autofill import (
-    guess_ground_pins, guess_input_pins, guess_other_side, looks_like_ground,
+    guess_ground_pins, guess_input_ground, guess_input_pins, guess_other_side, looks_like_ground,
     next_phase_refs, other_net, part_nets, setup_grounds,
 )
 from kipi.dc.pi.load_model import apply_to_load, new_items
@@ -495,6 +495,7 @@ class VrmEditor(_Editor):
         self.kind.addItem("Source (ideal supply, no input)", "source")
         self.kind.addItem("LDO (I_in = I_out + I_q)", "ldo")
         self.kind.addItem("Switcher (P_in = P_out / η)", "smps")
+        self.kind.addItem("Isolated (P_in = P_out / η, own output ground)", "isolated")
         self.output = self._picker()
         self.voltage = _spin(-1000, 1000, 3.3, 4, " V", 0.1)
         self.eff = _spin(1, 100, 90, 1, " %", 1)
@@ -516,6 +517,7 @@ class VrmEditor(_Editor):
         self.input = self._picker(optional=True)
         self.sense = self._picker(optional=True)
         self.ground = self._picker(optional=True)
+        self.input_ground = self._picker(optional=True)
         self.ground_sense = self._picker(optional=True)
         # Mesh remote sense (#93): the sense pickers show the selected point.
         self.mesh = QCheckBox("Enable mesh remote sense")
@@ -547,13 +549,14 @@ class VrmEditor(_Editor):
         f.addRow("Output pins", self.output)
         f.addRow("Input pins", self.input)
         f.addRow("Ground pins", self.ground)
+        f.addRow("Input ground pins", self.input_ground)
         f.addRow("Mesh sense", self.mesh)
         f.addRow("Sense points", self.n_points)
         f.addRow("Edit sense point", self.cmb_point)
         f.addRow("Sense pins", self.sense)
         f.addRow("Ground sense pins", self.ground_sense)
         # Drawings under the tooltips (#116), the field's part picked out.
-        art = {self.kind: ("vrm_types",), self.eff: ("vrm_types", "smps"),
+        art = {self.kind: ("vrm_types",), self.eff: ("vrm_types", "smps", "iso"),
                self.iq: ("vrm_types", "ldo"), self.load_line: ("load_line", "ll"),
                self.dropout: ("dropout", "dropout"), self.vin_row: ("dropout", "range"),
                self.vin_row.min: ("dropout", "range"), self.vin_row.max: ("dropout", "range"),
@@ -566,12 +569,17 @@ class VrmEditor(_Editor):
                self.vin_row.unit: ("tolerance", "volts", "dv", "pct"),
                self.acc_row.unit: ("tolerance", "volts", "dv", "pct"),
                self.output: ("vrm_pins", "out"), self.input: ("vrm_pins", "inp"),
-               self.ground: ("vrm_pins", "gnd")}
+               self.ground: ("vrm_pins", "gnd"),
+               self.input_ground: ("isolated", "ignd")}
         for w, text in (
                 (self.name, "A name for this regulator, used in the results tables"),
                 (self.kind, "Source: an ideal supply with no input (a connector, a bench "
                             "supply).\nLDO: input current = output current + quiescent "
-                            "current.\nSwitcher: input power = output power / efficiency."),
+                            "current.\nSwitcher: input power = output power / efficiency."
+                            "\nIsolated: a switcher whose output side has a ground of its "
+                            "own; its output ground pins are that ground's 0 V reference "
+                            "and its input current returns through its input ground pins. "
+                            "Not modeled in Coupled Noise."),
                 (self.voltage, "The voltage the VRM regulates to, at its output pins or at "
                                "its sense pins if it has them; loads and results are judged "
                                "against it. Picking the output net fills it in from the "
@@ -640,6 +648,11 @@ class VrmEditor(_Editor):
                 (self.ground, "Optional: the VRM's ground pins. With them, the ground return "
                               "is solved too and drops are measured output to ground. Picking "
                               "the output pins fills in the same part's ground pins."),
+                (self.input_ground, "Optional, isolated converters only: the input "
+                                    "side's ground pins, where its input current returns to "
+                                    "the VRM feeding it. Its ground pins are then its output "
+                                    "side's: they hold that ground at 0 V, the reference of "
+                                    "everything grounded on it."),
                 (self.sense, "Optional remote sense: the VRM holds its target voltage at these "
                              "pins instead of at its output"),
                 (self.ground_sense, "Optional negative remote sense on the ground net: the "
@@ -673,13 +686,17 @@ class VrmEditor(_Editor):
 
     def _kind_rows(self, *_):
         kind = self.kind.currentData()
-        self.form.setRowVisible(self.eff, kind == "smps")
+        isolated = kind == "isolated"
+        self.form.setRowVisible(self.eff, kind in ("smps", "isolated"))
+        self.form.setRowVisible(self.input_ground, isolated)
+        self.form.setRowVisible(self.n_phases, not isolated or self.n_phases.value() > 1)
+        self._phase_rows()
         self.form.setRowVisible(self.iq, kind != "source")
         self.form.setRowVisible(self.input, kind != "source")
         self.form.setRowVisible(self.dropout, kind == "ldo")
         self.form.setRowVisible(self.vin_row, kind != "source")
         self.form.setRowVisible(self.acc_row, kind != "source")
-        self.form.setRowVisible(self.btn_accuracy_calc, kind in ("ldo", "smps"))
+        self.form.setRowVisible(self.btn_accuracy_calc, kind != "source")
         dc = self.mode == "dc"
         dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
                    self.input, self.sense, self.ground_sense, self.dropout, self.mesh,
@@ -690,7 +707,8 @@ class VrmEditor(_Editor):
         _gray((self.bandwidth, *self.acc_row.fields()), not dc, "Used by the AC analysis only",
               editable=True)
         needs = {w: OPTIONAL for w in (self.iq, self.i_limit, self.load_line, self.dropout,
-                                       self.vin_row, self.n_phases, self.ground, self.sense,
+                                       self.vin_row, self.n_phases, self.ground,
+                                       self.input_ground, self.sense,
                                        self.ground_sense, self.mesh, self.n_points,
                                        *ac_only)}
         needs.update({w: REQUIRED for w in (self.name, self.kind, self.voltage, self.output)})
@@ -724,8 +742,10 @@ class VrmEditor(_Editor):
         self.cmb_phase.blockSignals(False)
         self.form.setRowVisible(self.cmb_phase, n > 1)
         tag = f" (phase {self._phase + 1})" if n > 1 else ""
+        ground = ("Output ground pins" if self.kind.currentData() == "isolated"
+                  else "Ground pins")
         for w, text in ((self.output, "Output pins"), (self.input, "Input pins"),
-                        (self.ground, "Ground pins")):
+                        (self.ground, ground)):
             self.form.labelForField(w).setText(text + tag)
 
     def _show_phase(self, v: Vrm):
@@ -734,6 +754,7 @@ class VrmEditor(_Editor):
         self.output.set_value(ph.output)
         self.input.set_value(ph.input)
         self.ground.set_value(ph.ground)
+        self.input_ground.set_value(v.input_ground)
         self._loading = loading
 
     def _point_rows(self):
@@ -879,6 +900,12 @@ class VrmEditor(_Editor):
                 ph.input = None
         v.output, v.input, v.ground = phases[0].output, phases[0].input, phases[0].ground
         v.phases = phases[1:]
+        v.input_ground = self.input_ground.value() if v.kind == "isolated" else None
+        if v.kind == "isolated" and v.input_ground is None:
+            v.input_ground = guess_input_ground(snap, self.panel.setup, self.panel._nets,
+                                                v.output, v.ground, v.input)
+            if v.input_ground is not None:
+                self._show(self.input_ground, v.input_ground)
 
     def _autofill_phase(self, v: Vrm, ph: VrmPhase, old: PinRef):
         """Pick the ground and input pins that go with newly picked output pins: the same
@@ -2175,6 +2202,7 @@ class PIPanel(QWidget, PartSelection):
         groups = net_groups(setup)
         driver = {groups[v.output.net]: v for v in setup.vrms}
         grounds = {groups[r.net] for r in [*(v.ground for v in setup.vrms),
+                                           *(v.input_ground for v in setup.vrms),
                                            *(l.ground for l in setup.loads)] if r}
         off = set(setup.excluded_nets)
 

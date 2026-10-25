@@ -145,3 +145,27 @@ def test_mesh_sense_points_edit_one_at_a_time(app):
     ed.n_points.setValue(1)
     assert v.sense_points == [] and v.sense == first
     panel.close()
+
+
+def test_an_isolated_converter_edits_its_input_ground(app):
+    from tree_boards import isolated_board, isolated_setup
+
+    from kipi.dc.pi.model import PinRef
+    setup = isolated_setup()
+    panel = PIPanel()
+    panel.set_board(isolated_board(), setup)
+    panel.vrm_list.lst.setCurrentRow(1)
+    ed = panel.vrm_list.editor
+    assert ed.input_ground.value() == PinRef("U1", "PGND", ["3"])
+    assert ed.form.labelForField(ed.ground).text() == "Output ground pins"
+    assert ed.form.isRowVisible(ed.input_ground) and ed.form.isRowVisible(ed.eff)
+    ed.kind.setCurrentIndex(ed.kind.findData("smps"))      # a switcher has none
+    assert setup.vrms[1].input_ground is None
+    assert not ed.form.isRowVisible(ed.input_ground)
+    assert ed.form.labelForField(ed.ground).text() == "Ground pins"
+    ed.kind.setCurrentIndex(ed.kind.findData("isolated"))  # the picked pins come back
+    assert setup.vrms[1].input_ground == PinRef("U1", "PGND", ["3"])
+    ed.input_ground.set_value(None)
+    ed._store()                                            # none picked: U1's are guessed
+    assert setup.vrms[1].input_ground == PinRef("U1", "PGND")
+    panel.close()
