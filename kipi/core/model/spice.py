@@ -2,18 +2,26 @@
 
 A vendor's model of a capacitor, resistor, ferrite bead or inductor is a ``.SUBCKT`` with
 two pins, built of resistors, inductors and capacitors (often a ladder of them, to follow
-the part's impedance over frequency). KiPI does not keep the netlist: it works out the
-impedance between the two pins and fits the values its own models have, a capacitor's C,
-ESL and ESR (:func:`capacitor_values`) and a series part's DC resistance and ESL
-(:func:`link_values`). Those are what the DC, AC and Coupled Noise solves use.
+the part's impedance over frequency). KiPI works out the impedance between the two pins
+and fits the values its own models have, a capacitor's C, ESL and ESR
+(:func:`capacitor_values`) and a series part's DC resistance and ESL (:func:`link_values`),
+for the tables and reports.
 
-The file is only read, never run: elements other than R, L, C, subcircuit calls and 0 V
-sources (current probes) are refused, values may be plain arithmetic of numbers and
+A series diode (#191) is a ``.model NAME D(...)`` card (its anode the first pin, side A)
+or a two-pin subcircuit with ``D`` elements in it. Its diodes follow the SPICE junction:
+IS, N and RS, BV and IBV for reverse breakdown, and CJO, VJ, M, FC and TT for its
+capacitance, at 27 °C. The DC solve takes the part's current at each voltage across it
+(:meth:`SpiceModel.dc_current`); AC and Coupled Noise its small-signal impedance at a DC
+operating current (:meth:`SpiceModel.impedance`).
+
+The file is only read, never run: elements other than R, L, C, D, subcircuit calls and
+0 V sources (current probes) are refused, values may be plain arithmetic of numbers and
 parameters only, and ``.include``/``.lib`` lines are not followed.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import re
 from dataclasses import dataclass, field
@@ -35,6 +43,12 @@ MAX_EXPR = 400                      # characters in one value expression
 SWEEP_HZ = np.logspace(0, 11, 1101)         # 1 Hz to 100 GHz
 FIT_FACTOR = 30.0
 LINK_ESL_HZ = 100e3
+# A diode's fitted values are read at this current: its slope resistance (the DCR in its
+# editor) and its ESL.
+LINK_BIAS_A = 1.0
+
+VT = 1.380649e-23 * 300.15 / 1.602176634e-19    # thermal voltage at 27 °C
+GMIN = 1e-12                                    # across every junction, as in SPICE
 
 PORT_A, PORT_B = "\0a", "\0b"
 
@@ -258,6 +272,8 @@ class Library:
         self.name = name
         self.subckts: Dict[str, Subckt] = {}
         self.params: List[Tuple[str, str]] = []     # file-level .param
+        # Diode .model cards, anywhere in the file: lower-case name -> (name, params).
+        self.models: Dict[str, Tuple[str, List[Tuple[str, str]]]] = {}
         stack: List[Subckt] = []
         for line in _logical_lines(text):
             words = _tokens(line)
@@ -273,6 +289,10 @@ class Library:
                 if stack:
                     s = stack.pop()
                     self.subckts.setdefault(s.name.lower(), s)
+            elif head == ".model":
+                if len(words) >= 3 and words[2].lower() == "d":
+                    self.models.setdefault(words[1].lower(),
+                                           (words[1], _split_params(words[3:])[1]))
             elif stack:
                 stack[-1].body.append(words)
             elif head == ".param":
@@ -296,9 +316,18 @@ class Library:
         """Names of the subcircuits with two pins (the ones a part can be), in file order."""
         return [s.name for s in self.subckts.values() if len(s.ports) == 2]
 
+    def diodes(self) -> List[str]:
+        """Names of the diode ``.model`` cards, which a series part can be too."""
+        return [name for name, _p in self.models.values()]
+
     def model(self, name: str) -> "SpiceModel":
-        """Subcircuit ``name`` flattened into its R, L and C between its two pins."""
+        """Subcircuit ``name`` flattened into its R, L, C and diodes between its two pins,
+        or diode model ``name`` from its anode (pin A) to its cathode."""
         s = self.subckts.get(name.lower())
+        if s is None and name.lower() in self.models:
+            m = SpiceModel(self.models[name.lower()][0])
+            self._diode(name, PORT_A, PORT_B, name, 1.0, self._env(self.params, {}), m, "")
+            return m
         if s is None:
             raise SpiceError(f"no subcircuit {name}")
         if len(s.ports) != 2:
@@ -312,6 +341,7 @@ class Library:
         """Subcircuit ``name`` on its own, as text: with the subcircuits it calls and the
         file's parameters, so it reads back alone (into a setup file, say)."""
         order: List[Subckt] = []
+        models: List[str] = [name.lower()] if name.lower() in self.models else []
         todo = [name.lower()]
         while todo:
             s = self.subckts.get(todo.pop())
@@ -323,8 +353,17 @@ class Library:
                     plain = _split_params(words[1:])[0]
                     if plain:
                         todo.append(plain[-1].lower())
+                elif words[0][:1].upper() == "D":
+                    plain = _split_params(words[1:])[0]
+                    if len(plain) > 2 and plain[2].lower() not in models:
+                        models.append(plain[2].lower())
         lines = [".param " + " ".join(f"{k}={v}" for k, v in self.params)] \
             if self.params else []
+        for key in models:
+            if key in self.models:
+                mname, params = self.models[key]
+                lines.append(f".model {mname} D(" + " ".join(f"{k}={v}" for k, v in params)
+                             + ")")
         for s in order:
             params = (" PARAMS: " + " ".join(f"{k}={v}" for k, v in s.params)
                       if s.params else "")
@@ -365,6 +404,13 @@ class Library:
                 continue
             if kind in "RLC":
                 self._passive(words, kind, node, env, m, path)
+            elif kind == "D":
+                plain, params = _split_params(words[1:])
+                if len(plain) < 3:
+                    raise SpiceError(f"{name}: needs two nodes and a model")
+                area = dict(params).get("area", plain[3] if len(plain) > 3 else "1")
+                self._diode(name, node(plain[0]), node(plain[1]), plain[2],
+                            evaluate(area, env), env, m, path)
             elif kind == "V":
                 self._probe(words, node, env, m)
             elif kind == "X":
@@ -382,8 +428,9 @@ class Library:
                 self._flatten(sub, [node(p) for p in pins], vals, env,
                               f"{path}{name.lower()}.", m, depth + 1)
             else:
-                raise SpiceError(f"{name}: only resistors, inductors and capacitors can be "
-                                 f"read, not {_KINDS.get(kind, 'this kind of element')}")
+                raise SpiceError(f"{name}: only resistors, inductors, capacitors and diodes "
+                                 f"can be read, not "
+                                 f"{_KINDS.get(kind, 'this kind of element')}")
             if len(m.elements) > MAX_ELEMENTS:
                 raise SpiceError(f"more than {MAX_ELEMENTS} elements")
 
@@ -422,6 +469,41 @@ class Library:
             if "cpar" in extra:
                 m.add("C", a, b, evaluate(extra["cpar"], env))
 
+    def _diode(self, name: str, a: str, b: str, model: str, area: float,
+               env: Dict[str, float], m: "SpiceModel", path: str):
+        """Diode ``name`` of ``model`` from anode ``a`` to cathode ``b``: a junction, with
+        the model's RS in series."""
+        got = self.models.get(model.lower())
+        if got is None:
+            raise SpiceError(f"{name}: its diode model {model} is not in the file")
+        if not area > 0:
+            raise SpiceError(f"{name}: its area must be positive")
+        p = dict(got[1])
+        if {"ron", "roff", "vfwd", "vrev"} & set(p):
+            raise SpiceError(f"{model}: LTspice's piecewise-linear diode (Ron, Vfwd) is not "
+                             "read; use a junction model (IS, N, RS)")
+
+        def val(*keys, default=None):
+            for k in keys:
+                if k in p:
+                    return evaluate(p[k], env)
+            return default
+        d = Diode(is_a=val("is", default=1e-14) * area, n=val("n", default=1.0),
+                  bv=val("bv"), ibv=val("ibv", default=1e-3) * area,
+                  cjo=val("cjo", "cj0", "cj", default=0.0) * area,
+                  vj=val("vj", "pb", default=1.0), m=val("m", "mj", default=0.5),
+                  fc=val("fc", default=0.5), tt=val("tt", default=0.0))
+        if not (d.is_a > 0 and d.n > 0 and d.ibv > 0 and d.vj > 0 and 0 <= d.fc < 1):
+            raise SpiceError(f"{model}: IS, N, IBV and VJ must be positive and FC below 1")
+        if d.bv is not None and not d.bv > 0:
+            d = dataclasses.replace(d, bv=None)     # BV=0 or below: no breakdown
+        rs = val("rs", default=0.0) / area
+        if rs:
+            inner = f"{path}{name.lower()}#rs"
+            m.add("R", a, inner, rs)
+            a = inner
+        m.add_diode(a, b, d)
+
     @staticmethod
     def _probe(words, node, env, m: "SpiceModel"):
         """A voltage source used as a current probe: 0 V, a short."""
@@ -439,25 +521,96 @@ class Library:
         m.add("R", node(words[1]), node(words[2]), 0.0)
 
 
-_KINDS = {"D": "diodes", "Q": "transistors", "M": "transistors", "J": "transistors",
+_KINDS = {"Q": "transistors", "M": "transistors", "J": "transistors",
           "E": "controlled sources", "F": "controlled sources", "G": "controlled sources",
           "H": "controlled sources", "B": "behavioral sources", "I": "current sources",
           "K": "coupled inductors", "S": "switches", "W": "switches",
           "T": "transmission lines", "O": "transmission lines", "U": "transmission lines"}
 
 
+# ------------------------------------------------------------------ diodes
+def _expo(x: float, x_max: float) -> Tuple[float, float]:
+    """exp(x) and its slope, carried on linearly past ``x_max`` so it cannot overflow."""
+    if x <= x_max:
+        e = math.exp(x)
+        return e, e
+    e = math.exp(x_max)
+    return e * (1 + x - x_max), e
+
+
+@dataclass(frozen=True)
+class Diode:
+    """A SPICE junction (its RS is a resistor beside it): currents in amps from anode to
+    cathode."""
+    is_a: float = 1e-14
+    n: float = 1.0
+    bv: Optional[float] = None          # reverse breakdown voltage; None: none
+    ibv: float = 1e-3                   # current at -BV
+    cjo: float = 0.0
+    vj: float = 1.0
+    m: float = 0.5
+    fc: float = 0.5
+    tt: float = 0.0
+
+    @property
+    def nvt(self) -> float:
+        return self.n * VT
+
+    def current(self, v: float) -> Tuple[float, float]:
+        """The current at junction voltage ``v``, and its slope (the conductance)."""
+        nvt = self.nvt
+        e, de = _expo(v / nvt, min(700.0, math.log(1e4 / self.is_a)))
+        i, g = self.is_a * (e - 1), self.is_a * de / nvt
+        if self.bv is not None:
+            x_max = min(700.0, math.log(1e4 / self.ibv))
+            e, de = _expo(-(v + self.bv) / nvt, x_max)
+            i -= self.ibv * (e - math.exp(max(-self.bv / nvt, -700.0)))
+            g += self.ibv * de / nvt
+        return i + GMIN * v, g + GMIN
+
+    def limit(self, new: float, old: float) -> float:
+        """SPICE's step limit on a junction's voltage between Newton steps (pnjlim), on the
+        forward side and, with BV, on the breakdown side."""
+        nvt = self.nvt
+
+        def lim(new, old, i_s):
+            vcrit = nvt * math.log(nvt / (math.sqrt(2) * i_s))
+            if new > vcrit and abs(new - old) > 2 * nvt:
+                if old > 0:
+                    arg = 1 + (new - old) / nvt
+                    return old + nvt * math.log(arg) if arg > 0 else vcrit
+                return nvt * math.log(new / nvt)
+            return new
+        new = lim(new, old, self.is_a)
+        if self.bv is not None:
+            new = -lim(-(new + self.bv), -(old + self.bv), self.ibv) - self.bv
+        return new
+
+    def capacitance(self, v: float, g: float) -> float:
+        """Junction and diffusion capacitance at junction voltage ``v``, conductance ``g``."""
+        c = self.tt * g
+        if self.cjo:
+            if v < self.fc * self.vj:
+                c += self.cjo * (1 - v / self.vj) ** -self.m
+            else:
+                c += (self.cjo * (1 - self.fc) ** (-1 - self.m)
+                      * (1 - self.fc * (1 + self.m) + self.m * v / self.vj))
+        return c
+
+
 # ------------------------------------------------------------------ model
 @dataclass
 class Element:
-    kind: str           # "R", "L" or "C"
-    a: str
+    kind: str           # "R", "L", "C" or "D"
+    a: str              # a diode's anode
     b: str
     value: float
+    diode: Optional[Diode] = None
 
 
 @dataclass
 class SpiceModel:
-    """A two-pin network of resistors, inductors and capacitors."""
+    """A two-pin network of resistors, inductors, capacitors and diodes."""
     name: str
     elements: List[Element] = field(default_factory=list)
 
@@ -465,9 +618,18 @@ class SpiceModel:
         if a != b:
             self.elements.append(Element(kind, a, b, float(value)))
 
-    def _merged(self, dc: bool):
+    def add_diode(self, a: str, b: str, d: Diode):
+        if a != b:
+            self.elements.append(Element("D", a, b, 0.0, d))
+
+    @property
+    def has_diodes(self) -> bool:
+        return any(e.kind == "D" for e in self.elements)
+
+    def _merged(self, dc: bool, elements: Optional[List[Element]] = None):
         """A node -> group map with shorts (and, at DC, inductors) merged, and the elements
         between groups: capacitors are dropped at DC."""
+        elements = self.elements if elements is None else elements
         parent: Dict[str, str] = {}
 
         def find(n):
@@ -477,19 +639,19 @@ class SpiceModel:
                 n = parent[n]
             return n
 
-        for e in self.elements:
+        for e in elements:
             find(e.a), find(e.b)
             if (e.kind in "RL" and e.value == 0) or (dc and e.kind == "L"):
                 parent[find(e.a)] = find(e.b)
         keep = []
-        for e in self.elements:
+        for e in elements:
             if e.kind == "C" and (dc or e.value == 0):
                 continue
             if e.kind in "RL" and (e.value == 0 or (dc and e.kind == "L")):
                 continue
             a, b = find(e.a), find(e.b)
             if a != b:
-                keep.append(Element(e.kind, a, b, e.value))
+                keep.append(Element(e.kind, a, b, e.value, e.diode))
         return find(PORT_A), find(PORT_B), keep
 
     @staticmethod
@@ -512,11 +674,13 @@ class SpiceModel:
             raise SpiceError(f"more than {MAX_NODES} nodes")
         return sorted(seen, key=lambda n: (n != a, n))
 
-    def impedance(self, freqs, c_scale: float = 1.0) -> np.ndarray:
+    def impedance(self, freqs, c_scale: float = 1.0, bias_a: float = 0.0) -> np.ndarray:
         """Impedance between the two pins at each of ``freqs`` (Hz, all > 0); inf where
-        they are not connected. ``c_scale`` scales every capacitor (a derating)."""
+        they are not connected. ``c_scale`` scales every capacitor (a derating). Diodes
+        are their small-signal conductance and capacitance with ``bias_a`` amps through
+        the part from pin A to pin B."""
         f = np.atleast_1d(np.asarray(freqs, float))
-        a, b, els = self._merged(dc=False)
+        a, b, els = self._merged(dc=False, elements=self._small_signal(bias_a))
         if a == b:
             return np.zeros(f.shape, complex)
         nodes = self._component(a, b, els)
@@ -546,6 +710,118 @@ class SpiceModel:
                 raise SpiceError(f"{self.name}: the network cannot be solved") from e
             out[s:s + step] = v[:, 0, 0]
         return out
+
+    def _small_signal(self, bias_a: float) -> List[Element]:
+        """The elements with each diode as its conductance and capacitance at ``bias_a``."""
+        if not self.has_diodes:
+            return self.elements
+        vds = self.operating_point(bias_a)[2]
+        out = [e for e in self.elements if e.kind != "D"]
+        for e, (vd, g) in zip((e for e in self.elements if e.kind == "D"), vds):
+            out.append(Element("R", e.a, e.b, 1.0 / g))
+            c = e.diode.capacitance(vd, g)
+            if c > 0:
+                out.append(Element("C", e.a, e.b, c))
+        return out
+
+    def _dc_network(self):
+        """The network at DC, for :meth:`dc_current`: its node count (pin A is node 0, pin
+        B is None), its resistors and its diodes, as (node, node, conductance or Diode),
+        and the last operating point (node voltages, junction voltages)."""
+        net = self.__dict__.get("_dc")
+        if net is None:
+            a, b, els = self._merged(dc=True)
+            nodes = self._component(a, b, els) if a != b else None
+            if nodes is None:
+                raise SpiceError(f"{self.name} does not conduct at DC, so it cannot be a "
+                                 "series part")
+            idx = {n: i for i, n in enumerate(nodes)}
+            res = [(idx.get(e.a), idx.get(e.b), 1.0 / e.value) for e in els if e.kind == "R"]
+            dio = [(idx.get(e.a), idx.get(e.b), e.diode) for e in els if e.kind == "D"]
+            net = self.__dict__["_dc"] = (len(nodes), res, dio, np.zeros(len(nodes)),
+                                         [0.0] * len(dio))
+        return net
+
+    def dc_current(self, v: float) -> Tuple[float, float]:
+        """The DC current from pin A to pin B with ``v`` volts from A to B, and its slope
+        dI/dV. Newton's method with SPICE's junction step limits, starting from the last
+        call's operating point."""
+        return self._dc_solve(v)[:2]
+
+    def _dc_solve(self, v: float):
+        n, res, dio, x_last, vd_last = self._dc_network()
+        x = x_last.copy()
+        x[0] = v
+        vd = list(vd_last)
+        for _ in range(500):
+            jac = np.zeros((n, n))
+            r = np.zeros(n)
+            for p, q, g in res:
+                for s, t, w in ((p, p, g), (q, q, g), (p, q, -g), (q, p, -g)):
+                    if s is not None and t is not None:
+                        jac[s, t] += w
+            gds = []
+            for (p, q, d), vk in zip(dio, vd):
+                i, g = d.current(vk)
+                gds.append(g)
+                ieq = i - g * vk
+                for s, t, w in ((p, p, g), (q, q, g), (p, q, -g), (q, p, -g)):
+                    if s is not None and t is not None:
+                        jac[s, t] += w
+                if p is not None:
+                    r[p] -= ieq
+                if q is not None:
+                    r[q] += ieq
+            if n > 1:
+                try:
+                    x[1:] = np.linalg.solve(jac[1:, 1:], r[1:] - jac[1:, 0] * v)
+                except np.linalg.LinAlgError as e:
+                    raise SpiceError(f"{self.name}: the network cannot be solved at DC") from e
+            new = [(x[p] if p is not None else 0.0) - (x[q] if q is not None else 0.0)
+                   for p, q, _d in dio]
+            done = all(abs(a - b) <= 1e-9 + 1e-6 * abs(b) for a, b in zip(new, vd))
+            if done:
+                break
+            vd = [d.limit(a, b) for (_p, _q, d), a, b in zip(dio, new, vd)]
+        else:
+            raise SpiceError(f"{self.name}: no DC operating point found at {v:g} V")
+        i = float(jac[0] @ x - r[0])
+        slope = float(jac[0, 0])
+        if n > 1:
+            slope -= float(jac[0, 1:] @ np.linalg.solve(jac[1:, 1:], jac[1:, 0]))
+        x_last[:] = x
+        vd_last[:] = vd
+        return i, slope, list(zip(vd, gds))
+
+    def operating_point(self, i: float) -> Tuple[float, float, List[Tuple[float, float]]]:
+        """The voltage from pin A to pin B with ``i`` amps through the part at DC, its slope
+        resistance dV/dI, and each diode's junction voltage and conductance there."""
+        if not self.has_diodes:
+            r = self.dc_resistance()
+            if r is None:
+                raise SpiceError(f"{self.name} does not conduct at DC")
+            return i * r, r, []
+        lo, hi = (0.0, 0.5) if i >= 0 else (-0.5, 0.0)
+        while self.dc_current(hi)[0] < i:
+            lo, hi = hi, 2 * hi
+            if hi > 1e5:
+                raise SpiceError(f"{self.name} cannot carry {i:g} A")
+        while self.dc_current(lo)[0] > i:
+            lo, hi = 2 * lo, lo
+            if lo < -1e5:
+                raise SpiceError(f"{self.name} cannot carry {i:g} A")
+        v = hi if i > 0 else lo
+        for _ in range(200):
+            got, g, vds = self._dc_solve(v)
+            if abs(got - i) <= 1e-12 + 1e-9 * abs(i) or hi - lo < 1e-12:
+                return v, 1.0 / g, vds
+            if got < i:
+                lo = v
+            else:
+                hi = v
+            step = v - (got - i) / g
+            v = step if lo < step < hi else 0.5 * (lo + hi)
+        raise SpiceError(f"{self.name}: no DC operating point found at {i:g} A")
 
     def dc_resistance(self) -> Optional[float]:
         """Resistance between the pins at DC; None if no resistor path joins them."""
@@ -584,6 +860,8 @@ class CapValues:
 class LinkValues:
     resistance_ohm: float
     esl_h: Optional[float]          # None: not inductive at LINK_ESL_HZ
+    # A diode's: its voltage from side A to side B at some currents, [(amps, volts)].
+    forward: Optional[List[Tuple[float, float]]] = None
 
 
 def capacitor_values(m: SpiceModel) -> CapValues:
@@ -624,7 +902,14 @@ def capacitor_values(m: SpiceModel) -> CapValues:
 
 def link_values(m: SpiceModel) -> LinkValues:
     """A series part's DC resistance and its inductance at LINK_ESL_HZ (None where it is
-    not inductive there: a resistor with only some capacitance across it)."""
+    not inductive there: a resistor with only some capacitance across it). A diode's are
+    its slope resistance and inductance at LINK_BIAS_A, with its forward voltage."""
+    if m.has_diodes:
+        forward = [(i, m.operating_point(i)[0]) for i in (1e-3, 0.1, LINK_BIAS_A)]
+        r = m.operating_point(LINK_BIAS_A)[1]
+        z = m.impedance([LINK_ESL_HZ], bias_a=LINK_BIAS_A)[0]
+        esl = z.imag / (2 * math.pi * LINK_ESL_HZ)
+        return LinkValues(float(r), float(esl) if esl > 0 else None, forward)
     r = m.dc_resistance()
     if r is None:
         raise SpiceError(f"{m.name} does not conduct at DC (a capacitor's model?), so it "
@@ -667,8 +952,8 @@ class SpiceRef:
 
     With ``use`` on, the AC and Coupled Noise solves take the part's impedance from the
     model at every frequency, and the RLC values in its editor are the fitted ones (the
-    DC solve uses the fitted DC resistance). Off, the part is its RLC values again and the
-    model is only kept."""
+    DC solve uses the fitted DC resistance, or a diode's current at each voltage). Off,
+    the part is its RLC values again and the model is only kept."""
     subckt: str
     netlist: str
     file: str = ""                  # the file it came from, for the user to see
@@ -680,11 +965,20 @@ class SpiceRef:
     def model(self) -> SpiceModel:
         return _model(self.netlist, self.subckt)
 
-    def impedance(self, omega, c_scale: float = 1.0) -> np.ndarray:
+    @property
+    def has_diodes(self) -> bool:
+        return self.model().has_diodes
+
+    def dc_current(self, v: float) -> Tuple[float, float]:
+        """The part's DC current from side A to side B at ``v`` volts, and its slope."""
+        return self.model().dc_current(v)
+
+    def impedance(self, omega, c_scale: float = 1.0, bias_a: float = 0.0) -> np.ndarray:
         """The model's impedance at angular frequencies ``omega``, every capacitor in it
-        scaled by ``c_scale``."""
+        scaled by ``c_scale``, its diodes biased by ``bias_a`` amps from side A to B."""
         w = np.atleast_1d(np.asarray(omega, float))
-        z = _impedance(self.netlist, self.subckt, float(c_scale), w.tobytes())
+        z = _impedance(self.netlist, self.subckt, float(c_scale), float(bias_a),
+                       w.tobytes())
         return z.reshape(np.shape(omega)) if np.ndim(omega) else z[0]
 
     @staticmethod
@@ -702,10 +996,11 @@ def _model(netlist: str, subckt: str) -> SpiceModel:
 
 
 @lru_cache(maxsize=128)
-def _impedance(netlist: str, subckt: str, c_scale: float, omega: bytes) -> np.ndarray:
+def _impedance(netlist: str, subckt: str, c_scale: float, bias_a: float,
+               omega: bytes) -> np.ndarray:
     # A board's capacitors share a few models, each solved once per sweep.
     w = np.frombuffer(omega, float)
-    z = _model(netlist, subckt).impedance(w / (2 * np.pi), c_scale)
+    z = _model(netlist, subckt).impedance(w / (2 * np.pi), c_scale, bias_a)
     z.setflags(write=False)
     return z
 
@@ -719,10 +1014,25 @@ def capacitor_ref(lib: Library, name: str) -> Tuple[SpiceRef, CapValues]:
 
 
 def link_ref(lib: Library, name: str) -> Tuple[SpiceRef, LinkValues]:
-    """Series part subcircuit ``name`` of ``lib`` to keep in a setup, and its fit."""
+    """Series part subcircuit or diode model ``name`` of ``lib`` to keep in a setup, and
+    its fit."""
     v = link_values(lib.model(name))
     vals = {"resistance": v.resistance_ohm}
     if v.esl_h is not None:
         vals["esl_h"] = v.esl_h
-    return SpiceRef(lib.subckts[name.lower()].name, lib.netlist(name), lib.name, True,
-                    vals), v
+    s = lib.subckts.get(name.lower())
+    return SpiceRef(s.name if s else lib.models[name.lower()][0], lib.netlist(name),
+                    lib.name, True, vals), v
+
+
+def constant_drop_ref(vf: float, rs: float) -> SpiceRef:
+    """A diode model for an older setup's constant forward drop ``vf`` with series
+    resistance ``rs``: a junction so steep that its drop is within a few percent of
+    ``vf`` from 10 mA to 1 A."""
+    n = max(0.1, vf / (200 * VT))
+    i_s = 0.1 / math.expm1(vf / (n * VT))
+    name = f"VF{round(vf * 1000)}MV"
+    lib = Library(f".model {name} D(IS={i_s:.6g} N={n:.6g} RS={rs:.6g})\n")
+    ref, _v = link_ref(lib, name)
+    ref.file = f"the older setup's constant {vf:g} V drop"
+    return ref

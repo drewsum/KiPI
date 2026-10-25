@@ -1054,12 +1054,26 @@ frequency, so a bead keeps its resistive peak. The DCR and ESL are then fitted t
 locked: the DCR is its resistance at DC (which the DC solve uses), and the ESL its
 inductance at 100 kHz, low on a bead's inductive slope. Untick to use the values as you
 type them; the model is kept.</p>
+<p><b>A diode</b> is imported the same way: pick its <code>.model … D(…)</code> card, or a
+two-pin subcircuit with diodes in it, and make side A its anode (the model's first pin).
+The dialog shows its forward voltage at 1 mA, 100 mA and 1 A. The DC solve takes the drop
+from the model at the current the diode carries, so the drop rises with the load. The AC and
+Coupled Noise solves use its small-signal resistance (n·V<sub>T</sub>/I + RS) and its
+junction and diffusion capacitance at an estimate of that current: what the loads and VRM
+inputs on side B's nets draw at nominal voltages (nothing, so the diode blocks, when a VRM
+drives side B). The DCR and ESL shown are its slope resistance and inductance at 1 A. A
+diode that is reverse biased with a load beyond it and no other supply has no DC solution,
+and says so. The junction is read at 27 °C. Setups from 0.9.2 with a constant forward drop
+load with a diode model of that drop.</p>
 <p><b>What KiPI reads from a SPICE file.</b> A two-pin <code>.SUBCKT</code> of resistors,
-inductors and capacitors, which is how makers model capacitors, resistors and ferrite beads.
+inductors, capacitors and diodes, which is how makers model capacitors, resistors, ferrite
+beads and diodes, or a diode's <code>.model D</code> card. Diodes use IS, N, RS, BV, IBV,
+CJO, VJ, M, FC, TT and an area factor; LTspice's piecewise-linear diode (Ron, Vfwd) is
+not read.
 It may call other subcircuits in the same file, use <code>.param</code> values and
 arithmetic, and use LTspice's <code>Rser</code>, <code>Lser</code>, <code>Rpar</code> and
-<code>Cpar</code>. 0 V sources (current probes) are read as shorts. Anything else (diodes,
-transistors, controlled or behavioral sources, coupled inductors) is refused with the
+<code>Cpar</code>. 0 V sources (current probes) are read as shorts. Anything else
+(transistors, controlled or behavioral sources, coupled inductors) is refused with the
 element named, and <code>.include</code> lines are not followed. The file is only read,
 never run. Models of switching regulators and other active parts are not for this; give a
 VRM or load its own values instead.</p>

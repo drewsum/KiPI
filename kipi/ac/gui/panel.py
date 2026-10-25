@@ -1338,7 +1338,7 @@ class ACPanel(QWidget, PartSelection):
     def _describe_link(k) -> str:
         r = "short" if k.resistance <= 0 else f"{k.resistance * 1e3:g} mΩ"
         esl = f", {k.esl_h * 1e9:g} nH" if k.esl_h else ""
-        kind = f", diode DC {k.diode_vf:g} V A→B" if k.diode_vf else ""
+        kind = f", diode A→B, SPICE {k.spice.subckt}" if k.is_diode else ""
         return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r}{esl}{kind})"
 
     @staticmethod

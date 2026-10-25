@@ -37,7 +37,7 @@ from typing import Dict, List, Optional, Tuple
 from kipi.ac.model import (
     DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, PackageModel, Probe, report_format,
 )
-from kipi.core.model.spice import SpiceRef
+from kipi.core.model.spice import SpiceRef, constant_drop_ref
 from kipi.dc.solver.setup import SHORT_OHMS, SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
 from kipi.noise.model import (
@@ -298,19 +298,27 @@ class DcLink:
     side_b: PinRef
     resistance: float                       # ohms; 0 = short (DC and AC)
     esl_h: Optional[float] = None           # series inductance, henries (AC only)
-    diode_vf: float = 0.0                   # DC forward drop, side A (anode) -> side B
     # The part's SPICE model (#51): with it in use, AC takes the impedance from it, and
-    # the resistance and ESL are fitted to it.
+    # the resistance and ESL are fitted to it. A diode's model (#191) also gives DC its
+    # current at each voltage; side A is its anode.
     spice: Optional[SpiceRef] = None
+    # The DC current a diode's small-signal impedance is taken at, side A to side B: set
+    # for an AC or Coupled Noise solve (see biased_link), never saved.
+    bias_a: Optional[float] = None
 
     @property
     def uses_spice(self) -> bool:
         return self.spice is not None and self.spice.use
 
+    @property
+    def is_diode(self) -> bool:
+        """Whether the part is a diode's SPICE model, in use."""
+        return self.uses_spice and self.spice.has_diodes
+
     def impedance(self, omega):
         """Small-signal impedance at angular frequency ``omega`` (an array)."""
         if self.uses_spice:
-            return self.spice.impedance(omega)
+            return self.spice.impedance(omega, bias_a=self.bias_a or 0.0)
         return self.resistance + 1j * omega * (self.esl_h or 0.0) + 0 * omega
 
     def is_short(self) -> bool:
@@ -384,6 +392,8 @@ class PISetup:
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)
         d.pop("legacy_laminate_k")
+        for k in d["links"]:
+            k.pop("bias_a")
         d["format_version"] = FORMAT_VERSION
         return d
 
@@ -422,11 +432,7 @@ class PISetup:
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
                                 for g in l.get("groups", [])])
                    for l in d.get("loads", [])],
-            links=[DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
-                          resistance=k["resistance"], esl_h=k.get("esl_h"),
-                          diode_vf=k.get("diode_vf", 0.0),
-                          spice=SpiceRef.from_dict(k.get("spice")))
-                   for k in d.get("links", [])],
+            links=[_link(k, pin) for k in d.get("links", [])],
             via_current_limit_a=d.get("via_current_limit_a", DEFAULT_VIA_CURRENT_LIMIT_A),
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
@@ -543,6 +549,49 @@ def _load_tolerance(d: dict) -> dict:
                 "tol_pct": d.get("tol_pct", True), "tol_dv": d.get("tol_dv", False)}
     t = d.get("tolerance_pct")
     return out if t is None else {**out, "tol_min": -t, "tol_max": t}
+
+
+def _link(k: dict, pin) -> DcLink:
+    link = DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
+                  resistance=k["resistance"], esl_h=k.get("esl_h"),
+                  spice=SpiceRef.from_dict(k.get("spice")))
+    # 0.9.2's constant forward drop (#161) becomes a diode model with that drop (#191).
+    vf = float(k.get("diode_vf") or 0.0)
+    if vf > 0 and link.spice is None and link.resistance > 0:
+        link.spice = constant_drop_ref(vf, link.resistance)
+        link.resistance = link.spice.values["resistance"]
+    return link
+
+
+def link_bias(setup: PISetup, link: DcLink) -> float:
+    """An estimate of the DC current through ``link`` from side A to side B, at nominal
+    voltages and without copper losses: what the loads and VRM inputs on side B's nets
+    draw (the nets joined to side B by parts other than diodes and ``link``). Nothing if
+    a VRM drives side B: the diode is taken to block."""
+    stop = {id(link)} | {id(k) for k in setup.links if k.is_diode}
+    joins = [(k.side_a.net, k.side_b.net) for k in setup.links if id(k) not in stop]
+    side, todo = {link.side_b.net}, [link.side_b.net]
+    while todo:
+        n = todo.pop()
+        for a, b in joins:
+            other = b if a == n else a if b == n else None
+            if other is not None and other not in side:
+                side.add(other)
+                todo.append(other)
+    if any(v.output.net in side for v in setup.vrms):
+        return 0.0
+    groups = net_groups(setup)
+    amps = sum(l.total_current() for l in setup.loads if l.supply.net in side)
+    amps += sum(_estimated_input(setup, groups, v) for v in setup.vrms
+                if v.input and v.input.net in side)
+    return float(amps)
+
+
+def biased_link(setup: PISetup, link: DcLink) -> DcLink:
+    """``link`` for an AC or Coupled Noise solve: a diode biased by :func:`link_bias`."""
+    if not link.is_diode:
+        return link
+    return dataclasses.replace(link, bias_a=link_bias(setup, link))
 
 
 def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
@@ -734,10 +783,6 @@ def validate(setup: PISetup) -> List[str]:
     for k in setup.links:
         if k.resistance < 0:
             errors.append(f"DC connection {k.name}: resistance cannot be negative")
-        if k.diode_vf < 0:
-            errors.append(f"Diode {k.name}: forward voltage cannot be negative")
-        if k.diode_vf and k.resistance == 0:
-            errors.append(f"Diode {k.name}: enter a nonzero series resistance")
     for g in ground_groups:
         if g in rail_groups:
             errors.append(f"{group_name(g)} is used both as a supply and as ground")

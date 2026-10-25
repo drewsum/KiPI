@@ -10,7 +10,7 @@ node (its pads tied together).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from kipi.dc.solver.via_barrel import ViaRule, default_via_rules
 
@@ -43,7 +43,12 @@ class SeriesLink:
     pads_a: List[str]
     pads_b: List[str]
     resistance: float       # ohms; at or below SHORT_OHMS the two sides are merged
-    voltage_drop: float = 0.0  # volts, oriented from side A to side B (diode model)
+    voltage_drop: float = 0.0  # volts, oriented from side A to side B
+    # A diode's current from side A to side B at a voltage across it, and its slope (#191):
+    # the solve finds the voltage where the copper carries that current. ``resistance``
+    # is then only how the part is split between the matrix and the right-hand side; any
+    # positive value gives the same answer.
+    curve: Optional[Callable[[float], Tuple[float, float]]] = None
 
 
 SHORT_OHMS = 1e-9

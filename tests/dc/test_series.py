@@ -71,6 +71,31 @@ def test_series_diode_applies_forward_drop_and_counts_its_loss():
     assert res.fields.summary["energy_balance_error"] < 1e-9
 
 
+def test_series_diode_drop_follows_its_spice_model():
+    from kipi.core.model.spice import Library
+    m = Library(".model D1 D(IS=10n N=1.2 RS=30m)").model("D1")
+    for amps in (0.5, 2.0):
+        p = problem(0.05, current=amps)                  # 50 mΩ: only how it is split
+        p.series[0].curve = m.dc_current
+        res = run(board(), p)
+        drop = m.operating_point(amps)[0]
+        expected = amps * (strip_r(8) + strip_r(8)) + drop
+        assert 1.0 - res.fields.terminals[1].v_mean == pytest.approx(expected, rel=1e-7)
+        (sr,) = res.fields.series
+        assert sr.current == pytest.approx(amps, rel=1e-9)
+        assert sr.power == pytest.approx(amps * drop, rel=1e-7)
+        assert res.fields.summary["energy_balance_error"] < 1e-7
+
+
+def test_a_reversed_diode_cannot_feed_its_load():
+    from kipi.core.model.spice import Library
+    m = Library(".model D1 D(IS=10n RS=30m)\n.subckt REV a k\nD1 k a D1\n.ends").model("REV")
+    p = problem(0.05)
+    p.series[0].curve = m.dc_current
+    with pytest.raises(SolveError, match="reverse biased"):
+        run(board(), p)
+
+
 def test_zero_ohm_part_is_a_short():
     res = run(board(), problem(0.0))
     expected = 2.0 * (strip_r(8) + strip_r(8))

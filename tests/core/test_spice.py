@@ -97,7 +97,8 @@ def test_the_wrong_kind_of_model_is_refused():
 
 
 @pytest.mark.parametrize("body, why", [
-    ("D1 1 2 DMOD", "diodes"), ("E1 1 2 3 0 10", "controlled sources"),
+    ("D1 1 2 DMOD", "DMOD is not in the file"), ("Q1 1 2 0 QN", "transistors"),
+    ("E1 1 2 3 0 10", "controlled sources"),
     ("B1 1 2 V=V(1)*2", "behavioral"), ("V1 1 2 5", "0 V sources"),
     ("X1 1 2 MISSING", "not in the file"), ("R1 1 2 {nope}", "unknown parameter"),
 ])
@@ -105,6 +106,55 @@ def test_only_passive_networks_are_read(body, why):
     lib = Library(f".subckt P 1 2\n{body}\nC9 1 2 1u\n.ends\n")
     with pytest.raises(SpiceError, match=why):
         lib.model("P")
+
+
+DIODES = """\
+.model D1N4148 D(IS=2.52n RS=0.568 N=1.752 BV=100 IBV=100u CJO=4p M=0.4 TT=20n mfg=Vishay)
+.MODEL SS34 D (Is=1u N=1.1
++ Cjo=300p)
+.model IDEAL D(Ron=10m Vfwd=0.3)
+.subckt SCH A K
+L1 A x 1n
+D1 x K SS34 2
+.ends
+"""
+
+
+def test_a_diode_model_follows_the_junction_equation():
+    lib = Library(DIODES)
+    assert lib.diodes() == ["D1N4148", "SS34", "IDEAL"] and lib.two_pin() == ["SCH"]
+    m = lib.model("D1N4148")
+    vt = 1.380649e-23 * 300.15 / 1.602176634e-19
+    for amps in (1e-4, 1e-2, 0.3):
+        v, r, _ = m.operating_point(amps)
+        assert v == pytest.approx(1.752 * vt * math.log1p(amps / 2.52e-9) + 0.568 * amps,
+                                  rel=1e-6)
+        assert r == pytest.approx(1.752 * vt / (amps + 2.52e-9) + 0.568, rel=1e-4)
+        i, g = m.dc_current(v)
+        assert i == pytest.approx(amps, rel=1e-6) and g == pytest.approx(1 / r, rel=1e-4)
+    assert abs(m.dc_current(-50)[0]) < 1e-8                      # blocks...
+    assert m.dc_current(-101.5)[0] < -0.1                         # ... until it breaks down
+    # Small signal at 10 mA: its slope resistance, with its junction and diffusion C.
+    z = m.impedance([1e3], bias_a=0.01)[0]
+    assert z.real == pytest.approx(1.752 * vt / 0.01 + 0.568, rel=1e-3)
+    assert abs(m.impedance([1e9], bias_a=0.0)[0]) < abs(m.impedance([1e3], bias_a=0.0)[0])
+
+
+def test_a_subcircuit_with_a_diode_in_it():
+    lib = Library(DIODES)
+    sch = lib.model("SCH")
+    one = Library(".model X D(Is=2u N=1.1 Cjo=600p)").model("X")      # area 2
+    assert sch.operating_point(1.0)[0] == pytest.approx(one.operating_point(1.0)[0], rel=1e-6)
+    v = link_values(sch)
+    assert v.esl_h == pytest.approx(1e-9, rel=0.01) and v.forward[0][0] == 1e-3
+    # Kept in a setup, the subcircuit brings its diode model along.
+    ref, _ = link_ref(lib, "SCH")
+    assert ".model SS34 D(" in ref.netlist and ref.has_diodes
+    assert ref.model().operating_point(0.5)[0] == pytest.approx(sch.operating_point(0.5)[0])
+    ref, values = link_ref(lib, "d1n4148")
+    assert ref.subckt == "D1N4148" and values.forward[1][1] == pytest.approx(0.85, abs=0.01)
+    with pytest.raises(SpiceError, match="piecewise-linear"):
+        lib.model("IDEAL")
 
 
 def test_endless_nesting_is_refused():
@@ -325,3 +375,12 @@ def test_an_ac_solve_uses_the_model():
     rlc = solve_ac(snap, setup(None), "VRM1", "GND").probes[0].z
     got = solve_ac(snap, setup(ref), "VRM1", "GND").probes[0].z
     assert got == pytest.approx(rlc, rel=1e-6)
+
+
+def test_the_dialog_lists_diode_models_for_a_series_part(app):
+    from kipi.gui.spice_dialog import CAPACITOR, LINK, SpiceModelDialog
+    d = SpiceModelDialog(Library(DIODES, "diodes.lib"), LINK, ["D1N4148"])
+    assert [d.list.item(i).text() for i in range(d.list.count())] == [
+        "SCH", "D1N4148", "SS34", "IDEAL"]
+    assert d.name == "D1N4148" and "0.85 V at 100 mA" in d.result.text()
+    assert SpiceModelDialog(Library(DIODES), CAPACITOR).list.count() == 1

@@ -105,10 +105,6 @@ def test_dc_connection_takes_a_resistors_value(app):
     # ... and picking the resistor again re-reads its value.
     pick("R5")
     assert k.resistance == pytest.approx(0.01) and ed.r.value() == pytest.approx(10.0)
-    ed.diode_vf.setValue(0.45)
-    assert k.diode_vf == pytest.approx(0.45)
-    ed.diode_vf.setValue(0)
-    assert k.diode_vf == 0
     panel.close()
 
 

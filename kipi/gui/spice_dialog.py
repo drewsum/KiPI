@@ -1,9 +1,10 @@
 """Import a capacitor's or series part's SPICE model (#51).
 
 The capacitor model and series link editors each have a button for it. It asks for a
-SPICE file and lets the user pick one of its subcircuits. That subcircuit (with any it
-calls) is kept in the setup, so the AC and Coupled Noise solves can take the part's
-impedance from it, along with the values fitted to it (:mod:`kipi.core.model.spice`).
+SPICE file and lets the user pick one of its subcircuits, or for a series part one of its
+diode models (#191). That model (with any subcircuits and diode models it uses) is kept
+in the setup, so the AC and Coupled Noise solves can take the part's impedance from it,
+along with the values fitted to it (:mod:`kipi.core.model.spice`).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.core.model.spice import (
-    LINK_ESL_HZ, CapValues, Library, LinkValues, SpiceError, SpiceRef, best_match,
+    LINK_BIAS_A, LINK_ESL_HZ, CapValues, Library, LinkValues, SpiceError, SpiceRef, best_match,
     capacitor_ref, link_ref,
 )
 
@@ -52,6 +53,15 @@ def describe(values: Values) -> str:
         return (f"C {si(values.capacitance_f, 'F')}, ESL {si(values.esl_h, 'H')}, "
                 f"ESR {si(values.esr_ohm, 'Ω')} (self-resonant at "
                 f"{si(values.srf_hz, 'Hz')})")
+    if values.forward:
+        drops = ", ".join(f"{v:.3g} V at {si(i, 'A')}" for i, v in values.forward)
+        esl = f", ESL {si(values.esl_h, 'H')}" if values.esl_h is not None else ""
+        text = (f"Diode, side A to side B: {drops}; slope resistance "
+                f"{si(values.resistance_ohm, 'Ω')} at {si(LINK_BIAS_A, 'A')}{esl}")
+        if values.forward[0][1] > 5:
+            text += (". It hardly conducts from its first pin to its second: is its first "
+                     "pin the cathode?")
+        return text
     esl = (f"ESL {si(values.esl_h, 'H')}" if values.esl_h is not None
            else f"no ESL (not inductive at {si(LINK_ESL_HZ, 'Hz')})")
     return f"DCR {si(values.resistance_ohm, 'Ω')}, {esl}"
@@ -70,7 +80,8 @@ class SpiceModelDialog(QDialog):
         self.resize(520, 420)
         lay = QVBoxLayout(self)
         what = ("capacitance, ESL and ESR" if kind == CAPACITOR
-                else "DC resistance (used by DC) and ESL")
+                else "DC resistance (used by DC) and ESL; a diode model's forward drop "
+                     "(DC takes it from the model at each current)")
         hint = QLabel("Pick the part's subcircuit. It is saved with the setup, and the AC "
                       "and Coupled Noise solves take the part's impedance from it at every "
                       f"frequency. Its {what} are fitted to it and shown below.")
@@ -81,7 +92,7 @@ class SpiceModelDialog(QDialog):
         self.filter.textChanged.connect(self._apply_filter)
         lay.addWidget(self.filter)
         self.list = QListWidget()
-        names = lib.two_pin()
+        names = _names(lib, kind)
         self.list.addItems(names)
         self.list.currentTextChanged.connect(self._picked)
         self.list.itemDoubleClicked.connect(lambda _it: self._accept_if_ok())
@@ -128,6 +139,11 @@ class SpiceModelDialog(QDialog):
             self.accept()
 
 
+def _names(lib: Library, kind: str) -> List[str]:
+    """What a part can be: two-pin subcircuits, and for a series part diode models."""
+    return lib.two_pin() + (lib.diodes() if kind == LINK else [])
+
+
 def import_spice(parent, kind: str, hints: Sequence[str] = ()
                  ) -> Optional[Tuple[SpiceRef, Values]]:
     """Ask for a SPICE file and one of its subcircuits: the model to keep and the values
@@ -143,9 +159,10 @@ def import_spice(parent, kind: str, hints: Sequence[str] = ()
     except (OSError, SpiceError) as e:
         QMessageBox.warning(parent, "Import SPICE model", f"{Path(path).name}: {e}")
         return None
-    if not lib.two_pin():
+    if not _names(lib, kind):
+        what = "subcircuit (.SUBCKT)" if kind == CAPACITOR else "subcircuit or diode model"
         QMessageBox.information(parent, "Import SPICE model",
-                                f"{lib.name} has no two-pin subcircuit (.SUBCKT) to read.")
+                                f"{lib.name} has no two-pin {what} to read.")
         return None
     dlg = SpiceModelDialog(lib, kind, hints, parent)
     if dlg.exec() != QDialog.Accepted or dlg.ref is None:

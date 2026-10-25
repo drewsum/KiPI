@@ -31,7 +31,7 @@ import numpy as np
 
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
-from kipi.dc.pi.model import PinRef, PISetup, net_groups
+from kipi.dc.pi.model import PinRef, PISetup, biased_link, net_groups
 
 @dataclass
 class BoardModelResult:
@@ -133,7 +133,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
             if k.is_short():
                 shorts.append((a, b))
             else:
-                ports.append(PortDef(k.name, "link", a, b, k))
+                ports.append(PortDef(k.name, "link", a, b, biased_link(setup, k)))
     notes: List[str] = []
     # The AC probes the ripple is wanted at: open ports between their rail and ground pins.
     obs_probes: List[str] = []

@@ -4,7 +4,23 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.2 (in development)
+## 0.9.3 (in development)
+
+### Added
+- **Diodes from a SPICE model** (#191). **Import SPICE model…** in a series link now also
+  reads a diode: its `.model D(...)` card or a two-pin subcircuit with diodes in it, side A
+  its anode. Diodes use IS, N and RS, BV and IBV for reverse breakdown, and CJO, VJ, M, FC
+  and TT, at 27 °C. The DC solve finds each diode's drop at the current it carries, by
+  Newton's method on the diodes' I-V curves around the factorized copper solve (no
+  refactorizing). AC and Coupled Noise use its small-signal resistance and capacitance at
+  the current its side B loads draw. A reverse-biased diode with nothing else feeding its
+  load stops the solve with a message.
+
+### Changed
+- **The series link's constant diode drop is gone** (#191): a diode is its SPICE model.
+  Setups saved with a forward drop load with a diode model of that drop and DCR.
+
+## 0.9.2
 
 ### Added
 - **Package PI models** (#53). The AC setup's new **Packages** tab reads a device's package

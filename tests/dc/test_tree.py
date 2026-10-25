@@ -2,12 +2,14 @@
 
 import math
 
+import numpy as np
 import pytest
 from shapely.geometry import box
 
 from kipi.dc.pi.model import (
     DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate, vin_range,
 )
+from kipi.core.model.spice import constant_drop_ref
 from kipi.dc.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, solve_tree
 from kipi.dc.solver.fem import SolveError
 
@@ -114,7 +116,8 @@ def test_validation_rules():
 def test_setup_file_round_trip(tmp_path):
     s = setup(kind="smps", eff=0.85, sense=True, ground=True, gsense=True)
     s.links.append(DcLink("D1", PinRef("U2", "+3V3", ["1"]),
-                          PinRef("U2", "+3V3", ["2"]), 0.05, diode_vf=0.32))
+                          PinRef("U2", "+3V3", ["2"]), 0.05,
+                          spice=constant_drop_ref(0.32, 0.05)))
     from kipi.dc.pi.model import PinGroup
     s.loads[0].groups = [PinGroup(["1"], 0.4, "a")]
     s.settings.rho_by_layer = {"In1.Cu": 1.9e-5}
@@ -125,6 +128,20 @@ def test_setup_file_round_trip(tmp_path):
     from kipi.core import yaml_io
     saved = yaml_io.loads(path.read_text(encoding="utf-8"))
     assert saved["format_version"] == 2
+
+
+def test_a_constant_diode_drop_loads_as_a_diode_model():
+    s = setup()
+    d = s.to_dict()
+    d["links"] = [{"name": "D1", "side_a": {"ref": "D1", "net": "A"},
+                   "side_b": {"ref": "D1", "net": "B"}, "resistance": 0.05,
+                   "diode_vf": 0.32}]
+    (k,) = PISetup.from_dict(d).links
+    assert k.is_diode and k.spice.subckt == "VF320MV"
+    m = k.spice.model()
+    for amps in (0.01, 0.1, 1.0):                   # 0.9.2's drop: 0.32 V + 50 mΩ · I
+        assert m.operating_point(amps)[0] == pytest.approx(0.32 + 0.05 * amps, abs=0.012)
+    assert "bias_a" not in PISetup.from_dict(d).to_dict()["links"][0]
 
 
 def test_legacy_json_setups_still_load(tmp_path):
@@ -441,3 +458,22 @@ def test_ranges_in_volts_from_nominal():
     del s.vrms[0]
     assert any("in volts from nominal needs a VRM" in e for e in validate(s))
 
+
+
+def test_a_diode_is_biased_by_the_loads_beyond_it():
+    from kipi.dc.pi.model import biased_link, link_bias
+    d = DcLink("D1", PinRef("D1", "A", ["1"]), PinRef("D1", "B", ["2"]), 0.05,
+               spice=constant_drop_ref(0.4, 0.05))
+    r = DcLink("R1", PinRef("R1", "B", ["1"]), PinRef("R1", "C", ["2"]), 0.1)
+    s = PISetup(vrms=[Vrm("J1", PinRef("J1", "A"), 5.0)], links=[d, r],
+                loads=[Load("U1", PinRef("U1", "B"), 0.5), Load("U2", PinRef("U2", "C"), 0.25),
+                       Load("U3", PinRef("U3", "A"), 1.0)])
+    assert link_bias(s, d) == pytest.approx(0.75)        # B, and C through R1
+    k = biased_link(s, d)
+    assert k.bias_a == pytest.approx(0.75) and d.bias_a is None
+    assert biased_link(s, r) is r                         # not a diode
+    s.vrms.append(Vrm("J2", PinRef("J2", "C"), 5.0))       # driven from side B: blocking
+    assert link_bias(s, d) == 0.0
+    # Its small-signal resistance falls with its current.
+    w = np.array([2 * np.pi * 1e3])
+    assert abs(k.impedance(w)[0]) < abs(d.impedance(w)[0])

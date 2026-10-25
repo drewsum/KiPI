@@ -27,7 +27,7 @@ from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
 from kipi.ac.target import judged_from, target_at
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
-from kipi.dc.pi.model import PinRef, PISetup
+from kipi.dc.pi.model import PinRef, PISetup, biased_link
 from kipi.dc.solver import pads_for
 
 
@@ -190,6 +190,10 @@ def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str):
         if k.is_short():
             shorts.append((pads(k.side_a), pads(k.side_b)))
         else:
+            k = biased_link(setup, k)
+            if k.is_diode:
+                notes.append(f"Series link {k.name}: diode small-signal model at "
+                             f"{k.bias_a:.3g} A, the DC loads beyond it")
             ports.append(PortDef(k.name, "link", pads(k.side_a), pads(k.side_b), k))
             links.append(k.name)
     return rail, ports, shorts, [c[0] for c in caps], missing, links, notes, uses
