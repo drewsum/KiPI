@@ -121,9 +121,11 @@ class NoiseResult:
                      if h.zeta > h.zeta_loop * 1.0001 else "")
             ring = (f"rings at {h.f_ring_hz / 1e6:.4g} MHz, ζ = {h.zeta:.3g}{floor}"
                     if h.f_ring_hz else "no ringing")
+            how = ("traced through the copper" if getattr(h, "traced", False)
+                   else "straight between the pads")
             lines.append(
                 f"Phase {h.phase}: hot loop {h.loop_l_h * 1e9:.3g} nH "
-                f"(package {h.package_l_h * 1e9:.3g} nH), switch node "
+                f"(package {h.package_l_h * 1e9:.3g} nH, {how}), switch node "
                 f"{h.c_sw_f * 1e12:.4g} pF to ground (Coss {h.coss_f * 1e12:.4g} pF"
                 f"{' assumed' if h.coss_default else ''} + copper "
                 f"{h.c_copper_f * 1e12:.3g} pF), R {h.r_loop_ohm * 1e3:.3g} mΩ; {ring}")

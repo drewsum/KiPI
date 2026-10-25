@@ -109,10 +109,11 @@ def test_ground_returns_without_copper_go_through_the_plane():
     setup = _setup(snap, [])
     lay = phase_layout(snap, setup, setup.aggressors[0].phases[0], 1, "buck", 12.0, 1.8,
                        "VIN", "VOUT", "GND")
-    labels = [s.label for s in lay.loops["C2"]]
+    labels = [s.label for s in lay.loops["C2"].elements]
     assert any("(plane)" in x for x in labels)               # no top-side ground there
-    assert not any("(plane)" in x for x in (s.label for s in lay.loops["C1"]))
+    assert not any("(plane)" in x for x in (s.label for s in lay.loops["C1"].elements))
     assert lay.image_z == pytest.approx(snap.stackup.layer(4).z_top_mm)
+    assert not lay.loops["C1"].traced and not lay.report.traced
 
 
 def test_a_victim_beside_the_hot_loop_is_coupled_inductively():

@@ -12,14 +12,15 @@ from synthetic import F, IN1, make_board, rect, square  # noqa: F401
 
 
 def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
-               victim_layer: int = F, victim_by: str = "switch"):
+               victim_layer: int = F, victim_by: str = "switch", detour: bool = False):
     """``sw_area``: the side of the switch node's square pour at U1's SW pad, mm.
 
     With ``victim_gap``, a 0.2 mm signal trace SIG runs from U3 (x = 11.5) to U4 (x = 24)
     beside the switch node's pour (x 11-15), ``victim_gap`` from its top edge, on
     ``victim_layer``. With ``victim_by="hot_loop"`` it runs instead from U3 (x = 3) to U4
     (x = 9.5) beside the hot loop's VIN track (y = 10, 1 mm wide), ``victim_gap`` below
-    its edge.
+    its edge. With ``detour`` the VIN track from C1 to U1 goes up to y = 4 and back
+    instead of straight along y = 10 (#187).
     """
     snap = make_board()
     snap.board_name = "buck.kicad_pcb"
@@ -46,7 +47,10 @@ def buck_board(sw_area: float = 4.0, victim_gap: Optional[float] = None,
     part("L1", "1uH", [("1", "SW", (16.0, 12.0)), ("2", "VOUT", (20.0, 12.0))])
     part("C2", "47uF", [("1", "VOUT", (24.0, 12.0)), ("2", "GND", (24.0, 15.0))])
     part("U2", "LOAD", [("1", "VOUT", (28.0, 12.0)), ("2", "GND", (28.0, 15.0))])
-    for net, a, b, w in (("VIN", (2, 10), (10, 10), 1.0), ("GND", (2, 14), (10, 14), 1.0),
+    vin = ([("VIN", (2, 10), (6, 10), 1.0), ("VIN", (6, 10), (6, 4), 1.0),
+            ("VIN", (6, 4), (10, 4), 1.0), ("VIN", (10, 4), (10, 10), 1.0)] if detour
+           else [("VIN", (2, 10), (10, 10), 1.0)])
+    for net, a, b, w in (*vin, ("GND", (2, 14), (10, 14), 1.0),
                          ("SW", (12, 12), (16, 12), 1.0), ("VOUT", (20, 12), (28, 12), 1.0),
                          ("GND", (24, 15), (28, 15), 1.0)):
         tracks.append(Track(net, F, w, a, b))

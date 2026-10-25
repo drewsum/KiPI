@@ -18,6 +18,10 @@ the rails ripple by the transfer impedance at the device's own pins, and the gro
 a victim's driver and receiver moves apart by the transfer impedance to their pads: the
 **common-impedance** coupling, the switching current's return sharing copper with the
 victim's.
+
+The mesh of the rails and ground is also where the hot loops are traced (#187,
+:mod:`.copper`), so it is built once, before the waveforms, with every port's pads as
+terminals (:func:`board_ports`), and handed to the field model.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ import numpy as np
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.dc.pi.model import PinRef, PISetup, biased_link, net_groups
+
 
 @dataclass
 class BoardModelResult:
@@ -48,6 +53,33 @@ class BoardModelResult:
     probe_ripple: Dict[str, np.ndarray] = field(default_factory=dict)   # V(rail) − V(gnd)
 
 
+@dataclass
+class BoardPorts:
+    """The board model's nets and ports, before the waveforms exist."""
+    gnd: str
+    rail: frozenset                              # the rails' nets
+    grounds: frozenset                           # the ground's nets (#171)
+    in_rail: frozenset
+    buck: bool
+    ports: list                                  # PortDef
+    src: List[int]                               # the source ports, two per phase
+    shorts: list
+    cap_rail: Dict[str, str]
+    missing: List[str]
+    notes: List[str]
+    obs_probes: List[str]
+    obs_victims: List[str]
+
+    def terminal_ids(self) -> List[str]:
+        """Every pad the mesh needs as a terminal."""
+        return list(dict.fromkeys(
+            [pid for p in self.ports for pid in (*p.plus_pads, *p.minus_pads)]
+            + [pid for a, b in self.shorts for pid in (*a, *b)]))
+
+    def ground_nets(self) -> List[str]:
+        return [self.gnd, *sorted(self.grounds - {self.gnd})]
+
+
 def ground_pads(snap: BoardSnapshot, ref: str, gnd: str) -> List[str]:
     """Pad ids of footprint ``ref`` on the ground net."""
     _, _, pads, _ = snap.items_on_net(gnd)
@@ -62,19 +94,25 @@ def _pads(snap: BoardSnapshot, pin: Optional[PinRef]) -> List[str]:
                                                               or p.number in pin.pins)]
 
 
-def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
-                victim_grounds: Dict[str, Tuple[List[str], List[str]]],
-                progress: ProgressReporter = NULL, probes=()) -> BoardModelResult:
-    """The board model of the aggressor's rails at the waveforms' harmonics.
-    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids;
-    ``probes``, AC probes to give the rails' ripple at (#157)."""
-    from kipi.ac.checks import ground_nets, rail_caps, rail_nets
-    from kipi.ac.solver.fem import ACError, ACSystem, PortDef
-    from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
+def aggressor_ground(setup: PISetup, agg) -> str:
+    """The aggressor's ground net: its VRM's, else its first phase's low-side pins'."""
     from kipi.noise.checks import find_vrm
     vrm = find_vrm(setup, agg)
-    gnd = vrm.ground.net if vrm.ground else next(
+    return vrm.ground.net if vrm.ground else next(
         (ph.low_side.net for ph in agg.phases if ph.low_side), "")
+
+
+def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
+                victim_grounds: Dict[str, Tuple[List[str], List[str]]], probes=()
+                ) -> BoardPorts:
+    """The board model's ports: the phases' sources, the rails' capacitors and links, the
+    AC probes to give the ripple at, and each victim's ground difference.
+    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids."""
+    from kipi.ac.checks import ground_nets, rail_caps, rail_nets
+    from kipi.ac.solver.fem import ACError, PortDef
+    from kipi.noise.checks import find_vrm
+    vrm = find_vrm(setup, agg)
+    gnd = aggressor_ground(setup, agg)
     if not gnd:
         raise ACError("the aggressor has no ground net (set its low-side pins)")
     vin_net = vrm.input.net if vrm.input else ""
@@ -87,8 +125,7 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
 
     ports: List[PortDef] = []
     src: List[int] = []
-    currents: List[np.ndarray] = []
-    for i, (ph, pw) in enumerate(zip(agg.phases, wf.phases), 1):
+    for i, ph in enumerate(agg.phases, 1):
         hs, ls = _pads(snap, ph.high_side), _pads(snap, ph.low_side)
         ind_net = vrm.output.net if buck else vin_net
         ind = [p.id for p in snap.pads if p.footprint == ph.inductor
@@ -103,7 +140,6 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
             ports.append(PortDef(f"I_HS{i}", "probe", hs, ls))
             ports.append(PortDef(f"I_L{i}", "probe", ls, ind))
         src += [len(ports) - 2, len(ports) - 1]
-        currents += [pw.pulsed.c, pw.inductor.c]
     caps, missing = rail_caps(snap, setup, rail, grounds)
     # A capacitor without a model gets its value from the board and typical parasitics,
     # as in the waveforms' own split (kipi.noise.parasitics).
@@ -152,7 +188,6 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
         else:
             ports.append(PortDef(f"probe {pr.name}", "probe", plus, minus))
             obs_probes.append(pr.name)
-    first_probe = len(ports) - len(obs_probes)
     obs_victims: List[str] = []
     for name, (drv, rcv) in victim_grounds.items():
         if not drv or not rcv:
@@ -163,14 +198,34 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
             continue
         ports.append(PortDef(f"gnd {name}", "probe", drv, rcv))
         obs_victims.append(name)
+    return BoardPorts(gnd, rail, grounds, in_rail, buck, ports, src, shorts, cap_rail,
+                      missing, notes, obs_probes, obs_victims)
+
+
+def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
+                victim_grounds: Dict[str, Tuple[List[str], List[str]]],
+                progress: ProgressReporter = NULL, probes=(),
+                mesh=None) -> BoardModelResult:
+    """The board model of the aggressor's rails at the waveforms' harmonics.
+    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids;
+    ``probes``, AC probes to give the rails' ripple at (#157); ``mesh``, the rails' and
+    ground's mesh with its node kinds, already built (else it is built here)."""
+    from kipi.ac.solver.fem import ACSystem
+    from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
+    bp = board_ports(snap, setup, agg, op, victim_grounds, probes)
+    ports, src, buck = bp.ports, bp.src, bp.buck
+    currents = [c for pw in wf.phases for c in (pw.pulsed.c, pw.inductor.c)]
+    notes = list(bp.notes)
+    first_probe = len(ports) - len(bp.obs_probes) - len(bp.obs_victims)
+    obs_probes, obs_victims = bp.obs_probes, bp.obs_victims
 
     # 0 V is the ground: the minus side of the first port that ends on it.
     pad_net = {p.id: p.net for p in snap.pads}
     ref_port = next((i for i, p in enumerate(ports)
-                     if p.minus_pads and pad_net.get(p.minus_pads[0]) == gnd), 0)
-    system = ACSystem(snap, sorted(rail), [gnd, *sorted(grounds - {gnd})], ports, shorts,
-                      setup.settings, setup.ac,
-                      progress, reference_port=ref_port)
+                     if p.minus_pads and pad_net.get(p.minus_pads[0]) == bp.gnd), 0)
+    system = ACSystem(snap, sorted(bp.rail), bp.ground_nets(), ports, bp.shorts,
+                      setup.settings, setup.ac, progress, reference_port=ref_port,
+                      prebuilt=mesh)
     freqs = wf.freqs()
     f0, f1 = float(freqs[0]), float(freqs[-1])
     n = max(4, int(math.ceil(math.log10(f1 / f0) * setup.noise.field_per_decade)) + 1)
@@ -212,6 +267,6 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     output_ripple = v[:, 1] if buck else v[:, 0]
     ground = {name: v[:, first_victim + j] for j, name in enumerate(obs_victims)}
     at_probes = {name: v[:, len(src) + j] for j, name in enumerate(obs_probes)}
-    return BoardModelResult(cap_currents, cap_rail, input_ripple, output_ripple, ground,
-                            f_field, system.n, system.total_plane_capacitance, missing,
+    return BoardModelResult(cap_currents, bp.cap_rail, input_ripple, output_ripple, ground,
+                            f_field, system.n, system.total_plane_capacitance, bp.missing,
                             notes + system.warnings, at_probes)

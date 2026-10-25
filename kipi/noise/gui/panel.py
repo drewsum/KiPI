@@ -1050,11 +1050,15 @@ class NoisePanel(QWidget, PartSelection):
         tip(f, self.chk_board, "Solve the converter's rails and ground with AC mode's field "
                                "model: the switching currents divide among all the modelled "
                                "capacitors on the rails through the copper's own impedance, "
-                               "the rails' ripple is taken at the device's pins, and the "
-                               "ground noise between each victim's driver and receiver is "
-                               "its shared-ground (common-impedance) coupling. Untick for a "
+                               "the rails' ripple is taken at the device's pins, each "
+                               "capacitor's hot loop is traced through the copper (its "
+                               "pours, traces, vias and plane), which sets the loop's "
+                               "inductance and the inductive coupling, and the ground noise "
+                               "between each victim's driver and receiver is its "
+                               "shared-ground (common-impedance) coupling. Untick for a "
                                "quick solve: the capacitors then share the current by their "
-                               "own impedance and there is no shared-ground coupling.",
+                               "own impedance, the hot loops are drawn straight between the "
+                               "pads and there is no shared-ground coupling.",
             ("board_model", "split", "gnd"))
         tip(f, self.spin_fpd, "Copper (field) solves per decade of the harmonics; the board's "
                               "response in between is interpolated, as in AC mode's sweep",

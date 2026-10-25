@@ -760,8 +760,12 @@ layer, behind the ground plane. Open its snapshot to try it.
   input and output voltages and the load current come from the DC setup unless you enter
   them. **Coss**, **Qrr**, **Rds(on)** and **package inductance** from the datasheet are
   optional.
-  KiPI draws the hot loop through the copper and computes its inductance, which with the
-  switch node's capacitance sets the ringing. The ringing's current flows round the hot
+  With the board model on, KiPI traces each capacitor's hot loop through the copper: a
+  conduction solve of the rails' and ground's mesh gives where its current flows in the
+  rail's pours and traces and in the ground's copper, vias and plane, and that current
+  distribution is the loop, for its inductance and for the inductive coupling onto
+  victims. (Off, the loop is drawn straight between the pads.) The inductance, with the
+  switch node's capacitance, sets the ringing. The ringing's current flows round the hot
   loop too, through the input capacitors, and couples onto victims. The control switch's
   turn-on is a hard edge, taking the current from a conducting body diode and sweeping out
   its reverse-recovery charge (Qrr), and rings; its turn-off is soft, carried by the
@@ -779,8 +783,8 @@ layer, behind the ground plane. Open its snapshot to try it.
 * **Settings tab**: the harmonics kept, the ringing's least damping (and the soft edge's),
   how finely victim traces are cut into cross-sections, and the **Board model**: AC mode's field model of the
   converter's rails and ground. It splits the ripple current among the capacitors through
-  the copper's own impedance and gives the shared-ground noise. It is the slow part of a
-  solve; untick it for a quick look.
+  the copper's own impedance, traces the hot loops through that copper and gives the
+  shared-ground noise. It is the slow part of a solve; untick it for a quick look.
 
 Pick the **Aggressor** and click **Solve**. The waveforms are exact Fourier series of the
 converter's piecewise-linear shapes, so they appear in well under a second, and the victims

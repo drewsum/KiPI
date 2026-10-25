@@ -7,6 +7,19 @@ milestones rather than versions that were ever set.
 ## 0.9.3 (in development)
 
 ### Added
+- **Hot loops traced through the copper** (#187). With the board model on, Coupled Noise
+  no longer draws each capacitor's hot loop straight between its pads: a DC conduction
+  solve of one ampere on the rails' and ground's mesh, from the capacitor's rail pad to
+  the switch's pins and from its ground pins back to the capacitor (and through the
+  switch node for the loops through the inductor), gives where the current flows in the
+  pours, traces, vias and plane. That distribution is the loop: its inductance is the
+  weighted sum of its pieces' partial inductances, with each side of the nearest plane
+  mirrored in its own face and the plane's own spread current counted by what the plane
+  lets through at each frequency, and the same pieces are the sources of the inductive
+  coupling onto every victim and the scan. The board model's mesh is built once, before
+  the waveforms, and shared with its field solve. The results notes say whether a phase's
+  loop was traced or drawn straight (the board model off, or a capacitor the copper does
+  not join to the switch), and a victim near a detour in the copper now sees it.
 - **Diodes from a SPICE model** (#191). **Import SPICE model…** in a series link now also
   reads a diode: its `.model D(...)` card or a two-pin subcircuit with diodes in it, side A
   its anode. Diodes use IS, N and RS, BV and IBV for reverse breakdown, and CJO, VJ, M, FC

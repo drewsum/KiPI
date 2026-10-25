@@ -125,7 +125,9 @@ def test_shared_ground_coupling_is_a_mechanism():
     off = solve_noise(snap, _setup(snap, [Victim("SIG")], board_model=False),
                       "U1 buck").victims[0]
     assert "common" not in off.peak_by
-    assert off.peak_by["capacitive"] == pytest.approx(v.peak_by["capacitive"])
+    # The board model changes the hot loop (traced through the copper, #187), so the
+    # ringing and with it the switch node differ a little; the capacitive path is the same.
+    assert off.peak_by["capacitive"] == pytest.approx(v.peak_by["capacitive"], rel=0.05)
 
 
 def test_a_victim_whose_ends_share_a_part_has_no_ground_difference():

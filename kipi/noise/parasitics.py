@@ -3,12 +3,16 @@
 **Hot loop.** The commutating current of a buck flows from each input capacitor's
 positive pad to the switching device's high-side pins, through the device to its
 low-side (power ground) pins and back to the capacitor's ground pad; a boost's does the
-same through its output capacitors. Each capacitor's loop is drawn as straight segments
-between those pads (on the device's layer, with a via drop where the capacitor is on the
-other side), each as wide as the net's copper along it, and its inductance comes from
-partial inductances (:mod:`kipi.noise.extract.peec`), with the nearest solid plane under
-the device taken as an image plane. The phase's loop inductance is the device's package
-inductance plus the capacitors' branches (their ESL plus their loop) in parallel.
+same through its output capacitors. With the board model on, each capacitor's loop is
+traced through the copper (#187, :mod:`kipi.noise.extract.copper`): DC conduction solves
+on the rails' and ground's mesh give where its current flows, pours, traces, vias and
+plane, and that distribution is the loop for the partial inductances
+(:mod:`kipi.noise.extract.peec`) and for the inductive coupling, with the nearest solid
+plane under the device as an image plane. Without the board model the loop is drawn as
+straight segments between the pads (on the device's layer, with a via drop where the
+capacitor is on the other side), each as wide as the net's copper along it. The phase's
+loop inductance is the device's package inductance plus the capacitors' branches (their
+ESL plus their loop) in parallel.
 
 **Switch node.** Its capacitance to ground is the device's (Coss, from the datasheet, or a
 typical value) plus that of the switch-node copper to the planes on the neighbouring
@@ -18,14 +22,17 @@ The two set the ringing on the switch node's edges: f_ring = 1 / (2π·√(L·C)
 damping ζ = R/2 · √(C/L), R the conducting switch's on-resistance, the capacitors' ESR and
 the copper's resistance at f_ring (skin effect included).
 
-These are estimates from the pads' positions, not a field solve of the loop's copper.
+The switch node's capacitance and the loop's resistance are estimates from the copper's
+shapes; the loop's current is a DC solve of the copper, not a field solve at frequency.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
 
 from kipi.ac.model import caps_dict
 from kipi.ac.solver.physics import EPS0_F_PER_MM, skin_depth_mm
@@ -33,7 +40,9 @@ from kipi.core.model.board import BoardSnapshot, Pad
 from kipi.core.model.parts import parse_capacitance
 from kipi.core.model.stackup import combined_epsilon_r
 from kipi.dc.pi.model import PinRef, PISetup
+from kipi.dc.solver.fem import SolveError
 from kipi.noise.extract import peec
+from kipi.noise.extract.copper import CopperPaths, Flow
 from kipi.noise.model import DEFAULT_COSS_F, DEFAULT_QRR_C, DEFAULT_RDS_ON_OHM, AggressorPhase
 from kipi.noise.waveforms import CapBranch
 
@@ -69,6 +78,21 @@ class HotLoopReport:
     zeta_loop: float = 1.0
     qrr_c: float = DEFAULT_QRR_C    # swept out on the hard edge
     qrr_default: bool = True
+    traced: bool = False            # the loops run through the copper (#187)
+
+
+@dataclass
+class CapLoop:
+    """One capacitor's current loop, per ampere out of its positive pad: the segments
+    the current flows in, each with the amperes it carries (:mod:`.extract.peec`), the
+    lines to draw it with, and what it cost."""
+    elements: List[peec.Segment]
+    weights: np.ndarray
+    paths: List[np.ndarray]         # (N, 3) polylines, mm, in the current's direction
+    r_ohm: float                    # the copper's DC resistance round it
+    size_mm: float                  # across, for the plane's response to it
+    traced: bool                    # through the copper, or straight between the pads
+    complete: bool = True           # every traced line reached its end
 
 
 @dataclass
@@ -79,7 +103,7 @@ class PhaseLayout:
     # Each capacitor's current loop (it carries that capacitor's ripple current, from its
     # positive pad around the loop), and the plane under the device taking image
     # currents: the z of its facing surface and its layer id (None without one).
-    loops: Dict[str, List[peec.Segment]] = field(default_factory=dict)
+    loops: Dict[str, CapLoop] = field(default_factory=dict)
     image_z: Optional[float] = None
     image_layer: Optional[int] = None
 
@@ -213,6 +237,22 @@ def _pad_short_side(pads: List[Pad]) -> float:
     return float(best) if best else 0.5
 
 
+def _loop_size(points) -> float:
+    """A loop's size across, mm: the square root of the area its corners span, at
+    least 1 mm."""
+    pts = np.array([p[:2] for p in points if p is not None], float).reshape(-1, 2)
+    if len(pts) < 2:
+        return 1.0
+    span = pts.max(axis=0) - pts.min(axis=0)
+    return max(float(math.sqrt(span[0] * span[1])), 1.0)
+
+
+def _plane_faces(board: _Board, plane_id: Optional[int]) -> Optional[Tuple[float, float]]:
+    """The plane's copper, z_bottom to z_top, or None without a plane."""
+    lay = board.stack.layer(plane_id) if plane_id is not None else None
+    return (lay.z_bottom_mm, lay.z_top_mm) if lay is not None else None
+
+
 def _cap_branch(board: _Board, setup: PISetup, ref: str, volts: float,
                 notes: List[str]) -> CapBranch:
     model = caps_dict(setup.caps).get(ref)
@@ -226,18 +266,18 @@ def _cap_branch(board: _Board, setup: PISetup, ref: str, volts: float,
 
 
 def _cap_loop(board: _Board, ref: str, plus_net: str, gnd_net: str, hops, dev_layer: int,
-              plane_z: Optional[float] = None) -> Tuple[List[peec.Segment], float]:
+              plane_z: Optional[float] = None) -> Optional[CapLoop]:
     """The loop from capacitor ``ref``'s positive pad through ``hops`` to its ground pad
-    and back across the capacitor, on ``dev_layer`` (with via drops at the capacitor when
-    it is on the other side). Each hop is (point, net, width, label) for the segment
-    arriving at the point: as wide as ``net``'s copper along it, or ``width`` when no net
-    is given. A ground hop with no ground copper under most of it on ``dev_layer`` returns
-    through the plane at ``plane_z`` instead, with via drops at its ends: the return current
-    flows in the plane under the loop. Returns the segments and their DC resistance."""
+    and back across the capacitor, drawn straight, on ``dev_layer`` (with via drops at the
+    capacitor when it is on the other side). Each hop is (point, net, width, label) for
+    the segment arriving at the point: as wide as ``net``'s copper along it, or ``width``
+    when no net is given. A ground hop with no ground copper under most of it on
+    ``dev_layer`` returns through the plane at ``plane_z`` instead, with via drops at its
+    ends: the return current flows in the plane under the loop."""
     plus = _centroid(board.pads(ref, plus_net))
     minus = _centroid(board.pads(ref, gnd_net))
     if plus is None or minus is None or any(h[0] is None for h in hops):
-        return [], 0.0
+        return None
     cap_layer = board.outer(ref)
     zc, zd = board.z(cap_layer), board.z(dev_layer)
     t = board.thickness(dev_layer)
@@ -272,7 +312,59 @@ def _cap_loop(board: _Board, ref: str, plus_net: str, gnd_net: str, hops, dev_la
         go(here, (*minus, zc), VIA_MM, f"{ref}- via")
         here = (*minus, zc)
     go(here, (*plus, zc), body, f"{ref} body", resist=False)
-    return segs, r
+    if not segs:
+        return None
+    path = np.array([segs[0].a, *(s.b for s in segs)])
+    return CapLoop(segs, np.ones(len(segs)), [path], r,
+                   _loop_size([plus, minus, *(h[0] for h in hops)]), False)
+
+
+def _traced_loop(board: _Board, ref: str, plus_net: str, gnd_net: str,
+                 legs: Sequence[tuple], links: Sequence[tuple], label: str
+                 ) -> Tuple[Optional[CapLoop], str]:
+    """Capacitor ``ref``'s loop through the copper (#187): ``legs`` are the conduction
+    solves round it in order, (the copper, fixed pads, pads, from_fixed, groups, what) as
+    :meth:`CopperPaths.flow` takes them, and ``links`` the parts the current crosses
+    between them, (from xy, to xy, z, width, thickness, what): the device, the inductor.
+    Returns the loop, or None and why not."""
+    plus = _centroid(board.pads(ref, plus_net))
+    minus = _centroid(board.pads(ref, gnd_net))
+    if plus is None or minus is None:
+        return None, f"{ref} has no pad on {plus_net} or {gnd_net}"
+    corners = [plus, minus] + [xy for a, b, *_ in links for xy in (a, b)]
+    centre = tuple(np.mean(np.array(corners, float), axis=0))
+    size = _loop_size(corners)
+    elements: List[peec.Segment] = []
+    weights: List[np.ndarray] = []
+    paths: List[np.ndarray] = []
+    r = 0.0
+    complete = True
+    for copper, fixed, pads, from_fixed, groups, what in legs:
+        if copper is None:
+            return None, f"{ref}: the copper of {what} cannot be meshed"
+        try:
+            flow: Optional[Flow] = copper.flow(fixed, pads, from_fixed, groups)
+        except SolveError as e:
+            return None, f"{ref}: {what} cannot be solved ({e})"
+        if flow is None:
+            return None, f"{ref}: no copper joins {what}"
+        segs, w = copper.elements(flow, centre, size, f"{label} {what}")
+        elements += segs
+        weights.append(w)
+        lines, ok = copper.streamlines(flow)
+        paths += lines
+        complete &= ok
+        r += flow.r_ohm
+    cap_layer = board.outer(ref)
+    body = (minus, plus, board.z(cap_layer), _pad_short_side(board.pads(ref)),
+            board.thickness(cap_layer), f"{ref} body")
+    for a, b, z, w, t, what in [*links, body]:
+        if math.dist(a, b) > 1e-9:
+            elements.append(peec.segment((*a, z), (*b, z), w, t, f"{label} {what}"))
+            weights.append(np.ones(1))
+            paths.append(np.array([(*a, z), (*b, z)], float))
+    return CapLoop(elements, np.concatenate(weights) if weights else np.zeros(0), paths, r,
+                   size, True, complete), ""
 
 
 def switch_node_copper_f(board: _Board, net: str) -> float:
@@ -300,8 +392,11 @@ def switch_node_copper_f(board: _Board, net: str) -> float:
 
 def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, index: int,
                  topology: str, vin: float, vout: float, vin_net: str, vout_net: str,
-                 gnd_net: str, min_zeta: float = 0.0) -> PhaseLayout:
-    """The hot-loop report and the capacitor branches (with their loops) of one phase."""
+                 gnd_net: str, min_zeta: float = 0.0,
+                 copper: Optional[CopperPaths] = None) -> PhaseLayout:
+    """The hot-loop report and the capacitor branches (with their loops) of one phase.
+    With ``copper`` (the board model's mesh of the rails and ground) the loops are traced
+    through it; without, they are drawn straight between the pads."""
     board = _Board(snap, setup.ac.default_er)
     notes: List[str] = []
     hs, ls = phase.high_side, phase.low_side
@@ -322,33 +417,93 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
     if a_pt is not None and b_pt is not None:
         mid = ((a_pt[0] + b_pt[0]) / 2, (a_pt[1] + b_pt[1]) / 2)
         z_plane, plane_name, plane_id = board.plane_under(dev_layer, mid)
-    cap_loops: Dict[str, List[peec.Segment]] = {}
+    plane = _plane_faces(board, plane_id)
+    cap_loops: Dict[str, CapLoop] = {}
+    hot_in = topology == "buck"
+    zd = board.z(dev_layer)
+    ind_w = _pad_short_side(ind_pads) if ind_pads else DEVICE_WIDTH_MM
+    ind_layer = board.outer(phase.inductor) if phase.inductor else dev_layer
+
+    # The pads each traced leg runs between (#187), and every capacitor's pads a device
+    # pin set will be asked about, so each set is factorized once.
+    def ids(pads: List[Pad]) -> List[str]:
+        return [p.id for p in pads]
+    hs_ids = ids(board.pads(hs.ref, hs.net, hs.pins)) if hs else []
+    ls_ids = ids(board.pads(ls.ref, ls.net, ls.pins)) if ls else []
+    l_rail_ids = ids([p for p in ind_pads if p.net == rail_net])
+    l_sw_ids = ids([p for p in ind_pads if p.net == phase.switch_net])
+    sw_dev = board.pads(dev_ref, phase.switch_net) if dev_ref and phase.switch_net else []
+    sw_dev_pt = _centroid(sw_dev)
+    hot_refs, other_refs = ((phase.input_caps, phase.output_caps) if hot_in
+                            else (phase.output_caps, phase.input_caps))
+    hot_net, other_net = (vin_net, vout_net) if hot_in else (vout_net, vin_net)
+    hot_groups = [ids(board.pads(r, hot_net)) for r in hot_refs]
+    other_groups = [ids(board.pads(r, other_net)) for r in other_refs]
+    minus_groups = [ids(board.pads(r, gnd)) for r in [*hot_refs, *other_refs]]
+
+    def traced(ref: str, hot: bool, plus_net: str) -> Tuple[Optional[CapLoop], str]:
+        if copper is None or a_pt is None or b_pt is None:
+            return None, ""
+        plus_ids, minus_ids = ids(board.pads(ref, plus_net)), ids(board.pads(ref, gnd))
+        t_dev = board.thickness(dev_layer)
+        if hot:
+            legs = [(copper, hs_ids, plus_ids, False, hot_groups, f"{ref}+ to {dev_ref}"),
+                    (copper, ls_ids, minus_ids, True, minus_groups, f"{dev_ref} to {ref}-")]
+            links = [(a_pt, b_pt, zd, DEVICE_WIDTH_MM, t_dev, f"through {dev_ref}")]
+        else:
+            if not phase.switch_net:
+                return None, f"{ref}: the phase has no switch node"
+            if not (l_rail_ids and l_sw_ids and sw_dev_pt is not None):
+                return None, (f"{ref}: {phase.inductor or 'the inductor'}'s pads or "
+                              f"{dev_ref}'s switch-node pads are not on the board")
+            sw_ids = ids(sw_dev)
+            sw_copper = copper.for_net(phase.switch_net, [*sw_ids, *l_sw_ids])
+            legs = [(copper, l_rail_ids, plus_ids, False, other_groups,
+                     f"{ref}+ to {phase.inductor}"),
+                    (sw_copper, sw_ids, l_sw_ids, False, [l_sw_ids],
+                     f"{phase.inductor} to {dev_ref}"),
+                    (copper, ls_ids, minus_ids, True, minus_groups, f"{dev_ref} to {ref}-")]
+            links = [(l_rail, l_sw, board.z(ind_layer), ind_w, board.thickness(ind_layer),
+                      f"through {phase.inductor}"),
+                     (sw_dev_pt, b_pt, zd, DEVICE_WIDTH_MM, t_dev, f"through {dev_ref}")]
+        return _traced_loop(board, ref, plus_net, gnd, legs, links, ref)
 
     def branches(refs: List[str], hot: bool, volts: float, plus_net: str):
         out, loops = [], {}
         for ref in refs:
             br = _cap_branch(board, setup, ref, volts, notes)
-            if hot:
-                hops = [(a_pt, plus_net, None, f"{ref}+ to {dev_ref}"),
-                        (b_pt, None, DEVICE_WIDTH_MM, f"through {dev_ref}")]
-            else:
-                ind_w = _pad_short_side(ind_pads) if ind_pads else DEVICE_WIDTH_MM
-                hops = [(l_rail, plus_net, None, f"{ref}+ to {phase.inductor}"),
-                        (l_sw, None, ind_w, f"through {phase.inductor}"),
-                        (b_pt, phase.switch_net, None, f"switch node to {dev_ref}")]
-            segs, r = _cap_loop(board, ref, plus_net, gnd, hops, dev_layer, z_plane)
-            if segs:
-                cap_loops[ref] = segs
-                br.path_l_h = max(peec.loop_inductance(segs, z_plane), 0.0)
-                br.path_r_ohm = r
+            loop, why = traced(ref, hot, plus_net)
+            if loop is None:
+                if why:
+                    notes.append(f"{why}: its loop is drawn straight between the pads")
+                if hot:
+                    hops = [(a_pt, plus_net, None, f"{ref}+ to {dev_ref}"),
+                            (b_pt, None, DEVICE_WIDTH_MM, f"through {dev_ref}")]
+                else:
+                    hops = [(l_rail, plus_net, None, f"{ref}+ to {phase.inductor}"),
+                            (l_sw, None, ind_w, f"through {phase.inductor}"),
+                            (b_pt, phase.switch_net, None, f"switch node to {dev_ref}")]
+                loop = _cap_loop(board, ref, plus_net, gnd, hops, dev_layer, z_plane)
+            if loop is not None:
+                cap_loops[ref] = loop
+                br.path_l_h = max(peec.distribution_inductance(loop.elements, loop.weights,
+                                                               plane), 0.0)
+                br.path_r_ohm = loop.r_ohm
+                if loop.traced and not loop.complete:
+                    notes.append(f"{ref}: a line of its loop did not reach its end through "
+                                 "the copper; the drawn path is cut short there")
             loops[ref] = br.path_l_h
             out.append(br)
         return out, loops
 
-    hot_in = topology == "buck"
     in_caps, in_loops = branches(phase.input_caps, hot_in, vin, vin_net)
     out_caps, out_loops = branches(phase.output_caps, not hot_in, vout, vout_net)
     hot_caps, hot_loops = (in_caps, in_loops) if hot_in else (out_caps, out_loops)
+    traced_all = bool(hot_caps) and all(cap_loops[c.ref].traced for c in hot_caps
+                                        if c.ref in cap_loops)
+    if copper is None and hot_caps and not setup.noise.board_model:
+        notes.append("The hot loops are drawn straight between the pads; turn the board "
+                     "model on to trace them through the copper")
 
     pkg = phase.package_l_h
     if hot_caps:
@@ -393,5 +548,5 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
         notes.append("No hot-loop inductance: the switch node's edges do not ring")
     report = HotLoopReport(index, loop_l, pkg, hot_loops, c_sw, coss, coss_default, c_cu,
                            r_loop, f_ring, zeta, plane_name, notes, zeta_loop, qrr,
-                           qrr_default)
+                           qrr_default, traced_all)
     return PhaseLayout(report, in_caps, out_caps, cap_loops, z_plane, plane_id)

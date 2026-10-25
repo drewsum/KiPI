@@ -120,6 +120,44 @@ def _boundary_nodes(tris: np.ndarray) -> np.ndarray:
     return np.unique(uniq[counts == 1].ravel())
 
 
+def mesh_rail_and_ground(snap: BoardSnapshot, rail_nets: Sequence[str],
+                         gnd_nets: Sequence[str], terminal_ids: Sequence[str], dc_settings,
+                         ac_settings, progress: ProgressReporter = NULL
+                         ) -> Tuple[NetMesh, np.ndarray]:
+    """The AC mesh of the rail's nets and its ground's, with ``terminal_ids`` as terminal
+    pads: one mesh of them all, and each node's kind (0 rail, 1 ground). Pads not on
+    those nets stop it."""
+    pad_net = {p.id: p.net for p in snap.pads}
+    nets = [*rail_nets, *gnd_nets]
+    stray = [pid for pid in terminal_ids if pad_net.get(pid) not in nets]
+    if stray:
+        raise ACError(f"Pads are not on the rail or its ground: {stray}")
+    # Via grading only near the rail: far stitching vias carry almost none of its
+    # current, and grading them is most of a large board's mesh (#123).
+    graded = None
+    if ac_settings.grade_near_rail_only:
+        graded = near_rail(snap, rail_nets, terminal_ids, dc_settings.circle_quad_segs)
+    meshes: List[NetMesh] = []
+    kinds = []
+    with progress.timed("Meshing rail and ground"):
+        for net in nets:
+            progress.check_cancel()
+            progress.info(f"-- {net}")
+            mine = [pid for pid in terminal_ids if pad_net.get(pid) == net]
+            meshes.append(mesh_net(
+                snap, net, mine, max_edge_mm=ac_settings.max_edge_mm,
+                min_angle_deg=dc_settings.min_angle_deg,
+                simplify_mm=dc_settings.simplify_mm,
+                circle_quad_segs=dc_settings.circle_quad_segs,
+                min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
+                progress=progress, graded=graded))
+            kinds.append(1 if net in gnd_nets else 0)
+    mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in snap.stackup.copper])
+    node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)
+                                for m, k in zip(meshes, kinds)])
+    return mesh, node_kind
+
+
 class ACSystem:
     """The assembled AC model of one rail (``rail_nets``) against ``gnd_net``: a net, or
     the ground's nets (#171), joined by the series links among the ports and shorts.
@@ -131,13 +169,18 @@ class ACSystem:
     ``temperature`` (#77), if given, maps KiCad xy (an (N, 2) array, mm) to the copper's
     temperature in °C, which sets its resistivity; without it the copper is at the DC
     settings' reference temperature.
+
+    ``prebuilt``, a mesh from :func:`mesh_rail_and_ground` with its node kinds, is used
+    in place of meshing again (Coupled Noise traces its hot loops on the same mesh, #187).
+    It must hold every port's pads as terminals.
     """
 
     def __init__(self, snap: BoardSnapshot, rail_nets: Sequence[str], gnd_net,
                  ports: List[PortDef], short_links: List[Tuple[List[str], List[str]]],
                  dc_settings, ac_settings, progress: ProgressReporter = NULL,
                  reference_port: int = 0,
-                 temperature: Optional[Callable[[np.ndarray], np.ndarray]] = None):
+                 temperature: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                 prebuilt: Optional[Tuple[NetMesh, np.ndarray]] = None):
         t0 = time.perf_counter()
         self.temperature = temperature
         self.snap, self.ports = snap, ports
@@ -147,7 +190,6 @@ class ACSystem:
         self.dc, self.ac = dc_settings, ac_settings
         self.stats = ACStats(n_ports=len(ports))
         self.warnings: List[str] = []
-        st = snap.stackup
         if not ports:
             raise ACError("Nothing to solve: no probe on this rail")
 
@@ -155,35 +197,16 @@ class ACSystem:
         terminal_ids = list(dict.fromkeys(
             [pid for p in ports for pid in (*p.plus_pads, *p.minus_pads)]
             + [pid for a, b in short_links for pid in (*a, *b)]))
-        pad_net = {p.id: p.net for p in snap.pads}
-        nets = [*self.rail_nets, *self.gnd_nets]
-        stray = [pid for pid in terminal_ids if pad_net.get(pid) not in nets]
-        if stray:
-            raise ACError(f"Pads are not on the rail or its ground: {stray}")
-        # Via grading only near the rail: far stitching vias carry almost none of its
-        # current, and grading them is most of a large board's mesh (#123).
-        graded = None
-        if ac_settings.grade_near_rail_only:
-            graded = near_rail(snap, self.rail_nets, terminal_ids, dc_settings.circle_quad_segs)
-        meshes: List[NetMesh] = []
-        kinds = []
-        with progress.timed("Meshing rail and ground"):
-            for net in nets:
-                progress.check_cancel()
-                progress.info(f"-- {net}")
-                mine = [pid for pid in terminal_ids if pad_net.get(pid) == net]
-                meshes.append(mesh_net(
-                    snap, net, mine, max_edge_mm=ac_settings.max_edge_mm,
-                    min_angle_deg=dc_settings.min_angle_deg,
-                    simplify_mm=dc_settings.simplify_mm,
-                    circle_quad_segs=dc_settings.circle_quad_segs,
-                    min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
-                    progress=progress, graded=graded))
-                kinds.append(1 if net in self.gnd_nets else 0)
-        mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in st.copper])
+        if prebuilt is not None:
+            mesh, node_kind = prebuilt
+            missing = [pid for pid in terminal_ids if pid not in mesh.pad_nodes]
+            if missing:
+                raise ACError(f"Pads are not terminals of the prebuilt mesh: {missing}")
+        else:
+            mesh, node_kind = mesh_rail_and_ground(snap, self.rail_nets, self.gnd_nets,
+                                                   terminal_ids, dc_settings, ac_settings,
+                                                   progress)
         self.mesh = mesh
-        node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)
-                                    for m, k in zip(meshes, kinds)])
         self.node_ground = node_kind == 1           # for the board map
         n = mesh.n_nodes
         self.stats.n_nodes, self.stats.n_tris = n, mesh.n_tris

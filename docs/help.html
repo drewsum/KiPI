@@ -1932,19 +1932,30 @@ the victim's own loop picking up the field, which the inductive path counts).</p
 with AC mode's field model: the switching currents divide among all the capacitors on the
 rails through the copper's own impedance, the rails' ripple is taken at the switching
 device's pins, and the ground difference between each victim's ends gives its shared-
-ground coupling. It is the slow part of a solve (comparable to an AC solve of the rails);
-untick it in Settings for a quick look.</p>
+ground coupling. Each capacitor's hot loop is traced through the same copper (below). It
+is the slow part of a solve (comparable to an AC solve of the rails); untick it in
+Settings for a quick look.</p>
 <p>An aggressor is one of the setup's VRMs of type <b>Switcher</b> (made in DC or AC mode).
 Its input rail and regulated voltage give the input and output voltages, and from them the
 topology: an input above the output is a <b>buck</b>, below it a <b>boost</b>. Its output
 current is the DC setup's loads on its output rail, unless you enter one.</p>
 <p>The <b>hot loop</b> is the path the switching current takes on every edge: in a buck,
 from the input capacitors through the high-side switch and back from the low-side switch to
-the capacitors' ground; in a boost, the same through the output capacitors. KiPI draws it
-between the pads you name, as wide as the copper along it, and computes its inductance from
-partial inductances, with the plane under it taking image currents. With the switch node's
+the capacitors' ground; in a boost, the same through the output capacitors. With the board
+model on, KiPI traces each capacitor's loop through the copper itself: a conduction solve
+on the rails' and ground's mesh of one ampere from the capacitor's rail pad to the switch's
+pins, and another from its ground pins back to the capacitor, give where the current flows
+in the rail's pours and traces and in the ground's copper, vias and plane. That current
+distribution, cell by cell and via by via, is the loop: its inductance comes from the
+partial inductances of every piece carrying its share of the current, with the plane under
+the device taking image currents, and the same pieces are the sources of the inductive
+coupling onto victims. (The DC distribution is the path of least resistance; at the ringing
+frequency the return in a solid plane gathers under the forward path, which the plane's
+images carry, and the plane's own spread current counts only by what the plane lets through
+at each frequency.) With the board model off, the loop is drawn straight between the pads
+you name, as wide as the copper along it, and the notes say so. With the switch node's
 capacitance to ground (the switch's Coss plus the switch-node copper's capacitance to the
-neighbouring planes) it sets the <b>ringing</b> on every edge, at
+neighbouring planes) the loop's inductance sets the <b>ringing</b> on every edge, at
 f = 1 / (2π√(L·C)). The ringing's current flows round the hot loop too, so the input
 capacitors of a buck (the output capacitors of a boost) carry it, and it couples onto
 victims through their loops.</p>
@@ -2069,8 +2080,10 @@ and the results say so.</p>
     cross-section of the copper around it (default 0.5 mm).</li>
   <li><b>Coupling window</b>: how far either side of a victim trace copper is taken into its
     cross-section (default 3 mm). Switch-node copper further away does not couple.</li>
-  <li><b>Board model</b>: solve the rails and ground's copper (above). Off, the capacitors
-    share the current by their own impedances and there is no shared-ground coupling.</li>
+  <li><b>Board model</b>: solve the rails and ground's copper (above), and trace the hot
+    loops through it. Off, the capacitors share the current by their own impedances, the
+    hot loops are drawn straight between the pads and there is no shared-ground
+    coupling.</li>
   <li><b>Field solves per decade</b>: copper solves per decade of the harmonics; the board's
     response in between is interpolated (default 10).</li>
   <li><b>Scan radius</b>: the scan looks at signal nets with a trace this close to the

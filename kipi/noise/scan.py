@@ -11,8 +11,8 @@ candidate. Each is ranked by a quick estimate of the noise it picks up:
   net's own capacitance Cg (each trace's 2πε/p11 and the receiver's) through it: over an
   edge of t = ΔV/(dV/dt), v = Cm·R·dV/dt·(1 − e^(−t/τ)), τ = R·(Cm + Cg). A low R gives
   Cm·R·dV/dt; an undriven net (#158) the charge divider ΔV·Cm/(Cm + Cg);
-* **inductive**: the EMF the capacitor loops induce along its traces, with the full
-  inductive model (it is cheap), its peak over a period.
+* **inductive**: the EMF the capacitor loops induce along its traces, with the inductive
+  model on the parts of each loop carrying most of its current, its peak over a period.
 
 The nets with the highest estimates are then solved in full, as victims of the scan's
 type and logic level (:func:`kipi.noise.model.scan_victim`), every mechanism included.
@@ -110,7 +110,7 @@ def estimate(snap: BoardSnapshot, setup: PISetup, agg, wf, layouts,
     t_edge = swing / dvdt if dvdt > 0 else 0.0
     v = scan_victim(s, "")
     r = 1.0 / sum(1.0 / x for x in (v.driver_ohm, v.receiver_ohm, v.termination_ohm) if x)
-    sources = loop_sources(layouts, wf)
+    sources = loop_sources(layouts, wf, estimate=True)
     freqs = wf.freqs()
     er = setup.ac.default_er
     rows = []
