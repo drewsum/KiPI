@@ -913,9 +913,9 @@ class NoisePanel(QWidget, PartSelection):
         tip_3d = ("Show in the 3D view where the selected victim's peak noise couples in: "
                   "each piece of its traces colored by its part of the receiver's peak (red "
                   "adds to it, blue takes from it), by one mechanism or all of them. The "
-                  "common-ground part is a dot at the driver; the capacitor loops that "
-                  "induce the inductive part are drawn in magenta. Tick the switch node's net "
-                  "in the Board panel to see the capacitive source.")
+                  "common-ground part is a dot at the driver. Hot loops in 3D, below, draws "
+                  "the capacitor loops that induce the inductive part; tick the switch "
+                  "node's net in the Board panel to see the capacitive source.")
         tip_3d = art_tip(tip_3d, "coupling", "cap", "ind", "gnd")
         self.cmb_coupling.setToolTip(tip_3d)
         self.cmb_coupling.currentIndexChanged.connect(self._coupling_view_changed)
@@ -930,6 +930,36 @@ class NoisePanel(QWidget, PartSelection):
         self.lbl_coupling.setVisible(False)
         lr.addWidget(self.coupling_row)
         lr.addWidget(self.lbl_coupling)
+        # The hot loops (#178): each capacitor's current path through the copper.
+        self.loops_row = QWidget(g_res)
+        row = QHBoxLayout(self.loops_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.cmb_loops = QComboBox(self.loops_row)
+        tip_loops = ("Draw the hot loops in the 3D view: each input capacitor's (a boost: "
+                     "output capacitor's) ripple current from its positive pad through the "
+                     "copper to the switching device, through the device and back through "
+                     "the ground's copper, vias and plane to the capacitor, and the loops "
+                     "through the inductor likewise. With the board model on the lines are "
+                     "streamlines of the current through the copper, each starting at an "
+                     "equal share of it, so where they bunch the current is densest; off, "
+                     "the loop is drawn straight between the pads. Cones point the way the "
+                     "current flows out of the capacitor; each loop has its own colour and "
+                     "the capacitor's name. These loops are the sources of the inductive "
+                     "coupling.")
+        tip_loops = art_tip(tip_loops, "loop_path", "path")
+        self.cmb_loops.setToolTip(tip_loops)
+        self.cmb_loops.currentIndexChanged.connect(self._loops_changed)
+        lbl = QLabel("Hot loops in 3D", self.loops_row)
+        lbl.setToolTip(tip_loops)
+        row.addWidget(lbl)
+        row.addWidget(self.cmb_loops, 1)
+        self.lbl_loops = QLabel(g_res)
+        self.lbl_loops.setWordWrap(True)
+        self.lbl_loops.setStyleSheet("color: #aaa;")
+        self.loops_row.setVisible(False)
+        self.lbl_loops.setVisible(False)
+        lr.addWidget(self.loops_row)
+        lr.addWidget(self.lbl_loops)
         self.txt_notes = QLabel(g_res)
         self.txt_notes.setWordWrap(True)
         self.txt_notes.setTextFormat(Qt.RichText)
@@ -1330,6 +1360,7 @@ class NoisePanel(QWidget, PartSelection):
         reset_sort(self.tbl_victims)
         self.tbl_victims.setRowCount(0)
         self.coupling_row.setVisible(False)
+        self._fill_loops(None)
         self._set_victim("")
 
     def show_error(self, message: str):
@@ -1374,6 +1405,7 @@ class NoisePanel(QWidget, PartSelection):
         lines += [f"⚠ {html.escape(v.name)}: {html.escape(w)}"
                   for v in getattr(result, "victims", []) for w in v.warnings]
         self.txt_notes.setText("<br>".join(lines))
+        self._fill_loops(result)
         self._fill_victims(result)
         self.btn_report.setVisible(bool(getattr(result, "report_path", "")))
         self.report_option.set_available(True)
@@ -1424,6 +1456,33 @@ class NoisePanel(QWidget, PartSelection):
         from kipi.noise.viz import coupling_overlay
         return coupling_overlay(self.result, self._victim,
                                 self.cmb_coupling.currentData() or "off")
+
+    def _fill_loops(self, result):
+        """The hot loops menu for ``result`` (#178): off, all, or one capacitor's; the
+        choice made stays where the new result has it too."""
+        from kipi.noise.viz import LOOPS_OFF, loop_choices
+        choices = loop_choices(result)
+        keep = self.cmb_loops.currentData() or LOOPS_OFF
+        self.cmb_loops.blockSignals(True)
+        self.cmb_loops.clear()
+        for key, text in choices:
+            self.cmb_loops.addItem(text, key)
+        i = self.cmb_loops.findData(keep)
+        self.cmb_loops.setCurrentIndex(i if i >= 0 else 0)
+        self.cmb_loops.blockSignals(False)
+        self.loops_row.setVisible(bool(choices))
+        self._loops_changed()
+
+    def _loops_changed(self, *_):
+        ov = self.hot_loops_overlay()
+        self.lbl_loops.setText(ov.note if ov is not None else "")
+        self.lbl_loops.setVisible(ov is not None)
+        self.coupling_changed.emit()
+
+    def hot_loops_overlay(self):
+        """The hot loops to draw in the 3D view (#178), or None."""
+        from kipi.noise.viz import LOOPS_OFF, hot_loops_overlay
+        return hot_loops_overlay(self.result, self.cmb_loops.currentData() or LOOPS_OFF)
 
     def _save_results(self):
         if not self._results or self.snapshot is None:

@@ -1271,11 +1271,15 @@ class MainWindow(QMainWindow):
         (#152), and bring the view to the front; only in that mode."""
         if self._closed:
             return
-        ov = self.noise_panel.coupling_overlay() if self.mode == "noise" else None
-        if ov is None and self.viewer.coupling is None:
+        noise = self.mode == "noise"
+        ov = self.noise_panel.coupling_overlay() if noise else None
+        loops = self.noise_panel.hot_loops_overlay() if noise else None
+        if ov is None and loops is None and self.viewer.coupling is None \
+                and self.viewer.hot_loops is None:
             return
         self.viewer.set_coupling(ov)
-        if ov is not None and front:
+        self.viewer.set_hot_loops(loops)
+        if (ov is not None or loops is not None) and front:
             self.views.setCurrentWidget(self.viewer)
 
     def _panels(self):

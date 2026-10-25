@@ -404,6 +404,7 @@ def test_the_visual_settings_show_a_drawing(panel):
         "spectrum": (panel.spin_fmax, panel.spin_harm, plot.chk_spectrum),
         "interp": (panel.spin_fpd,),
         "coupling": (panel.cmb_coupling,),
+        "loop_path": (panel.cmb_loops,),
         "bw_limit": (plot.chk_bw,),
     }
     for name, widgets in drawn.items():

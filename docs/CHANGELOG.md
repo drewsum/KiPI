@@ -20,6 +20,14 @@ milestones rather than versions that were ever set.
   the waveforms, and shared with its field solve. The results notes say whether a phase's
   loop was traced or drawn straight (the board model off, or a capacitor the copper does
   not join to the switch), and a victim near a detour in the copper now sees it.
+- **Hot loops in 3D** (#178). A new menu under Coupled Noise's results draws the capacitor
+  loops in the 3D view, all of them or one: each capacitor's ripple current from its
+  positive pad through the copper to the switching device and back through the ground's
+  copper, vias and plane, as streamlines of the traced current (equal shares each, so they
+  bunch where the current is densest), in a colour of its own with the capacitor's name
+  and cones pointing the current's way; the line under the menu gives each loop's
+  inductance. It works with or without victims. The coupling views no longer draw the
+  loops in magenta over the victim.
 - **Diodes from a SPICE model** (#191). **Import SPICE model…** in a series link now also
   reads a diode: its `.model D(...)` card or a two-pin subcircuit with diodes in it, side A
   its anode. Diodes use IS, N and RS, BV and IBV for reverse breakdown, and CJO, VJ, M, FC

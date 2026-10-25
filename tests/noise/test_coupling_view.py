@@ -85,10 +85,9 @@ def test_the_overlay_shows_one_mechanism_or_all(solved):
     assert coupling_overlay(r, "nope", "total") is None
     cap = coupling_overlay(r, "SIG", "capacitive")
     assert np.allclose(cap.segment_mv, 1e3 * v.segment_v["capacitive"])
-    assert cap.loops == [] and len(cap.points) == 0
+    assert len(cap.points) == 0
     assert cap.limit_mv == pytest.approx(np.abs(cap.segment_mv).max())
     ind = coupling_overlay(r, "SIG", "inductive")
-    assert len(ind.loops) == len(r.loop_paths)
     tot = coupling_overlay(r, "SIG", "total")
     assert np.allclose(tot.segment_mv, cap.segment_mv + ind.segment_mv)
     assert "peak" in tot.note
@@ -97,6 +96,39 @@ def test_the_overlay_shows_one_mechanism_or_all(solved):
         assert common.point_mv[0] == pytest.approx(1e3 * v.common_v)
     else:
         assert len(common.points) == 0 and "board model" in common.note
+
+
+def test_the_hot_loops_overlay_draws_each_loop_in_its_colour(solved):
+    """#178: the loops are their own view, one colour and name per capacitor, with
+    arrows along the current, and are no longer part of the coupling views."""
+    from kipi.noise.viz import LOOP_COLORS, LOOPS_ALL, hot_loops_overlay, loop_choices
+    _, _, r = solved
+    assert hot_loops_overlay(r, "off") is None and hot_loops_overlay(None, LOOPS_ALL) is None
+    assert hot_loops_overlay(r, "C9 (phase 1)") is None
+    assert [k for k, _ in loop_choices(r)] == ["off", "all", *r.loop_paths]
+    assert loop_choices(None) == []
+    ov = hot_loops_overlay(r, LOOPS_ALL)
+    assert [lp.key for lp in ov.loops] == list(r.loop_paths)
+    assert [lp.label for lp in ov.loops] == ["C1", "C2"]
+    assert [lp.color for lp in ov.loops] == list(LOOP_COLORS[:2])
+    c1 = ov.loops[0]
+    assert np.array_equal(c1.segments, r.loop_paths["C1 (phase 1)"])
+    assert len(c1.arrow_xyz) >= 4 and c1.arrow_xyz.shape == c1.arrow_dir.shape
+    assert np.allclose(np.linalg.norm(c1.arrow_dir, axis=1), 1.0)
+    # Every arrow sits on one of the loop's segments, pointing its way.
+    for p, d in zip(c1.arrow_xyz, c1.arrow_dir):
+        a, b = c1.segments[:, 0], c1.segments[:, 1]
+        u = b - a
+        ln = np.linalg.norm(u, axis=1)
+        t = np.einsum("ij,ij->i", p - a, u) / np.maximum(ln, 1e-12) ** 2
+        on = np.linalg.norm(a + t[:, None] * u - p, axis=1) < 1e-6
+        assert any(on & (t > -1e-9) & (t < 1 + 1e-9) & (u @ d / np.maximum(ln, 1e-12) > 0.999))
+    # The name goes at the capacitor: where the loop comes back to its positive pad.
+    assert np.allclose(c1.label_xyz[:2], (6.0, 10.0))
+    assert "C1 (phase 1)" in ov.note and "nH" in ov.note
+    one = hot_loops_overlay(r, "C2 (phase 1)")
+    assert [lp.key for lp in one.loops] == ["C2 (phase 1)"] and one.loops[0].color == LOOP_COLORS[1]
+    assert not hasattr(coupling_overlay(r, "SIG", "inductive"), "loops")
 
 
 @pytest.fixture(scope="module")
@@ -117,10 +149,32 @@ def test_the_panel_picks_the_view_for_the_selected_victim(app, solved):
     p.show_result(r)
     assert not p.coupling_row.isHidden() and changed[-1] is None    # off by default
     p.cmb_coupling.setCurrentIndex(p.cmb_coupling.findData("inductive"))
-    assert changed[-1] is not None and changed[-1].loops
+    assert changed[-1] is not None and len(changed[-1].segments)
     assert "inductive" in p.lbl_coupling.text()
     p.clear_results()
     assert changed[-1] is None and p.coupling_row.isHidden()
+    p.close()
+
+
+def test_the_panel_offers_the_hot_loops(app, solved):
+    from kipi.noise.gui.panel import NoisePanel
+    snap, setup, r = solved
+    p = NoisePanel()
+    p.set_board(snap, setup)
+    loops = []
+    p.coupling_changed.connect(lambda: loops.append(p.hot_loops_overlay()))
+    p.show_result(r)
+    assert not p.loops_row.isHidden() and loops[-1] is None          # off by default
+    assert [p.cmb_loops.itemText(i) for i in range(p.cmb_loops.count())] == [
+        "Off", "All capacitors", "C1 (phase 1)", "C2 (phase 1)"]
+    assert p.lbl_loops.isHidden()
+    p.cmb_loops.setCurrentIndex(p.cmb_loops.findData("C2 (phase 1)"))
+    assert [lp.key for lp in loops[-1].loops] == ["C2 (phase 1)"]
+    assert "C2 (phase 1)" in p.lbl_loops.text() and not p.lbl_loops.isHidden()
+    p.show_result(r)                                                 # the choice stays
+    assert p.cmb_loops.currentData() == "C2 (phase 1)"
+    p.clear_results()
+    assert loops[-1] is None and p.loops_row.isHidden()
     p.close()
 
 
@@ -136,9 +190,12 @@ def test_the_window_draws_it_in_noise_mode_only(app, no_3d, solved):
         p = w.noise_panel
         p.cmb_coupling.setCurrentIndex(p.cmb_coupling.findData("capacitive"))
         assert w.viewer.coupling is not None and w.views.currentWidget() is w.viewer
+        assert w.viewer.hot_loops is None
+        p.cmb_loops.setCurrentIndex(p.cmb_loops.findData("all"))
+        assert w.viewer.hot_loops is not None and len(w.viewer.hot_loops.loops) == 2
         w.findChild(QRadioButton, "mode_ac").setChecked(True)
-        assert w.viewer.coupling is None
+        assert w.viewer.coupling is None and w.viewer.hot_loops is None
         w.findChild(QRadioButton, "mode_noise").setChecked(True)
-        assert w.viewer.coupling is not None
+        assert w.viewer.coupling is not None and w.viewer.hot_loops is not None
     finally:
         w.close()

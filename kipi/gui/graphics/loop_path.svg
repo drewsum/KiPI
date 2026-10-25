@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="170" viewBox="0 0 300 170">
+  <rect x="0" y="0" width="300" height="170" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- the board in section: top copper, dielectric, ground plane -->
+    <rect x="20" y="62" width="260" height="6" fill="{grid}"/>
+    <rect x="20" y="68" width="260" height="22" fill="{grid}" opacity="0.5"/>
+    <rect x="20" y="90" width="260" height="6" fill="{grid}"/>
+    <text x="22" y="58" fill="{muted}" font-size="10">top copper</text>
+    <text x="22" y="110" fill="{muted}" font-size="10">ground plane</text>
+    <!-- the capacitor and the switching device standing on the top copper -->
+    <rect x="48" y="40" width="34" height="22" rx="3" fill="none" stroke="{fg}" stroke-width="1.6"/>
+    <text x="65" y="55" fill="{fg}" text-anchor="middle" font-size="10">C in</text>
+    <rect x="196" y="36" width="52" height="26" rx="3" fill="none" stroke="{fg}" stroke-width="1.6"/>
+    <text x="222" y="53" fill="{fg}" text-anchor="middle" font-size="10">switch</text>
+    <!-- vias through the dielectric -->
+    <path d="M84,62 V96 M90,62 V96 M190,62 V96 M196,62 V96" stroke="{muted}" stroke-width="1.4"/>
+    <!-- the loop: along the top copper to the switch, down its via, back in the plane, up at the capacitor -->
+    <g stroke="{path}" stroke-width="2.2" fill="none">
+      <path d="M58,62 V65 H208 V62"/>
+      <path d="M236,62 V65 H214 V93 H87 V65 H74 V62"/>
+    </g>
+    <g fill="{path}">
+      <path d="M130,61 l8,4 l-8,4 z"/>
+      <path d="M160,89 l-8,4 l8,4 z"/>
+      <path d="M118,89 l-8,4 l8,4 z"/>
+      <path d="M214,74 l-3,-6 l6,0 z" transform="rotate(180 214 76)"/>
+    </g>
+    <text x="150" y="130" fill="{path}" text-anchor="middle">the current's own path: pour, via, plane, via</text>
+    <text x="150" y="150" fill="{muted}" text-anchor="middle" font-size="10">lines bunch where the current is densest; cones point its way</text>
+  </g>
+</svg>

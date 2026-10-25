@@ -104,9 +104,13 @@ def no_3d(monkeypatch):
 
         pi_markers = ()
         coupling = None
+        hot_loops = None
 
         def set_coupling(self, overlay):
             self.coupling = overlay
+
+        def set_hot_loops(self, overlay):
+            self.hot_loops = overlay
 
         def set_pi_markers(self, markers):
             self.pi_markers = list(markers)

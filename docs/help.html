@@ -2161,9 +2161,21 @@ two against the smaller margin.</p>
 victim's peak noise couples in: <b>Superposition</b>, or one mechanism. Each piece of its
 traces is colored by its share of the receiver's peak, red adding to it and blue taking
 from it; the shares add up exactly to the peak, so the brightest pieces are the ones to
-move. The common-ground share is a dot at the driver, and the capacitor loops that induce
-the inductive noise are drawn in magenta. The line under the menu gives each mechanism's
-share. Choose <b>Off</b> to go back to the board.</p>
+move. The common-ground share is a dot at the driver. The line under the menu gives each
+mechanism's share. Choose <b>Off</b> to go back to the board.</p>
+<p><b>Hot loops in 3D</b>, below it, draws the capacitor loops themselves: <b>All
+capacitors</b>, or one. Each is the capacitor's ripple current from its positive pad
+through the copper to the switching device, through the device, and back through the
+ground's copper, vias and plane to the capacitor (the loops through the inductor
+likewise), in a colour of its own with the capacitor's name at the capacitor, and cones
+along it pointing the way the current flows. With the board model on, the lines are
+streamlines of the current the solve traced through the copper, each starting at an equal
+share of it: where they bunch the current is densest, and where they dive down a via and
+run in the plane that is where the return really goes. With the board model off the loop
+is drawn straight between the pads. The line under the menu gives each loop's inductance
+and whether it was traced. These loops are the sources of the inductive noise, so a victim
+close to one of them, on the same side of the plane, is the one to move; the view works
+whether or not any victim is solved.</p>
 <p>The mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
 node's dV/dt: keep victims away from the switch node's copper (or behind a plane), and
 drive them harder. <b>Inductive</b> noise comes from the hot loop's dI/dt: make the loop

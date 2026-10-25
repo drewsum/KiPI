@@ -115,12 +115,14 @@ def _view():
            _arrow_actors={}, _result_via_actor=None, _board_actors=[], _hidden_layers=set(),
            _coating_actors=[], _show_mask=False, _show_silk=False,
            _show_mask_result=False, _show_silk_result=False, _coupling=None,
-           _coupling_actors=[], _coupling_bar=None, _coupling_title=None)
+           _coupling_actors=[], _coupling_bar=None, _coupling_title=None, _hot_loops=None,
+           _hot_loop_actors=[])
     for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
                  "set_feature_visible", "_place_models", "_selected_markers", "set_pi_selected",
                  "pi_marker_at", "_to_screen", "focus_on", "_start_blink", "_blink_step",
                  "_paint_selected", "set_coupling", "_remove_coupling_actors",
-                 "_draw_coupling"):
+                 "_draw_coupling", "set_hot_loops", "_remove_hot_loop_actors",
+                 "_draw_hot_loops"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
     return v
 
@@ -451,17 +453,47 @@ def test_clicking_a_marker_in_ac_mode_selects_it_in_the_ac_setup(app, no_3d, mon
     w.close()
 
 
+def test_the_hot_loops_are_drawn_in_their_colours():
+    """Coupled Noise's hot loops (#178): a tube, cones and a name per loop; hidden over
+    results, removed with None."""
+    from kipi.noise.viz import LoopOverlay, LoopPath
+    v = _view()
+    segs = np.array([[[0, 0, 1.5], [4, 0, 1.5]], [[4, 0, 1.5], [4, 0, 1.3]]], float)
+    loop = LoopPath("C1 (phase 1)", "C1", segs, np.array([[2, 0, 1.5]]),
+                    np.array([[1, 0, 0]]), "#ff9a1f", np.array([0, 0, 1.5]))
+    v.set_hot_loops(LoopOverlay([loop, loop], "two"))
+    assert len(v._hot_loop_actors) == 6 and v._hot_loops.note == "two"
+    mapper = v._hot_loop_actors[0].GetMapper()
+    mapper.Update()
+    tube = pv.wrap(mapper.GetInput())
+    assert tube.n_cells == 2
+    np.testing.assert_allclose(tube.points[1], (4, 0, 1.5))
+    np.testing.assert_allclose(v._hot_loop_actors[0].GetProperty().GetColor(),
+                               pv.Color("#ff9a1f").float_rgb, atol=1e-6)
+    cones = pv.wrap(v._hot_loop_actors[1].GetMapper().GetInput())
+    assert cones.n_points > 0 and cones.bounds[0] >= 2.0 - 1e-6     # the cone starts at its point
+    assert v._hot_loop_actors[2].GetMapper().GetInputDataObject(0, 0).GetPointData() \
+        .GetAbstractArray("names").GetValue(0) == "C1"
+    v._result = object()
+    v._apply_visibility()
+    assert not any(a.GetVisibility() for a in v._hot_loop_actors)
+    v._result = None
+    v.set_zscale(2.0)
+    assert len(v._hot_loop_actors) == 6 and v._hot_loop_actors[0].GetScale()[2] == 2.0
+    v.set_hot_loops(None)
+    assert v._hot_loop_actors == [] and v._hot_loops is None
+
+
 def test_a_victims_coupling_is_drawn_over_the_copper():
-    """Coupled Noise's overlay (#152): the victim's segments colored by their share, the
-    common-ground dot and the loops; hidden over results, removed with None."""
+    """Coupled Noise's overlay (#152): the victim's segments colored by their share and
+    the common-ground dot; hidden over results, removed with None."""
     from kipi.noise.viz import CouplingOverlay
     v = _view()
     segs = np.array([[[0, 0, 1.5], [1, 0, 1.5]], [[1, 0, 1.5], [2, 0, 1.5]]], float)
     ov = CouplingOverlay("Superposition share of the peak (mV)", segs, np.array([2.0, -1.0]),
-                         np.array([[0, 0, 1.5]]), np.array([0.5]),
-                         [np.array([[[0, 5, 1.5], [3, 5, 1.5]]])], 2.0)
+                         np.array([[0, 0, 1.5]]), np.array([0.5]), 2.0)
     v.set_coupling(ov)
-    assert len(v._coupling_actors) == 3 and v._coupling_bar == ov.title
+    assert len(v._coupling_actors) == 2 and v._coupling_bar == ov.title
     mapper = v._coupling_actors[0].GetMapper()
     mapper.Update()                     # the mesh reaches the mapper through its pipeline
     victim = pv.wrap(mapper.GetInput())

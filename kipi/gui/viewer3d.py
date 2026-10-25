@@ -54,11 +54,13 @@ _PI_BLINKS = 6
 _PI_LABEL_HALF_H_PX = 9
 _PI_DOT_PICK_PX = 8
 # Coupled Noise's coupling overlay (#152): the victim's traces as tubes this many pixels
-# wide, the common-ground dot, and the capacitor loops thinner, in the loops' color.
+# wide, and the common-ground dot.
 _COUPLING_LINE_PX = 7
 _COUPLING_DOT_PX = 18
-_COUPLING_LOOP_PX = 3
-_COUPLING_LOOP_COLOR = "#ff4dff"
+# Its hot loops (#178): each capacitor's current path as a tube, with cones along it the
+# way the current flows, and the capacitor's name at the capacitor.
+_HOT_LOOP_PX = 4
+_HOT_LOOP_CONE_MM = (0.9, 0.3)                  # length, radius
 
 
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
@@ -335,6 +337,8 @@ class Viewer3D(QWidget):
         self._coupling_actors: List[object] = []
         self._coupling_bar: Optional[str] = None
         self._coupling_title = None
+        self._hot_loops = None              # Coupled Noise's hot loops (#178), likewise
+        self._hot_loop_actors: List[object] = []
         # Clicks are handled here rather than with pyvista's point picking, so a click can
         # also select a via by its on-screen distance (vias are only a few pixels wide).
         self._picker = vtkCellPicker()
@@ -363,6 +367,8 @@ class Viewer3D(QWidget):
         self._set_result(None)
         self._remove_coupling_actors()
         self._coupling = None
+        self._remove_hot_loop_actors()
+        self._hot_loops = None
         p.clear_actors()
         self._remove_pi_actors()
         self._pi_markers = []
@@ -590,11 +596,6 @@ class Viewer3D(QWidget):
                 show_scalar_bar=not shown_bar, scalar_bar_args=bar, name="coupling:common",
                 pickable=False, reset_camera=False, render=False))
             shown_bar = True
-        if ov.loops:
-            self._coupling_actors.append(p.add_mesh(
-                lines(np.concatenate(ov.loops)), color=_COUPLING_LOOP_COLOR,
-                line_width=_COUPLING_LOOP_PX, render_lines_as_tubes=True, lighting=False,
-                name="coupling:loops", pickable=False, reset_camera=False, render=False))
         for a in self._coupling_actors:
             a.SetScale(1.0, 1.0, self._zscale)
         if shown_bar and ov.title in p.scalar_bars:
@@ -606,6 +607,60 @@ class Viewer3D(QWidget):
             self._coupling_bar = ov.title
             self._coupling_title = _bar_title_actor(ov.title)
             p.renderer.AddViewProp(self._coupling_title)
+
+    # ------------------------------------------------------- hot loops (#178)
+    def set_hot_loops(self, overlay):
+        """Draw Coupled Noise's hot loops over the copper: a
+        :class:`kipi.noise.viz.LoopOverlay`, or None to remove them."""
+        self._hot_loops = overlay
+        self._remove_hot_loop_actors()
+        if overlay is not None:
+            self._draw_hot_loops(overlay)
+        self._apply_visibility()
+
+    @property
+    def hot_loops(self):
+        return self._hot_loops
+
+    def _remove_hot_loop_actors(self):
+        p = self.plotter
+        for a in self._hot_loop_actors:
+            if isinstance(a, vtkActor2D):
+                p.renderer.RemoveViewProp(a)
+            else:
+                p.remove_actor(a, render=False)
+        self._hot_loop_actors = []
+
+    def _draw_hot_loops(self, ov):
+        p = self.plotter
+        flip = np.array([1.0, -1.0, 1.0])
+        length, radius = _HOT_LOOP_CONE_MM
+        cone = pv.Cone(center=(length / 2, 0, 0), direction=(1, 0, 0), height=length,
+                       radius=radius, resolution=12)
+        for i, loop in enumerate(ov.loops):
+            pts = loop.segments.reshape(-1, 3) * flip
+            n = len(loop.segments)
+            cells = np.column_stack([np.full(n, 2), 2 * np.arange(n), 2 * np.arange(n) + 1])
+            mesh = pv.PolyData(pts, lines=cells.ravel(), deep=True)
+            self._hot_loop_actors.append(p.add_mesh(
+                mesh, color=loop.color, line_width=_HOT_LOOP_PX, render_lines_as_tubes=True,
+                lighting=False, name=f"hotloop:{i}", pickable=False, reset_camera=False,
+                render=False))
+            if len(loop.arrow_xyz):
+                heads = pv.PolyData(loop.arrow_xyz * flip, deep=True)
+                heads["dir"] = loop.arrow_dir * flip
+                glyphs = heads.glyph(orient="dir", scale=False, factor=1.0, geom=cone)
+                self._hot_loop_actors.append(p.add_mesh(
+                    glyphs, color=loop.color, lighting=False, name=f"hotloop:{i}:arrows",
+                    pickable=False, reset_camera=False, render=False))
+            label = loop.label_xyz * flip
+            label[2] = label[2] * self._zscale + _PI_LABEL_LIFT_MM
+            actor = _pi_labels_actor(label[None, :], [loop.label], pv.Color(loop.color).float_rgb)
+            p.renderer.AddViewProp(actor)
+            self._hot_loop_actors.append(actor)
+        for a in self._hot_loop_actors:
+            if not isinstance(a, vtkActor2D):
+                a.SetScale(1.0, 1.0, self._zscale)
 
     @property
     def pi_marker_names(self) -> List[str]:
@@ -818,6 +873,8 @@ class Viewer3D(QWidget):
             a.SetVisibility(self._show_pi and not showing_result)
         for a in self._coupling_actors:
             a.SetVisibility(not showing_result)
+        for a in self._hot_loop_actors:
+            a.SetVisibility(not showing_result)
         if self._coupling_bar in self.plotter.scalar_bars:
             self.plotter.scalar_bars[self._coupling_bar].SetVisibility(not showing_result)
         if self._coupling_title is not None:
@@ -840,6 +897,9 @@ class Viewer3D(QWidget):
             a.SetScale(1.0, 1.0, self._zscale)
         for a in self._coupling_actors:
             a.SetScale(1.0, 1.0, self._zscale)
+        if self._hot_loops is not None:       # its labels sit at a height in view units
+            self._remove_hot_loop_actors()
+            self._draw_hot_loops(self._hot_loops)
         self._place_models()
         if self._pi_markers:
             self._draw_pi_markers()

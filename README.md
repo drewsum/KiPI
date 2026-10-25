@@ -819,13 +819,19 @@ open-drain line is solved once per state, as its driver holds it far harder low 
 **Coupling in 3D**, under the results table, shows where the selected victim's peak noise
 couples in. Each piece of its traces is colored by its share of the receiver's peak: red
 adds to it, blue takes from it. Pick the superposition or one mechanism. The common-ground
-share is a dot at the driver, and the capacitor loops that induce the inductive noise are
-drawn in magenta. The shares add up exactly to the peak, so the brightest pieces are the
-ones to move. Below, SIG_LOOP picks up most of its noise near the switching device, where it
-runs closest to the hot loop, enough to fail: the hot loop's 179 MHz ringing current
-induces most of it.
+share is a dot at the driver. The shares add up exactly to the peak, so the brightest
+pieces are the ones to move. Below, SIG_LOOP picks up most of its noise near the switching
+device, where it runs closest to the hot loop, enough to fail: the hot loop's 179 MHz
+ringing current induces most of it.
 
-![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 631 mV peak, beside the magenta capacitor loops](docs/images/noise_coupling_3d.png)
+![Coupling in 3D for SIG_LOOP: the victim colored by its share of the 631 mV peak, beside the capacitor loops](docs/images/noise_coupling_3d.png)
+
+**Hot loops in 3D** draws the capacitor loops themselves, all or one: each capacitor's
+ripple current from its positive pad through the copper to the switching device and back
+through the ground's copper, vias and plane, in its own colour with the capacitor's name,
+and cones pointing the way the current flows. With the board model on the lines are
+streamlines of the current traced through the copper, each carrying an equal share, so
+they bunch where the current is densest and dive down the vias the return really takes.
 
 The mechanisms point to different fixes. Capacitive noise comes from the switch node's
 dV/dt: keep victims away from its copper or behind a plane, and drive them harder.
