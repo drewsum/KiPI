@@ -252,6 +252,24 @@ def test_the_near_field_report_finds_the_loops_and_the_switch_node(solved):
     assert any("cables" in n for n in emi.notes)
     assert any("Near field" in x for x in r.summary_lines())
 
+    # Each hotspot is a peak of its own, not the strongest one's shoulder: the inductor's
+    # and C1's loop, each once; the switch node's one pour, once.
+    assert [h.source for h in emi.h_hotspots] == ["L1 field", "C1 loop"]
+    assert len(emi.e_hotspots) == 1
+
+
+def test_hotspots_are_separate_peaks():
+    from kipi.noise.fields import _peaks
+    x, y = np.meshgrid(np.arange(20.0), np.arange(10.0))
+    bump = lambda x0, y0, a: a * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / 4)
+    g = bump(4, 5, 1.0) + bump(14, 5, 0.5) + bump(19, 0, 0.01)      # the last under the floor
+    flat = g.copy()
+    flat[5, 4] = flat[5, 5] = flat[5, 4]                            # a flat top: both kept
+    i = _peaks(g.ravel(), 20, 10)
+    assert [(k % 20, k // 20) for k in i] == [(4, 5), (14, 5)]
+    assert {k % 20 for k in _peaks(flat.ravel(), 20, 10)} >= {4, 5}
+    assert len(_peaks(np.zeros(200), 20, 10)) == 0
+
 
 def test_the_field_maps_cover_the_board_and_peak_at_the_hotspots(solved, tmp_path):
     snap, setup, r = solved

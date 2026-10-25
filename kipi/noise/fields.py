@@ -48,7 +48,8 @@ MAP_NAMES = ("direct", "image", "plane", "through")
 NEAR_FIELD_MM = 5.0                     # the hotspot plane's height over the top copper
 FAR_FIELD_M = 3.0                       # the radiated estimate's distance
 HOTSPOTS = 5
-HOTSPOT_APART_MM = 3.0
+HOTSPOT_APART_MM = 3.0                  # a flat peak's points closer than this are one
+HOTSPOT_FLOOR = 0.05                    # a peak under this share of the strongest is no hotspot
 HOTSPOT_POINTS = 4000                   # the hotspot grid's size, at most
 MAP_POINTS = 8000                       # the report's field map's grid, at most
 MAP_CELL_MM = 0.5                       # and its finest cell
@@ -407,10 +408,29 @@ def _kept_harmonics(spectra: Sequence[Spectrum]) -> np.ndarray:
     return np.flatnonzero(keep)
 
 
+def _peaks(best: np.ndarray, nx: int, ny: int) -> np.ndarray:
+    """The grid's local maxima (indices into ``best``, row by row), strongest first: the
+    points at least as strong as their eight neighbours, and at HOTSPOT_FLOOR of the
+    strongest."""
+    g = np.pad(best.reshape(ny, nx), 1, constant_values=-np.inf)
+    mid = g[1:-1, 1:-1]
+    peak = mid > 0
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dy or dx:
+                peak &= mid >= g[1 + dy:1 + dy + ny, 1 + dx:1 + dx + nx]
+    idx = np.flatnonzero(peak.ravel())
+    idx = idx[best[idx] >= HOTSPOT_FLOOR * best.max()] if len(idx) else idx
+    return idx[np.argsort(-best[idx])]
+
+
 def _hotspots(srcs, kind: str, freqs: np.ndarray, pts: np.ndarray, unit: str,
-              block: int = 16) -> Tuple[List[Hotspot], np.ndarray]:
-    """Where |field| of any harmonic is largest on ``pts``, the harmonic, and the source
-    contributing most there; and every point's largest |field| (P,)."""
+              block: int = 16, shape: Optional[Tuple[int, int]] = None
+              ) -> Tuple[List[Hotspot], np.ndarray]:
+    """The peaks of |field| (of any harmonic) on ``pts``, a grid of ``shape`` (nx, ny):
+    each separate peak where it is largest, the harmonic, and the source contributing
+    most there; and every point's largest |field| (P,). Without ``shape`` there are no
+    hotspots, only the field."""
     if kind == "H":
         idx = _kept_harmonics([s.current for s in srcs])
     else:
@@ -448,10 +468,9 @@ def _hotspots(srcs, kind: str, freqs: np.ndarray, pts: np.ndarray, unit: str,
         k_best[better] = idx[fs][k[better]]
         for j, p in enumerate(per):
             per_best[j, better] = p[k[better], np.flatnonzero(better)]
-    order = np.argsort(-best)
     spots: List[Hotspot] = []
-    for i in order:
-        if best[i] <= 0 or len(spots) >= HOTSPOTS:
+    for i in (_peaks(best, *shape) if shape is not None else []):
+        if len(spots) >= HOTSPOTS:
             break
         if any(math.hypot(pts[i, 0] - s.x_mm, pts[i, 1] - s.y_mm) < HOTSPOT_APART_MM
                for s in spots):
@@ -493,8 +512,8 @@ def near_field_report(sources: FieldSources, freqs: np.ndarray,
         box = extent(srcs)
         span = max(box[2] - box[0], box[3] - box[1], 1.0) + 6.0
         cell = max(1.0, span / math.sqrt(HOTSPOT_POINTS))
-        pts, _, _ = slice_grid(box, z, cell, pad_mm=3.0)
-        spots, _ = _hotspots(srcs, kind, freqs, pts, unit)
+        pts, nx, ny = slice_grid(box, z, cell, pad_mm=3.0)
+        spots, _ = _hotspots(srcs, kind, freqs, pts, unit, shape=(nx, ny))
         fmap = _field_map(srcs, kind, freqs, z, unit, box,
                           getattr(sources, "board_bounds", None))
         if kind == "H":
