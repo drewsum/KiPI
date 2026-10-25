@@ -39,6 +39,8 @@ class Segment:
     c_f_per_mm: float = 0.0
     l_h_per_mm: float = 0.0
     cm: Dict[str, float] = field(default_factory=dict)   # switch net -> Cm′, F/mm
+    # Inductance in series with the segment (a plane split's detour, #146), henries.
+    series_l_h: float = 0.0
 
     @property
     def length_mm(self) -> float:

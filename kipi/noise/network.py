@@ -74,7 +74,9 @@ class VictimNetwork:
         self.length = np.array([x.length_mm for x in s])
         self.r = np.array([RHO_CU_OHM_MM / (x.width_mm * thickness_mm.get(x.layer, COPPER_T_MM))
                            for x in s])
-        self.l = np.array([x.l_h_per_mm for x in s])
+        # A split's detour inductance (#146) is spread along its segment.
+        self.l = np.array([x.l_h_per_mm + getattr(x, "series_l_h", 0.0) / max(x.length_mm, 1e-9)
+                           for x in s])
         self.c = np.array([x.c_f_per_mm for x in s])
 
     def nearest(self, xy) -> int:

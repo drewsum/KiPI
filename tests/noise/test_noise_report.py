@@ -27,9 +27,10 @@ def test_the_report_has_every_section(board, tmp_path):
     path = write_noise_report(tmp_path / report_name("cn", "U1"), r, snap, setup)
     text = path.read_text(encoding="utf-8")
     for section in ("id='victims'", "id='aggressor'", "id='waveforms'", "id='noise'",
-                    "id='scan'", "id='notes'"):
+                    "id='scan'", "id='emi'", "id='notes'"):
         assert section in text, section
     assert "SIG_LOOP" in text and "data:image/png" in text
+    assert "hotspots" in text and "CISPR" in text and "Radiated estimate" in text
     assert report_name("cn", "U1 / buck").startswith("cn_U1_buck_noise_report_")
 
 

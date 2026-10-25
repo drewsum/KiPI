@@ -1970,6 +1970,30 @@ which overshoots once and settles. So a buck rings on its rising edge and a boos
 falling one. At light load the current may be too small to carry the node across within
 the controller's dead time; the next switch then turns on part way and finishes the edge
 hard. The results notes say which edge is which.</p>
+<p>The <b>inductor</b> is a source too: its winding is a magnetic dipole along its axis,
+and an unshielded (open drum) part's field reaches the board around it. KiPI stands the
+winding in as a loop of its turns at the body, normal to the winding axis you set, with
+the turns from the inductance and the body's size, carrying the inductor current; it
+couples onto victims like the hot loops. A shielded (or moulded) part keeps most of its
+flux in its shield: its equivalent loop is smaller and carries a tenth of the turns, so
+its field is weaker and falls off sooner. The winding's sense is not on the board, so the
+sign of its coupling is taken positive.</p>
+<p>A victim that crosses a <b>split in its reference plane</b>, a slot, a gap between two
+planes, the edge of a pour, or a change from one plane to another, has its return current
+detour round the split. Each crossing is found where two joined pieces of the victim have
+different copper under them, and the detour's inductance (Johnson's estimate for a trace
+crossing a slot, 0.197 nH/mm × D × ln(D/w), D the detour and w the trace width; through
+the nearest capacitor joining the two nets where the reference changes plane) goes in
+series with the trace there. The cross-sections already give a piece over a gap the
+capacitance and inductance of the far copper, and the inductive coupling counts the
+loops' real current round the gap rather than a solid plane's images. The results say
+where each victim crosses and what the detour adds.</p>
+<p>The <b>fields</b> the sources make are kept for the 3D view and for a near-field
+report: the H field of every current loop by Biot–Savart from the same elements the
+inductive coupling uses, with the plane's images (and its own current, by what the plane
+mirrors at each frequency), and the E field of each switch node from its copper's charge
+(its capacitance to the nearest plane, patch by patch) and that charge's image. See
+<b>Fields in 3D</b> under the results.</p>
 <p>The waveforms are exact Fourier series of piecewise-linear shapes (trapezoids and
 triangles) up to a highest frequency set by the edges and the ringing, so nothing is
 time-stepped and a solve takes well under a second.</p>
@@ -2010,6 +2034,11 @@ and the rail, its value, the switch node, and the capacitors from each rail to g
 given to the nearest phase. Each phase has:</p>
 <ul>
   <li><b>Inductor</b>, <b>Inductance</b> and <b>DCR</b>.</li>
+  <li><b>Winding axis</b> and <b>Shielded inductor</b>: how the inductor's winding sits
+    (vertical for a flat SMD drum or moulded part, along or across the part for one wound
+    on a rod lying flat) and whether a shield closes its flux, for its stray field (see
+    <a href="#noise-concepts">the concepts</a>). An unshielded part's whole winding
+    reaches the board around it; a shielded part's field is weaker and falls off sooner.</li>
   <li><b>Switch node</b>: the net between the switching device and the inductor.</li>
   <li><b>High-side pins</b> and <b>Low-side pins</b> (<a href="#pin-picker">pin pickers</a>):
     the switching device's pins on the rail its hot loop is fed from (VIN for a buck, the
@@ -2177,6 +2206,23 @@ is drawn straight between the pads. The line under the menu gives each loop's in
 and whether it was traced. These loops are the sources of the inductive noise, so a victim
 close to one of them, on the same side of the plane, is the one to move; the view works
 whether or not any victim is solved.</p>
+<p><b>Fields in 3D</b>, below the hot loops, draws a field on a slice over the board: the
+<b>H field</b> of the current loops you tick in the list (each capacitor's hot loop and
+the inductor's stray field) or the <b>E field</b> of the switch nodes, at the height
+entered over the top copper. Each point is coloured by its peak over a switching period,
+on a log scale three decades under the strongest, with arrows along the field there; tick
+several sources to see how their fields add up, and tick <b>Animate</b> to play the field
+through one switching period. Clicking a part or net in the 3D view adds its field to the
+view (and switches it to H or E as the part needs). The field shown is the alternating
+one, the part that couples: a plane under a loop mirrors it as it does in the coupling,
+and the DC part of the inductor's current is left out.</p>
+<p>The notes and the report also give the <b>near field</b> 5 mm over the board: where
+the H and E fields are strongest, at which harmonic and from which source, as a
+near-field probe would find them, and a first <b>radiated estimate</b> at 3 m: each loop,
+with its image in the plane, as a magnetic dipole, the loops added as phasors, against
+the CISPR 32 class B limit. It counts the bare board's loops only: cables, common-mode
+currents and an enclosure are not modelled, so it is an indicator of which loop and
+harmonic would radiate most, not a compliance prediction.</p>
 <p>The mechanisms answer different fixes. <b>Capacitive</b> noise comes from the switch
 node's dV/dt: keep victims away from the switch node's copper (or behind a plane), and
 drive them harder. <b>Inductive</b> noise comes from the hot loop's dI/dt: make the loop

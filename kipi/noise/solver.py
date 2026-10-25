@@ -187,6 +187,24 @@ def _paths(layouts) -> Dict[str, np.ndarray]:
     return out
 
 
+def _fields(snap, setup, agg, layouts, wf, result, progress):
+    """The field sources and the near-field report (#146), after the board model has
+    given the capacitors their currents."""
+    from kipi.noise.fields import field_sources, near_field_report
+    progress.stage("Fields")
+    try:
+        with progress.timed("fields"):
+            result.fields = field_sources(snap, setup, agg, layouts, wf)
+            result.emi = near_field_report(result.fields, wf.freqs())
+    except (ValueError, MemoryError) as e:
+        msg = f"Fields left out ({e})"
+        result.warnings.append(msg)
+        progress.warn(msg)
+        return
+    for line in result.emi.lines():
+        progress.info(line)
+
+
 def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
                 progress: Optional[ProgressReporter] = None, dc_result=None) -> NoiseResult:
     """``dc_result``, the last DC power-tree solve if any, gives the board model the DC
@@ -263,6 +281,8 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
         msg = "The ripple at AC probes needs the board model (Settings tab): not shown"
         result.warnings.append(msg)
         progress.warn(msg)
+    _fields(snap, setup, agg, layouts, wf, result, progress)
+    progress.partial(result)
 
     if victims:
         from kipi.noise.extract.xsection import Cache

@@ -32,6 +32,15 @@ picks up noise. Each via is cut at the copper layers it passes, so each piece li
 on one side of any plane, and its EMF is added in series to a victim segment that ends at
 it on its first layer (signed by the way the path crosses it). A via's stub beyond the
 layers its traces use carries no current and is left out.
+
+**Plane splits** (#146). Where no plane copper lies under a victim segment (it crosses a
+slot or a gap between two planes), there is nothing to mirror the loops' field: the
+segment links the loops' direct field, and the real current in the plane around it (the
+loop's return, which the conduction solve already routes round the gap) counts in full
+rather than by what a solid plane would let through.
+
+**The inductor** (#146) is a source too, its stray field as the equivalent loop
+:func:`kipi.noise.parasitics.inductor_loop` makes of it, carrying the inductor current.
 """
 
 from __future__ import annotations
@@ -98,6 +107,12 @@ def loop_sources(layouts, wf, estimate: bool = False) -> List[LoopSource]:
             src = LoopSource(f"{ref} loop (phase {i})", loop.elements, -spec.c, lay.image_z,
                              lay.image_layer, loop.weights, loop.size_mm)
             out.append(src.reduced() if estimate else src)
+        ind = getattr(lay, "inductor", None)
+        phases = getattr(wf, "phases", [])
+        if ind is not None and i <= len(phases):
+            out.append(LoopSource(f"{lay.inductor_ref} field (phase {i})", ind.elements,
+                                  phases[i - 1].inductor.c, lay.image_z, lay.image_layer,
+                                  ind.weights, ind.size_mm))
     return out
 
 
@@ -180,7 +195,9 @@ def _mutual_terms(src: LoopSource, victim: Sequence[peec.Segment], lay, covered:
                   ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """The loop's mutual inductance with each victim segment as A + Γ·B + T·C over
     frequency: the direct part, the images' (by the plane's mirroring Γ) and the part
-    the plane lets through (by its transmission T)."""
+    the plane lets through (by its transmission T). ``covered`` says which victim
+    segments have the plane's copper under them: one without (over a split, #146) links
+    the direct field only, the plane's own current in full."""
     w = src.weight()
     direct = w @ peec.mutual_matrix(src.segments, victim)
     a, b, c = direct.copy(), np.zeros(len(victim)), np.zeros(len(victim))
@@ -195,7 +212,7 @@ def _mutual_terms(src: LoopSource, victim: Sequence[peec.Segment], lay, covered:
             continue
         own = [src.segments[i] for i in idx]
         wi = w[idx]
-        same = v_side == side
+        same = (v_side == side) & covered
         if same.any():
             tgt = [victim[j] for j in np.flatnonzero(same)]
             b[same] -= wi @ peec.mutual_matrix([peec.mirror(s, z_face) for s in own], tgt)
@@ -213,7 +230,9 @@ def _mutual_terms(src: LoopSource, victim: Sequence[peec.Segment], lay, covered:
             a[j] -= wi @ peec.mutual_matrix(own, tgt)
     inside = np.flatnonzero(s_side == 0)
     if len(inside):
-        b -= w[inside] @ peec.mutual_matrix([src.segments[i] for i in inside], victim)
+        m = w[inside] @ peec.mutual_matrix([src.segments[i] for i in inside], victim)
+        b[covered] -= m[covered]
+        a[~covered] += m[~covered]
     return a, b, c
 
 

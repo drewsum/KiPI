@@ -70,6 +70,13 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     if not segs:
         res.warnings = warnings + [f"{victim.net} has no tracks to couple onto"]
         return res
+    # Splits in the reference plane (#146): each crossing's detour inductance goes in
+    # series with the segment after it.
+    from kipi.noise.splits import plane_splits
+    res.splits = plane_splits(snap, segs, [victim.net, *switch_nets], setup)
+    for sp in res.splits:
+        text = sp.describe()
+        warnings.append(text[0].upper() + text[1:])
     res.length_mm = float(sum(x.length_mm for x in segs))
     res.coupled_mm = float(sum(x.length_mm for x in segs if x.cm))
     res.z0_ohm = float(sum(x.z0_ohm * x.length_mm for x in segs) / res.length_mm)

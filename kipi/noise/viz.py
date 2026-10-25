@@ -8,12 +8,17 @@ Here those parts are colored along the traces, the common-ground part at the dri
 (or drew it straight between the pads): its path, in the direction the current flows out
 of the capacitor's positive pad, in a colour of its own, with the capacitor's name at the
 capacitor.
+
+**Fields** (#146). The H field of chosen current loops (the capacitors' and the
+inductor's) or the E field of chosen switch nodes on a slice over the board
+(:mod:`kipi.noise.fields`): each point's peak over a switching period, coloured on a
+log scale, with arrows along the field there; or frames over one period to animate.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -29,6 +34,12 @@ LOOP_COLORS = ("#ff9a1f", "#2ad4ff", "#8cff3a", "#ff5ec8", "#ffe14d", "#b48bff",
                "#5effc3")
 # How far apart along a loop its direction arrows sit, mm.
 ARROW_SPACING_MM = 2.0
+# The field view: kinds, the slice's default height over the top copper, the animation.
+FIELD_KINDS = (("off", "Off"), ("H", "H field (magnetic)"), ("E", "E field (electric)"))
+FIELD_HEIGHT_MM = 1.0
+FIELD_FRAMES = 96
+FIELD_FRAME_MS = 40
+FIELD_DECADES = 3.0                     # the colour scale's range under the peak
 
 
 @dataclass
@@ -63,6 +74,64 @@ class LoopOverlay:
     """The hot loops the 3D view draws (#178)."""
     loops: List[LoopPath] = field(default_factory=list)
     note: str = ""
+
+
+@dataclass
+class FieldOverlay:
+    """A field on a slice for the 3D view: the grid's points (P, 3) in KiCad's (x, y, z)
+    mm, row by row (``ny`` rows of ``nx``), each point's peak |field| over a period and
+    the field there then; ``frames`` (T, P, 3), when animating, the field over one
+    period, a frame every ``frame_ms``."""
+    title: str
+    unit: str
+    points: np.ndarray
+    nx: int
+    ny: int
+    magnitude: np.ndarray                   # (P,)
+    vectors: np.ndarray                     # (P, 3)
+    limits: Tuple[float, float]             # the colour scale, log
+    frames: Optional[np.ndarray] = None
+    frame_ms: int = FIELD_FRAME_MS
+    note: str = ""
+
+
+def field_choices(result, kind: str) -> List[tuple]:
+    """The sources of ``kind`` ("H" or "E") a result has: (key, label)."""
+    fs = getattr(result, "fields", None) if result is not None else None
+    if fs is None or kind not in ("H", "E"):
+        return []
+    phases = len(getattr(result.waveforms, "phases", []) or [])
+    return [(s.key, f"{s.label} (phase {s.phase})" if phases > 1 and s.phase else s.label)
+            for s in fs.of_kind(kind)]
+
+
+def field_overlay(result, kind: str, keys: Sequence[str], height_mm: float = FIELD_HEIGHT_MM,
+                  animate: bool = False) -> Optional[FieldOverlay]:
+    """The field of the sources ``keys`` of ``kind`` on a slice ``height_mm`` over the
+    top copper, or None (off, no such sources, or a result without fields)."""
+    from kipi.noise.fields import FieldSlice
+    fs = getattr(result, "fields", None) if result is not None else None
+    if fs is None or kind not in ("H", "E"):
+        return None
+    chosen = [s for s in fs.of_kind(kind) if s.key in set(keys)]
+    if not chosen:
+        return None
+    wf = result.waveforms
+    n_t = wf.samples_per_period()
+    sl = FieldSlice(fs, kind, chosen, fs.z_top_mm + height_mm, n_t)
+    stride = max(1, n_t // 1024)
+    mag, vec = sl.peak(stride)
+    top = float(mag.max()) if mag.size and mag.max() > 0 else 1.0
+    limits = (top / 10 ** FIELD_DECADES, top)
+    frames = sl.frames(FIELD_FRAMES) if animate else None
+    i = int(np.argmax(mag))
+    what = "H" if kind == "H" else "E"
+    names = ", ".join(s.label for s in chosen)
+    note = (f"{what} field of {names}, {height_mm:g} mm over the top copper: each point's "
+            f"peak over a period, up to {top:.3g} {sl.unit} at ({sl.pts[i, 0]:.1f}, "
+            f"{sl.pts[i, 1]:.1f}) mm" + ("; animating one period" if animate else ""))
+    return FieldOverlay(f"{what} field, peak over a period ({sl.unit})", sl.unit, sl.pts,
+                        sl.nx, sl.ny, mag, vec, limits, frames, FIELD_FRAME_MS, note)
 
 
 def coupling_overlay(result, victim: str, view: str) -> Optional[CouplingOverlay]:

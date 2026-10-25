@@ -7,6 +7,23 @@ milestones rather than versions that were ever set.
 ## 0.9.3 (in development)
 
 ### Added
+- **Fields in 3D, the inductor's stray field, plane splits and a near-field report**
+  (#146), the Coupled Noise stretch goals. **Fields in 3D** under the results draws the
+  H field of the current loops you tick (each capacitor's hot loop and the inductor) or
+  the E field of the switch nodes on a slice over the board, each point's peak over a
+  switching period on a log colour scale with arrows along the field, or animated through
+  one period; several sources add up, and clicking a part or net in the 3D view adds its
+  field. The Aggressors pane's phase gains a **Winding axis** and a **Shielded inductor**
+  tickbox: the inductor's stray field is modelled as a loop of its turns at the body,
+  couples onto victims like the hot loops and shows in the field view; a shielded part's
+  is weaker and falls off sooner. A victim crossing a split in its reference plane (a
+  slot, a gap, a change to another plane) gets the return's detour inductance in series
+  there (Johnson's estimate), the loops' real current round the gap instead of a solid
+  plane's images, and a note saying where it crosses. The notes and the report also give
+  the near-field hotspots 5 mm over the board (the strongest H and E, where, at which
+  harmonic and from which source) and a first radiated estimate of the loops at 3 m
+  against the CISPR 32 class B limit: an indicator for the bare board's loops, not a
+  compliance prediction. The hot-loop visualizer of #146 was done by #178 and #187.
 - **Hot loops traced through the copper** (#187). With the board model on, Coupled Noise
   no longer draws each capacitor's hot loop straight between its pads: a DC conduction
   solve of one ampere on the rails' and ground's mesh, from the capacitor's rail pad to

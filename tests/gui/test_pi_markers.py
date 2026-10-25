@@ -105,6 +105,9 @@ class _Timer:
     def stop(self):
         self.active = False
 
+    def setInterval(self, ms):
+        self.interval = ms
+
 
 def _view():
     v = NS(plotter=pv.Plotter(off_screen=True), _models={}, _model_actors={}, _board_top=0.0,
@@ -116,13 +119,16 @@ def _view():
            _coating_actors=[], _show_mask=False, _show_silk=False,
            _show_mask_result=False, _show_silk_result=False, _coupling=None,
            _coupling_actors=[], _coupling_bar=None, _coupling_title=None, _hot_loops=None,
-           _hot_loop_actors=[])
+           _hot_loop_actors=[], _fields=None, _field_actors=[], _field_bar=None,
+           _field_title=None, _field_mesh=None, _field_arrows=None, _field_frame=0,
+           _field_timer=_Timer())
     for name in ("set_pi_markers", "_draw_pi_markers", "_remove_pi_actors", "_apply_visibility", "set_zscale",
                  "set_feature_visible", "_place_models", "_selected_markers", "set_pi_selected",
                  "pi_marker_at", "_to_screen", "focus_on", "_start_blink", "_blink_step",
                  "_paint_selected", "set_coupling", "_remove_coupling_actors",
                  "_draw_coupling", "set_hot_loops", "_remove_hot_loop_actors",
-                 "_draw_hot_loops"):
+                 "_draw_hot_loops", "set_fields", "_remove_field_actors", "_draw_fields",
+                 "_field_arrow_mesh", "_field_step"):
         setattr(v, name, MethodType(getattr(Viewer3D, name), v))
     return v
 
@@ -482,6 +488,41 @@ def test_the_hot_loops_are_drawn_in_their_colours():
     assert len(v._hot_loop_actors) == 6 and v._hot_loop_actors[0].GetScale()[2] == 2.0
     v.set_hot_loops(None)
     assert v._hot_loop_actors == [] and v._hot_loops is None
+
+
+def test_a_field_slice_is_drawn_and_animated():
+    """Coupled Noise's field slice (#146): a coloured plane with arrows; frames step its
+    scalars; hidden over results, removed with None."""
+    from kipi.noise.viz import FieldOverlay
+    v = _view()
+    nx, ny = 6, 5
+    gx, gy = np.meshgrid(np.arange(nx) * 1.0, np.arange(ny) * 1.0)
+    pts = np.column_stack([gx.ravel(), gy.ravel(), np.full(gx.size, 2.0)])
+    mag = 1.0 + pts[:, 0]
+    vec = np.column_stack([np.zeros(len(pts)), np.zeros(len(pts)), mag])
+    frames = np.stack([vec * 0.5, vec * 0.25]).astype(np.float32)
+    ov = FieldOverlay("H field (A/m)", "A/m", pts, nx, ny, mag, vec, (0.01, 10.0), frames, 40, "n")
+    v.set_fields(ov)
+    assert len(v._field_actors) == 2 and v._fields is ov and v._field_timer.active
+    mapper = v._field_actors[0].GetMapper()
+    mapper.Update()
+    mesh = pv.wrap(mapper.GetInput())
+    assert mesh.n_cells == (nx - 1) * (ny - 1) and mesh.n_points == nx * ny
+    np.testing.assert_allclose(mesh.point_data["field"], mag)
+    np.testing.assert_allclose(mesh.points[1], (1.0, 0.0, 2.0))       # y flipped: 0 stays 0
+    assert v._field_bar == "H field (A/m)"
+    v._field_step()
+    assert v._field_frame == 1
+    np.testing.assert_allclose(mesh.point_data["field"], np.maximum(mag * 0.25, 0.01))
+    v._result = object()
+    v._apply_visibility()
+    assert not any(a.GetVisibility() for a in v._field_actors)
+    v._result = None
+    v.set_zscale(2.0)
+    assert v._field_actors[0].GetScale()[2] == 2.0
+    v.set_fields(None)
+    assert v._field_actors == [] and v._fields is None and not v._field_timer.active
+    assert v._field_bar is None
 
 
 def test_a_victims_coupling_is_drawn_over_the_copper():

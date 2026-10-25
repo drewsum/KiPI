@@ -20,6 +20,10 @@ if TYPE_CHECKING:                       # PinRef lives in the setup model, which
     from kipi.dc.pi.model import PinRef
 
 TOPOLOGIES = ("auto", "buck", "boost")
+# How the inductor's winding sits (#146): its axis normal to the board (a flat SMD drum or
+# moulded part), along the part's longer side, or across it.
+INDUCTOR_AXES = (("vertical", "Vertical (flat SMD part)"), ("along", "Along the part"),
+                 ("across", "Across the part"))
 
 # Used where a phase leaves them blank; the ringing they give is a typical one.
 DEFAULT_COSS_F = 200e-12                # switch-node capacitance of the switching device
@@ -53,6 +57,10 @@ class AggressorPhase:
     rds_on_hs_ohm: Optional[float] = None
     rds_on_ls_ohm: Optional[float] = None
     package_l_h: float = 0.0            # loop inductance inside the device's package
+    # The inductor's stray field (#146): the winding's axis (an INDUCTOR_AXES key) and
+    # whether a shield closes its flux. Unshielded, its field reaches the board around it.
+    inductor_axis: str = "vertical"
+    inductor_shielded: bool = True
 
 
 @dataclass
@@ -291,7 +299,10 @@ def phase_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]]
         input_caps=list(d.get("input_caps", [])), output_caps=list(d.get("output_caps", [])),
         coss_f=d.get("coss_f"), qrr_c=d.get("qrr_c"), rds_on_hs_ohm=d.get("rds_on_hs_ohm"),
         rds_on_ls_ohm=d.get("rds_on_ls_ohm"),
-        package_l_h=float(d.get("package_l_h") or 0.0))
+        package_l_h=float(d.get("package_l_h") or 0.0),
+        inductor_axis=(d.get("inductor_axis") if d.get("inductor_axis") in dict(INDUCTOR_AXES)
+                       else "vertical"),
+        inductor_shielded=bool(d.get("inductor_shielded", True)))
 
 
 def aggressor_from_dict(d: dict, pin: Callable[[Optional[dict]], Optional[PinRef]],

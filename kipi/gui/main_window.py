@@ -1274,12 +1274,14 @@ class MainWindow(QMainWindow):
         noise = self.mode == "noise"
         ov = self.noise_panel.coupling_overlay() if noise else None
         loops = self.noise_panel.hot_loops_overlay() if noise else None
-        if ov is None and loops is None and self.viewer.coupling is None \
-                and self.viewer.hot_loops is None:
+        fields = self.noise_panel.fields_overlay() if noise else None
+        if ov is None and loops is None and fields is None and self.viewer.coupling is None \
+                and self.viewer.hot_loops is None and self.viewer.fields is None:
             return
         self.viewer.set_coupling(ov)
         self.viewer.set_hot_loops(loops)
-        if (ov is not None or loops is not None) and front:
+        self.viewer.set_fields(fields)
+        if (ov is not None or loops is not None or fields is not None) and front:
             self.views.setCurrentWidget(self.viewer)
 
     def _panels(self):
@@ -2167,6 +2169,8 @@ class MainWindow(QMainWindow):
             what = (f"model {marker.setup_item} ({marker.name})" if marker.kind == "cap"
                     else marker.name)
             self.statusBar().showMessage(f"Selected {what} in the setup", 5000)
+            if self.mode == "noise":            # and its field, when the view is on (#146)
+                self.noise_panel.show_field_of(marker.name)
             return
         segs, ids = self._via_candidates()
         via_id = None
@@ -2232,6 +2236,7 @@ class MainWindow(QMainWindow):
                 break
 
         self._barrel_status = ""
+        hit_net = ""
         lines = [f"<b>Picked</b> x={x:.3f} y={y:.3f} mm on <b>{html.escape(cu.name)}</b>"]
         if probe_html:
             lines.append(probe_html)
@@ -2259,7 +2264,14 @@ class MainWindow(QMainWindow):
                 g = self._copper_cache.get(net, {}).get(cu.id)
                 if g is not None and g.buffer(0.01).contains(p0):
                     lines.append(f"Copper of net <b>{html.escape(net)}</b>")
+                    hit_net = net
                     break
+        if self.mode == "noise":
+            # A clicked part's or net's field joins the field view when it is on (#146).
+            part = pad_hit.footprint if pad_hit is not None else ""
+            net = pad_hit.net if pad_hit is not None else best_via.net if best_via else hit_net
+            if not (part and self.noise_panel.show_field_of(part)) and net:
+                self.noise_panel.show_field_of(net)
         self.info.setHtml("<br>".join(lines))
         self.btn_select.setEnabled(self._picked is not None and self._source is not None
                                    and self._source.can_select())

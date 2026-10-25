@@ -22,6 +22,15 @@ The two set the ringing on the switch node's edges: f_ring = 1 / (2π·√(L·C)
 damping ζ = R/2 · √(C/L), R the conducting switch's on-resistance, the capacitors' ESR and
 the copper's resistance at f_ring (skin effect included).
 
+**Inductor** (#146). The power inductor's own stray field is a source too: its winding is
+a magnetic dipole of moment N·I·A along its axis. KiPI stands it in as an equivalent
+square loop at the part's body (:func:`inductor_loop`): N from the inductance and the
+body's size (L ≈ μ0·N²·A/h for the open magnetic circuit of a drum core, h the body's
+height), its area the winding's, carrying N times the inductor current. A shielded part
+closes most of its flux in its shield: its equivalent loop is smaller (the leakage is
+near the core) and carries a tenth of the turns, so its field is weaker and falls off
+sooner. The winding's sense is not on the board, so the field's sign is taken positive.
+
 The switch node's capacitance and the loop's resistance are estimates from the copper's
 shapes; the loop's current is a DC solve of the copper, not a field solve at frequency.
 """
@@ -55,6 +64,14 @@ MAX_WIDTH_MM = 5.0
 FALLBACK_C_F = 10e-6
 FALLBACK_ESR_OHM = 0.005
 FALLBACK_ESL_H = 0.5e-9
+# The inductor's equivalent loop (#146): the body's height as a share of its shorter
+# side, the winding's side as a share of it (unshielded; shielded, the leakage's), and
+# the share of the turns a shield leaves outside.
+IND_HEIGHT = 0.4
+IND_WINDING = 0.6
+IND_SHIELDED_WINDING = 0.35
+IND_SHIELDED_SHARE = 0.1
+MU0_H_PER_MM = 4e-10 * math.pi
 
 
 @dataclass
@@ -106,6 +123,9 @@ class PhaseLayout:
     loops: Dict[str, CapLoop] = field(default_factory=dict)
     image_z: Optional[float] = None
     image_layer: Optional[int] = None
+    # The inductor's stray field as an equivalent loop (#146), carrying its current.
+    inductor: Optional[CapLoop] = None
+    inductor_ref: str = ""
 
 
 class _Board:
@@ -367,6 +387,67 @@ def _traced_loop(board: _Board, ref: str, plus_net: str, gnd_net: str,
                    size, True, complete), ""
 
 
+def _pad_extent(pads: List[Pad]) -> Tuple[float, float, float, float]:
+    """The box round the pads' copper: x0, y0, x1, y1."""
+    xs, ys = [], []
+    for p in pads:
+        for polys in p.shapes.values():
+            for poly in polys:
+                xs += [q[0] for q in poly.outline]
+                ys += [q[1] for q in poly.outline]
+        if not p.shapes:
+            xs.append(p.position[0])
+            ys.append(p.position[1])
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def inductor_loop(board: _Board, phase: AggressorPhase) -> Tuple[Optional[CapLoop], str]:
+    """The inductor's stray field as an equivalent loop (#146): a square loop of the
+    winding's size at the body's centre, normal to the winding's axis, carrying
+    ``weights`` amperes per ampere of inductor current (the turns, less what a shield
+    keeps in). Returns the loop and a note on how it was made, or None and why not."""
+    ref = phase.inductor
+    pads = board.pads(ref) if ref else []
+    if len(pads) < 2 or phase.inductance_h <= 0:
+        return None, ""
+    x0, y0, x1, y1 = _pad_extent(pads)
+    sx, sy = max(x1 - x0, 0.5), max(y1 - y0, 0.5)
+    # The body spans the pads; across two narrow pads it is nearer square than they are.
+    short = max(min(sx, sy), 0.6 * max(sx, sy))
+    h = min(max(IND_HEIGHT * short, 0.8), 8.0)
+    shielded = phase.inductor_shielded
+    a = (IND_SHIELDED_WINDING if shielded else IND_WINDING) * short
+    turns = math.sqrt(phase.inductance_h * h / (MU0_H_PER_MM * a * a))
+    share = IND_SHIELDED_SHARE if shielded else 1.0
+    layer = board.outer(ref)
+    up = 1.0 if board.side.get(ref, "top") == "top" else -1.0
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    zc = board.z(layer) + up * (board.thickness(layer) / 2 + h / 2)
+    axis = phase.inductor_axis
+    if axis == "vertical":
+        u, v = np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
+        how = "vertical"
+    else:
+        long_x = sx >= sy
+        along_x = long_x if axis == "along" else not long_x
+        # The loop's plane is normal to the axis: the other horizontal direction and up.
+        u = np.array([0.0, 1.0, 0.0]) if along_x else np.array([1.0, 0.0, 0.0])
+        v = np.array([0.0, 0.0, 1.0])
+        how = f"{'along' if axis == 'along' else 'across'} the part " \
+              f"({'x' if along_x else 'y'})"
+    c = np.array([cx, cy, zc])
+    corners = [c - u * a / 2 - v * a / 2, c + u * a / 2 - v * a / 2,
+               c + u * a / 2 + v * a / 2, c - u * a / 2 + v * a / 2]
+    segs = peec.polyline(corners, [a / 4] * 4, a / 4, [f"{ref} winding"] * 4)
+    path = np.array([*corners, corners[0]], float)
+    loop = CapLoop(segs, np.full(len(segs), turns * share), [path], 0.0, a, False)
+    kept = " (a tenth of its turns: the shield keeps the rest in)" if shielded else ""
+    note = (f"{ref}: {'shielded' if shielded else 'unshielded'}, winding axis {how}: its "
+            f"stray field is that of {turns * share:.3g} turns round {a:.2g} mm at "
+            f"{h / 2:.2g} mm above the board{kept}")
+    return loop, note
+
+
 def switch_node_copper_f(board: _Board, net: str) -> float:
     """Capacitance of the switch node's copper to the planes on the neighbouring layers."""
     total = 0.0
@@ -546,7 +627,15 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
         zeta = max(zeta_loop, min_zeta)
     elif loop_l <= 0:
         notes.append("No hot-loop inductance: the switch node's edges do not ring")
+    ind_loop, ind_note = inductor_loop(board, phase)
+    if ind_note:
+        notes.append(ind_note)
     report = HotLoopReport(index, loop_l, pkg, hot_loops, c_sw, coss, coss_default, c_cu,
                            r_loop, f_ring, zeta, plane_name, notes, zeta_loop, qrr,
                            qrr_default, traced_all)
-    return PhaseLayout(report, in_caps, out_caps, cap_loops, z_plane, plane_id)
+    if ind_loop is not None and plane_id is None:
+        # No plane under the device: the one under the inductor takes its images.
+        centre = np.mean(ind_loop.paths[0][:-1], axis=0)
+        z_plane, _, plane_id = board.plane_under(ind_layer, (centre[0], centre[1]))
+    return PhaseLayout(report, in_caps, out_caps, cap_loops, z_plane, plane_id, ind_loop,
+                       phase.inductor if ind_loop is not None else "")

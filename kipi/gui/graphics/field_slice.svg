@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="170" viewBox="0 0 300 170">
+  <rect x="0" y="0" width="300" height="170" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- the board, seen at a slant -->
+    <path d="M30,120 L190,120 L270,150 L110,150 z" fill="{grid}" stroke="{muted}" stroke-width="1"/>
+    <!-- the switch node pour and the hot loop's capacitor and switch on it -->
+    <path d="M118,128 L150,128 L166,134 L134,134 z" fill="{e}" opacity="0.6"/>
+    <rect x="70" y="112" width="18" height="10" rx="2" fill="none" stroke="{fg}" stroke-width="1.4"/>
+    <rect x="98" y="112" width="24" height="10" rx="2" fill="none" stroke="{fg}" stroke-width="1.4"/>
+    <text x="79" y="109" fill="{muted}" text-anchor="middle" font-size="9">C in</text>
+    <text x="110" y="109" fill="{muted}" text-anchor="middle" font-size="9">switch</text>
+    <text x="150" y="146" fill="{e}" text-anchor="middle" font-size="9">switch node</text>
+    <!-- the slice above the board: a coloured plane with arrows -->
+    <path d="M30,70 L190,70 L270,100 L110,100 z" fill="{slice}" opacity="0.35" stroke="{slice}" stroke-width="1.2"/>
+    <!-- the H field rings round the hot loop, strongest at the loop -->
+    <g fill="none" stroke="{h}" stroke-width="1.4">
+      <ellipse cx="100" cy="85" rx="14" ry="5"/>
+      <ellipse cx="100" cy="85" rx="26" ry="9" opacity="0.6"/>
+      <ellipse cx="100" cy="85" rx="38" ry="13" opacity="0.35"/>
+    </g>
+    <text x="100" y="62" fill="{h}" text-anchor="middle" font-size="10">H round the loop</text>
+    <!-- the E field over the switch node: arrows up -->
+    <g stroke="{e}" stroke-width="1.6" fill="{e}">
+      <path d="M160,96 V80 M172,99 V83 M184,102 V86"/>
+      <path d="M160,78 l-3,5 h6 z M172,81 l-3,5 h6 z M184,84 l-3,5 h6 z"/>
+    </g>
+    <text x="200" y="66" fill="{e}" text-anchor="middle" font-size="10">E over the switch node</text>
+    <!-- the slice's height -->
+    <path d="M40,120 V70" stroke="{slice}" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <text x="36" y="98" fill="{slice}" text-anchor="end" font-size="9">height</text>
+    <text x="150" y="20" fill="{muted}" text-anchor="middle" font-size="10">the field on a slice over the board, its peak over a period</text>
+    <text x="150" y="34" fill="{muted}" text-anchor="middle" font-size="10">or animated through one switching cycle</text>
+  </g>
+</svg>

@@ -8,8 +8,10 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from kipi.noise.checks import OperatingPoint
+from kipi.noise.fields import EmiReport, FieldSources
 from kipi.noise.parasitics import HotLoopReport
 from kipi.noise.scan import ScanRow
+from kipi.noise.splits import SplitCrossing
 from kipi.noise.waveforms import SmpsWaveforms, Spectrum
 
 MECHANISMS = ("capacitive", "inductive", "common")
@@ -68,6 +70,8 @@ class VictimResult:
     common_v: float = 0.0
     driver_xyz: Optional[np.ndarray] = None
     peak_t_s: float = 0.0
+    # Where the net crosses a split in its reference plane (#146).
+    splits: List[SplitCrossing] = field(default_factory=list)
 
     @property
     def ratio(self) -> float:
@@ -96,6 +100,10 @@ class NoiseResult:
     scan: List["ScanRow"] = field(default_factory=list)              # every net estimated
     # Each capacitor loop's path, (N, 2, 3) segment ends as (x, y, z) mm (#152)
     loop_paths: Dict[str, np.ndarray] = field(default_factory=dict)
+    # The field sources (the loops, the inductors, the switch nodes) for the 3D field
+    # view, and where their near fields are strongest (#146).
+    fields: Optional[FieldSources] = None
+    emi: Optional[EmiReport] = None
 
     def victim(self, name: str) -> Optional[VictimResult]:
         return next((v for v in self.victims if v.name == name), None)
@@ -134,6 +142,8 @@ class NoiseResult:
         if self.board_note:
             lines.append(self.board_note)
         lines += self.probe_lines()
+        if self.emi is not None:
+            lines += self.emi.lines()
         if self.scan:
             solved = sum(r.solved for r in self.scan)
             lines.append(f"Scan: {len(self.scan)} net(s) near the aggressor estimated, the "
@@ -146,7 +156,9 @@ class NoiseResult:
                          f"({v.ratio * 100:.3g} % of its {v.margin_v * 1e3:.4g} mV margin, "
                          f"{'PASS' if v.passed else 'FAIL'}; {by} mV); {cm * 1e15:.4g} fF "
                          f"to the switch node over {v.coupled_mm:.3g} of {v.length_mm:.3g} "
-                         f"mm, {m * 1e12:.4g} pH to the capacitor loops")
+                         f"mm, {m * 1e12:.4g} pH to the current loops")
+            for sp in getattr(v, "splits", []):
+                lines.append(f"Victim {v.name} {sp.describe()}")
             for st in v.states:
                 lines.append(f"Victim {v.name} held {st.name} ({st.level_v:.3g} V, driver "
                              f"{st.driver_ohm:.4g} Ω): {st.excursion_v * 1e3:.4g} mV toward "

@@ -771,6 +771,10 @@ layer, behind the ground plane. Open its snapshot to try it.
   turn-on is a hard edge, taking the current from a conducting body diode and sweeping out
   its reverse-recovery charge (Qrr), and rings; its turn-off is soft, carried by the
   inductor current into the diode's clamp, and barely rings.
+  The phase's **Winding axis** and **Shielded inductor** tickbox describe the inductor's
+  stray field: its winding is modelled as a loop of its turns at the body, normal to the
+  axis, carrying the inductor current, which couples onto victims like the hot loops. A
+  shielded part keeps most of its flux in, so its field is weaker and falls off sooner.
 * **Victims tab**: each victim is a net with its driver and receiver pins (guessed as the
   net's farthest-apart pads when left blank) and a **Type**: CMOS push-pull, open drain,
   series or parallel terminated, an LVDS leg, an analog input, or high impedance
@@ -833,6 +837,24 @@ through the ground's copper, vias and plane, in its own colour with the capacito
 and cones pointing the way the current flows. With the board model on the lines are
 streamlines of the current traced through the copper, each carrying an equal share, so
 they bunch where the current is densest and dive down the vias the return really takes.
+
+**Fields in 3D** draws a field over the board: the **H field** of the current loops you
+tick (the capacitors' hot loops and the inductor's stray field) or the **E field** of the
+switch nodes, on a slice at the height you set, each point coloured by its peak over a
+switching period on a log scale with arrows along the field, or **Animate** to play one
+period. Tick several sources to see their fields add up, and click a part or net in the
+3D view to add its field. The notes and the report also give the **near-field hotspots**
+5 mm over the board (the strongest H and E, where, at which harmonic and from which
+source) and a first **radiated estimate** of the loops at 3 m against the CISPR 32 class B
+limit: the bare board's loops as magnetic dipoles, their images in the plane included,
+with no cables, common-mode currents or enclosure, so an indicator, not a compliance
+prediction.
+
+A victim that crosses a **split in its reference plane** (a slot, a gap, the edge of a
+pour, or a change to another plane) is noted, with where it crosses and how far its
+return current has to detour: the detour's inductance goes in series with the trace
+there, and the loops' real current round the gap couples onto it instead of a solid
+plane's images.
 
 The mechanisms point to different fixes. Capacitive noise comes from the switch node's
 dV/dt: keep victims away from its copper or behind a plane, and drive them harder.

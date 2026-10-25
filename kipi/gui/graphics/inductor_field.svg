@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="170" viewBox="0 0 300 170">
+  <rect x="0" y="0" width="300" height="170" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- the board in section -->
+    <rect x="20" y="118" width="260" height="6" fill="{grid}"/>
+    <rect x="20" y="124" width="260" height="14" fill="{grid}" opacity="0.5"/>
+    <rect x="20" y="138" width="260" height="6" fill="{grid}"/>
+    <!-- an unshielded inductor on the left: a drum core, the field reaching out -->
+    <rect x="58" y="74" width="54" height="44" rx="4" fill="none" stroke="{fg}" stroke-width="1.6"/>
+    <rect x="80" y="78" width="10" height="36" fill="{grid}"/>
+    <path d="M62,84 h12 M62,92 h12 M62,100 h12 M62,108 h12 M96,84 h12 M96,92 h12 M96,100 h12 M96,108 h12" stroke="{muted}" stroke-width="1.4"/>
+    <!-- the winding's axis -->
+    <path d="M85,64 V128" stroke="{axis}" stroke-width="2" stroke-dasharray="4 3"/>
+    <path d="M85,60 l-4,8 h8 z" fill="{axis}"/>
+    <text x="85" y="54" fill="{axis}" text-anchor="middle" font-size="10">axis</text>
+    <!-- its stray field lines, wide -->
+    <g fill="none" stroke="{fg}" stroke-width="1.2" opacity="0.8">
+      <path d="M85,74 C40,70 30,110 52,118"/>
+      <path d="M85,74 C130,70 140,110 118,118"/>
+      <path d="M85,76 C20,66 8,116 40,120"/>
+      <path d="M85,76 C150,66 162,116 130,120"/>
+    </g>
+    <text x="85" y="156" fill="{fg}" text-anchor="middle" font-size="10">unshielded: the field spreads</text>
+    <!-- a shielded one on the right: the shield closes the flux, a little leaks -->
+    <rect x="188" y="74" width="54" height="44" rx="4" fill="none" stroke="{shield}" stroke-width="3"/>
+    <rect x="210" y="78" width="10" height="36" fill="{grid}"/>
+    <path d="M192,84 h12 M192,92 h12 M192,100 h12 M192,108 h12 M226,84 h12 M226,92 h12 M226,100 h12 M226,108 h12" stroke="{muted}" stroke-width="1.4"/>
+    <g fill="none" stroke="{fg}" stroke-width="1.2" opacity="0.8">
+      <path d="M215,74 C200,70 196,86 204,90"/>
+      <path d="M215,74 C230,70 234,86 226,90"/>
+      <path d="M215,72 C180,68 178,112 194,118"/>
+      <path d="M215,72 C250,68 252,112 236,118"/>
+    </g>
+    <text x="215" y="156" fill="{shield}" text-anchor="middle" font-size="10">shielded: a little leaks near the core</text>
+    <text x="150" y="20" fill="{muted}" text-anchor="middle" font-size="10">the inductor's stray field couples onto nearby traces</text>
+  </g>
+</svg>
