@@ -602,10 +602,15 @@ def link_bias(setup: PISetup, link: DcLink) -> float:
     return float(amps)
 
 
-def biased_link(setup: PISetup, link: DcLink) -> DcLink:
-    """``link`` for an AC or Coupled Noise solve: a diode biased by :func:`link_bias`."""
+def biased_link(setup: PISetup, link: DcLink,
+                solved: Optional[Dict[str, float]] = None) -> DcLink:
+    """``link`` for an AC or Coupled Noise solve: a diode biased by the current the last
+    DC solve found through it (``solved``, by link name, from
+    :func:`kipi.ac.bias.dc_link_currents`), else by :func:`link_bias`'s estimate."""
     if not link.is_diode:
         return link
+    if solved and link.name in solved:
+        return dataclasses.replace(link, bias_a=max(float(solved[link.name]), 0.0))
     return dataclasses.replace(link, bias_a=link_bias(setup, link))
 
 

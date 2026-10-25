@@ -52,6 +52,12 @@ milestones rather than versions that were ever set.
   vias, zone copper, outline and DC solve match the board file's.
 
 ### Changed
+- **Diodes are biased by the DC solve.** An AC or Coupled Noise solve made after a DC
+  solve takes each diode link's small-signal model at the current the DC solve found
+  through it, the copper's own split, in place of the estimate from the loads beyond it
+  (which stays for solves without a DC result); the notes say which. Coupled Noise's board
+  model also derates its capacitors at the DC solve's voltage across each, as AC mode's
+  does, instead of the rails' nominal voltages.
 - **The series link's constant diode drop is gone** (#191): a diode is its SPICE model.
   Setups saved with a forward drop load with a diode model of that drop and DCR.
 

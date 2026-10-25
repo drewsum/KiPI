@@ -460,6 +460,27 @@ def test_ranges_in_volts_from_nominal():
 
 
 
+def test_a_solved_dc_current_biases_a_diode_before_the_estimate():
+    """AC and Coupled Noise take the diode's bias from the last DC solve where there is
+    one (the current the copper really carries), else the estimate from the loads."""
+    from types import SimpleNamespace as NS
+    from kipi.ac.bias import dc_link_currents
+    from kipi.dc.pi.model import biased_link
+    from kipi.dc.solver.post import SeriesResult
+    d = DcLink("D1", PinRef("D1", "A", ["1"]), PinRef("D1", "B", ["2"]), 0.05,
+               spice=constant_drop_ref(0.4, 0.05))
+    s = PISetup(vrms=[Vrm("J1", PinRef("J1", "A"), 5.0)], links=[d],
+                loads=[Load("U1", PinRef("U1", "B"), 0.5)])
+    series = [SeriesResult("D1", 0.05, 0.42, 5.0, 4.6, 0.01),
+              SeriesResult("J2", 0.0, float("nan"), 5.0, 5.0, 0.0)]       # a short
+    tree = NS(groups={"A": NS(result=NS(fields=NS(series=series)))})
+    assert dc_link_currents(tree) == {"D1": pytest.approx(0.42)}
+    assert dc_link_currents(None) == {} and dc_link_currents(NS(groups={})) == {}
+    assert biased_link(s, d, dc_link_currents(tree)).bias_a == pytest.approx(0.42)
+    assert biased_link(s, d, {}).bias_a == pytest.approx(0.5)             # the estimate
+    assert biased_link(s, d, {"D1": -0.1}).bias_a == 0.0                  # reverse: blocks
+
+
 def test_a_diode_is_biased_by_the_loads_beyond_it():
     from kipi.dc.pi.model import biased_link, link_bias
     d = DcLink("D1", PinRef("D1", "A", ["1"]), PinRef("D1", "B", ["2"]), 0.05,

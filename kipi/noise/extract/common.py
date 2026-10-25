@@ -103,11 +103,15 @@ def aggressor_ground(setup: PISetup, agg) -> str:
 
 
 def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
-                victim_grounds: Dict[str, Tuple[List[str], List[str]]], probes=()
-                ) -> BoardPorts:
+                victim_grounds: Dict[str, Tuple[List[str], List[str]]], probes=(),
+                dc_result=None) -> BoardPorts:
     """The board model's ports: the phases' sources, the rails' capacitors and links, the
     AC probes to give the ripple at, and each victim's ground difference.
-    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids."""
+    ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids.
+    ``dc_result``, the last DC power-tree solve if any, gives the DC voltage across each
+    capacitor (else its rail's nominal) and the current through each diode link (else an
+    estimate from the loads beyond it), as AC mode's solve does."""
+    from kipi.ac.bias import dc_link_currents, dc_volts
     from kipi.ac.checks import ground_nets, rail_caps, rail_nets
     from kipi.ac.solver.fem import ACError, PortDef
     from kipi.noise.checks import find_vrm
@@ -155,22 +159,33 @@ def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
         caps.append((ref, CapModel(ref, c, FALLBACK_ESL_H, FALLBACK_ESR_OHM, [ref]),
                      a[0].net, [p.id for p in a], [p.id for p in b]))
     cap_rail: Dict[str, str] = {}
+    solved_v = dc_volts(snap, dc_result, caps) if setup.ac.dc_bias else {}
     for ref, model, net, a, b in caps:
-        volts = op.vin if net in in_rail else op.vout
+        volts = solved_v.get(ref, op.vin if net in in_rail else op.vout)
         if setup.ac.dc_bias:
             model = dataclasses.replace(model, capacitance_f=model.capacitance_at(volts))
         ports.append(PortDef(ref, "cap", a, b, model))
         cap_rail[ref] = "in" if net in in_rail else "out"
     shorts = []
     inside = set(rail) | grounds
+    notes: List[str] = []
+    link_currents = dc_link_currents(dc_result)
     for k in setup.links:
         if k.side_a.net in inside and k.side_b.net in inside:
             a, b = _pads(snap, k.side_a), _pads(snap, k.side_b)
             if k.is_short():
                 shorts.append((a, b))
             else:
-                ports.append(PortDef(k.name, "link", a, b, biased_link(setup, k)))
-    notes: List[str] = []
+                solved = k.name in link_currents
+                k = biased_link(setup, k, link_currents)
+                if k.is_diode:
+                    src = "from the DC solve" if solved else "the DC loads beyond it, estimated"
+                    notes.append(f"Series link {k.name}: diode small-signal model at "
+                                 f"{k.bias_a:.3g} A, {src}")
+                ports.append(PortDef(k.name, "link", a, b, k))
+    if solved_v:
+        notes.append(f"Capacitors derated at the DC solve's voltage across them: "
+                     f"{len(solved_v)} of {len(caps)}")
     # The AC probes the ripple is wanted at: open ports between their rail and ground pins.
     obs_probes: List[str] = []
     for pr in probes:
@@ -205,14 +220,15 @@ def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
 def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
                 victim_grounds: Dict[str, Tuple[List[str], List[str]]],
                 progress: ProgressReporter = NULL, probes=(),
-                mesh=None) -> BoardModelResult:
+                mesh=None, dc_result=None) -> BoardModelResult:
     """The board model of the aggressor's rails at the waveforms' harmonics.
     ``victim_grounds`` maps a victim to its driver's and receiver's ground pad ids;
     ``probes``, AC probes to give the rails' ripple at (#157); ``mesh``, the rails' and
-    ground's mesh with its node kinds, already built (else it is built here)."""
+    ground's mesh with its node kinds, already built (else it is built here);
+    ``dc_result``, the last DC solve, for the parts' bias (:func:`board_ports`)."""
     from kipi.ac.solver.fem import ACSystem
     from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
-    bp = board_ports(snap, setup, agg, op, victim_grounds, probes)
+    bp = board_ports(snap, setup, agg, op, victim_grounds, probes, dc_result)
     ports, src, buck = bp.ports, bp.src, bp.buck
     currents = [c for pw in wf.phases for c in (pw.pulsed.c, pw.inductor.c)]
     notes = list(bp.notes)

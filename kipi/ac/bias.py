@@ -93,6 +93,21 @@ def dc_volts(snap: BoardSnapshot, dc_result, caps: List[tuple]) -> Dict[str, flo
     return out
 
 
+def dc_link_currents(dc_result) -> Dict[str, float]:
+    """The current the DC solve ``dc_result`` (a power-tree result) found through each
+    series link, side A to side B, by the link's name: what biases a diode's small-signal
+    model in an AC or Coupled Noise solve, in place of an estimate from the loads beyond
+    it. Shorts (no current resolved) are left out."""
+    if dc_result is None or not getattr(dc_result, "groups", None):
+        return {}
+    out: Dict[str, float] = {}
+    for g in dc_result.groups.values():
+        for s in getattr(g.result.fields, "series", ()):
+            if np.isfinite(s.current):
+                out[s.name] = float(s.current)
+    return out
+
+
 def temperature_source(setup, dc_result):
     """How the AC solve sees temperature (#77): (copper temperature function of KiCad xy, or
     None when temperature is not modeled; a description for the log; a warning or "")."""

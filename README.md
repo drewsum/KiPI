@@ -452,8 +452,9 @@ analysis. **Import SPICE model…** uses the maker's SPICE model of the part (a 
 say): AC takes the link's impedance from it at every frequency, keeping a bead's resistive
 peak, and DC its resistance at DC. Only R, L, C and diode models are read. A diode is its
 `.model D(...)` card (or a subcircuit with diodes in it), with side A its anode: DC takes its
-drop from the model at the current it carries, and AC its small-signal resistance and
-capacitance at the current of the loads beyond it. I squared R losses in series links are calculated. **In order to assign a series link, the nets on either side must both be defined as power nets in the net selection pane**. In practice, 0 ohm resistors are never possible; Check your jumper's datasheet for max DCR.
+drop from the model at the current it carries, and AC and Coupled Noise its small-signal
+resistance and capacitance at that solved current (or, before a DC solve, at the current of
+the loads beyond it). I squared R losses in series links are calculated. **In order to assign a series link, the nets on either side must both be defined as power nets in the net selection pane**. In practice, 0 ohm resistors are never possible; Check your jumper's datasheet for max DCR.
 
 **Solve tab**: every combined rail, with a checkbox. Untick the rails that are not modeled or
 routed yet to solve the rest; only the ticked rails are validated, and the choice is saved.

@@ -1082,9 +1082,10 @@ two-pin subcircuit with diodes in it, and make side A its anode (the model's fir
 The dialog shows its forward voltage at 1 mA, 100 mA and 1 A. The DC solve takes the drop
 from the model at the current the diode carries, so the drop rises with the load. The AC and
 Coupled Noise solves use its small-signal resistance (n·V<sub>T</sub>/I + RS) and its
-junction and diffusion capacitance at an estimate of that current: what the loads and VRM
-inputs on side B's nets draw at nominal voltages (nothing, so the diode blocks, when a VRM
-drives side B). The DCR and ESL shown are its slope resistance and inductance at 1 A. A
+junction and diffusion capacitance at the current the last DC solve found through it, or,
+without a DC solve, at an estimate: what the loads and VRM inputs on side B's nets draw at
+nominal voltages (nothing, so the diode blocks, when a VRM drives side B). The solve's
+notes say which. The DCR and ESL shown are its slope resistance and inductance at 1 A. A
 diode that is reverse biased with a load beyond it and no other supply has no DC solution,
 and says so. The junction is read at 27 °C. Setups from 0.9.2 with a constant forward drop
 load with a diode model of that drop.</p>

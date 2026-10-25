@@ -133,7 +133,7 @@ def _copper(snap, setup, agg, op, cand, warnings, progress):
     return mesh, copper
 
 
-def _board_model(snap, setup, agg, op, wf, result, progress, victims, mesh):
+def _board_model(snap, setup, agg, op, wf, result, progress, victims, mesh, dc_result):
     """Run the board model and put its capacitor currents and ripple into the waveforms;
     None (with a warning) where it cannot be built."""
     from kipi.ac.solver.fem import ACError
@@ -147,7 +147,8 @@ def _board_model(snap, setup, agg, op, wf, result, progress, victims, mesh):
     try:
         with progress.timed("board model"):
             bm = solve_board(snap, setup, agg, op, wf, grounds, progress,
-                             _ripple_probes(setup, agg, result.warnings, progress), mesh)
+                             _ripple_probes(setup, agg, result.warnings, progress), mesh,
+                             dc_result)
     except (ACError, MeshError, SolveError) as e:
         msg = f"Board model left out ({e}); the capacitors share the current by their own " \
               "impedance and there is no shared-ground coupling"
@@ -187,7 +188,10 @@ def _paths(layouts) -> Dict[str, np.ndarray]:
 
 
 def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
-                progress: Optional[ProgressReporter] = None) -> NoiseResult:
+                progress: Optional[ProgressReporter] = None, dc_result=None) -> NoiseResult:
+    """``dc_result``, the last DC power-tree solve if any, gives the board model the DC
+    voltage across the capacitors and the current through diode links, as AC mode's
+    solve takes them."""
     progress = progress or ProgressReporter()
     agg = next((a for a in setup.aggressors if a.name == aggressor), None)
     if agg is None:
@@ -249,7 +253,8 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
 
     board = None
     if mesh is not None:
-        board = _board_model(snap, setup, agg, op, wf, result, progress, victims, mesh)
+        board = _board_model(snap, setup, agg, op, wf, result, progress, victims, mesh,
+                             dc_result)
         if board is not None:
             for line in result.probe_lines():
                 progress.info(line)

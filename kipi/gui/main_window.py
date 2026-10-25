@@ -1726,12 +1726,13 @@ class MainWindow(QMainWindow):
             self.log("Coupled Noise solve queued until the current task finishes")
             return
         frozen = copy.deepcopy(setup)
+        dc_result = self._tree       # the last DC solve biases the parts, as in AC mode
 
         def work(progress):
             from kipi.noise.checks import NoiseError
             from kipi.noise.solver import solve_noise
             try:
-                result = solve_noise(snap, frozen, aggressor, progress)
+                result = solve_noise(snap, frozen, aggressor, progress, dc_result)
             except NoiseError as e:
                 progress.warn(str(e))
                 return None, str(e)

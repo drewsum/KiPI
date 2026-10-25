@@ -20,7 +20,9 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from kipi.ac import package as pkgs
-from kipi.ac.bias import apply_derating, dc_volts, part_temperatures, temperature_source
+from kipi.ac.bias import (
+    apply_derating, dc_link_currents, dc_volts, part_temperatures, temperature_source,
+)
 from kipi.ac.board_map import ACMap, MapMesh, build_map
 from kipi.ac.checks import ground_nets, rail_caps, rail_nets, validate_ac
 from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
@@ -151,10 +153,13 @@ def element_impedance(port: PortDef, omega: np.ndarray) -> np.ndarray:
     return port.element.impedance(omega)   # a series link
 
 
-def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str):
+def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
+                link_currents: Optional[Dict[str, float]] = None):
     """Ports, merged short links, notes and the package models joining the solve
     (:class:`kipi.ac.package.PackageUse`) for the rail driven by ``vrm_name``. Die probes
-    have no port: they are solved through their packages' balls, ports of kind "pkg"."""
+    have no port: they are solved through their packages' balls, ports of kind "pkg".
+    ``link_currents``, the last DC solve's current through each series link by name,
+    biases the diodes among them; without it, an estimate from the loads beyond each."""
     vrm = next(v for v in setup.vrms if v.name == vrm_name)
     rail = rail_nets(setup, vrm, gnd)
     grounds = ground_nets(setup, vrm, gnd)
@@ -190,10 +195,12 @@ def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str):
         if k.is_short():
             shorts.append((pads(k.side_a), pads(k.side_b)))
         else:
-            k = biased_link(setup, k)
+            solved = bool(link_currents) and k.name in link_currents
+            k = biased_link(setup, k, link_currents)
             if k.is_diode:
+                src = "from the DC solve" if solved else "the DC loads beyond it, estimated"
                 notes.append(f"Series link {k.name}: diode small-signal model at "
-                             f"{k.bias_a:.3g} A, the DC loads beyond it")
+                             f"{k.bias_a:.3g} A, {src}")
             ports.append(PortDef(k.name, "link", pads(k.side_a), pads(k.side_b), k))
             links.append(k.name)
     return rail, ports, shorts, [c[0] for c in caps], missing, links, notes, uses
@@ -318,8 +325,8 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     if errors:
         raise ACError("Setup problems:\n- " + "\n- ".join(errors))
     s = setup.ac
-    rail, ports, shorts, caps, missing, links, notes, uses = build_ports(snap, setup,
-                                                                        vrm_name, gnd)
+    rail, ports, shorts, caps, missing, links, notes, uses = build_ports(
+        snap, setup, vrm_name, gnd, dc_link_currents(dc_result))
     for n in notes:
         progress.warn(n)
     vrm = next(v for v in setup.vrms if v.name == vrm_name)
