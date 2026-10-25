@@ -50,6 +50,8 @@ FAR_FIELD_M = 3.0                       # the radiated estimate's distance
 HOTSPOTS = 5
 HOTSPOT_APART_MM = 3.0
 HOTSPOT_POINTS = 4000                   # the hotspot grid's size, at most
+MAP_POINTS = 8000                       # the report's field map's grid, at most
+MAP_CELL_MM = 0.5                       # and its finest cell
 HARMONIC_FLOOR = 1e-3                   # harmonics under this share of the largest are skipped
 # CISPR 32 class B radiated limits at 3 m, quasi-peak, dBµV/m, by band.
 CISPR_B_3M = ((30e6, 230e6, 40.0), (230e6, 1e9, 47.0))
@@ -190,6 +192,8 @@ class FieldSources:
     fsw_hz: float = 0.0
     z_top_mm: float = 0.0               # the top copper's upper face
     z_bottom_mm: float = 0.0
+    # The board outline's bounds (x0, y0, x1, y1) mm, for the report's map; None without one.
+    board_bounds: Optional[Tuple[float, float, float, float]] = None
 
     def get(self, key: str):
         return next((s for s in [*self.h, *self.e] if s.key == key), None)
@@ -340,6 +344,17 @@ class Hotspot:
 
 
 @dataclass
+class FieldMap:
+    """Each point's strongest harmonic (peak amplitude) on the hotspot plane, for the
+    report's board map: ``values`` (ny, nx) over ``bounds`` (x0, y0, x1, y1) mm, row by
+    row from y0."""
+    kind: str                           # "H" or "E"
+    unit: str
+    values: np.ndarray
+    bounds: Tuple[float, float, float, float]
+
+
+@dataclass
 class EmiReport:
     """Where the near fields are strongest and a first estimate of what the loops radiate
     (:mod:`kipi.noise.fields`)."""
@@ -347,6 +362,8 @@ class EmiReport:
     distance_m: float
     h_hotspots: List[Hotspot] = field(default_factory=list)
     e_hotspots: List[Hotspot] = field(default_factory=list)
+    h_map: Optional[FieldMap] = None
+    e_map: Optional[FieldMap] = None
     radiated_f: Optional[np.ndarray] = None       # (F,) Hz
     radiated_dbuv: Optional[np.ndarray] = None    # (F,) dBµV/m at distance_m
     limit_dbuv: Optional[np.ndarray] = None       # (F,) the CISPR 32 B limit, NaN off band
@@ -391,15 +408,15 @@ def _kept_harmonics(spectra: Sequence[Spectrum]) -> np.ndarray:
 
 
 def _hotspots(srcs, kind: str, freqs: np.ndarray, pts: np.ndarray, unit: str,
-              block: int = 16) -> List[Hotspot]:
+              block: int = 16) -> Tuple[List[Hotspot], np.ndarray]:
     """Where |field| of any harmonic is largest on ``pts``, the harmonic, and the source
-    contributing most there."""
+    contributing most there; and every point's largest |field| (P,)."""
     if kind == "H":
         idx = _kept_harmonics([s.current for s in srcs])
     else:
         idx = _kept_harmonics([s.voltage for s in srcs])
     if not len(idx):
-        return []
+        return [], np.zeros(len(pts))
     prepared = []
     for s in srcs:
         if kind == "H":
@@ -442,7 +459,24 @@ def _hotspots(srcs, kind: str, freqs: np.ndarray, pts: np.ndarray, unit: str,
         spots.append(Hotspot(float(pts[i, 0]), float(pts[i, 1]), float(best[i]),
                              float(freqs[k_best[i]]), srcs[int(np.argmax(per_best[:, i]))].label,
                              unit))
-    return spots
+    return spots, best
+
+
+def _field_map(srcs, kind: str, freqs: np.ndarray, z_mm: float, unit: str, box,
+               board) -> FieldMap:
+    """Every point's strongest harmonic over the board (and the sources, with room round
+    them), on a grid of its own: the hotspots' grid hugs the sources, and the field is
+    still there at its edge."""
+    x0, y0, x1, y1 = box
+    x0, y0, x1, y1 = x0 - 3.0, y0 - 3.0, x1 + 3.0, y1 + 3.0
+    if board is not None:
+        x0, y0 = min(x0, board[0]), min(y0, board[1])
+        x1, y1 = max(x1, board[2]), max(y1, board[3])
+    cell = max(MAP_CELL_MM, math.sqrt(max(x1 - x0, 1.0) * max(y1 - y0, 1.0) / MAP_POINTS))
+    pts, nx, ny = slice_grid((x0, y0, x1, y1), z_mm, cell)
+    _, best = _hotspots(srcs, kind, freqs, pts, unit)
+    return FieldMap(kind, unit, best.reshape(ny, nx),
+                    (float(pts[0, 0]), float(pts[0, 1]), float(pts[-1, 0]), float(pts[-1, 1])))
 
 
 def near_field_report(sources: FieldSources, freqs: np.ndarray,
@@ -460,11 +494,13 @@ def near_field_report(sources: FieldSources, freqs: np.ndarray,
         span = max(box[2] - box[0], box[3] - box[1], 1.0) + 6.0
         cell = max(1.0, span / math.sqrt(HOTSPOT_POINTS))
         pts, _, _ = slice_grid(box, z, cell, pad_mm=3.0)
-        spots = _hotspots(srcs, kind, freqs, pts, unit)
+        spots, _ = _hotspots(srcs, kind, freqs, pts, unit)
+        fmap = _field_map(srcs, kind, freqs, z, unit, box,
+                          getattr(sources, "board_bounds", None))
         if kind == "H":
-            rep.h_hotspots = spots
+            rep.h_hotspots, rep.h_map = spots, fmap
         else:
-            rep.e_hotspots = spots
+            rep.e_hotspots, rep.e_map = spots, fmap
     if sources.h and len(freqs):
         m_total = np.zeros((len(freqs), 3), complex)
         by_source = []
@@ -548,6 +584,11 @@ def field_sources(snap, setup, agg, layouts, wf) -> FieldSources:
     out = FieldSources(fsw_hz=wf.fsw_hz,
                        z_top_mm=stack.copper[0].z_top_mm if stack.copper else 0.0,
                        z_bottom_mm=stack.copper[-1].z_bottom_mm if stack.copper else 0.0)
+    ring = [xy for poly in snap.outline or [] for xy in poly.outline]
+    if ring:
+        a = np.asarray(ring, float)
+        out.board_bounds = (float(a[:, 0].min()), float(a[:, 1].min()),
+                            float(a[:, 0].max()), float(a[:, 1].max()))
     for src in loop_sources(layouts, wf):
         phase = int(src.label[src.label.rfind("phase ") + 6:-1]) if "(phase " in src.label else 0
         lay = stack.layer(src.image_layer) if src.image_layer is not None else None

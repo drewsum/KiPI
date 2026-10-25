@@ -253,6 +253,44 @@ def test_the_near_field_report_finds_the_loops_and_the_switch_node(solved):
     assert any("Near field" in x for x in r.summary_lines())
 
 
+def test_the_field_maps_cover_the_board_and_peak_at_the_hotspots(solved, tmp_path):
+    snap, setup, r = solved
+    emi = r.emi
+    for fmap, spots in ((emi.h_map, emi.h_hotspots), (emi.e_map, emi.e_hotspots)):
+        x0, y0, x1, y1 = fmap.bounds
+        assert x0 <= 0 and y0 <= 0 and x1 >= 32 and y1 >= 20          # the 32 x 20 board
+        ny, nx = fmap.values.shape
+        assert nx * ny <= 8000 and fmap.values.min() >= 0
+        # Its strongest point is where the hotspot search found it (within a cell or so).
+        j, i = np.unravel_index(np.argmax(fmap.values), fmap.values.shape)
+        x, y = x0 + i * (x1 - x0) / (nx - 1), y0 + j * (y1 - y0) / (ny - 1)
+        assert math.hypot(x - spots[0].x_mm, y - spots[0].y_mm) < 1.5
+        assert fmap.values.max() == pytest.approx(spots[0].value, rel=0.25)
+    assert r.fields.board_bounds == (0.0, 0.0, 32.0, 20.0)
+    # The report draws them over the board, the hotspots numbered as in their tables.
+    from kipi.noise.html_report import write_noise_report
+    text = write_noise_report(tmp_path / "n.html", r, snap, setup).read_text(encoding="utf-8")
+    emi_part = text[text.index("id='emi'"):text.index("id='notes'")]
+    assert emi_part.count("data:image/png") == 3                    # H, E and the radiated
+    assert "Click to sort'>#</th>" in emi_part and "<td>1</td>" in emi_part
+
+
+def test_a_big_board_gets_a_zoomed_field_map_too(monkeypatch):
+    from kipi.noise import html_report
+    snap = buck_board(victim_gap=0.2)
+    snap.outline = [Poly(rect(-40, -30, 90, 60))]
+    setup = _setup(snap, [Victim("SIG")], shielded=False)
+    r = solve_noise(snap, setup, "U1 buck")
+    assert r.emi.h_map.bounds == (-40.0, -30.0, 90.0, 60.0)
+    figs = []
+    monkeypatch.setattr(html_report, "_png", lambda fig: figs.append(fig) or "x")
+    html_report._field_map_png(r.emi.h_map, r.emi.h_hotspots, snap, 5.0)
+    board, zoom = figs[0].axes[:2]
+    assert board.get_xlim() == (-40.0, 90.0) and board.get_ylim() == (60.0, -30.0)   # y down
+    assert zoom.get_xlim()[1] - zoom.get_xlim()[0] < 60
+    assert not board.texts and len(zoom.texts) > 5                  # labels in the zoom only
+
+
 def test_the_radiated_estimate_is_otts_small_loop():
     """One loop in free space carrying 1 mA at 100 MHz: E = 1.316e-14·f²·I·A/r."""
     corners = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0]]

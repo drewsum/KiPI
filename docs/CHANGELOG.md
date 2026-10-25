@@ -7,6 +7,11 @@ milestones rather than versions that were ever set.
 ## 0.9.3 (in development)
 
 ### Added
+- **Field maps in the noise report.** The near-field section draws the H and E fields
+  5 mm over the board on the board's outline and its top side (pads, silkscreen and
+  reference designators). Each point shows its strongest harmonic on a log colour
+  scale, with the hotspots numbered as in their tables. A converter that covers only a
+  small part of its board also gets a zoomed view next to the whole board.
 - **Fields in 3D, the inductor's stray field, plane splits and a near-field report**
   (#146), the Coupled Noise stretch goals. **Fields in 3D** under the results draws the
   H field of the current loops you tick (each capacitor's hot loop and the inductor) or
