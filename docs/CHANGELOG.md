@@ -78,6 +78,12 @@ milestones rather than versions that were ever set.
 - **The series link's constant diode drop is gone** (#191): a diode is its SPICE model.
   Setups saved with a forward drop load with a diode model of that drop and DCR.
 
+### Fixed
+- **Waveform legend labels cut off** (#197). The tickbox list beside the Waveforms plot
+  kept a narrow width and cut its curve names short. It now widens to its longest name, up
+  to 360 px, and a name still too long for the room (on a small screen) is shortened with
+  an ellipsis, its whole text in the tooltip.
+
 ## 0.9.2
 
 ### Added

@@ -3,10 +3,11 @@ currents and rail ripple voltages over a few switching periods, or their harmoni
 
 from __future__ import annotations
 
+import html
 from typing import List, Optional, Tuple
 
 import numpy as np
-from qtpy.QtCore import Qt
+from qtpy.QtCore import QEvent, QSize, Qt
 from qtpy.QtGui import QColor, QIcon, QPixmap
 from qtpy.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout,
                             QWidget)
@@ -18,6 +19,8 @@ from kipi.noise.waveforms import bandwidth_limited
 EMPTY = "Solve an aggressor in Coupled Noise mode to see its waveforms here."
 MAX_CAP_CURVES = 12             # more capacitors than this: the largest currents only
 BW_LIMIT_HZ = 20e6              # the bandwidth limit, as an oscilloscope's
+CURVE_LIST_MIN = 90             # the legend's width, px: at least
+CURVE_LIST_MAX = 360            # and at most (a third of the plot's width on a small one)
 
 VIEWS = (("sw", "Switch node voltage"), ("il", "Inductor currents"),
          ("cin", "Input capacitor currents"), ("cout", "Output capacitor currents"),
@@ -42,6 +45,14 @@ VICTIM_CURVES = (("total", "Superposition", True,
                  ("driver", "Driver end", True,
                   "The superposition at the driver's end of the net as well",
                   ("coupling", "drv")))
+
+
+class _CurveScroll(QScrollArea):
+    """The legend's scroll area, asking for the width its maximum allows (#197): Qt's own
+    size hint does not follow tickboxes added later, so the legend stayed narrow."""
+
+    def sizeHint(self) -> QSize:
+        return QSize(self.maximumWidth(), super().sizeHint().height())
 
 
 class NoisePlot(QWidget):
@@ -93,12 +104,13 @@ class NoisePlot(QWidget):
         self.curve_lay.setContentsMargins(2, 2, 2, 2)
         self.curve_lay.setSpacing(2)
         self.curve_lay.addStretch(1)
-        self.curve_scroll = QScrollArea(self)
+        self.curve_scroll = _CurveScroll(self)
         self.curve_scroll.setWidget(self.curve_box)
         self.curve_scroll.setWidgetResizable(True)
         self.curve_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.curve_scroll.setMaximumWidth(220)
         self.curve_scroll.setVisible(False)
+        self._curve_width = CURVE_LIST_MIN
+        self.curve_scroll.installEventFilter(self)
         row = QHBoxLayout()
         row.addWidget(self.canvas, 1)
         row.addWidget(self.curve_scroll)
@@ -351,6 +363,7 @@ class NoisePlot(QWidget):
                 chk.toggled.connect(lambda on, n=name: self._show_curve(n, on))
                 self.curve_lay.insertWidget(i, chk)
                 self.chk_shown.append(chk)
+            self._fit_curve_list()
         self.curve_scroll.setVisible(True)
         shown = [(i, (label, s)) for i, (name, label, s) in enumerate(spectra)
                  if name not in hidden]
@@ -367,6 +380,52 @@ class NoisePlot(QWidget):
         self.lbl_figures.setText(f"<span style='color:#999'>{bw}:</span> "
                                  + " &nbsp; ".join(figures) if figures else "")
         return shown
+
+    def _fit_curve_list(self):
+        """Widen the legend to its longest label (#197), up to CURVE_LIST_MAX px: it kept a
+        narrow width that cut the labels off. The layout may still squeeze it on a small
+        screen; :meth:`_elide_curves` then shortens the labels to what fits."""
+        for chk in self.chk_shown:          # measured at their whole text
+            if chk.property("label") is None:
+                chk.setProperty("label", chk.text())
+                chk.setProperty("tip", chk.toolTip())
+            chk.setText(chk.property("label"))
+        widest = max((c.sizeHint().width() for c in self.chk_shown), default=0)
+        width = max(CURVE_LIST_MIN, min(CURVE_LIST_MAX, widest + self._curve_chrome()))
+        self.curve_scroll.setMinimumWidth(CURVE_LIST_MIN)
+        self.curve_scroll.setMaximumWidth(width)
+        self._curve_width = width
+        self.curve_scroll.updateGeometry()
+        self._elide_curves()
+
+    def _curve_chrome(self) -> int:
+        """The legend's width besides its tickboxes: margins, frame and scroll bar."""
+        m = self.curve_lay.contentsMargins()
+        return (m.left() + m.right() + 2 * self.curve_scroll.frameWidth()
+                + self.curve_scroll.verticalScrollBar().sizeHint().width())
+
+    def _elide_curves(self):
+        """Shorten the labels that do not fit the legend as laid out, the whole text in
+        their tooltip; restore those that fit again."""
+        width = self.curve_scroll.width() if self.curve_scroll.isVisible() else 0
+        room = (width or self._curve_width) - self._curve_chrome()
+        for chk in self.chk_shown:
+            full, tip = chk.property("label"), chk.property("tip") or ""
+            if full is None:
+                continue
+            chk.setText(full)
+            if chk.sizeHint().width() > room:
+                # The text's share of the tickbox: what is left after the box and icon.
+                fm = chk.fontMetrics()
+                extra = chk.sizeHint().width() - fm.horizontalAdvance(full)
+                chk.setText(fm.elidedText(full, Qt.ElideRight, max(20, room - extra)))
+                tip = f"<b>{html.escape(full)}</b><br>{tip}" if tip else full
+            chk.setToolTip(tip)
+
+    def eventFilter(self, obj, event):
+        if obj is self.curve_scroll and event.type() == QEvent.Resize:
+            self._elide_curves()
+        return super().eventFilter(obj, event)
 
     def _show_curve(self, name: str, on: bool):
         hidden = self._hidden.setdefault(self.cmb_view.currentData(), set())

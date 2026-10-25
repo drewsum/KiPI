@@ -333,6 +333,36 @@ def test_the_curve_list_shows_p_p_and_rms_as_plotted(vpanel, window):
         chk.setChecked(True)
 
 
+def test_the_curve_list_is_as_wide_as_its_labels(vpanel):
+    """#197: the legend kept a narrow width that cut its labels off. It now fits the
+    longest label, and one too long for the room it gets is elided with its whole text in
+    its tooltip."""
+    from kipi.noise.gui.plot import CURVE_LIST_MAX, NoisePlot
+    from kipi.noise.solver import solve_noise
+    r = solve_noise(vpanel.snapshot, vpanel.setup, vpanel.setup.aggressors[0].name)
+    plot = NoisePlot()
+    plot.set_result(r)
+    plot.set_view("ripple")
+    plot.show()
+    plot.resize(1400, 800)
+    QApplication.processEvents()
+    for chk in plot.chk_shown:
+        assert chk.text() == chk.property("label")              # not elided
+        assert plot.curve_scroll.width() >= chk.sizeHint().width()
+    plot.chk_shown[0].setProperty("label", "A very long curve name " * 6)
+    plot._fit_curve_list()
+    QApplication.processEvents()
+    chk = plot.chk_shown[0]
+    assert plot.curve_scroll.width() <= CURVE_LIST_MAX
+    assert chk.text().endswith("…") and len(chk.text()) < len(chk.property("label"))
+    assert "A very long curve name" in chk.toolTip()
+    plot.chk_shown[0].setProperty("label", "Vin ripple")
+    plot._fit_curve_list()
+    QApplication.processEvents()
+    assert plot.chk_shown[0].text() == "Vin ripple"
+    plot.close()
+
+
 def test_the_bandwidth_limit_filters_every_view(vpanel, window):
     from kipi.noise.solver import solve_noise
     vpanel.victim_list._add()
