@@ -578,7 +578,7 @@ class MainWindow(QMainWindow):
         self.btn_guess.setToolTip(
             "Pick 3D models from KiCad's library for the parts that have none, by their "
             "footprint name: for a board with no KiCad board file (an ODB++ job, a "
-            "snapshot away from its board), or parts whose models KiCad cannot find. "
+            "HyperLynx file, a snapshot away from its board), or parts whose models KiCad cannot find. "
             "It is a guess: the log names each model picked by size code or the closest "
             "name. Opening or reloading a board drops them.")
         self.btn_guess.setVisible(self._tool.offers_part_models)

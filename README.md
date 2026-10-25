@@ -51,9 +51,9 @@ KiPI runs two ways, from the same folder:
   folder**, and KiCad installs its dependencies.
 * **Standalone**: KiPI started on its own, with its launcher, opens board files and needs
   no KiCad. The folder can be **anywhere**; the launcher installs the dependencies on the
-  first start. It opens KiCad 7 to 10 board files (`.kicad_pcb`), ODB++ jobs and KiPI
-  snapshots (`.kipi.json.gz`). Reading HYP an CCE files is on the way
-  ([#45](https://github.com/drewsum/KiPI/issues/45)).
+  first start. It opens KiCad 7 to 10 board files (`.kicad_pcb`), ODB++ jobs, HyperLynx
+  files (`.hyp`) and KiPI snapshots (`.kipi.json.gz`). Reading CCE files is on the way
+  ([#143](https://github.com/drewsum/KiPI/issues/143)).
 
 ### As a KiCad plugin
 
@@ -171,6 +171,14 @@ Export at 6 decimals where you can: KiCad's default of 2 rounds every coordinate
 does not carry is listed under *Placeholders*; KiCad's export in particular leaves out
 the nets of copper drawings, writes a dielectric's sublayers as one, and turns spaces in
 net names into underscores.
+
+A **HyperLynx** file (`.hyp`; KiCad writes one with *File → Export → Hyperlynx*) gives the
+stackup, the pad stacks and each net's pins, vias, tracks and copper polygons, which KiPI
+reads as they are. The file names each part and its side but not where it sits or how it
+is turned, so a part is placed in the middle of its pads (listed under *Placeholders*).
+KiCad's export leaves out pads with no net, which carry no current. Like an ODB++ job, the
+setup is found by the file's name: export `Board.hyp` next to `Board.kicad_pcb` to share
+the board's setup.
 
 To change the setup later, use **About → Manage dependencies…** in KiPI, or the launcher:
 
@@ -949,6 +957,7 @@ The tests also solve the example board and check that its committed setup still 
 | `kipi/sources/kicad_ipc/` | The running KiCad, through the IPC API (kipy): board extraction, zone refill, KiCad instance checks, color theme, 3D models through kicad-cli (and guessed from its library by footprint name) |
 | `kipi/sources/kicad_pcb/` | KiCad board files read without KiCad: S-expression parser, pads, the `.kicad_pro`'s net classes |
 | `kipi/sources/odbpp/` | ODB++ jobs (folder, `.zip`, `.tgz`): the archive, layer features and symbols, the `eda/data` netlist and components, the stackup from the matrix |
+| `kipi/sources/hyp/` | HyperLynx files (`.hyp`): the record parser, the stackup, pad stacks, nets with their pins, vias, tracks and copper polygons, and the board outline |
 | `kipi/sources/snapshot_file.py` | A saved snapshot as a source |
 | `kipi/dc/` | DC analysis: |
 | `kipi/dc/solver/` | 2.5D DC conduction FEM: sheet conductance, via/PTH barrels, series parts, sources, loads |

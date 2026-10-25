@@ -21,6 +21,14 @@ milestones rather than versions that were ever set.
   returns through its new **Input ground pins** on the input side's ground, so both grounds
   are solved in DC. AC solves its rails against its output ground and counts its input as a
   load on the rail feeding it. Coupled Noise does not model isolated converters.
+- **HyperLynx files** (#143). Standalone **Open…** reads a `.hyp` board file (KiCad writes
+  one with File > Export > Hyperlynx): its stackup and solder masks, pad stacks (round,
+  rectangular, oblong and oval pads, through and per layer), and each net's pins, vias
+  (through, blind and buried), tracks and arcs, copper polygons with their voids, and the
+  board outline with its cutouts. Inches and metres, and copper given as a thickness or a
+  weight, are read. Parts are placed in the middle of their pads, as the file does not say
+  where they sit. Checked against KiCad's export of an 8-layer board: its stackup, tracks,
+  vias, zone copper, outline and DC solve match the board file's.
 
 ### Changed
 - **The series link's constant diode drop is gone** (#191): a diode is its SPICE model.

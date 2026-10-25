@@ -326,8 +326,8 @@ title bar, or drag it onto the main window, to dock it again.</p>
     board files with <b>Open…</b> and needs no KiCad. The title bar then ends in
     <i>(standalone)</i>, and the controls that need KiCad are hidden (see the
     <a href="#toolbar">toolbar</a>). Standalone opens KiCad board files
-    (<code>.kicad_pcb</code>), ODB++ jobs and KiPI snapshots
-    (<code>.kipi.json.gz</code>).</li>
+    (<code>.kicad_pcb</code>), ODB++ jobs, HyperLynx files (<code>.hyp</code>) and KiPI
+    snapshots (<code>.kipi.json.gz</code>).</li>
   <li><b>KiCad board files.</b> A <code>.kicad_pcb</code> from KiCad 7 to 10 reads the
     same as the plugin reads it from KiCad, so a board set up in the plugin opens standalone
     with its setup. Net classes come from the <code>.kicad_pro</code> next to it. KiPI uses
@@ -342,6 +342,12 @@ title bar, or drag it onto the main window, to dock it again.</p>
     tool asks: KiCad's default of 2 rounds coordinates to 10&nbsp;µm. What the job leaves
     out (copper drawings' nets, a dielectric's thickness) is listed under
     <b>Placeholders</b>.</li>
+  <li><b>HyperLynx.</b> Open a <code>.hyp</code> file (KiCad writes one with <i>File &rarr;
+    Export &rarr; Hyperlynx</i>). KiPI reads its stackup, pad stacks and each net's pins,
+    vias, tracks and copper polygons as the file gives them. The file does not say where a
+    part sits or how it is turned, so each part is placed in the middle of its pads (listed
+    under <b>Placeholders</b>); KiCad's export also leaves out pads with no net. The setup
+    is found by the file's name, as for an ODB++ job.</li>
   <li><b>Standalone setup.</b> Start standalone KiPI with its launcher:
     double-click <code>kipi_launcher.pyw</code> (Windows) or run <code>python
     kipi_launcher.py</code>. The first start installs KiPI's packages into an environment
@@ -405,8 +411,8 @@ of decimals, plus more when a small typed value needs them.</p>
     saved with <b>Save snapshot…</b>. KiCad does not need to be running.</td></tr>
   <tr><td><b>Open…</b><br><small>standalone</small></td><td class="wrap">Opens a board file:
     a KiCad board (<code>.kicad_pcb</code>), an ODB++ job (<code>.zip</code>,
-    <code>.tgz</code>, or its <code>matrix/matrix</code> file) or a KiPI snapshot
-    (<code>.kipi.json.gz</code>).
+    <code>.tgz</code>, or its <code>matrix/matrix</code> file), a HyperLynx file
+    (<code>.hyp</code>) or a KiPI snapshot (<code>.kipi.json.gz</code>).
     Its saved setup comes with it, as with <b>Load from KiCad</b>. The arrow beside it lists
     the boards opened lately.</td></tr>
   <tr><td><b>Reload</b><br><small>standalone</small></td><td class="wrap">Reads the open board
@@ -2413,6 +2419,20 @@ If the running programs cannot be listed, KiPI carries on.</p></div>
   <li><b>A copper drawing carries no current:</b> some exporters (KiCad among them) do not
     say which net drawn copper is on. KiPI gives it the net of the copper it touches; on
     its own it has none.</li>
+</ul></div>
+</details>
+<details id="ts-hyp">
+<summary>A HyperLynx file does not open, or opens with parts missing</summary>
+<div class="body"><ul>
+  <li><b>"not a HyperLynx board file":</b> the file has no <code>BOARD</code>,
+    <code>STACKUP</code> or <code>NET</code> records. Export it again as a board.</li>
+  <li><b>"ends inside a block":</b> the file was cut short, e.g. copied while it was still
+    being written. Export it again.</li>
+  <li><b>A part is missing or off its place:</b> a part with no pads on any net is not in
+    the file, and a part is drawn in the middle of its pads because the file does not say
+    where it sits.</li>
+  <li><b>"pad stacks are used but not in the file":</b> those pads are read with no copper.
+    Export the file again from the design tool.</li>
 </ul></div>
 </details>
 <details>

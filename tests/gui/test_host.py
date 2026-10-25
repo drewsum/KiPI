@@ -99,8 +99,9 @@ def test_the_registry_knows_snapshots(board_file):
     with pytest.raises(ValueError, match="cannot open"):
         registry.open_board("board.brd")
     assert registry.file_filter().startswith(
-        "Boards (*.kicad_pcb *.zip *.tgz *.tar.gz matrix *.json.gz *.json);;"
-        "KiCad board (*.kicad_pcb);;ODB++ (*.zip *.tgz *.tar.gz matrix);;KiPI snapshot (")
+        "Boards (*.kicad_pcb *.zip *.tgz *.tar.gz matrix *.hyp *.json.gz *.json);;"
+        "KiCad board (*.kicad_pcb);;ODB++ (*.zip *.tgz *.tar.gz matrix);;HyperLynx (*.hyp);;"
+        "KiPI snapshot (")
     assert src.files() == [board_file]
 
 
@@ -185,6 +186,23 @@ def test_standalone_opens_odb_jobs(app, no_3d, tmp_path, monkeypatch):
     assert w.snapshot.source_format == "odbpp" and w.snapshot.board_name == "features"
     assert [Path(f) for f in w._watcher.files()] == [job]
     assert "ODB++" in w.act_open.toolTip()
+    w.close()
+
+
+def test_standalone_opens_hyperlynx_files(app, no_3d, tmp_path, monkeypatch):
+    from qtpy.QtCore import QSettings
+    from kipi.gui import recent
+    from kipi.gui.main_window import MainWindow
+    ini = str(tmp_path / "settings.ini")
+    monkeypatch.setattr(recent, "settings", lambda: QSettings(ini, QSettings.IniFormat))
+    board = tmp_path / "small.hyp"
+    shutil.copy(Path(__file__).parents[1] / "data" / "hyp" / "small.hyp", board)
+    w = MainWindow()
+    w.open_path(str(board))
+    _idle(app, w)
+    assert w.snapshot.source_format == "hyp" and w.snapshot.board_name == "small"
+    assert [Path(f) for f in w._watcher.files()] == [board]
+    assert "HyperLynx" in w.act_open.toolTip()
     w.close()
 
 
