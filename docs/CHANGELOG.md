@@ -4,7 +4,9 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.3 (in development)
+## 0.9.4 (in development)
+
+## 0.9.3
 
 ### Added
 - **Series links with more than two pins, from their SPICE models** (#193). Importing a

@@ -40,7 +40,7 @@ control in KiPI has a tooltip. This README is an overview; the user guide has th
 
 ![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
-**Status: 0.9.3 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
+**Status: 0.9.4 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
 
 ## Install
 
