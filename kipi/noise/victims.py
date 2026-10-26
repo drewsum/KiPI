@@ -9,6 +9,7 @@ capacitance. Each mechanism is solved on its own, then added up as phasors.
 from __future__ import annotations
 
 import math
+import time
 from typing import List, Optional, Sequence
 
 import numpy as np
@@ -47,12 +48,16 @@ def ends(snap: BoardSnapshot, victim: Victim):
 def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
            wf: SmpsWaveforms, cache: Optional[Cache] = None,
            check_cancel=None, layouts: Sequence = (),
-           ground_diff: Optional[np.ndarray] = None) -> VictimResult:
+           ground_diff: Optional[np.ndarray] = None, progress=None) -> VictimResult:
     """The victim's noise from each mechanism: capacitive from the switch nodes,
     inductive from the capacitor loops in ``layouts`` (each phase's
     :class:`~kipi.noise.parasitics.PhaseLayout`), and common-impedance from
     ``ground_diff``, its driver's ground against its receiver's at each harmonic (from the
-    board model; None without one)."""
+    board model; None without one). Each step's time goes to ``progress``'s log."""
+    def say(text: str):
+        if progress is not None:
+            progress.info(f"  {victim.name}: {text}")
+    t0 = time.perf_counter()
     s = setup.noise
     warnings: List[str] = []
     driver, receiver, guessed = ends(snap, victim)
@@ -67,6 +72,8 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
                   setup.ac.default_er, cache, check_cancel)
     segs = ext.segments
     res.solves = ext.solves
+    say(f"{len(segs)} segment(s), {ext.solves} cross-section(s) solved and {ext.cached} "
+        f"reused in {time.perf_counter() - t0:.2f} s")
     if not segs:
         res.warnings = warnings + [f"{victim.net} has no tracks to couple onto"]
         return res
@@ -108,7 +115,10 @@ def couple(snap: BoardSnapshot, setup: PISetup, victim: Victim, agg: Aggressor,
     if not sources:
         warnings.append("No capacitor loops (set the switching device's pins and the "
                         "capacitors): no inductive coupling")
+    t0 = time.perf_counter()
     emf, res.m_h = victim_emf(snap, sources, segs, freqs, victim.net)
+    say(f"mutual inductance to {len(sources)} loop(s) in {time.perf_counter() - t0:.2f} s; "
+        f"solving the line at {len(freqs)} harmonics")
 
     def solve(driver_ohm: float, transfer: bool = False):
         terms = [Termination(d_xy, driver_ohm),

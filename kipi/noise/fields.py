@@ -34,11 +34,13 @@ The CISPR 32 class B limit at 3 m is shown beside it for scale.
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from kipi.core.progress import NULL, ProgressReporter
 from kipi.noise.extract import peec
 from kipi.noise.waveforms import Spectrum, ifft_periodic
 
@@ -495,7 +497,7 @@ def _hotspots(srcs, kind: str, freqs: np.ndarray, pts: np.ndarray, unit: str,
 
 
 def _field_map(srcs, kind: str, freqs: np.ndarray, z_mm: float, unit: str, box,
-               board) -> FieldMap:
+               board, progress: ProgressReporter = NULL) -> FieldMap:
     """Every point's strongest harmonic over the board (and the sources, with room round
     them), on a grid of its own: the hotspots' grid hugs the sources, and the field is
     still there at its edge."""
@@ -506,29 +508,37 @@ def _field_map(srcs, kind: str, freqs: np.ndarray, z_mm: float, unit: str, box,
         x1, y1 = max(x1, board[2]), max(y1, board[3])
     cell = max(MAP_CELL_MM, math.sqrt(max(x1 - x0, 1.0) * max(y1 - y0, 1.0) / MAP_POINTS))
     pts, nx, ny = slice_grid((x0, y0, x1, y1), z_mm, cell)
+    progress.info(f"  {kind} field: the map over the board, {len(pts)} points")
     _, best = _hotspots(srcs, kind, freqs, pts, unit)
     return FieldMap(kind, unit, best.reshape(ny, nx),
                     (float(pts[0, 0]), float(pts[0, 1]), float(pts[-1, 0]), float(pts[-1, 1])))
 
 
 def near_field_report(sources: FieldSources, freqs: np.ndarray,
-                      height_mm: float = NEAR_FIELD_MM, distance_m: float = FAR_FIELD_M
-                      ) -> EmiReport:
+                      height_mm: float = NEAR_FIELD_MM, distance_m: float = FAR_FIELD_M,
+                      progress: ProgressReporter = NULL) -> EmiReport:
     """Hotspots of H and E ``height_mm`` over the top copper and the loops' radiated
-    estimate at ``distance_m`` (:class:`EmiReport`)."""
+    estimate at ``distance_m`` (:class:`EmiReport`), each step reported to ``progress``."""
     rep = EmiReport(height_mm, distance_m)
     z = sources.z_top_mm + height_mm
     freqs = np.asarray(freqs, float)
     for kind, srcs, unit in (("H", sources.h, "A/m"), ("E", sources.e, "V/m")):
         if not srcs or not len(freqs):
             continue
+        progress.check_cancel()
+        t0 = time.perf_counter()
         box = extent(srcs)
         span = max(box[2] - box[0], box[3] - box[1], 1.0) + 6.0
         cell = max(1.0, span / math.sqrt(HOTSPOT_POINTS))
         pts, nx, ny = slice_grid(box, z, cell, pad_mm=3.0)
+        n_el = sum(len(s.a) if kind == "H" else len(s.xyz) for s in srcs)
+        progress.info(f"  {kind} field: {len(srcs)} source(s), {n_el} pieces; hotspots on "
+                      f"{len(pts)} points")
         spots, _ = _hotspots(srcs, kind, freqs, pts, unit, shape=(nx, ny))
+        progress.check_cancel()
         fmap = _field_map(srcs, kind, freqs, z, unit, box,
-                          getattr(sources, "board_bounds", None))
+                          getattr(sources, "board_bounds", None), progress)
+        progress.info(f"  {kind} field done in {time.perf_counter() - t0:.2f} s")
         if kind == "H":
             rep.h_hotspots, rep.h_map = spots, fmap
         else:

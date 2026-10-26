@@ -58,7 +58,7 @@ def _victims(snap, setup, agg, wf, layouts, result, progress, cand):
     from kipi.noise.scan import estimate
     progress.stage("Scan")
     with progress.timed("scan"):
-        rows = estimate(snap, setup, agg, wf, layouts, cand)
+        rows = estimate(snap, setup, agg, wf, layouts, cand, progress)
     for row in rows[:max(s.scan_top_n, 0)]:
         drv, rcv = guess_ends(snap, row.net)
         if drv is None or rcv is None:
@@ -122,7 +122,7 @@ def _copper(snap, setup, agg, op, cand, warnings, progress):
         progress.stage("Board model: mesh")
         mesh = mesh_rail_and_ground(snap, sorted(bp.rail), bp.ground_nets(),
                                     bp.terminal_ids(), setup.settings, setup.ac, progress)
-        copper = CopperPaths(snap, mesh[0], setup.settings, setup.ac)
+        copper = CopperPaths(snap, mesh[0], setup.settings, setup.ac, progress)
     except (ACError, MeshError, SolveError) as e:
         msg = (f"Board model left out ({e}); the hot loops are drawn straight between the "
                "pads, the capacitors share the current by their own impedance and there is "
@@ -195,7 +195,7 @@ def _fields(snap, setup, agg, layouts, wf, result, progress):
     try:
         with progress.timed("fields"):
             result.fields = field_sources(snap, setup, agg, layouts, wf)
-            result.emi = near_field_report(result.fields, wf.freqs())
+            result.emi = near_field_report(result.fields, wf.freqs(), progress=progress)
     except (ValueError, MemoryError) as e:
         msg = f"Fields left out ({e})"
         result.warnings.append(msg)
@@ -236,7 +236,7 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
             ground = gnd or (ph.low_side.net if ph.low_side else "")
             layouts.append(phase_layout(snap, setup, ph, i, op.topology, op.vin, op.vout,
                                         vin_net, vout_net, ground,
-                                        agg.min_ring_zeta, copper))
+                                        agg.min_ring_zeta, copper, progress))
     reports = [lay.report for lay in layouts]
 
     progress.stage("Waveforms")
@@ -292,11 +292,11 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
         scanned = {r.net for r in result.scan if r.solved}
         for i, victim in enumerate(victims):
             progress.fraction(i / len(victims))
-            progress.debug(f"Victim {i + 1}/{len(victims)}: {victim.name}")
+            progress.info(f"Victim {i + 1}/{len(victims)}: {victim.name}")
             with progress.timed(f"victim {victim.name}"):
                 vr = couple(snap, setup, victim, agg, wf, cache, progress.check_cancel,
                             layouts, board.ground_diff.get(victim.name)
-                            if board is not None else None)
+                            if board is not None else None, progress)
             vr.scanned = victim.name in scanned and victim not in setup.victims
             result.victims.append(vr)
             ok = "PASS" if vr.passed else "FAIL"

@@ -429,6 +429,32 @@ def test_only_the_aggressors_planes_count():
     assert len(plane_splits(_slotted(), segs(), ["SIG", "SW"], setup, nets)) == 1
 
 
+def test_a_board_model_solve_reports_each_long_step():
+    import logging
+    from kipi.core.progress import ProgressReporter
+
+    class Log(ProgressReporter):
+        def __init__(self):
+            super().__init__()
+            self.lines = []
+
+        def message(self, text, level=logging.INFO):
+            if level > logging.DEBUG:                       # what the GUI shows
+                self.lines.append(text)
+
+    snap = buck_board(victim_gap=0.2)
+    setup = _setup(snap, [Victim("SIG")], board_model=True)
+    setup.noise.scan = True
+    log = Log()
+    solve_noise(snap, setup, "U1 buck", log)
+    text = "\n".join(log.lines)
+    assert "  [1/" in text and "first frequency took" in text      # the board model
+    assert "C1's loop traced through the copper" in text            # the hot loops
+    assert "H field: " in text and "E field: " in text and "map over the board" in text
+    assert "Victim 1/" in text and "SIG: " in text and "cross-section(s) solved" in text
+    assert "mutual inductance to" in text
+
+
 # ------------------------------------------------------------------ the GUI
 @pytest.fixture(scope="module")
 def app():

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -241,7 +242,8 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     ground's mesh with its node kinds, already built (else it is built here);
     ``dc_result``, the last DC solve, for the parts' bias (:func:`board_ports`)."""
     from kipi.ac.solver.fem import ACSystem
-    from kipi.ac.solver.sweep import _interpolate, element_currents, terminate_transfer
+    from kipi.ac.solver.sweep import (_interpolate, element_currents, fmt_hz,
+                                      terminate_transfer)
     bp = board_ports(snap, setup, agg, op, victim_grounds, probes, dc_result)
     ports, src, buck = bp.ports, bp.src, bp.buck
     currents = [c for pw in wf.phases for c in (pw.pulsed.c, pw.inductor.c)]
@@ -262,14 +264,19 @@ def solve_board(snap: BoardSnapshot, setup: PISetup, agg, op, wf,
     f_field = np.logspace(math.log10(f0), math.log10(f1), n)
     zb = np.zeros((n, len(ports), len(ports)), complex)
     progress.stage(f"Board model: {n} field solves, {len(ports)} ports, {system.n} unknowns")
+    t1 = time.perf_counter()
     try:
         for k, f in enumerate(f_field):
             progress.check_cancel()
-            progress.debug(f"Board model field solve {k + 1}/{n} at {f / 1e6:.4g} MHz")
+            progress.info(f"  [{k + 1}/{n}] solving {fmt_hz(f)}")
             zb[k] = system.port_impedance(2 * np.pi * f, progress)
             progress.fraction((k + 1) / n)
+            if k == 0:
+                progress.info(f"  first frequency took {time.perf_counter() - t1:.2f} s "
+                              f"({system.stats.method})")
     finally:
         system.close()
+    progress.info(f"Field solves done in {time.perf_counter() - t1:.2f} s")
     if f1 > 1e9:
         notes.append(f"The board model is quasi-static: above about 1 GHz (here to "
                      f"{f1 / 1e9:.3g} GHz) it is approximate")

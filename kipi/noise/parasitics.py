@@ -38,6 +38,7 @@ shapes; the loop's current is a DC solve of the copper, not a field solve at fre
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -48,6 +49,7 @@ from kipi.ac.solver.physics import EPS0_F_PER_MM, skin_depth_mm
 from kipi.core.model.board import BoardSnapshot, Pad
 from kipi.core.model.parts import parse_capacitance
 from kipi.core.model.stackup import combined_epsilon_r
+from kipi.core.progress import NULL, ProgressReporter
 from kipi.dc.pi.model import PinRef, PISetup
 from kipi.dc.solver.fem import SolveError
 from kipi.noise.extract import peec
@@ -474,10 +476,12 @@ def switch_node_copper_f(board: _Board, net: str) -> float:
 def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, index: int,
                  topology: str, vin: float, vout: float, vin_net: str, vout_net: str,
                  gnd_net: str, min_zeta: float = 0.0,
-                 copper: Optional[CopperPaths] = None) -> PhaseLayout:
+                 copper: Optional[CopperPaths] = None,
+                 progress: ProgressReporter = NULL) -> PhaseLayout:
     """The hot-loop report and the capacitor branches (with their loops) of one phase.
     With ``copper`` (the board model's mesh of the rails and ground) the loops are traced
-    through it; without, they are drawn straight between the pads."""
+    through it, each reported to ``progress``; without, they are drawn straight between
+    the pads."""
     board = _Board(snap, setup.ac.default_er)
     notes: List[str] = []
     hs, ls = phase.high_side, phase.low_side
@@ -552,8 +556,14 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
     def branches(refs: List[str], hot: bool, volts: float, plus_net: str):
         out, loops = [], {}
         for ref in refs:
+            progress.check_cancel()
             br = _cap_branch(board, setup, ref, volts, notes)
+            t0 = time.perf_counter()
             loop, why = traced(ref, hot, plus_net)
+            if loop is not None and loop.traced:
+                progress.info(f"  Phase {index}: {ref}'s loop traced through the copper, "
+                              f"{len(loop.elements)} pieces, in "
+                              f"{time.perf_counter() - t0:.2f} s")
             if loop is None:
                 if why:
                     notes.append(f"{why}: its loop is drawn straight between the pads")
