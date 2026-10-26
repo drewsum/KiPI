@@ -91,6 +91,13 @@ milestones rather than versions that were ever set.
   kept a narrow width and cut its curve names short. It now widens to its longest name, up
   to 360 px, and a name still too long for the room (on a small screen) is shortened with
   an ellipsis, its whole text in the tooltip.
+- **KiPI froze when a field was shown in 3D** after a Coupled Noise solve. With the board
+  model on, each hot loop is traced through the copper in hundreds or thousands of
+  pieces, and the field of them all was worked out on the UI thread, twice for every
+  change (and again on unrelated changes such as picking a victim). The field is now
+  worked out once per change in the background, with "Working out the field…" under the
+  list meanwhile and the field shown before staying until the new one is ready; the
+  field sums themselves are about 2.5 times faster.
 
 ## 0.9.2
 

@@ -2345,5 +2345,6 @@ class MainWindow(QMainWindow):
             if task is not None and task.isRunning():
                 task.progress.cancel()
                 task.wait(3000)
+        self.noise_panel.wait_fields()
         self.viewer.close()
         super().closeEvent(event)

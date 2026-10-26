@@ -43,7 +43,7 @@ from kipi.noise.extract import peec
 from kipi.noise.waveforms import Spectrum, ifft_periodic
 
 EPS0_F_PER_M = 8.8541878128e-12
-_CHUNK = 1_500_000                      # elements × points per block
+_CHUNK = 2_000_000                      # elements × points per block
 MAP_NAMES = ("direct", "image", "plane", "through")
 NEAR_FIELD_MM = 5.0                     # the hotspot plane's height over the top copper
 FAR_FIELD_M = 3.0                       # the radiated estimate's distance
@@ -215,17 +215,25 @@ def biot_savart(a: np.ndarray, b: np.ndarray, w: np.ndarray, r0: np.ndarray,
     ok = length > 1e-9
     a, d, w, r0, length = a[ok], d[ok], w[ok], r0[ok], length[ok]
     u = d / length[:, None]
+    # Near the origin, the distances by expansion keep their digits. Each element adds
+    # k·(u × (p − a)), so the sum is (Σ k·u) × p − Σ k·(u × a): products of (C, P) scalars
+    # with (C, 3), not (C, P, 3) arrays, many times faster on a traced loop's elements.
+    o = pts.mean(axis=0)
+    p, a = pts - o, a - o
+    p2 = np.einsum("pk,pk->p", p, p)
+    a2 = np.einsum("ck,ck->c", a, a)
+    ua = np.einsum("ck,ck->c", u, a)
+    uxa = np.cross(u, a)
     step = max(1, _CHUNK // len(pts))
     for c0 in range(0, len(a), step):
         c = slice(c0, c0 + step)
-        rel = pts[None, :, :] - a[c, None, :]                          # (C, P, 3)
-        s = np.einsum("cpk,ck->cp", rel, u[c])
-        perp = rel - s[:, :, None] * u[c, None, :]
-        rho2 = np.einsum("cpk,cpk->cp", perp, perp) + (r0[c] ** 2)[:, None]
+        s = u[c] @ p.T - ua[c, None]                                   # (C, P) along it
+        r2 = p2[None, :] - 2 * (a[c] @ p.T) + a2[c, None]
+        rho2 = np.maximum(r2 - s * s, 0.0) + (r0[c] ** 2)[:, None]
         ln = length[c][:, None]
-        geom = (ln - s) / np.sqrt((ln - s) ** 2 + rho2) + s / np.sqrt(s * s + rho2)
-        phi = np.cross(u[c, None, :], perp)                            # (C, P, 3)
-        out += np.einsum("c,cpk->pk", w[c], phi * (geom / rho2)[:, :, None])
+        k = (ln - s) / np.sqrt((ln - s) ** 2 + rho2) + s / np.sqrt(s * s + rho2)
+        k *= w[c, None] / rho2
+        out += np.cross(k.T @ u[c], p) - k.T @ uxa[c]
     return out * (1e3 / (4 * math.pi))                                 # 1/mm → 1/m
 
 
@@ -237,11 +245,16 @@ def patch_field(xyz: np.ndarray, q: np.ndarray, cell_mm: float, pts: np.ndarray)
         return out
     step = max(1, _CHUNK // len(pts))
     r_min2 = (cell_mm / 2 * 1e-3) ** 2
-    for c0 in range(0, len(xyz), step):
+    # As in biot_savart: Σ k·(p − x) = p·Σ k − Σ k·x, with k = q/r³ a (C, P) scalar.
+    o = pts.mean(axis=0)
+    p, x = (pts - o) * 1e-3, (xyz - o) * 1e-3                           # m
+    p2 = np.einsum("pk,pk->p", p, p)
+    x2 = np.einsum("ck,ck->c", x, x)
+    for c0 in range(0, len(x), step):
         c = slice(c0, c0 + step)
-        rel = (pts[None, :, :] - xyz[c, None, :]) * 1e-3                # m
-        r2 = np.einsum("cpk,cpk->cp", rel, rel) + r_min2
-        out += np.einsum("c,cpk->pk", q[c], rel / (r2 ** 1.5)[:, :, None])
+        r2 = np.maximum(p2[None, :] - 2 * (x[c] @ p.T) + x2[c, None], 0.0) + r_min2
+        k = q[c, None] / (r2 * np.sqrt(r2))
+        out += p * k.sum(axis=0)[:, None] - k.T @ x[c]
     return out / (4 * math.pi * EPS0_F_PER_M)
 
 

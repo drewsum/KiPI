@@ -433,6 +433,14 @@ def test_the_aggressor_pane_edits_the_winding(app):
     p.close()
 
 
+def _settled(app, p):
+    """The field the panel works out off the UI thread, once it is done."""
+    while p._field_task is not None:
+        p.wait_fields(60000)
+        app.processEvents()
+    return p
+
+
 def test_the_panel_offers_the_fields(app, solved):
     from qtpy.QtCore import Qt
     from kipi.noise.gui.panel import NoisePanel
@@ -442,22 +450,30 @@ def test_the_panel_offers_the_fields(app, solved):
     seen = []
     p.coupling_changed.connect(lambda: seen.append(p.fields_overlay()))
     p.show_result(r)
-    assert not p.fields_row.isHidden() and p.lst_fields.isHidden() and seen[-1] is None
+    assert not p.fields_row.isHidden() and p.lst_fields.isHidden() and p.fields_overlay() is None
     p.cmb_field.setCurrentIndex(p.cmb_field.findData("H"))
     assert not p.lst_fields.isHidden()
     assert [p.lst_fields.item(i).text() for i in range(p.lst_fields.count())] == [
         "C1 loop", "C2 loop", "L1 field"]
     assert all(p.lst_fields.item(i).checkState() == Qt.Checked for i in range(3))
+    assert p._field_task is not None and "Working out" in p.lbl_fields.text()
+    _settled(app, p)
     assert seen[-1] is not None and seen[-1].unit == "A/m"
     assert "C1 loop, C2 loop, L1 field" in p.lbl_fields.text()
+    # A change while one is under way: the latest is the one shown, worked out once.
     p.lst_fields.item(1).setCheckState(Qt.Unchecked)
-    assert "C2" not in seen[-1].note
     p.chk_animate.setChecked(True)
-    assert seen[-1].frames is not None
+    _settled(app, p)
+    assert "C2" not in seen[-1].note and seen[-1].frames is not None
+    n = len(seen)
+    p.chk_animate.setChecked(True)                          # nothing new asked for
+    p.coupling_changed.emit()                               # nor worked out again
+    assert len(seen) == n + 1 and seen[-1] is seen[-2]
     p.chk_animate.setChecked(False)
+    _settled(app, p)
     # A clicked net adds its field, switching to E; a clicked part its loop, back to H.
     assert p.show_field_of("SW") and p.cmb_field.currentData() == "E"
-    assert seen[-1].unit == "V/m"
+    assert _settled(app, p).fields_overlay().unit == "V/m"
     assert p.show_field_of("C2") and p.cmb_field.currentData() == "H"
     assert p._ticked(p.lst_fields) == ["C2 loop (phase 1)"]
     assert p.show_field_of("L1") and p._ticked(p.lst_fields) == ["C2 loop (phase 1)",
@@ -466,10 +482,10 @@ def test_the_panel_offers_the_fields(app, solved):
     p.show_result(r)                                        # the choices stay
     assert p.cmb_field.currentData() == "H" and p._ticked(p.lst_fields) == [
         "C2 loop (phase 1)", "L1 field (phase 1)"]
+    _settled(app, p)
     p.clear_results()
     assert seen[-1] is None and p.fields_row.isHidden() and not p.show_field_of("C1")
-    p.close()
-
+    assert p.fields_overlay() is None
 
 def test_the_window_draws_the_field_in_noise_mode(app, no_3d, solved):
     from qtpy.QtWidgets import QRadioButton
@@ -483,6 +499,8 @@ def test_the_window_draws_the_field_in_noise_mode(app, no_3d, solved):
         p = w.noise_panel
         assert w.viewer.fields is None
         p.cmb_field.setCurrentIndex(p.cmb_field.findData("E"))
+        assert w.viewer.fields is None                     # until it is worked out
+        _settled(app, p)
         assert w.viewer.fields is not None and w.viewer.fields.unit == "V/m"
         assert w.views.currentWidget() is w.viewer
         w.findChild(QRadioButton, "mode_ac").setChecked(True)

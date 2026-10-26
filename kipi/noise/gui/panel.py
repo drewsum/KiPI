@@ -809,6 +809,9 @@ class NoisePanel(QWidget, PartSelection):
         self.result = None
         self._results: Dict[str, object] = {}     # the last NoiseResult of each aggressor
         self._victim = ""                         # the victim selected in the results
+        self._field_key = None                    # the field view's request (#146)
+        self._field_overlay = None                # and the field last worked out for it
+        self._field_task = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
 
@@ -1592,20 +1595,70 @@ class NoisePanel(QWidget, PartSelection):
     def _field_kind_changed(self, *_):
         self._fill_field_list()             # another kind: its own sources, all on
 
+    def _field_request(self):
+        """What the field view asks for: (key, field_overlay's arguments), or None (off)."""
+        kind = self.cmb_field.currentData() or "off"
+        if kind == "off" or not self.fields_row.isVisibleTo(self) or self.result is None:
+            return None
+        keys = tuple(self._ticked(self.lst_fields))
+        h, animate = self.spin_field_h.value(), self.chk_animate.isChecked()
+        return (id(self.result), kind, keys, h, animate), (self.result, kind, keys, h, animate)
+
     def _fields_changed(self, *_):
-        ov = self.fields_overlay()
-        self.lbl_fields.setText(ov.note if ov is not None else "")
-        self.lbl_fields.setVisible(ov is not None)
+        """The field asked for changed: worked out off the UI thread, as a traced loop's
+        many elements take seconds; the one shown stays until it is ready."""
+        req = self._field_request()
+        key = req[0] if req is not None else None
+        if key == self._field_key:
+            return
+        self._field_key = key
+        if req is None:
+            self._field_overlay = None
+            self.lbl_fields.setVisible(False)
+            self.coupling_changed.emit()
+            return
+        self.lbl_fields.setText("Working out the field…")
+        self.lbl_fields.setVisible(True)
+        self._start_field_task()
+
+    def _start_field_task(self):
+        """Work out the field asked for, unless one is under way: the latest request
+        follows it when it is done."""
+        from kipi.gui.worker import QtProgress, Task
+        from kipi.noise.viz import field_overlay
+        req = self._field_request()
+        if self._field_task is not None or req is None:
+            return
+        key, args = req
+        task = Task(lambda _progress: field_overlay(*args), QtProgress(), self)
+        task.done.connect(lambda ov, k=key: self._field_done(k, ov))
+        task.failed.connect(lambda tb, k=key: self._field_done(k, None, tb))
+        task.finished.connect(task.deleteLater)
+        self._field_task = task
+        task.start()
+
+    def _field_done(self, key, ov, error: str = ""):
+        self._field_task = None
+        if key != self._field_key:          # another was asked for meanwhile
+            self._start_field_task()
+            return
+        self._field_overlay = ov
+        lines = error.strip().splitlines()
+        note = ov.note if ov is not None else \
+            f"The field failed: {lines[-1]}" if lines else ""
+        self.lbl_fields.setText(note)
+        self.lbl_fields.setVisible(bool(note))
         self.coupling_changed.emit()
 
+    def wait_fields(self, ms: int = 3000) -> None:
+        """Let a field under way finish (the window closing, or a test)."""
+        if self._field_task is not None:
+            self._field_task.wait(ms)
+
     def fields_overlay(self):
-        """The field slice to draw in the 3D view (#146), or None."""
-        from kipi.noise.viz import field_overlay
-        kind = self.cmb_field.currentData() or "off"
-        if kind == "off" or not self.fields_row.isVisibleTo(self):
-            return None
-        return field_overlay(self.result, kind, self._ticked(self.lst_fields),
-                             self.spin_field_h.value(), self.chk_animate.isChecked())
+        """The field slice to draw in the 3D view (#146), or None: the last one worked
+        out, while the view is on."""
+        return self._field_overlay if self._field_key is not None else None
 
     @staticmethod
     def _ticked(lst: QListWidget) -> List[str]:
