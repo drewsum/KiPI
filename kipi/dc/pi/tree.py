@@ -47,6 +47,7 @@ solved; its notes on what was left out become warnings.
 
 from __future__ import annotations
 
+import functools
 import math
 import time
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -57,7 +58,7 @@ from kipi.core.mesh.mesher import mesh_nets
 from kipi.core.model.board import BoardSnapshot
 from kipi.dc.pi.model import (
     GROUND_REF_KINDS, SWITCHING_KINDS, Load, PISetup, PinRef, Vrm, active_setup, net_groups,
-    validate, vin_range,
+    validate, vin_range, warmed_link,
 )
 from kipi.dc.pi.results import (  # also importable from here, where they were defined
     DISCONNECTED,
@@ -89,6 +90,16 @@ class _Pads:
 
     def __call__(self, ref: PinRef) -> List[str]:
         return [p.id for p in pads_for(self.snap, ref.net, ref.ref, ref.pins or None)]
+
+
+def _two_point(gmat: np.ndarray) -> float:
+    """The resistance between the first two nodes of conductance matrix ``gmat`` (0 for
+    one node: a short)."""
+    if len(gmat) < 2:
+        return 0.0
+    e = np.zeros(len(gmat))
+    e[:2] = 1.0, -1.0
+    return float(max(e @ np.linalg.pinv(gmat) @ e, 0.0))
 
 
 def _pad_voltages(sol, pad_ids: List[str]) -> np.ndarray:
@@ -286,9 +297,29 @@ class _TreeSolver:
 
     # ------------------------------------------------------------ systems
     def _links_in(self, g: Group) -> List[SeriesLink]:
-        return [SeriesLink(k.name, self.pads(k.side_a), self.pads(k.side_b), k.resistance,
-                           curve=k.spice.dc_current if k.is_diode else None)
-                for k in self.setup.links if k.side_a.net in g]
+        out = []
+        for k in self.setup.links:
+            if not any(p.net in g for p in k.sides):
+                continue
+            k = warmed_link(self.snap, k, self.pads, self.temperature)
+            if not k.is_multi:
+                curve = (functools.partial(k.spice.dc_current, temp_c=k.temp_c)
+                         if k.is_diode else None)
+                out.append(SeriesLink(k.name, self.pads(k.side_a), self.pads(k.side_b),
+                                      k.dc_resistance(), curve=curve))
+                continue
+            # A multi-pin part (#193): each piece of it joining sides on these nets, by
+            # its conductance matrix (a common-mode choke's windings are on two rails).
+            blocks = k.dc_blocks()
+            for groups, gmat in blocks:
+                if groups[0][0].net not in g:
+                    continue
+                pads = [[pid for p in group for pid in self.pads(p)] for group in groups]
+                name = k.name if len(blocks) == 1 else \
+                    f"{k.name} ({' ↔ '.join(p.net for group in groups for p in group)})"
+                out.append(SeriesLink(name, pads[0], pads[min(1, len(pads) - 1)],
+                                      _two_point(gmat), groups=pads, conductance=gmat))
+        return out
 
     def _system_for(self, g: Group, sources, loads, label):
         """Mesh and factorize a group once; later passes only re-solve."""

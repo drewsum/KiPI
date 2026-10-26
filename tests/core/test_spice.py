@@ -93,7 +93,7 @@ def test_the_wrong_kind_of_model_is_refused():
     with pytest.raises(SpiceError, match="not capacitive"):
         capacitor_values(lib.model("WSL0805"))
     with pytest.raises(SpiceError, match="3 pins"):
-        lib.model("THREE")
+        capacitor_values(lib.model("THREE"))
 
 
 @pytest.mark.parametrize("body, why", [
@@ -217,9 +217,9 @@ def test_the_link_editor_imports_the_model_and_locks_dcr_and_esl(app, monkeypatc
     from kipi.dc.pi.model import DcLink, PinRef
     seen = {}
 
-    def fake(parent, kind, hints):
+    def fake(parent, kind, hints, pins=()):
         seen["hints"] = hints
-        return link_ref(Library(LIB, "parts.lib"), "BLM18PG221")
+        return (*link_ref(Library(LIB, "parts.lib"), "BLM18PG221"), None)
     monkeypatch.setattr(pi_panel, "import_spice", fake)
     snap = make_board()
     snap.footprints.append(Footprint("f9", "FB1", "BLM18PG221SN1", (0, 0), "top"))

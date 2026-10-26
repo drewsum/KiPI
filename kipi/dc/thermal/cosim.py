@@ -186,7 +186,9 @@ def _copper_heat(heat: _Heat, tree: TreeResult):
             heat.add_hole("vias", v.owner_id, v.position, v.power)
         for e, sr in zip(r.solution.series_elements, r.fields.series):
             link = r.solution.problem.series[e.link]
-            heat.add_pads("DC connections", link.pads_a + link.pads_b, sr.power)
+            pads = ([p for group in link.groups for p in group] if link.groups
+                    else link.pads_a + link.pads_b)         # all of a multi-pin part's
+            heat.add_pads("DC connections", pads, sr.power)
 
 
 def _vrm_heat(heat: _Heat, tree: TreeResult, snap: BoardSnapshot, setup: PISetup):

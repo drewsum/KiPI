@@ -54,6 +54,10 @@ class SeriesElement:
     node_b: int
     g: Optional[float]  # siemens; None when the part is a short (sides merged)
     voltage_drop: float = 0.0
+    # A multi-pin part's piece (#193): the merged unknowns of its side groups and the
+    # conductance matrix between them (``g`` is then None and no short is meant).
+    nodes: Optional[List[int]] = None
+    gmat: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -167,6 +171,9 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
             raise SolveError(f"Series part pads have no meshed copper: {missing}")
         return np.concatenate([pad_groups[p] for p in pads])
     for link in problem.series:
+        if link.conductance is not None:            # each group of sides is one node
+            groups.extend(side_nodes(pads) for pads in link.groups)
+            continue
         a, b = side_nodes(link.pads_a), side_nodes(link.pads_b)
         if link.resistance <= SHORT_OHMS:
             groups.append(np.concatenate([a, b]))
@@ -222,6 +229,15 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
 
     series: List[SeriesElement] = []
     for i, link in enumerate(problem.series):
+        if link.conductance is not None:
+            nodes = [int(merged_of[pad_groups[pads[0]][0]]) for pads in link.groups]
+            gm = np.asarray(link.conductance, dtype=float)
+            series.append(SeriesElement(i, link.name, nodes[0], nodes[min(1, len(nodes) - 1)],
+                                        None, 0.0, nodes, gm))
+            rows = np.concatenate([rows, np.repeat(nodes, len(nodes))])
+            cols = np.concatenate([cols, np.tile(nodes, len(nodes))])
+            data = np.concatenate([data, gm.ravel()])
+            continue
         na = int(merged_of[pad_groups[link.pads_a[0]][0]])
         nb = int(merged_of[pad_groups[link.pads_b[0]][0]])
         if link.resistance <= SHORT_OHMS or na == nb:
@@ -402,7 +418,9 @@ class LinearSystem:
             source_pad_current[src.name] = [float(flow[u]) / us.count(u) for u in us]
         series_current = {}
         for e in self.series:
-            if e.g is None:
+            if e.gmat is not None:                      # into side A's group
+                series_current[e.name] = float(e.gmat[0] @ np.nan_to_num(u_all[e.nodes]))
+            elif e.g is None:
                 series_current[e.name] = float("nan")   # a short: current not resolved
             else:
                 series_current[e.name] = float(e.g * (u_all[e.node_a] - u_all[e.node_b]

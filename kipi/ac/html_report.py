@@ -623,11 +623,14 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
         parts.append("<h3>Series links</h3>" + _table(
             ["Link", "Side A", "Side B", "R", "ESL"],
             [[_e(k.name) + _spice_tag(k), _e(f"{k.side_a.label()} · {k.side_a.net}"),
-              _e(f"{k.side_b.label()} · {k.side_b.net}"), _ohms(k.resistance),
-              _si(k.esl_h, "H") if k.esl_h else ""] for k in links]))
+              "<br>".join(_e(f"{p.label()} · {p.net}") for p in k.sides[1:]),
+              "" if k.is_multi else _ohms(k.resistance),
+              _si(k.esl_h, "H") if k.esl_h and not k.is_multi else ""] for k in links]))
         if any(k.uses_spice for k in links):
             parts.append("<p class='note'>A link marked SPICE takes its impedance from its "
-                         "SPICE model at every frequency; its R and ESL are fitted to it.</p>")
+                         "SPICE model at every frequency; its R and ESL are fitted to it. A "
+                         "multi-pin part is its model's admittance between all of its sides "
+                         "(after side A, under side B).</p>")
     ff = result.field_freqs
     parts.append("<h3>Sweep and mesh</h3>" + _table(["Setting", "Value"], [
         ["Sweep", f"{_hz(freqs[0])} to {_hz(freqs[-1])}, {len(freqs)} points "

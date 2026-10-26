@@ -7,6 +7,25 @@ milestones rather than versions that were ever set.
 ## 0.9.3 (in development)
 
 ### Added
+- **Series links with more than two pins, from their SPICE models** (#193). Importing a
+  SPICE model for a series link now also offers subcircuits with more than two pins,
+  such as a common-mode choke, a feedthrough capacitor or a filter. The dialog maps each
+  of the model's pins to one of the part's pins, and each becomes a side of the link (A,
+  B, C, …). Only an import makes such a link; the series link pane is otherwise
+  unchanged. Coupled inductors (`K` lines) are read, as choke models need them. DC takes
+  the model's conductance matrix between the sides. Each piece of the part that conducts
+  at DC joins only its own nets, so a choke's two windings keep the rail and the ground
+  apart. AC and Coupled Noise take the model's N-port admittance at every frequency,
+  terminated as ports from side A to each other side. With the model unticked, the link
+  is its typed values between side A and side B.
+- **SPICE models follow the copper temperature** (#196). Every imported SPICE model, for
+  capacitors and series links, is worked out at its part's temperature. That is the mean
+  of the copper's temperature under its pads: from the DC thermal co-simulation in DC,
+  and from the AC sweep's temperature setting in AC and Coupled Noise. Without a known
+  temperature, a model stays at SPICE's nominal 27 °C. `TEMP` in a model's values follows
+  it, and so do TC1 and TC2 on its resistors, inductors and capacitors. A diode's IS
+  (with XTI and EG), thermal voltage, BV (TBV1, TBV2) and RS (TRS1, TRS2) follow it too.
+  A two-pin link's DC resistance is the model's at that temperature.
 - **Field maps in the noise report.** The near-field section draws the H and E fields
   5 mm over the board on the board's outline and its top side (pads, silkscreen and
   reference designators). Each point shows its strongest harmonic on a log colour

@@ -5,7 +5,9 @@
 2. jω·Z_b, smooth across frequency (the plane capacitance's 1/jω is taken out), is
    interpolated onto the full sweep (PCHIP on log f, real and imaginary parts).
 3. At each sweep frequency the parts terminate their ports, and the impedance at each
-   probe is Z_pp − Z_pE (Z_EE + diag Z_e)⁻¹ Z_Ep (the other probes stay open).
+   probe is Z_pp − Z_pE (Z_EE + diag Z_e)⁻¹ Z_Ep (the other probes stay open). A
+   multi-pin part (#193) is a port from its side A to each other side, the ports sharing
+   its N-port admittance.
 4. Package models (#53) join at their balls' ports, and their die probes are solved
    through them (:mod:`kipi.ac.package`).
 """
@@ -13,7 +15,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -29,7 +31,7 @@ from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
 from kipi.ac.target import judged_from, target_at
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
-from kipi.dc.pi.model import PinRef, PISetup, biased_link
+from kipi.dc.pi.model import PinRef, PISetup, biased_link, warmed_link
 from kipi.dc.solver import pads_for
 
 
@@ -153,6 +155,46 @@ def element_impedance(port: PortDef, omega: np.ndarray) -> np.ndarray:
     return port.element.impedance(omega)   # a series link
 
 
+@dataclass
+class LinkPin:
+    """The element of one port of a multi-pin series link (#193), from its side A to side
+    ``index`` + 1 (B, then the others). Its ports share the part's admittance."""
+    link: object
+    index: int
+
+
+def link_ports(k, pads) -> List[PortDef]:
+    """A series link's ports (``pads`` maps a PinRef to pad ids): one from side A to side
+    B, or a multi-pin part's one from side A to each of its other sides."""
+    if not k.is_multi:
+        return [PortDef(k.name, "link", pads(k.side_a), pads(k.side_b), k)]
+    return [PortDef(f"{k.name} {s.label()}", "link", pads(s), pads(k.side_a), LinkPin(k, i))
+            for i, s in enumerate(k.sides[1:])]
+
+
+def warm_parts(snap: BoardSnapshot, ports: List[PortDef], temperature,
+               temps: Dict[str, float]) -> int:
+    """Put the SPICE models of the parts on ``ports`` at the copper's temperature under
+    them (#196), in place: series links at the mean over their pads of ``temperature``,
+    capacitors at ``temps`` (°C by reference, :func:`kipi.ac.bias.part_temperatures`).
+    Returns how many parts were warmed."""
+    if temperature is None:
+        return 0
+    pads = _Pads(snap)
+    done: Dict[int, object] = {}
+    for p in ports:
+        if p.kind == "cap" and p.element.uses_spice and p.name in temps:
+            p.element = replace(p.element, temp_c=temps[p.name])
+            done[id(p)] = p.element
+        elif p.kind == "link":
+            k = p.element.link if isinstance(p.element, LinkPin) else p.element
+            if id(k) not in done:
+                done[id(k)] = warmed_link(snap, k, pads, temperature)
+            w = done[id(k)]
+            p.element = LinkPin(w, p.element.index) if isinstance(p.element, LinkPin) else w
+    return sum(getattr(e, "temp_c", None) is not None for e in done.values())
+
+
 def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                 link_currents: Optional[Dict[str, float]] = None):
     """Ports, merged short links, notes and the package models joining the solve
@@ -185,12 +227,12 @@ def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     shorts, links = [], []
     inside = set(rail) | grounds
     for k in setup.links:
-        on = (k.side_a.net in inside, k.side_b.net in inside)
+        on = [p.net in inside for p in k.sides]
         if not any(on):
             continue
         if not all(on):
-            notes.append(f"Series link {k.name} leads off the rail to "
-                         f"{k.side_b.net if on[0] else k.side_a.net}; left out")
+            off = ", ".join(dict.fromkeys(p.net for p, x in zip(k.sides, on) if not x))
+            notes.append(f"Series link {k.name} leads off the rail to {off}; left out")
             continue
         if k.is_short():
             shorts.append((pads(k.side_a), pads(k.side_b)))
@@ -201,7 +243,7 @@ def build_ports(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                 src = "from the DC solve" if solved else "the DC loads beyond it, estimated"
                 notes.append(f"Series link {k.name}: diode small-signal model at "
                              f"{k.bias_a:.3g} A, {src}")
-            ports.append(PortDef(k.name, "link", pads(k.side_a), pads(k.side_b), k))
+            ports += link_ports(k, pads)
             links.append(k.name)
     return rail, ports, shorts, [c[0] for c in caps], missing, links, notes, uses
 
@@ -223,31 +265,59 @@ def _interpolate(f_field: np.ndarray, zb: np.ndarray, freqs: np.ndarray) -> np.n
 def terminate(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef]) -> np.ndarray:
     """Impedance at each probe port (columns), with every part on its port."""
     probe_idx = [i for i, p in enumerate(ports) if p.kind == "probe"]
-    elem_idx = [i for i, p in enumerate(ports) if p.kind not in OPEN_KINDS]
     out = np.zeros((len(freqs), len(probe_idx)), complex)
-    omega = 2 * np.pi * freqs
-    ze = (np.stack([element_impedance(ports[i], omega) for i in elem_idx], axis=1)
-          if elem_idx else np.zeros((len(freqs), 0)))
-    P, E = np.array(probe_idx), np.array(elem_idx, dtype=int)
+    E, ze, ye = _elements(freqs, ports)
+    P = np.array(probe_idx)
     for k in range(len(freqs)):
         z = zb[k]
         zpp = z[P, P]
         if len(E):
-            m = z[np.ix_(E, E)] + np.diag(ze[k])
             zep = z[np.ix_(E, P)]
-            out[k] = zpp - np.einsum("ij,ij->j", z[np.ix_(E, P)], np.linalg.solve(m, zep))
+            out[k] = zpp - np.einsum("ij,ij->j", zep, _parts_solve(z, E, ze, ye, k, zep))
         else:
             out[k] = zpp
     return out
 
 
 def _elements(freqs: np.ndarray, ports: List[PortDef]):
-    """The indices of the ports that hold parts and their impedances (F, E)."""
+    """The indices of the ports that hold parts, their impedances (F, E), and, with a
+    multi-pin part among them (#193), their admittances (F, E, E), else None: a
+    multi-pin part's ports share a block of it, which may be singular (a common-mode
+    choke's windings float apart at DC), so it has no impedance matrix."""
     idx = [i for i, p in enumerate(ports) if p.kind not in OPEN_KINDS]
     omega = 2 * np.pi * freqs
-    ze = (np.stack([element_impedance(ports[i], omega) for i in idx], axis=1)
-          if idx else np.zeros((len(freqs), 0)))
-    return np.array(idx, dtype=int), ze
+    multi = [j for j, i in enumerate(idx) if isinstance(ports[i].element, LinkPin)]
+    ze = np.ones((len(freqs), len(idx)), complex)
+    for j, i in enumerate(idx):
+        if j not in multi:
+            ze[:, j] = element_impedance(ports[i], omega)
+    if not multi:
+        return np.array(idx, dtype=int), ze, None
+    ye = np.zeros((len(freqs), len(idx), len(idx)), complex)
+    plain = [j for j in range(len(idx)) if j not in multi]
+    ye[:, plain, plain] = 1.0 / ze[:, plain]
+    parts: Dict[int, List[Tuple[int, int]]] = {}
+    for j in multi:
+        el = ports[idx[j]].element
+        parts.setdefault(id(el.link), []).append((j, el.index))
+    for group in parts.values():
+        link = ports[idx[group[0][0]]].element.link
+        y = link.admittance(omega)[:, 1:, 1:]           # side A is the ports' minus side
+        at = np.array([j for j, _i in group])
+        sel = np.array([i for _j, i in group])
+        ye[:, at[:, None], at[None, :]] = y[:, sel[:, None], sel[None, :]]
+    return np.array(idx, dtype=int), ze, ye
+
+
+def _parts_solve(z: np.ndarray, E: np.ndarray, ze: np.ndarray, ye: Optional[np.ndarray],
+                 k: int, rhs: np.ndarray) -> np.ndarray:
+    """(Z_EE + Z_e)⁻¹ rhs at sweep frequency ``k``; with admittances,
+    (1 + Y_e Z_EE)⁻¹ Y_e rhs, the same where Z_e = Y_e⁻¹ exists."""
+    zee = z[np.ix_(E, E)]
+    if ye is None:
+        return np.linalg.solve(zee + np.diag(ze[k]), rhs)
+    y = ye[k]
+    return np.linalg.solve(np.eye(len(E)) + y @ zee, y @ rhs)
 
 
 def terminate_transfer(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef],
@@ -256,15 +326,14 @@ def terminate_transfer(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef],
     its port: the voltage at each ``obs`` port per ampere into each ``src`` port, the other
     probes open. Z_os − Z_oE (Z_EE + Z_e)⁻¹ Z_Es; its diagonal for ``obs = src`` is
     :func:`terminate`."""
-    E, ze = _elements(freqs, ports)
+    E, ze, ye = _elements(freqs, ports)
     S, O = np.array(src, dtype=int), np.array(obs, dtype=int)
     out = np.zeros((len(freqs), len(O), len(S)), complex)
     for k in range(len(freqs)):
         z = zb[k]
         out[k] = z[np.ix_(O, S)]
         if len(E):
-            m = z[np.ix_(E, E)] + np.diag(ze[k])
-            out[k] -= z[np.ix_(O, E)] @ np.linalg.solve(m, z[np.ix_(E, S)])
+            out[k] -= z[np.ix_(O, E)] @ _parts_solve(z, E, ze, ye, k, z[np.ix_(E, S)])
     return out
 
 
@@ -273,13 +342,13 @@ def element_currents(zb: np.ndarray, freqs: np.ndarray, ports: List[PortDef],
     """How currents into the ``src`` probe ports divide among the parts: (part port
     indices, (F, parts, len(src))), each part's port current per ampere into each source,
     entering the board at its plus side: −(Z_EE + Z_e)⁻¹ Z_Es."""
-    E, ze = _elements(freqs, ports)
+    E, ze, ye = _elements(freqs, ports)
     S = np.array(src, dtype=int)
     out = np.zeros((len(freqs), len(E), len(S)), complex)
     for k in range(len(freqs)):
         if len(E):
             z = zb[k]
-            out[k] = -np.linalg.solve(z[np.ix_(E, E)] + np.diag(ze[k]), z[np.ix_(E, S)])
+            out[k] = -_parts_solve(z, E, ze, ye, k, z[np.ix_(E, S)])
     return E, out
 
 
@@ -342,11 +411,15 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     if temp_warning:
         notes.append(temp_warning)
         progress.warn(temp_warning)
-    cap_bias, bias_notes, deratings = apply_derating(ports, setup, vrm, volts,
-                                          part_temperatures(snap, ports, temperature),
-                                          temp_text)
+    temps = part_temperatures(snap, ports, temperature)
+    cap_bias, bias_notes, deratings = apply_derating(ports, setup, vrm, volts, temps,
+                                                     temp_text)
     for n in bias_notes:
         progress.info(n)
+    warmed = warm_parts(snap, ports, temperature, temps)
+    if warmed:
+        progress.info(f"SPICE models at the copper's temperature under them ({temp_text}): "
+                      f"{warmed} part(s)")
     # Die probes (#53) are marked on their package's part.
     die_names = [p.name for p in setup.probes if p.on_die and any(
         u.model.name == p.package and any(d.number == p.die_port for d in u.dies)

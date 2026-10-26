@@ -121,8 +121,8 @@ def vrm_part(vrm) -> Part:
 
 
 def link_part(link) -> Part:
-    """A series link's marker spec: both of its sides are rail pins."""
-    return ("link", link.name, f"Link {link.name}", [link.side_a, link.side_b], [])
+    """A series link's marker spec: all of its sides are rail pins."""
+    return ("link", link.name, f"Link {link.name}", list(link.sides), [])
 
 
 def cap_markers(snap: BoardSnapshot, setup, nets, sides: Dict[str, str]) -> List[PartMarker]:

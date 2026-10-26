@@ -147,15 +147,17 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
 
     links = []
     for k in setup.links:
-        if all(n in grounds or is_ground_name(n) for n in (k.side_a.net, k.side_b.net)):
-            continue                    # a net tie between grounds: no power flows
-        bid = f"link:{k.name}"
-        lines = [si(k.resistance, "Ω") if k.resistance else "short"]
-        if k.esl_h:
-            lines.append(f"ESL {si(k.esl_h, 'H')}")
-        d.blocks[bid] = Block(bid, "link", k.name, lines,
-                              tip=f"Series link {k.name}: {k.side_a.net} ↔ {k.side_b.net}")
-        links.append((bid, rail(k.side_a.net), rail(k.side_b.net)))
+        # A multi-pin part (#193) is a block per pair of nets it joins at DC.
+        pairs = [(a, b) for a, b in k.joins()
+                 if not all(n in grounds or is_ground_name(n) for n in (a, b))]
+        for i, (a, b) in enumerate(pairs):      # none: a net tie between grounds
+            bid = f"link:{k.name}" + (f":{i}" if i else "")
+            lines = [si(k.resistance, "Ω") if k.resistance else "short"]
+            if k.esl_h:
+                lines.append(f"ESL {si(k.esl_h, 'H')}")
+            d.blocks[bid] = Block(bid, "link", k.name, lines,
+                                  tip=f"Series link {k.name}: {a} ↔ {b}")
+            links.append((bid, rail(a), rail(b)))
 
     for l in setup.loads:
         bid = f"load:{l.name}"

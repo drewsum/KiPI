@@ -72,6 +72,9 @@ class CapModel:
     # The part's SPICE model (#51): with it in use, the impedance is the model's, and the
     # three values above are fitted to it.
     spice: Optional["SpiceRef"] = None
+    # The part's temperature, °C, its SPICE model is worked out at (#196): the copper's
+    # under it, set by a solve that knows it; None: the model's nominal. Never saved.
+    temp_c: Optional[float] = None
 
     @property
     def uses_spice(self) -> bool:
@@ -128,7 +131,8 @@ class CapModel:
         model's capacitors alike."""
         if self.uses_spice:
             fitted = self.spice.values.get("capacitance_f") or self.capacitance_f
-            return self.spice.impedance(omega, self.capacitance_f / fitted if fitted else 1.0)
+            return self.spice.impedance(omega, self.capacitance_f / fitted if fitted else 1.0,
+                                        temp_c=self.temp_c)
         return self.esr_ohm + 1j * omega * self.esl_h + 1.0 / (1j * omega * self.capacitance_f)
 
     def srf_hz(self) -> Optional[float]:

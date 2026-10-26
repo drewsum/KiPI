@@ -48,7 +48,7 @@ from kipi.gui.load_model_dialogs import (
 )
 from kipi.gui.report_option import ReportOption
 from kipi.gui.sortable import make_sortable, reset_sort, set_row, sorted_rows
-from kipi.gui.spice_dialog import LINK, import_spice, part_values, spice_text
+from kipi.gui.spice_dialog import LINK, import_spice, part_pins, part_values, spice_text
 from kipi.gui.tooltip_art import add_text, art_tip
 from kipi.gui.unit_spin import UnitSpinBox
 from kipi.dc.pi import vunits
@@ -1243,7 +1243,16 @@ class LinkEditor(_Editor):
                  "The DC solve takes its drop from the model at the current it carries. AC "
                  "and Coupled Noise use its small-signal resistance and capacitance at the "
                  "current the DC loads beyond it draw. The DCR and ESL shown are its slope "
-                 "resistance and inductance at 1 A."),
+                 "resistance and inductance at 1 A.\n\n"
+                 "A part with more than two pins (a common-mode choke, a feedthrough "
+                 "capacitor) is a .SUBCKT with a pin per side, coupled inductors (K) "
+                 "allowed. Map each of its pins to one of side A's part's pins in the "
+                 "dialog: each becomes a side of the link. DC takes its conductance "
+                 "between the sides, AC and Coupled Noise its admittance at every "
+                 "frequency.\n\n"
+                 "The model is worked out at the copper's temperature under the part when "
+                 "the solve knows it (TEMP, TC1 and TC2, and a diode's temperature "
+                 "parameters), else at 27 °C."),
                 (self.chk_spice,
                  "Take the impedance from the imported SPICE model. Untick to use the DCR "
                  "and ESL as you enter them; the model is kept, and ticking again puts its "
@@ -1293,10 +1302,20 @@ class LinkEditor(_Editor):
         if k is None:
             return
         refs = dict.fromkeys(r.ref for r in (k.side_a, k.side_b) if r is not None)
-        got = import_spice(self, LINK, [k.name, *part_values(self.panel.snapshot, refs)])
+        # A multi-pin model (#193) maps its pins to side A's part's pins, its sides.
+        part = k.side_a.ref if k.side_a is not None else ""
+        pins = part_pins(self.panel.snapshot, part)
+        got = import_spice(self, LINK, [k.name, *part_values(self.panel.snapshot, refs)],
+                           pins)
         if got is None:
             return
-        k.spice = got[0]
+        k.spice, _values, mapped = got
+        if mapped:
+            net = dict(pins)
+            sides = [PinRef(part, net[n], [n]) for n in mapped]
+            k.side_a, k.side_b, k.more_sides = sides[0], sides[1], sides[2:]
+        else:
+            k.more_sides = []
         self._fitted(k)
 
     def _spice_toggled(self, on: bool):
@@ -1322,7 +1341,13 @@ class LinkEditor(_Editor):
         self.chk_spice.setVisible(k.spice is not None)
         self.lbl_spice.setVisible(k.spice is not None)
         self.chk_spice.setChecked(k.uses_spice)
-        self.lbl_spice.setText(spice_text(k.spice) if k.spice else "")
+        text = spice_text(k.spice) if k.spice else ""
+        if k.more_sides:                            # a multi-pin part's sides (#193)
+            text += (" Its pins: " + ", ".join(f"{chr(65 + i)} {p.label()} · {p.net}"
+                                              for i, p in enumerate(
+                                                  [k.side_a, k.side_b, *k.more_sides]))
+                     + ("." if k.uses_spice else "; only A and B while it is not in use."))
+        self.lbl_spice.setText(text)
         free = not k.uses_spice
         self.r.setEnabled(free)
         for w in (self.esl, self.btn_esl_package, self.btn_esl_bead):
@@ -2447,7 +2472,9 @@ class PIPanel(QWidget, PartSelection):
         r = "short" if k.resistance <= 0 else f"{k.resistance * 1e3:g} mΩ"
         kind = ", diode A→B" if k.is_diode else ""
         kind += f", SPICE {k.spice.subckt}" if k.uses_spice else ""
-        return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r}{kind})"
+        if k.is_multi:
+            r = f"{len(k.sides)} pins"
+        return f"{k.name}: {' ↔ '.join(p.net for p in k.sides)} ({r}{kind})"
 
     # ------------------------------------------------------------------ results
     def set_busy(self, busy: bool, queued: bool = False):

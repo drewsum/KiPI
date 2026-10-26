@@ -126,9 +126,10 @@ def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
     ``dc_result``, the last DC power-tree solve if any, gives the DC voltage across each
     capacitor (else its rail's nominal) and the current through each diode link (else an
     estimate from the loads beyond it), as AC mode's solve does."""
-    from kipi.ac.bias import dc_link_currents, dc_volts
+    from kipi.ac.bias import dc_link_currents, dc_volts, part_temperatures, temperature_source
     from kipi.ac.checks import ground_nets, rail_caps, rail_nets
     from kipi.ac.solver.fem import ACError, PortDef
+    from kipi.ac.solver.sweep import link_ports, warm_parts
     from kipi.noise.checks import find_vrm
     vrm = find_vrm(setup, agg)
     gnd = aggressor_ground(setup, agg)
@@ -186,7 +187,7 @@ def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
     notes: List[str] = []
     link_currents = dc_link_currents(dc_result)
     for k in setup.links:
-        if k.side_a.net in inside and k.side_b.net in inside:
+        if all(p.net in inside for p in k.sides):
             a, b = _pads(snap, k.side_a), _pads(snap, k.side_b)
             if k.is_short():
                 shorts.append((a, b))
@@ -197,10 +198,17 @@ def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
                     src = "from the DC solve" if solved else "the DC loads beyond it, estimated"
                     notes.append(f"Series link {k.name}: diode small-signal model at "
                                  f"{k.bias_a:.3g} A, {src}")
-                ports.append(PortDef(k.name, "link", a, b, k))
+                ports += link_ports(k, lambda p: _pads(snap, p))
     if solved_v:
         notes.append(f"Capacitors derated at the DC solve's voltage across them: "
                      f"{len(solved_v)} of {len(caps)}")
+    # SPICE models at the copper's temperature under them (#196), as AC mode's solve.
+    temperature, temp_text, _warning = temperature_source(setup, dc_result)
+    warmed = warm_parts(snap, ports, temperature,
+                        part_temperatures(snap, ports, temperature))
+    if warmed:
+        notes.append(f"SPICE models at the copper's temperature under them ({temp_text}): "
+                     f"{warmed} part(s)")
     # The AC probes the ripple is wanted at: open ports between their rail and ground pins.
     obs_probes: List[str] = []
     for pr in probes:

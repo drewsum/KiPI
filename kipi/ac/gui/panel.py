@@ -165,7 +165,9 @@ class CapEditor(_Editor):
                  "Noise solves take each part's impedance from it at every frequency. The "
                  "capacitance, ESL and ESR are fitted to it, for the tables and reports. Its "
                  "capacitance is at no DC bias: enter the voltage rating to derate it, which "
-                 "scales every capacitor in the model alike."),
+                 "scales every capacitor in the model alike. With a temperature in the "
+                 "sweep settings, the model is worked out at the copper's temperature "
+                 "under each part (TEMP, TC1 and TC2 in it), else at 27 °C."),
                 (self.chk_spice,
                  "Take the impedance from the imported SPICE model. Untick to use the "
                  "capacitance, ESL and ESR as you enter them; the model is kept, and "
@@ -1339,7 +1341,9 @@ class ACPanel(QWidget, PartSelection):
         r = "short" if k.resistance <= 0 else f"{k.resistance * 1e3:g} mΩ"
         esl = f", {k.esl_h * 1e9:g} nH" if k.esl_h else ""
         kind = f", diode A→B, SPICE {k.spice.subckt}" if k.is_diode else ""
-        return f"{k.name}: {k.side_a.net} ↔ {k.side_b.net} ({r}{esl}{kind})"
+        if k.is_multi:
+            r, esl, kind = f"{len(k.sides)} pins", "", f", SPICE {k.spice.subckt}"
+        return f"{k.name}: {' ↔ '.join(p.net for p in k.sides)} ({r}{esl}{kind})"
 
     @staticmethod
     def _describe_cap(m: CapModel) -> str:

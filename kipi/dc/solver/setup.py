@@ -10,7 +10,7 @@ node (its pads tied together).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from kipi.dc.solver.via_barrel import ViaRule, default_via_rules
 
@@ -49,6 +49,12 @@ class SeriesLink:
     # is then only how the part is split between the matrix and the right-hand side; any
     # positive value gives the same answer.
     curve: Optional[Callable[[float], Tuple[float, float]]] = None
+    # A multi-pin part's piece joining sides at DC (#193): the pads of each group of its
+    # sides shorted together (side A's group first), and the conductance matrix between
+    # the groups, siemens, its rows summing to zero. ``pads_a`` and ``pads_b`` are then its
+    # first two groups' pads and ``resistance`` the resistance between them, for reports.
+    groups: Optional[List[List[str]]] = None
+    conductance: Optional[Any] = None
 
 
 SHORT_OHMS = 1e-9
@@ -132,4 +138,6 @@ class NetProblem:
         for s in self.series:
             ids.extend(s.pads_a)
             ids.extend(s.pads_b)
+            for pads in s.groups or ():             # a multi-pin part's other sides
+                ids.extend(pads)
         return list(dict.fromkeys(ids))

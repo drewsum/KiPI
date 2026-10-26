@@ -171,6 +171,14 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
         link = prob.series[e.link]
         va, vb = float(sol.v_merged[e.node_a]), float(sol.v_merged[e.node_b])
         i = sol.series_current.get(e.name, float("nan"))
+        if getattr(e, "gmat", None) is not None:    # a multi-pin part's piece (#193)
+            v = np.nan_to_num(sol.v_merged[e.nodes])
+            v = v - v.mean()                        # its rows sum to zero: no cancellation
+            pw = float(v @ e.gmat @ v)
+            series_power += pw
+            series.append(SeriesResult(e.name, link.resistance, i, va, vb, pw,
+                                       list(link.pads_a), list(link.pads_b)))
+            continue
         pw = 0.0 if e.g is None else i * (link.resistance * i
                                           + sol.series_drop.get(e.name, e.voltage_drop))
         series_power += pw

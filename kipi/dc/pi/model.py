@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
+
 from kipi.ac.model import (
     DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, PackageModel, Probe, report_format,
 )
@@ -316,9 +318,16 @@ class DcLink:
     # the resistance and ESL are fitted to it. A diode's model (#191) also gives DC its
     # current at each voltage; side A is its anode.
     spice: Optional[SpiceRef] = None
+    # A multi-pin part's sides after side A and side B (#193), one per pin of its SPICE
+    # model in order; only a model import sets them. Without the model in use, the part
+    # is its RLC values between side A and side B.
+    more_sides: List[PinRef] = field(default_factory=list)
     # The DC current a diode's small-signal impedance is taken at, side A to side B: set
     # for an AC or Coupled Noise solve (see biased_link), never saved.
     bias_a: Optional[float] = None
+    # The part's temperature, °C, its SPICE model is worked out at (#196): the copper's
+    # under its pads, set by a solve that knows it; None: the model's nominal. Never saved.
+    temp_c: Optional[float] = None
 
     @property
     def uses_spice(self) -> bool:
@@ -329,11 +338,54 @@ class DcLink:
         """Whether the part is a diode's SPICE model, in use."""
         return self.uses_spice and self.spice.has_diodes
 
+    @property
+    def is_multi(self) -> bool:
+        """Whether the part is a multi-pin SPICE model, in use, with a side per pin."""
+        return (self.uses_spice and bool(self.more_sides)
+                and self.spice.pins == 2 + len(self.more_sides))
+
+    @property
+    def sides(self) -> List[PinRef]:
+        """The sides the solves join: side A and side B, and a multi-pin part's others."""
+        return [self.side_a, self.side_b, *(self.more_sides if self.is_multi else ())]
+
+    def dc_blocks(self) -> List[Tuple[List[List[PinRef]], np.ndarray]]:
+        """A multi-pin part at DC: each piece joining sides, as (its sides in groups
+        shorted together, the conductance matrix between the groups)."""
+        sides = self.sides
+        return [([[sides[i] for i in g] for g in groups], gmat)
+                for groups, gmat in self.spice.dc_blocks(self.temp_c)]
+
+    def joins(self) -> List[Tuple[str, str]]:
+        """The nets the part joins at DC, in pairs: side A's and side B's, or a multi-pin
+        part's within each piece (a common-mode choke's windings are apart)."""
+        if not self.is_multi:
+            return [(self.side_a.net, self.side_b.net)]
+        out = []
+        for groups, _g in self.dc_blocks():
+            nets = [p.net for group in groups for p in group]
+            out += [(nets[0], n) for n in nets[1:]]
+        return out
+
+    def dc_resistance(self) -> float:
+        """The resistance DC solves the part with: its SPICE model's at ``temp_c`` (#196)
+        when it has one in use and is warmed, else ``resistance`` (the model's, fitted at
+        its nominal temperature)."""
+        if self.uses_spice and self.temp_c is not None and not self.is_diode:
+            r = self.spice.dc_resistance(self.temp_c)
+            if r is not None and r >= 0:
+                return float(r)
+        return self.resistance
+
     def impedance(self, omega):
         """Small-signal impedance at angular frequency ``omega`` (an array)."""
         if self.uses_spice:
-            return self.spice.impedance(omega, bias_a=self.bias_a or 0.0)
+            return self.spice.impedance(omega, bias_a=self.bias_a or 0.0, temp_c=self.temp_c)
         return self.resistance + 1j * omega * (self.esl_h or 0.0) + 0 * omega
+
+    def admittance(self, omega) -> np.ndarray:
+        """A multi-pin part's admittance between its sides, (F, N, N)."""
+        return self.spice.admittance(omega, self.temp_c)
 
     def is_short(self) -> bool:
         """Whether the part is a short in AC as in DC (merged away)."""
@@ -380,7 +432,7 @@ class PISetup:
         """Nets the VRMs, loads, series links and probes have pins on."""
         refs = [r for v in self.vrms for r in v.pin_refs()]
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
-        refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
+        refs += [r for k in self.links for r in (k.side_a, k.side_b, *k.more_sides) if r]
         refs += [r for p in self.probes for r in (p.rail, p.ground) if r]
         refs += self._aggressor_pins()
         return {r.net for r in refs}
@@ -389,7 +441,7 @@ class PISetup:
         """Footprints given a model: VRMs, loads, series links, capacitor and package models."""
         refs = [r for v in self.vrms for r in v.pin_refs()]
         refs += [r for ld in self.loads for r in (ld.supply, ld.ground) if r]
-        refs += [r for k in self.links for r in (k.side_a, k.side_b) if r]
+        refs += [r for k in self.links for r in (k.side_a, k.side_b, *k.more_sides) if r]
         refs += self._aggressor_pins()
         out = {r.ref for r in refs} | {ref for m in self.caps for ref in m.refs}
         out |= {ph.inductor for a in self.aggressors for ph in a.phases}
@@ -408,6 +460,9 @@ class PISetup:
         d.pop("legacy_laminate_k")
         for k in d["links"]:
             k.pop("bias_a")
+            k.pop("temp_c")
+        for m in d["caps"]:
+            m.pop("temp_c")
         d["format_version"] = FORMAT_VERSION
         return d
 
@@ -569,7 +624,8 @@ def _load_tolerance(d: dict) -> dict:
 def _link(k: dict, pin) -> DcLink:
     link = DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                   resistance=k["resistance"], esl_h=k.get("esl_h"),
-                  spice=SpiceRef.from_dict(k.get("spice")))
+                  spice=SpiceRef.from_dict(k.get("spice")),
+                  more_sides=[pin(x) for x in k.get("more_sides") or []])
     # 0.9.2's constant forward drop (#161) becomes a diode model with that drop (#191).
     vf = float(k.get("diode_vf") or 0.0)
     if vf > 0 and link.spice is None and link.resistance > 0:
@@ -584,7 +640,7 @@ def link_bias(setup: PISetup, link: DcLink) -> float:
     draw (the nets joined to side B by parts other than diodes and ``link``). Nothing if
     a VRM drives side B: the diode is taken to block."""
     stop = {id(link)} | {id(k) for k in setup.links if k.is_diode}
-    joins = [(k.side_a.net, k.side_b.net) for k in setup.links if id(k) not in stop]
+    joins = [j for k in setup.links if id(k) not in stop for j in k.joins()]
     side, todo = {link.side_b.net}, [link.side_b.net]
     while todo:
         n = todo.pop()
@@ -614,6 +670,18 @@ def biased_link(setup: PISetup, link: DcLink,
     return dataclasses.replace(link, bias_a=link_bias(setup, link))
 
 
+def warmed_link(snap, link: DcLink, pads, temperature) -> DcLink:
+    """``link`` with its SPICE model at the copper's temperature under it (#196): the mean
+    over its sides' pads (``pads`` maps a PinRef to pad ids) of ``temperature``, a copper
+    temperature (:mod:`kipi.core.temperature`). Unchanged without either."""
+    if not link.uses_spice or temperature is None or snap is None:
+        return link
+    from kipi.core.temperature import of_pads
+    ids = {pid for p in link.sides for pid in pads(p)}
+    t = of_pads(temperature, [p for p in snap.pads if p.id in ids])
+    return link if t is None else dataclasses.replace(link, temp_c=t)
+
+
 def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
     """Map every net mentioned in the setup to its group (nets joined by series links)."""
     parent: Dict[str, str] = {}
@@ -636,8 +704,9 @@ def net_groups(setup: PISetup, extra_nets=()) -> Dict[str, frozenset]:
         if l.ground:
             nets.add(l.ground.net)
     for k in setup.links:
-        nets.update((k.side_a.net, k.side_b.net))
-        union(k.side_a.net, k.side_b.net)
+        nets.update(p.net for p in k.sides)
+        for a, b in k.joins():
+            union(a, b)
     groups: Dict[str, set] = {}
     for n in nets:
         groups.setdefault(find(n), set()).add(n)

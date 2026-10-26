@@ -9,6 +9,8 @@ every layer. :func:`at` reads either.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 
 
@@ -20,3 +22,17 @@ def at(temperature, xy, layers=None) -> np.ndarray:
     if by_layer is None or layers is None:
         return np.asarray(temperature(xy), dtype=float)
     return np.asarray(by_layer(xy, layers), dtype=float)
+
+
+def of_pads(temperature, pads) -> Optional[float]:
+    """A part's temperature, °C: the mean of the copper's at its ``pads`` (board pads),
+    each on its own copper layer (the hottest there, for a pad on several). None without
+    a temperature, pads or a finite reading."""
+    pads = list(pads)
+    if temperature is None or not pads:
+        return None
+    layers = [next(iter(p.layers)) if len(p.layers) == 1 else -1 for p in pads]
+    t = np.broadcast_to(at(temperature, [p.position for p in pads], np.array(layers)),
+                        (len(pads),))
+    t = t[np.isfinite(t)]
+    return float(t.mean()) if t.size else None

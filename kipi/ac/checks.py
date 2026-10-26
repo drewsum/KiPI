@@ -71,9 +71,9 @@ def ground_nets(setup: PISetup, vrm: Vrm, gnd: str) -> frozenset:
 
 def _joined(setup: PISetup, net: str, stop) -> frozenset:
     """``net`` and the nets series links join to it, through no link that touches a net
-    in ``stop``."""
-    links = [(k.side_a.net, k.side_b.net) for k in setup.links
-             if k.side_a.net not in stop and k.side_b.net not in stop]
+    in ``stop``: a multi-pin part's (#193) nets joined at DC, pair by pair."""
+    links = [(a, b) for k in setup.links for a, b in k.joins()
+             if a not in stop and b not in stop]
     out, todo = {net}, [net]
     while todo:
         n = todo.pop()
