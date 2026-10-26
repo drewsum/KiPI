@@ -102,6 +102,20 @@ def aggressor_ground(setup: PISetup, agg) -> str:
         (ph.low_side.net for ph in agg.phases if ph.low_side), "")
 
 
+def aggressor_nets(setup: PISetup, agg) -> frozenset:
+    """The aggressor's ground and its input and output rails' nets: the planes its
+    current flows in."""
+    from kipi.ac.checks import ground_nets, rail_nets
+    from kipi.noise.checks import find_vrm
+    vrm = find_vrm(setup, agg)
+    gnd = aggressor_ground(setup, agg)
+    vin_net = vrm.input.net if vrm.input else ""
+    in_rail = (net_groups(setup, [vin_net]).get(vin_net, frozenset([vin_net]))
+               if vin_net else frozenset())
+    nets = rail_nets(setup, vrm, gnd) | in_rail | ground_nets(setup, vrm, gnd)
+    return frozenset(nets) - {""}
+
+
 def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
                 victim_grounds: Dict[str, Tuple[List[str], List[str]]], probes=(),
                 dc_result=None) -> BoardPorts:

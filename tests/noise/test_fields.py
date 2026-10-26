@@ -406,6 +406,29 @@ def test_a_victim_leaving_one_plane_for_another_detours_through_a_capacitor():
     assert c.detour_mm == pytest.approx(d) and c.l_h == pytest.approx(slot_inductance(d, 0.2) + 0.5e-9)
 
 
+def test_only_the_aggressors_planes_count():
+    from kipi.core.model.board import Zone
+    from kipi.noise.extract.common import aggressor_nets
+    from kipi.noise.model import Aggressor
+    setup = buck_setup()
+    agg = Aggressor("U1 buck", vrm="U1")
+    nets = aggressor_nets(setup, agg)
+    assert {"GND", "VOUT", "VIN"} <= nets and "P3V3" not in nets
+    segs = lambda: [Segment((x, 14.3), (x + 0.5, 14.3), F, 0.2)          # noqa: E731
+                    for x in np.arange(11.5, 24.0, 0.5)]
+    # Ground under the start, another rail's plane under the end: not the aggressor's.
+    snap = buck_board(victim_gap=0.2)
+    snap.zones[0].filled = {IN1: [Poly(rect(0, 0, 20, 20))]}
+    snap.zones.append(Zone("z3v3", "P3V3", "", 0, filled={IN1: [Poly(rect(20, 0, 32, 20))]}))
+    snap.invalidate_index()
+    assert len(plane_splits(snap, segs(), ["SIG", "SW"], setup)) == 1
+    s = segs()
+    assert plane_splits(snap, s, ["SIG", "SW"], setup, nets) == []
+    assert not any(x.series_l_h for x in s)
+    # A slot in the aggressor's ground still counts.
+    assert len(plane_splits(_slotted(), segs(), ["SIG", "SW"], setup, nets)) == 1
+
+
 # ------------------------------------------------------------------ the GUI
 @pytest.fixture(scope="module")
 def app():

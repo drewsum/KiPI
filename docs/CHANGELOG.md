@@ -85,6 +85,10 @@ milestones rather than versions that were ever set.
   does, instead of the rails' nominal voltages.
 - **The series link's constant diode drop is gone** (#191): a diode is its SPICE model.
   Setups saved with a forward drop load with a diode model of that drop and DCR.
+- **Plane crossings are only the aggressor's.** Coupled Noise now counts a victim's plane
+  crossing only where every plane involved is the aggressor's ground or one of its input
+  or output rails. A gap in another rail's pour, or a step from ground onto another rail's
+  plane, is no longer reported or added to the victim's line.
 
 ### Fixed
 - **Waveform legend labels cut off** (#197). The tickbox list beside the Waveforms plot

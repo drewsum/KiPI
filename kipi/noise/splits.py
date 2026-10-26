@@ -14,13 +14,17 @@ counts the loops' real current round a gap rather than a solid plane's images
 two joined segments have different references, and its inductance is Johnson's estimate
 for a trace crossing a slot, L ≈ 0.197 nH/mm · D · ln(D/w), D the distance the return
 current detours and w the trace width, put in series with the segment after the crossing.
+
+Only the aggressor's planes count: its ground and its input and output rails, the copper
+its current flows in. A crossing that involves any other plane (a gap in another rail's
+pour, or a step from ground onto it) is left out.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 from kipi.core.model.board import BoardSnapshot
 from kipi.noise.extract.capacitive import Segment
@@ -160,11 +164,13 @@ def _joining_parts(snap: BoardSnapshot, net_a: str, net_b: str) -> List[Tuple[fl
 
 
 def plane_splits(snap: BoardSnapshot, segs: Sequence[Segment], exclude: Sequence[str] = (),
-                 setup=None) -> List[SplitCrossing]:
+                 setup=None, only: Optional[Collection[str]] = None) -> List[SplitCrossing]:
     """The crossings along ``segs`` (a victim's segments, joined where their ends meet),
     each with its series inductance set on its segment (:attr:`Segment.series_l_h`).
     ``exclude`` are nets whose copper is no reference (the victim's own, the switch
-    nodes); ``setup`` gives the capacitor models' ESL for a plane-to-plane crossing."""
+    nodes); ``setup`` gives the capacitor models' ESL for a plane-to-plane crossing.
+    ``only`` (None: every net) are the planes whose crossings count; one between or in
+    any other is left out."""
     if not segs:
         return []
     planes = _Planes(snap, exclude)
@@ -189,6 +195,9 @@ def plane_splits(snap: BoardSnapshot, segs: Sequence[Segment], exclude: Sequence
         xy = (kx * SNAP_MM, ky * SNAP_MM)
         pairs = [(i, j) for a, (i, _) in enumerate(ends) for (j, _) in ends[a + 1:]
                  if refs[i] != refs[j]]
+        if only is not None:
+            pairs = [(i, j) for i, j in pairs
+                     if all(refs[k] is None or refs[k][1] in only for k in (i, j))]
         if not pairs:
             continue
         i, j = pairs[0]
