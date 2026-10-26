@@ -205,6 +205,21 @@ def _fields(snap, setup, agg, layouts, wf, result, progress):
         progress.info(line)
 
 
+def _field_views(result, progress):
+    """The 3D view's field slices, the solve's last step: shown only when asked for, but
+    worked out now so a choice of field and sources shows at once."""
+    from kipi.noise.viz import field_views
+    views = field_views(result)
+    if views is None:
+        return
+    progress.stage("Field views")
+    try:
+        with progress.timed("field views"):
+            views.prepare(check=progress.check_cancel)
+    except (ValueError, MemoryError) as e:
+        progress.warn(f"Field views left to work out when asked for ({e})")
+
+
 def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
                 progress: Optional[ProgressReporter] = None, dc_result=None) -> NoiseResult:
     """``dc_result``, the last DC power-tree solve if any, gives the board model the DC
@@ -307,4 +322,5 @@ def solve_noise(snap: BoardSnapshot, setup: PISetup, aggressor: str,
                 progress.warn(f"Victim {vr.name}: {w}")
         progress.fraction(1.0)
         progress.debug(f"Cross-sections: {cache.misses} solved, {cache.hits} reused")
+    _field_views(result, progress)
     return result

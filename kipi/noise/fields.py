@@ -308,16 +308,48 @@ class FieldSlice:
         self.cell_mm = cell
         self.z_mm = z_mm
         maps, waves = [], []
+        self.rows: Dict[str, List[int]] = {}               # each source's maps
         for s in chosen:
+            self.rows[s.key] = []
             if kind == "H":
                 for name, m in s.maps(self.pts, s.side_of(z_mm)).items():
+                    self.rows[s.key].append(len(maps))
                     maps.append(m)
                     waves.append(_map_wave(s, name, n_t, sources.fsw_hz))
             else:
+                self.rows[s.key].append(len(maps))
                 maps.append(s.map(self.pts))
                 waves.append(ifft_periodic(0.0, s.voltage.c, n_t))
         self.maps = np.stack(maps) if maps else np.zeros((0, len(self.pts), 3))
         self.waves = np.stack(waves) if waves else np.zeros((0, n_t))     # (M, T)
+
+    def part(self, chosen: Sequence) -> "FieldSlice":
+        """Some of this slice's sources: their maps alone (the field adds up), on this
+        grid cut to their extent with the constructor's room around it."""
+        bounds = extent(chosen)
+        span = max(bounds[2] - bounds[0], bounds[3] - bounds[1], 1.0)
+        pad = max(3.0, 0.5 * span)
+        xs, ys = self.pts[:self.nx, 0], self.pts[::self.nx, 1]
+        ix = np.flatnonzero((xs >= bounds[0] - pad) & (xs <= bounds[2] + pad))
+        iy = np.flatnonzero((ys >= bounds[1] - pad) & (ys <= bounds[3] + pad))
+        if len(ix) < 2:
+            ix = np.arange(self.nx)
+        if len(iy) < 2:
+            iy = np.arange(self.ny)
+        cols = (iy[:, None] * self.nx + ix[None, :]).ravel()
+        out = FieldSlice.__new__(FieldSlice)
+        out.kind, out.unit, out.sources = self.kind, self.unit, list(chosen)
+        out.pts, out.nx, out.ny = self.pts[cols], len(ix), len(iy)
+        out.cell_mm, out.z_mm = self.cell_mm, self.z_mm
+        out.rows, rows = {}, []
+        for s in chosen:
+            mine = self.rows.get(s.key, [])
+            out.rows[s.key] = list(range(len(rows), len(rows) + len(mine)))
+            rows += mine
+        rows = np.asarray(rows, dtype=int)
+        out.maps = self.maps[np.ix_(rows, cols)]
+        out.waves = self.waves[rows]
+        return out
 
     def at(self, t: Sequence[int]) -> np.ndarray:
         """The field at the period's samples ``t``: (len(t), P, 3)."""

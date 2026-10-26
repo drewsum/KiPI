@@ -95,6 +95,13 @@ milestones rather than versions that were ever set.
   crossing only where every plane involved is the aggressor's ground or one of its input
   or output rails. A gap in another rail's pour, or a step from ground onto another rail's
   plane, is no longer reported or added to the victim's line.
+- **Fields in 3D are worked out by the solve, once.** The last step of a Coupled Noise
+  solve, after the victims, works out every H and E source's field at the slice's default
+  height. Showing a field, ticking other sources or turning Animate on now only adds up
+  those fields, and a view seen before shows at once instead of being worked out again.
+  The view stays off until you pick a field. A new slice height is worked out the first
+  time you ask for it and kept. Results opened from a file work their fields out the
+  first time one is shown.
 
 ### Fixed
 - **Waveform legend labels cut off** (#197). The tickbox list beside the Waveforms plot

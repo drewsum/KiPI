@@ -811,6 +811,7 @@ class NoisePanel(QWidget, PartSelection):
         self._victim = ""                         # the victim selected in the results
         self._field_key = None                    # the field view's request (#146)
         self._field_overlay = None                # and the field last worked out for it
+        self._field_overlay_key = None
         self._field_task = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
@@ -1605,20 +1606,30 @@ class NoisePanel(QWidget, PartSelection):
         return (id(self.result), kind, keys, h, animate), (self.result, kind, keys, h, animate)
 
     def _fields_changed(self, *_):
-        """The field asked for changed: worked out off the UI thread, as a traced loop's
-        many elements take seconds; the one shown stays until it is ready."""
+        """The field asked for changed. The solve has worked out every source's maps at
+        the default height (:class:`~kipi.noise.viz.FieldViews`), so a choice of sources
+        is only their sum, put together off the UI thread and kept; a new height's maps
+        take seconds. The one shown stays until the new one is ready."""
+        from kipi.noise.viz import field_views
         req = self._field_request()
         key = req[0] if req is not None else None
         if key == self._field_key:
             return
         self._field_key = key
         if req is None:
-            self._field_overlay = None
+            self._field_overlay = self._field_overlay_key = None
             self.lbl_fields.setVisible(False)
             self.coupling_changed.emit()
             return
-        self.lbl_fields.setText("Working out the field…")
-        self.lbl_fields.setVisible(True)
+        _, (result, kind, keys, h, animate) = req
+        views = field_views(result)
+        ov = views.cached(kind, keys, h, animate) if views is not None else None
+        if ov is not None:                  # shown before: at once
+            self._show_field(ov)
+            return
+        if views is not None and not views.ready(kind, h):
+            self.lbl_fields.setText("Working out the field…")
+            self.lbl_fields.setVisible(True)
         self._start_field_task()
 
     def _start_field_task(self):
@@ -1640,9 +1651,14 @@ class NoisePanel(QWidget, PartSelection):
     def _field_done(self, key, ov, error: str = ""):
         self._field_task = None
         if key != self._field_key:          # another was asked for meanwhile
-            self._start_field_task()
+            if self._field_key is not None and self._field_overlay_key != self._field_key:
+                self._start_field_task()
             return
+        self._show_field(ov, error)
+
+    def _show_field(self, ov, error: str = ""):
         self._field_overlay = ov
+        self._field_overlay_key = self._field_key
         lines = error.strip().splitlines()
         note = ov.note if ov is not None else \
             f"The field failed: {lines[-1]}" if lines else ""

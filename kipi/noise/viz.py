@@ -17,6 +17,8 @@ log scale, with arrows along the field there; or frames over one period to anima
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
@@ -105,20 +107,97 @@ def field_choices(result, kind: str) -> List[tuple]:
             for s in fs.of_kind(kind)]
 
 
+class FieldViews:
+    """A result's field slices, worked out once: per kind and height, every source's maps
+    on one grid over all of that kind's sources, so any choice of them is only their sum
+    (:meth:`FieldSlice.part`); and the last few views put together. The solve works out
+    the default height's after the victims; another height is worked out when first asked
+    for. Not saved with the result: an opened one works them out again."""
+
+    def __init__(self, result):
+        self.result = result
+        self._slices = {}                   # (kind, height) -> FieldSlice of all sources
+        self._views = OrderedDict()         # field_overlay's arguments -> FieldOverlay
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(kind, height_mm):
+        return kind, round(float(height_mm), 6)
+
+    def ready(self, kind: str, height_mm: float) -> bool:
+        return self._key(kind, height_mm) in self._slices
+
+    def slice(self, kind: str, height_mm: float):
+        """Every ``kind`` source's maps ``height_mm`` over the top copper (None: none)."""
+        from kipi.noise.fields import FieldSlice
+        fs = self.result.fields
+        if not fs.of_kind(kind):
+            return None
+        with self._lock:                    # the solve and the panel may both ask
+            k = self._key(kind, height_mm)
+            if k not in self._slices:
+                self._slices[k] = FieldSlice(fs, kind, fs.of_kind(kind), fs.z_top_mm + height_mm,
+                                             self.result.waveforms.samples_per_period())
+            return self._slices[k]
+
+    def prepare(self, height_mm: float = FIELD_HEIGHT_MM, check=None) -> None:
+        """Work out both kinds' slices at ``height_mm`` (``check`` between them may cancel)."""
+        for kind in ("H", "E"):
+            if check is not None:
+                check()
+            self.slice(kind, height_mm)
+
+    def _view_key(self, kind, keys, height_mm, animate):
+        return (*self._key(kind, height_mm), tuple(keys), bool(animate))
+
+    def cached(self, kind: str, keys: Sequence[str], height_mm: float, animate: bool):
+        """The view put together already, or None."""
+        return self._views.get(self._view_key(kind, keys, height_mm, animate))
+
+    def overlay(self, kind: str, keys: Sequence[str], height_mm: float, animate: bool):
+        k = self._view_key(kind, keys, height_mm, animate)
+        if k in self._views:
+            self._views.move_to_end(k)
+            return self._views[k]
+        ov = _compose(self.result, kind, keys, height_mm, animate, self)
+        self._views[k] = ov
+        while len(self._views) > _VIEWS_KEPT:
+            self._views.popitem(last=False)
+        return ov
+
+
+_VIEWS_KEPT = 6                         # an animation's frames are tens of megabytes
+_VIEWS_LOCK = threading.Lock()
+
+
+def field_views(result) -> Optional[FieldViews]:
+    """``result``'s :class:`FieldViews`, made on first asking; None without fields."""
+    if result is None or getattr(result, "fields", None) is None:
+        return None
+    with _VIEWS_LOCK:
+        views = getattr(result, "field_views", None)
+        if views is None:
+            views = result.field_views = FieldViews(result)
+        return views
+
+
 def field_overlay(result, kind: str, keys: Sequence[str], height_mm: float = FIELD_HEIGHT_MM,
                   animate: bool = False) -> Optional[FieldOverlay]:
     """The field of the sources ``keys`` of ``kind`` on a slice ``height_mm`` over the
     top copper, or None (off, no such sources, or a result without fields)."""
-    from kipi.noise.fields import FieldSlice
-    fs = getattr(result, "fields", None) if result is not None else None
-    if fs is None or kind not in ("H", "E"):
+    views = field_views(result)
+    if views is None or kind not in ("H", "E"):
         return None
+    return views.overlay(kind, keys, height_mm, animate)
+
+
+def _compose(result, kind, keys, height_mm, animate, views) -> Optional[FieldOverlay]:
+    fs = result.fields
     chosen = [s for s in fs.of_kind(kind) if s.key in set(keys)]
     if not chosen:
         return None
-    wf = result.waveforms
-    n_t = wf.samples_per_period()
-    sl = FieldSlice(fs, kind, chosen, fs.z_top_mm + height_mm, n_t)
+    sl = views.slice(kind, height_mm).part(chosen)
+    n_t = result.waveforms.samples_per_period()
     stride = max(1, n_t // 1024)
     mag, vec = sl.peak(stride)
     top = float(mag.max()) if mag.size and mag.max() > 0 else 1.0

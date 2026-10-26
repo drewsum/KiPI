@@ -2,6 +2,7 @@
 report (#146): the field formulas against closed forms, the sources a solve builds, the
 overlays, and their place in the panel, the 3D view and the window."""
 
+import dataclasses
 import math
 import os
 
@@ -230,6 +231,32 @@ def test_the_slice_adds_the_sources_fields(solved):
     f12 = np.einsum("mt,mpk->tpk", both.waves[:, t], np.stack(
         [m for s in fs.h[:2] for m in s.maps(p, 1).values()]))
     assert np.allclose(f12, f1 + f2)
+
+
+def test_the_solve_works_out_the_field_views_once(solved):
+    from kipi.noise.viz import FIELD_HEIGHT_MM, field_views
+    _, _, r = solved
+    views = field_views(r)
+    assert views is r.field_views and views.ready("H", FIELD_HEIGHT_MM)
+    assert views.ready("E", FIELD_HEIGHT_MM) and not views.ready("H", 7.5)
+    whole = views.slice("H", FIELD_HEIGHT_MM)
+    assert views.slice("H", FIELD_HEIGHT_MM) is whole
+    # A part is the source's own maps on the whole grid, cut to around it.
+    fs, n = r.fields, r.waveforms.samples_per_period()
+    part = whole.part([fs.h[0]])
+    own = FieldSlice(fs, "H", [fs.h[0]], whole.z_mm, n, cell_mm=whole.cell_mm, pad_mm=0.0)
+    assert part.maps.shape == (len(own.maps), len(part.pts), 3) and len(part.pts) < len(whole.pts)
+    assert part.pts[:, 0].min() < fs.h[0].xy_extent()[0] - 2
+    p = part.pts[len(part.pts) // 2][None, :]
+    want = np.stack(list(fs.h[0].maps(p, fs.h[0].side_of(whole.z_mm)).values()))
+    i = len(part.pts) // 2
+    assert np.allclose(part.maps[:, i:i + 1], want) and np.allclose(part.waves, own.waves)
+    # A view asked for again is the one put together before; the field is not saved.
+    keys = ["C1 loop (phase 1)"]
+    ov = field_overlay(r, "H", keys)
+    assert views.cached("H", keys, FIELD_HEIGHT_MM, False) is ov
+    assert field_overlay(r, "H", keys) is ov
+    assert "field_views" not in {f.name for f in dataclasses.fields(r)}
 
 
 def test_the_near_field_report_finds_the_loops_and_the_switch_node(solved):
@@ -505,7 +532,8 @@ def test_the_panel_offers_the_fields(app, solved):
     assert [p.lst_fields.item(i).text() for i in range(p.lst_fields.count())] == [
         "C1 loop", "C2 loop", "L1 field"]
     assert all(p.lst_fields.item(i).checkState() == Qt.Checked for i in range(3))
-    assert p._field_task is not None and "Working out" in p.lbl_fields.text()
+    # The solve worked out the slices: only the sum is put together, no "Working out".
+    assert p._field_task is not None and "Working out" not in p.lbl_fields.text()
     _settled(app, p)
     assert seen[-1] is not None and seen[-1].unit == "A/m"
     assert "C1 loop, C2 loop, L1 field" in p.lbl_fields.text()
@@ -519,7 +547,8 @@ def test_the_panel_offers_the_fields(app, solved):
     p.coupling_changed.emit()                               # nor worked out again
     assert len(seen) == n + 1 and seen[-1] is seen[-2]
     p.chk_animate.setChecked(False)
-    _settled(app, p)
+    assert p._field_task is None                            # seen before: shown at once
+    assert "C2" not in seen[-1].note and seen[-1].frames is None
     # A clicked net adds its field, switching to E; a clicked part its loop, back to H.
     assert p.show_field_of("SW") and p.cmb_field.currentData() == "E"
     assert _settled(app, p).fields_overlay().unit == "V/m"
@@ -548,8 +577,7 @@ def test_the_window_draws_the_field_in_noise_mode(app, no_3d, solved):
         p = w.noise_panel
         assert w.viewer.fields is None
         p.cmb_field.setCurrentIndex(p.cmb_field.findData("E"))
-        assert w.viewer.fields is None                     # until it is worked out
-        _settled(app, p)
+        _settled(app, p)            # the panel test showed this one: here at once
         assert w.viewer.fields is not None and w.viewer.fields.unit == "V/m"
         assert w.views.currentWidget() is w.viewer
         w.findChild(QRadioButton, "mode_ac").setChecked(True)
