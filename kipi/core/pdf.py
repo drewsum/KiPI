@@ -71,6 +71,8 @@ _TABLE = re.compile(r"<table(?! class='maps')")
 _HEADING = re.compile(r"<h[1-6]\b")
 _PAGE_BREAK = " style='page-break-before: always'"
 _DATA_IMAGE = re.compile(r"""src=(['"])data:image/(png|jpeg);base64,([A-Za-z0-9+/=]+)\1""")
+_IMG_TAG = re.compile(r"<img\b[^>]*>")
+_IMG_SIZE = re.compile(r"""\b(width|height)=(['"])(\d+(?:\.\d+)?)\2""")
 
 
 class PdfError(RuntimeError):
@@ -120,6 +122,36 @@ def write_pdf(html: str, path, title: str = "",
     return path
 
 
+def _image_scale(writer) -> float:
+    """How much wider than its width in 96 dpi pixels Qt lays an image out on ``writer``:
+    1 where Qt counts 96 pixels to the inch (Windows, Linux), 4/3 on macOS, where it counts
+    72 and every image would run off the page's right edge."""
+    from qtpy.QtCore import QSizeF, QUrl
+    from qtpy.QtGui import QImage, QTextDocument
+    doc = QTextDocument()
+    doc.documentLayout().setPaintDevice(writer)
+    doc.setPageSize(QSizeF(writer.width(), writer.height()))
+    blank = QImage(1, 1, QImage.Format_ARGB32)
+    blank.fill(0)
+    doc.addResource(QTextDocument.ImageResource, QUrl("kipi-probe"), blank)
+    doc.setHtml("<img src='kipi-probe' width='96' height='1'>")
+    layout = doc.begin().layout()
+    shown = layout.lineAt(0).naturalTextWidth() if layout.lineCount() else 0.0
+    return shown / writer.resolution() if shown > 0 else 1.0
+
+
+def _images_at(html: str, scale: float) -> str:
+    """``html`` with each image's width and height divided by ``scale``, so that the
+    sizes, written in 96 dpi pixels, come out at that size on the page."""
+    if abs(scale - 1.0) < 1e-3:
+        return html
+
+    def size(m):
+        return f"{m.group(1)}='{float(m.group(3)) / scale:.0f}'"
+
+    return _IMG_TAG.sub(lambda t: _IMG_SIZE.sub(size, t.group(0)), html)
+
+
 def file_link(name: str) -> str:
     """The href of a link to the attached file ``name``."""
     return FILE_LINK + name
@@ -154,6 +186,7 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
     html = html.replace(NOTES_MARKER, f"<img src='{NOTES_IMAGE}' width='1' "
                                       f"height='{round(NOTES_HEIGHT_PT * 96 / 72)}'>")
     writer = _writer(path, title)
+    html = _images_at(html, _image_scale(writer))
 
     # Laid out on the writer itself, in its pixels, one page at a time (what print() does,
     # but here the notes box's place on the page is known).
