@@ -12,7 +12,8 @@ A victim segment links the loops' flux through the loop it makes with its return
 which flows in the plane under it. The plane under the loops answers their field with eddy
 currents, an image of the loop of strength Γ: a thin copper sheet is transparent to a
 loop ℓ across at low frequency and a mirror at high, Γ = jα/(1 + jα) with
-α = ω·μ0·(t/ρ)·ℓ/2 (about 0.3 at 10 MHz for a 4 mm loop over 35 µm of copper). For a
+α = ω·μ0·(t/ρ)·ℓ/2 (about 300 at 10 MHz for a 4 mm loop over 35 µm of copper, so
+at the switching frequency and above the plane is all but a mirror). For a
 victim on the same side of the plane as a loop segment the EMF is
 
     E = −jω·Σ I·(M(segment, victim) − Γ·M(segment's image, victim)),
@@ -38,6 +39,13 @@ slot or a gap between two planes), there is nothing to mirror the loops' field: 
 segment links the loops' direct field, and the real current in the plane around it (the
 loop's return, which the conduction solve already routes round the gap) counts in full
 rather than by what a solid plane would let through.
+
+**The victim's ends** (#201). The victim's loop closes at its ends, down through its pads,
+parts and ground pins to the plane its return flows in. These drops are vertical, like its
+vias, and link a loop's vertical current: a hot loop's via drops, or an inductor whose
+winding axis lies along the board, whose field a straight trace beside it may not link at
+all. Each free end's drop, from its layer to the plane's face on its side, adds in series
+to the segment it ends.
 
 **The inductor** (#146) is a source too, its stray field as the equivalent loop
 :func:`kipi.noise.parasitics.inductor_loop` makes of it, carrying the inductor current.
@@ -168,6 +176,50 @@ def via_pieces(snap: BoardSnapshot, net: str, segs: Sequence[VictimSegment]
     return out
 
 
+def _path_ends(segs: Sequence[VictimSegment]) -> List[Tuple[int, bool]]:
+    """The victim's free ends, (segment, whether at its b end): segment ends no other
+    segment meets, on any layer, as :class:`kipi.noise.network.VictimNetwork` joins them."""
+    from kipi.noise.network import SNAP_MM
+    count: Dict[Tuple[int, int], int] = {}
+    keys = []
+    for s in segs:
+        ka = (round(s.a[0] / SNAP_MM), round(s.a[1] / SNAP_MM))
+        kb = (round(s.b[0] / SNAP_MM), round(s.b[1] / SNAP_MM))
+        keys.append((ka, kb))
+        for k in {ka, kb}:
+            count[k] = count.get(k, 0) + 1
+    return [(i, at_b) for i, (ka, kb) in enumerate(keys) if ka != kb
+            for at_b, k in ((False, ka), (True, kb)) if count[k] == 1]
+
+
+def _end_drops(snap: BoardSnapshot, segs: Sequence[VictimSegment],
+               ends: Sequence[Tuple[int, bool]], lay) -> List[ViaPiece]:
+    """The victim's path from each free end down to the plane's face on its side (#201):
+    through the pad, the part and its ground pin, where the loop the victim makes with its
+    return in the plane closes. A loop's vertical current (its via drops, a winding whose
+    axis lies along the board) links these, as the trace itself may link none of it. The
+    path runs up from the plane at an a end and down to it at a b end."""
+    out: List[ViaPiece] = []
+    for i, at_b in ends:
+        s = segs[i]
+        cu = snap.stackup.layer(s.layer)
+        if cu is None:
+            continue
+        z = cu.z_mid_mm
+        if z > lay.z_top_mm:
+            face = lay.z_top_mm
+        elif z < lay.z_bottom_mm:
+            face = lay.z_bottom_mm
+        else:
+            continue                        # on the plane's own layer
+        x, y = s.b if at_b else s.a
+        top, bottom = (x, y, z), (x, y, face)
+        w = max(s.width_mm, 0.1)
+        out.append(ViaPiece(peec.segment(top if at_b else bottom, bottom if at_b else top,
+                                         w, w, f"end {i}"), i, 1.0))
+    return out
+
+
 def _plane_cover(snap: BoardSnapshot, layer: int, xy: np.ndarray) -> np.ndarray:
     """Whether a plane (any zone fill) on ``layer`` covers each point."""
     import shapely
@@ -241,33 +293,44 @@ def victim_emf(snap: BoardSnapshot, sources: Sequence[LoopSource],
                ) -> Tuple[np.ndarray, Dict[str, float]]:
     """The EMF along each victim segment (a→b) at each frequency, (F, segments), and
     each source loop's mutual inductance with the whole victim at the first frequency.
-    With ``net``, the victim's vias are included, their EMF in its segments'."""
+    With ``net``, the victim's vias are included, their EMF in its segments'; where a
+    loop has a plane, so are the drops from the victim's free ends to it."""
     emf = np.zeros((len(freqs), len(segs)), complex)
     mutual: Dict[str, float] = {}
     if not sources or not segs:
         return emf, mutual
     pieces = via_pieces(snap, net, segs) if net else []
-    victim = _victim_3d(snap, segs) + [p.piece for p in pieces]
-    # Each piece's own EMF, folded into its segment's below.
-    fold = np.zeros((len(victim), len(segs)))
-    fold[np.arange(len(segs)), np.arange(len(segs))] = 1.0
-    for k, p in enumerate(pieces):
-        fold[len(segs) + k, p.seg] = p.sign
-    mid = np.array([[(v.a[0] + v.b[0]) / 2, (v.a[1] + v.b[1]) / 2] for v in victim])
+    base = _victim_3d(snap, segs) + [p.piece for p in pieces]
+    ends = _path_ends(segs)
     omega = 2 * np.pi * np.asarray(freqs)
-    covers: Dict[int, np.ndarray] = {}
+    # Per plane: the victim with its drops to that plane, how each piece's EMF folds into
+    # its segment's, and which pieces the plane covers.
+    by_plane: Dict[Optional[int], Tuple[list, np.ndarray, np.ndarray]] = {}
     for src in sources:
         lay = snap.stackup.layer(src.image_layer) if src.image_layer is not None else None
-        if lay is not None and src.image_layer not in covers:
-            covered = _plane_cover(snap, src.image_layer, mid)
-            if pieces:
-                # A via passes the plane through its antipad: the plane around it counts.
-                around = np.array([mid[len(segs):] + d for d in VIA_COVER_MM])
-                near = np.array([_plane_cover(snap, src.image_layer, xy) for xy in around])
-                covered[len(segs):] = near.any(axis=0)
-            covers[src.image_layer] = covered
-        a, b, c = _mutual_terms(src, victim, lay,
-                                covers.get(src.image_layer, np.zeros(len(victim), bool)))
+        key = src.image_layer if lay is not None else None
+        if key not in by_plane:
+            drops = _end_drops(snap, segs, ends, lay) if lay is not None else []
+            victim = base + [d.piece for d in drops]
+            fold = np.zeros((len(victim), len(segs)))
+            fold[np.arange(len(segs)), np.arange(len(segs))] = 1.0
+            for k, p in enumerate([*pieces, *drops]):
+                fold[len(segs) + k, p.seg] = p.sign
+            covered = np.zeros(len(victim), bool)
+            if lay is not None:
+                mid = np.array([[(v.a[0] + v.b[0]) / 2, (v.a[1] + v.b[1]) / 2]
+                                for v in victim])
+                covered = _plane_cover(snap, src.image_layer, mid)
+                if pieces or drops:
+                    # A via passes the plane through its antipad, and an end drops to the
+                    # plane beside its pad: the plane around each counts.
+                    around = np.array([mid[len(segs):] + d for d in VIA_COVER_MM])
+                    near = np.array([_plane_cover(snap, src.image_layer, xy)
+                                     for xy in around])
+                    covered[len(segs):] |= near.any(axis=0)
+            by_plane[key] = (victim, fold, covered)
+        victim, fold, covered = by_plane[key]
+        a, b, c = _mutual_terms(src, victim, lay, covered)
         if lay is not None:
             gamma, trans = peec.plane_response(freqs, lay.thickness_mm, _loop_size(src))
             m = a[None, :] + gamma[:, None] * b[None, :] + trans[:, None] * c[None, :]

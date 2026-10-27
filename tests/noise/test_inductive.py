@@ -18,7 +18,7 @@ from kipi.noise.network import Termination, VictimNetwork
 from kipi.noise.parasitics import phase_layout
 from kipi.noise.solver import solve_noise
 from noise_boards import buck_board, buck_setup
-from synthetic import F, IN2
+from synthetic import F, IN1, IN2
 
 MU0 = 4e-7 * math.pi
 
@@ -210,3 +210,51 @@ def test_a_via_that_joins_one_layer_is_not_a_path():
     snap.tracks = snap.tracks[:1]
     snap.invalidate_index()
     assert via_pieces(snap, "SIG", split_tracks(snap, "SIG", 1.0)) == []
+
+
+def _biot_savart_flux(loop, weights, x0, x1, y, z0, z1, n=400):
+    """Flux of the loop's thin-wire field, with its image in a perfect mirror at z0,
+    through the rectangle x0..x1 at y between z0 and z1 (B_y, by Biot–Savart)."""
+    xs = np.linspace(x0, x1, n + 1)
+    zs = np.linspace(z0, z1, 41)
+    xm, zm = (xs[1:] + xs[:-1]) / 2, (zs[1:] + zs[:-1]) / 2
+    pts = np.array([[x, y, z] for x in xm for z in zm])
+    by = np.zeros(len(pts))
+    for seg, w in zip(loop, weights):
+        for a, b, k in ((seg.a, seg.b, 1.0), (*(mirror(seg, z0).a, mirror(seg, z0).b), -1.0)):
+            t = np.linspace(0, 1, 201)
+            mids = a + np.outer((t[1:] + t[:-1]) / 2, b - a)
+            dl = (b - a) / 200
+            r = pts[:, None, :] - mids[None, :, :]
+            d = np.linalg.norm(r, axis=2) ** 3
+            by += k * w * 1e-7 * (np.cross(dl, r)[:, :, 1] / d).sum(axis=1) * 1e3
+    return by.sum() * (xs[1] - xs[0]) * (zs[1] - zs[0]) * 1e-6
+
+
+def test_a_victim_ending_beside_an_inductor_links_its_field_through_its_end():
+    """#201: a winding whose axis lies along the board, beside a trace that ends at it.
+    The trace runs across the field's lines and links none of it; the drop from its end
+    to the plane links it all. The victim's whole loop, by Biot–Savart, agrees."""
+    from kipi.noise.extract.inductive import LoopSource, victim_emf
+    from kipi.noise.model import AggressorPhase
+    from kipi.noise.parasitics import _Board, inductor_loop
+    snap = buck_board()
+    loop, _ = inductor_loop(_Board(snap, 4.3), AggressorPhase(
+        inductor="L1", inductance_h=1e-6, inductor_shielded=False, inductor_axis="along"))
+    face = snap.stackup.layer(IN1).z_top_mm
+    src = LoopSource("L1 field", loop.elements, np.array([1.0]), face, IN1, loop.weights)
+    y = 14.3
+    segs = [Segment((11.5, y), (18.0, y), F, 0.2)]
+    _, m = victim_emf(snap, [src], segs, np.array([1e9]))
+    trace_only = loop.weights @ (mutual_matrix(loop.elements, [segment(
+        [11.5, y, snap.stackup.layer(F).z_mid_mm], [18.0, y, snap.stackup.layer(F).z_mid_mm],
+        0.2, 0.035)]) - mutual_matrix([mirror(s, face) for s in loop.elements], [segment(
+            [11.5, y, snap.stackup.layer(F).z_mid_mm], [18.0, y, snap.stackup.layer(F).z_mid_mm],
+            0.2, 0.035)]))
+    assert abs(trace_only.sum()) < 1e-15
+    flux = _biot_savart_flux(loop.elements, loop.weights, 11.5, 18.0, y, face,
+                             snap.stackup.layer(F).z_mid_mm)
+    assert abs(m["L1 field"]) > 100e-12
+    # The path runs up from the plane at x = 11.5, along the trace, down at x = 18 and
+    # back along the plane: by the right-hand rule its normal is +y, so M = Φ_y / I.
+    assert m["L1 field"] == pytest.approx(flux, rel=0.02)

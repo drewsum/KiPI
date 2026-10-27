@@ -133,6 +133,12 @@ def test_the_inductor_is_a_loop_of_its_turns():
     assert "along the part (x)" in note
     xs = {round(float(e.a[0]), 6) for e in along.elements}
     assert xs == {18.0} and len({round(float(e.a[2]), 6) for e in along.elements}) == 2
+    # It stands within the body's 1.2 mm height, above the board, as tall as the winding's
+    # share of it, with the turns that area takes (#201).
+    zs = [float(z) for e in along.elements for z in (e.a[2], e.b[2])]
+    assert min(zs) > 1.505 and max(zs) - min(zs) == pytest.approx(0.6 * h)
+    assert along.weights[0] == pytest.approx(turns * math.sqrt(a / (0.6 * h)), rel=1e-6)
+    assert "1.8 x 0.72 mm" in note
     assert inductor_loop(_Board(snap, 4.3), AggressorPhase(inductor="L1")) == (None, "")
 
 

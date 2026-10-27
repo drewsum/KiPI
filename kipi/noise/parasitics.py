@@ -26,7 +26,9 @@ the copper's resistance at f_ring (skin effect included).
 a magnetic dipole of moment N·I·A along its axis. KiPI stands it in as an equivalent
 square loop at the part's body (:func:`inductor_loop`): N from the inductance and the
 body's size (L ≈ μ0·N²·A/h for the open magnetic circuit of a drum core, h the body's
-height), its area the winding's, carrying N times the inductor current. A shielded part
+height), its area the winding's, carrying N times the inductor current. A winding whose
+axis lies along the board stands within the body's height, so its loop is as tall as
+that allows (#201). A shielded part
 closes most of its flux in its shield: its equivalent loop is smaller (the leakage is
 near the core) and carries a tenth of the turns, so its field is weaker and falls off
 sooner. The winding's sense is not on the board, so the field's sign is taken positive.
@@ -418,14 +420,18 @@ def inductor_loop(board: _Board, phase: AggressorPhase) -> Tuple[Optional[CapLoo
     short = max(min(sx, sy), 0.6 * max(sx, sy))
     h = min(max(IND_HEIGHT * short, 0.8), 8.0)
     shielded = phase.inductor_shielded
-    a = (IND_SHIELDED_WINDING if shielded else IND_WINDING) * short
-    turns = math.sqrt(phase.inductance_h * h / (MU0_H_PER_MM * a * a))
+    winding = IND_SHIELDED_WINDING if shielded else IND_WINDING
+    a = winding * short
+    # Lying along the board, the winding stands within the body's height (#201): its
+    # loop is a across and that share of h tall, its turns from that area.
+    axis = phase.inductor_axis
+    tall = a if axis == "vertical" else min(a, winding * h)
+    turns = math.sqrt(phase.inductance_h * h / (MU0_H_PER_MM * a * tall))
     share = IND_SHIELDED_SHARE if shielded else 1.0
     layer = board.outer(ref)
     up = 1.0 if board.side.get(ref, "top") == "top" else -1.0
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     zc = board.z(layer) + up * (board.thickness(layer) / 2 + h / 2)
-    axis = phase.inductor_axis
     if axis == "vertical":
         u, v = np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
         how = "vertical"
@@ -438,14 +444,17 @@ def inductor_loop(board: _Board, phase: AggressorPhase) -> Tuple[Optional[CapLoo
         how = f"{'along' if axis == 'along' else 'across'} the part " \
               f"({'x' if along_x else 'y'})"
     c = np.array([cx, cy, zc])
-    corners = [c - u * a / 2 - v * a / 2, c + u * a / 2 - v * a / 2,
-               c + u * a / 2 + v * a / 2, c - u * a / 2 + v * a / 2]
-    segs = peec.polyline(corners, [a / 4] * 4, a / 4, [f"{ref} winding"] * 4)
+    corners = [c - u * a / 2 - v * tall / 2, c + u * a / 2 - v * tall / 2,
+               c + u * a / 2 + v * tall / 2, c - u * a / 2 + v * tall / 2]
+    wire = min(a, tall) / 4
+    segs = peec.polyline(corners, [wire] * 4, wire, [f"{ref} winding"] * 4)
     path = np.array([*corners, corners[0]], float)
-    loop = CapLoop(segs, np.full(len(segs), turns * share), [path], 0.0, a, False)
+    loop = CapLoop(segs, np.full(len(segs), turns * share), [path], 0.0,
+                   math.sqrt(a * tall), False)
     kept = " (a tenth of its turns: the shield keeps the rest in)" if shielded else ""
+    size = f"{a:.2g}" if tall == a else f"{a:.2g} x {tall:.2g}"
     note = (f"{ref}: {'shielded' if shielded else 'unshielded'}, winding axis {how}: its "
-            f"stray field is that of {turns * share:.3g} turns round {a:.2g} mm at "
+            f"stray field is that of {turns * share:.3g} turns round {size} mm at "
             f"{h / 2:.2g} mm above the board{kept}")
     return loop, note
 

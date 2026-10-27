@@ -39,6 +39,19 @@ milestones rather than versions that were ever set.
   its copper and its pad tops, and a via's tube shape is made once for every net.
 
 ### Fixed
+- **Coupled noise from an inductor lying on its side, and at a victim's ends** (#201).
+  An inductor whose winding axis is set along or across the part was modelled as a
+  loop as tall as its winding is wide, which reached down through the board into the
+  plane under it. Its loop now stands inside the part's body, and its turns are worked
+  out from that area. A victim's loop also closes at its ends, down through its pads and
+  parts to the plane its return flows in. That path is vertical, so a straight trace
+  running across a winding's field lines can pick up the field through its ends even
+  where the trace picks up none. It is now counted at each free end of the victim. For a
+  trace ending beside such an inductor, this is all of the coupling. It agrees with a
+  Biot–Savart integral of the inductor's field over the victim's loop to 0.3%. An
+  unshielded inductor within a few millimetres of a victim can add half again to its
+  inductive noise; a shielded one adds a few percent at most.
+
 - **ODB++ pads drawn with the job's own symbols had no copper** (#203). A pad, drill or
   via drawn with a symbol from the job's `symbols/` folder rather than a standard one
   (`rect…`, `r…`, `oval…`, …) was read with no copper and a drill of size zero. PADS
