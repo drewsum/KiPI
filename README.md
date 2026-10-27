@@ -235,7 +235,9 @@ To try it without a design of your own, open the example board in
 
 **Loads tab**: one entry per consumer: its **Supply pins**, **Current** (split evenly or by
 pin group), optional **Ground pins** and a **Tolerance** for PASS/FAIL. **Load models**
-(**Model ▾**) save and apply a part's supplies as a YAML file.
+(**Model ▾**) save and apply a part's supplies as a YAML file. They also read a
+HyperLynx PI model (`.hlpimodel`): its DC sink currents, pin by pin, as a load on each net
+the pins are on, on as many parts as you tick.
 
 ![Load editor](docs/images/setup_loads.png)
 

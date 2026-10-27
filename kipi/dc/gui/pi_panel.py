@@ -37,7 +37,7 @@ from kipi.dc.pi.autofill import (
     guess_ground_pins, guess_input_ground, guess_input_pins, guess_other_side, looks_like_ground,
     next_phase_refs, other_net, part_nets, setup_grounds,
 )
-from kipi.dc.pi.load_model import apply_to_load, new_items
+from kipi.dc.pi.load_model import apply_to_load, new_items, on_pins
 from kipi.dc.pi.model import (
     DEFAULT_VIA_CURRENT_LIMIT_A, DELTA_VOLTS, PERCENT, VOLTS, DcLink, Load, PinRef, PISetup,
     SensePoint, Vrm, VrmPhase, active_setup, group_name, net_groups, range_unit, range_volts, rail_nominal,
@@ -2410,7 +2410,7 @@ class PIPanel(QWidget, PartSelection):
 
     def apply_load_model(self, model=None):
         """Apply a load model file (or ``model``) to the loads the user ticks."""
-        model = model or open_model(self)
+        model = model or open_model(self, hyperlynx=True)
         if model is None:
             return
         loads = self.setup.loads
@@ -2422,13 +2422,17 @@ class PIPanel(QWidget, PartSelection):
         if not dlg.exec():
             return
         for row, i in dlg.chosen():
-            apply_to_load(loads[row], model.supplies[i])
+            load, s = loads[row], model.supplies[i]
+            if s.split_by_net:          # only the model's pins on this load's net
+                s = on_pins(s, load.supply.pins or part_nets(
+                    self.snapshot, load.supply.ref).get(load.supply.net, []))
+            apply_to_load(load, s)
         self.load_list.reload()
         self.load_list.changed.emit()
 
     def add_loads_from_model(self, model=None):
         """Add a load model's loads on the parts the user ticks."""
-        model = model or open_model(self)
+        model = model or open_model(self, hyperlynx=True)
         if model is None:
             return
         parts = candidate_parts(model, self.snapshot)

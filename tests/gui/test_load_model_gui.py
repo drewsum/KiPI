@@ -71,3 +71,23 @@ def test_apply_dialog_ticks_only_what_matches(app):
     assert d.chosen() == [(0, 0), (1, 0)]
     d.boxes[0].setCurrentIndex(0)                     # leave as is: untick
     assert not d.checks[0].isChecked() and d.chosen() == [(1, 0)]
+
+
+def test_dc_loads_get_added_from_a_hyperlynx_model_one_per_net(app, accept, tmp_path):
+    from kipi.dc.gui.pi_panel import PIPanel
+    path = tmp_path / "U1.hlpimodel"
+    path.write_text("* HL PI Model File\nVERSION=1.0\n1 DC I=0.2 R=1e+06\n"
+                    "2 DC I=0.3 R=1e+06\n", encoding="utf-8")
+    model = LoadModel.load(path)
+    panel = PIPanel()
+    panel.snapshot, panel.setup = board(), setup("ldo")
+    panel.setup.loads = []
+    panel.load_list.reload()
+    panel.add_loads_from_model(model)          # U1 pin 1 on VIN, pin 2 on +3V3; U2 too
+    loads = {l.name: l for l in panel.setup.loads}
+    assert (loads["U1 VIN"].supply.pins, loads["U1 VIN"].current) == (["1"], 0.2)
+    assert (loads["U1 +3V3"].supply.pins, loads["U1 +3V3"].current) == (["2"], 0.3)
+    u2 = loads["U2 +3V3"]                       # pin 1 of U2 is on +3V3
+    u2.current = 0.0
+    panel.apply_load_model(model)
+    assert u2.current == 0.2 and loads["U1 VIN"].current == 0.2

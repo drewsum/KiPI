@@ -19,6 +19,9 @@ from kipi.dc.pi.load_model import (
 )
 
 FILTER = "KiPI load models (*.yml *.yaml)"
+# The DC loads also read a HyperLynx PI model's DC sink currents (#149).
+DC_FILTER = ("Load models (*.yml *.yaml *.hlpimodel);;KiPI load models (*.yml *.yaml);;"
+             "HyperLynx PI models (*.hlpimodel)")
 _DIR_KEY = "load_model/dir"
 SKIP = "(leave as is)"
 
@@ -31,9 +34,11 @@ def _remember_dir(path: str) -> None:
     QSettings("KiPI", "KiPI").setValue(_DIR_KEY, str(Path(path).parent))
 
 
-def open_model(parent) -> Optional[LoadModel]:
-    """Ask for a model file and read it; None if canceled or it cannot be read (said)."""
-    path, _ = QFileDialog.getOpenFileName(parent, "Open load model", _last_dir(), FILTER)
+def open_model(parent, hyperlynx: bool = False) -> Optional[LoadModel]:
+    """Ask for a model file and read it; None if canceled or it cannot be read (said).
+    With ``hyperlynx``, a HyperLynx ``.hlpimodel`` can be chosen too."""
+    path, _ = QFileDialog.getOpenFileName(parent, "Open load model", _last_dir(),
+                                          DC_FILTER if hyperlynx else FILTER)
     if not path:
         return None
     _remember_dir(path)
@@ -42,9 +47,13 @@ def open_model(parent) -> Optional[LoadModel]:
     except ModelError as e:
         QMessageBox.warning(parent, "Load model", f"{Path(path).name}: {e}")
         return None
+    notes = "\n\n" + "\n".join(f"• {n}" for n in model.notes) if model.notes else ""
     if not model.supplies:
-        QMessageBox.information(parent, "Load model", f"{Path(path).name} has no supplies.")
+        QMessageBox.information(parent, "Load model",
+                                f"{Path(path).name} has no supplies.{notes}")
         return None
+    if notes:
+        QMessageBox.information(parent, "Load model", f"Notes on {Path(path).name}:{notes}")
     return model
 
 
@@ -128,10 +137,16 @@ class PartsDialog(QDialog):
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         lay = QVBoxLayout(self)
         n = len(model.supplies)
-        intro = QLabel(f"Add a {noun} for each supply of <b>{_title(model)}</b> on the ticked "
-                       f"parts. Listed are the parts that have the pins of at least one of "
-                       f"its {n} suppl{'y' if n == 1 else 'ies'}; a supply's net is the one "
-                       "its pins are on.", self)
+        split = any(s.split_by_net for s in model.supplies)
+        if split:       # a HyperLynx model's pins, one load per net they are on (#149)
+            text = (f"Add a {noun} for each net the pins of <b>{_title(model)}</b> are on, "
+                    "on the ticked parts. Listed are the parts that have any of its pins.")
+        else:
+            text = (f"Add a {noun} for each supply of <b>{_title(model)}</b> on the ticked "
+                    f"parts. Listed are the parts that have the pins of at least one of its "
+                    f"{n} suppl{'y' if n == 1 else 'ies'}; a supply's net is the one its pins "
+                    "are on.")
+        intro = QLabel(text, self)
         intro.setWordWrap(True)
         lay.addWidget(intro)
         self.filter = QLineEdit(self)
@@ -140,7 +155,8 @@ class PartsDialog(QDialog):
         lay.addWidget(self.filter)
         self.list = QListWidget(self)
         for ref, value, k in parts:
-            it = QListWidgetItem(f"{ref}  {value}  ({k} of {n} supplies)")
+            it = QListWidgetItem(f"{ref}  {value}  ({k} net{'' if k == 1 else 's'})" if split
+                                 else f"{ref}  {value}  ({k} of {n} supplies)")
             it.setData(Qt.UserRole, ref)
             it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
             it.setCheckState(Qt.Unchecked)
@@ -222,7 +238,9 @@ def model_button(parent: QWidget, noun: str, apply: Callable[[], None],
     b = QPushButton("Model ▾", parent)
     b.setToolTip(f"Load models: a part's supplies in a file of their own (YAML), to apply "
                  f"to many {noun}s at once, to add the {noun}s of other copies of the part, "
-                 "or to use on other boards")
+                 "or to use on other boards"
+                 + (". A HyperLynx PI model (.hlpimodel) gives its DC sink currents pin by "
+                    "pin, as a load on each net its pins are on" if noun == "load" else ""))
     menu = QMenu(b)
     menu.addAction(f"Apply model file to {noun}s…", apply)
     menu.addAction(f"Add {noun}s from model file…", add)

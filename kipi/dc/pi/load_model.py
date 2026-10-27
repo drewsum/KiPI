@@ -19,6 +19,10 @@ A model file is YAML, always (``.yml`` or ``.yaml``), and names one part:
         target: {ohm: 0.01, up_to_hz: 50.0e6}      # or {points: [[hz, ohm], ...]}
         load_step: {step_a: 0.6, slew_a_per_us: 5}
 
+A HyperLynx PI model (``.hlpimodel``, #149) reads as a model too: its DC sink currents
+pin by pin, as one supply split by net on the part it is applied to (see
+:mod:`kipi.dc.pi.importers.hyperlynx_pimodel`).
+
 Every key but ``name`` is optional, and only the ones given are applied. The DC loads take
 the current, pin groups and the three tolerances (#174); the AC probes the target, or one
 worked out from the load step as the target calculator does (with the tighter side of the
@@ -74,6 +78,8 @@ class SupplyModel:
     ac_tol_min: Optional[float] = None
     ac_tol_max: Optional[float] = None
     ac_tol_unit: str = PERCENT
+    # Pins on several nets, one load each (a HyperLynx model's, which names no nets).
+    split_by_net: bool = False
 
     def has_tolerance(self) -> bool:
         return self.tol_min is not None or self.tol_max is not None
@@ -120,6 +126,7 @@ class SupplyModel:
 class LoadModel:
     part: str = ""
     supplies: List[SupplyModel] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)     # what reading it left out; not saved
 
     # ------------------------------------------------------------------ file
     def to_dict(self) -> dict:
@@ -153,6 +160,9 @@ class LoadModel:
     @staticmethod
     def load(path) -> "LoadModel":
         path = Path(path)
+        from kipi.dc.pi.importers.hyperlynx_pimodel import is_pimodel, load_pimodel
+        if is_pimodel(path):
+            return load_pimodel(path)
         if not is_yaml(path):
             raise ModelError(f"{path.name}: load models are YAML files (.yml or .yaml)")
         yaml_io = _yaml()
@@ -340,6 +350,32 @@ def model_of(setup: PISetup, ref: str, part: str = "") -> LoadModel:
     return model
 
 
+# ---------------------------------------------------------------------- pin currents
+def groups_of(amps: Dict[str, float]) -> List[PinGroup]:
+    """Pin groups of pins drawing the same current each, from {pin: amps}."""
+    by_current: Dict[float, List[str]] = {}
+    for pin, a in amps.items():
+        by_current.setdefault(a, []).append(pin)
+    return [PinGroup(pins, a * len(pins), f"{a:g} A per pin")
+            for a, pins in by_current.items()]
+
+
+def on_pins(s: SupplyModel, pins: List[str]) -> SupplyModel:
+    """The share of ``s`` on ``pins`` (a split supply's on one net): its pin groups cut to
+    those pins, each pin drawing what it did. One group left is a plain current."""
+    keep = set(pins)
+    groups = []
+    for g in s.groups:
+        on = [p for p in g.pins if p in keep]
+        if on:
+            groups.append(PinGroup(on, g.current * len(on) / len(g.pins), g.name))
+    out = SupplyModel(s.name, [p for p in s.pins if p in keep],
+                      list(s.ground_pins), s.current_a, groups)
+    if len(groups) == 1:
+        out.current_a, out.groups = groups[0].current, []
+    return out
+
+
 # ---------------------------------------------------------------------- matching
 def best_supply(model: LoadModel, name: str, pins: Optional[PinRef],
                 only: bool = True) -> Optional[int]:
@@ -453,6 +489,14 @@ def new_items(model: LoadModel, ref: str, part_nets: Dict[str, List[str]]):
     have pins on part ``ref``; ``part_nets`` is its {net: [pins]}."""
     out = []
     for s in model.supplies:
+        if s.split_by_net:
+            for net, on in part_nets.items():
+                mine = [p for p in s.pins if p in set(on)]
+                if mine:
+                    share = on_pins(s, mine)
+                    share.name = net
+                    out.append((share, PinRef(ref, net, mine), None))
+            continue
         rail = pins_for(part_nets, s.pins) if s.pins else None
         if rail is None:
             continue

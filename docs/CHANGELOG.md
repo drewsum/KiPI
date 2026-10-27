@@ -6,6 +6,16 @@ milestones rather than versions that were ever set.
 
 ## 0.9.4 (in development)
 
+### Added
+- **HyperLynx PI models for DC loads** (#149). The Loads tab's **Model ▾** menu now also
+  opens a HyperLynx PI model file (`.hlpimodel`), which gives a part's DC sink current pin
+  by pin. **Add loads from model file…** adds a load on each net the model's pins are on,
+  on every part you tick, so one file serves every copy of the part. **Apply model file to
+  loads…** sets the current of loads that already exist from the model's pins on their
+  net. Pins that draw different currents become pin groups. Only the `DC` records are
+  read: `VRM` records are skipped, and the sink resistance `R` is not modelled, since KiPI's
+  loads draw a fixed current. Anything left out is listed when the file is opened.
+
 ### Changed
 - **Large boards show in 3D more than twice as fast** (#202). After a board is read,
   each net's copper is meshed for the 3D view; on a 10-layer board with 1,400 nets
