@@ -455,7 +455,8 @@ class CoupledNoise:
     """A 12 V to 1.8 V buck (U1, power stage) on F.Cu over a GND plane on In1.Cu, with
     three 0.2 mm victims, each between two ICs with a ground pin:
 
-    * SIG_SW beside the switch node's pour (capacitive coupling dominates),
+    * SIG_SW beside the switch node's pour (capacitive coupling, with a like inductive
+      part through its ends beside the output capacitor's via),
     * SIG_LOOP beside the hot loop's VIN track (inductive coupling dominates),
     * SIG_BURIED on In2.Cu under SIG_LOOP, behind the plane (shielded: far less noise).
     """

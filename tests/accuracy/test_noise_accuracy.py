@@ -14,7 +14,13 @@ def solved():
 
 
 def test_each_victim_is_coupled_the_way_its_route_says(solved):
-    assert solved["SIG_SW"].dominant == "capacitive"
+    # SIG_SW runs beside the switch node's pour, so it is the one victim with a real
+    # capacitive part. Its ends drop to the plane beside the output capacitor's ground
+    # via, whose switching current links them (#201), so its inductive part is of the
+    # same size: neither mechanism dominates it.
+    sw = solved["SIG_SW"].peak_by
+    assert sw["capacitive"] > 10 * solved["SIG_LOOP"].peak_by["capacitive"] + 1e-3
+    assert 0.5 < sw["capacitive"] / sw["inductive"] < 2.0
     assert solved["SIG_LOOP"].dominant == "inductive"
     assert set(solved["SIG_LOOP"].peak_by) == {"capacitive", "inductive", "common"}
 
