@@ -105,21 +105,41 @@ def net_layer_copper(snap: BoardSnapshot, net: str, layer: int,
 
 def drill_holes(snap: BoardSnapshot, net: str, layer: int,
                 quad_segs: int = CIRCLE_QUAD_SEGS) -> Optional[BaseGeometry]:
-    """Drill holes of the net's vias and through-hole pads that pass through ``layer``."""
-    holes = []
+    """Drill holes of the net's vias and through-hole pads that pass through ``layer``.
+
+    Kept on the snapshot (until :meth:`BoardSnapshot.invalidate_index`): the 3D view's
+    pad tops want the same holes the net's copper was cut with."""
+    cache = snap.__dict__.setdefault("_drill_holes", {})
+    key = (net, layer, quad_segs)
+    if key not in cache:
+        cache[key] = _drill_holes(snap, net, layer, quad_segs)
+    return cache[key]
+
+
+def _drill_holes(snap: BoardSnapshot, net: str, layer: int,
+                 quad_segs: int) -> Optional[BaseGeometry]:
+    # Round holes are buffered all at once, into their places among the slots: one at a
+    # time, a ground net's thousands of vias took over a second per board (#202).
+    holes: list = []
+    round_at, centers, radii = [], [], []
+
+    def round_hole(at, r):
+        round_at.append(len(holes))
+        holes.append(None)
+        centers.append(at)
+        radii.append(r)
+
     _, vias, pads, _ = snap.items_on_net(net)
     for v in vias:
         if layer in v.layers and v.drill_mm > 0:
-            holes.append(shapely.Point(v.position).buffer(v.drill_mm / 2.0,
-                                                          quad_segs=quad_segs))
+            round_hole(v.position, v.drill_mm / 2.0)
     for p in pads:
         if p.pad_type == "pth" and layer in p.shapes:
             dx, dy = p.drill_mm
             if dx <= 0:
                 continue
             if abs(dx - dy) < 1e-6:
-                holes.append(shapely.Point(p.position).buffer(dx / 2.0,
-                                                              quad_segs=quad_segs))
+                round_hole(p.position, dx / 2.0)
             else:  # oblong slot
                 r = min(dx, dy) / 2.0
                 half = (max(dx, dy) - min(dx, dy)) / 2.0
@@ -127,6 +147,10 @@ def drill_holes(snap: BoardSnapshot, net: str, layer: int,
                 x, y = p.position
                 seg = [(x - half * ux, y - half * uy), (x + half * ux, y + half * uy)]
                 holes.append(LineString(seg).buffer(r, quad_segs=quad_segs))
+    if centers:
+        circles = shapely.buffer(shapely.points(centers), np.asarray(radii), quad_segs=quad_segs)
+        for i, g in zip(round_at, circles):
+            holes[i] = g
     return shapely.union_all(holes) if holes else None
 
 

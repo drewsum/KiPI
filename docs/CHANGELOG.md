@@ -6,6 +6,17 @@ milestones rather than versions that were ever set.
 
 ## 0.9.4 (in development)
 
+### Changed
+- **Large boards show in 3D more than twice as fast** (#202). After a board is read,
+  each net's copper is meshed for the 3D view; on a 10-layer board with 1,400 nets
+  (KiCad's Jetson AGX Thor demo, read as ODB++) that took 55 s, and now takes 23 s.
+  Copper is triangulated with Triangle, which KiPI already uses for its solver meshes,
+  instead of GEOS: a ground plane with 2,700 antipads took 4 s and now takes a quarter
+  of a second. Triangle is used only where the copper's outlines neither cross nor
+  touch, or touch only at shared corners; anywhere else, or without Triangle
+  installed, GEOS triangulates as before. A net's drill holes are worked out once for
+  its copper and its pad tops, and a via's tube shape is made once for every net.
+
 ### Fixed
 - **ODB++ pads drawn with the job's own symbols had no copper** (#203). A pad, drill or
   via drawn with a symbol from the job's `symbols/` folder rather than a standard one

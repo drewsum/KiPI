@@ -10,6 +10,7 @@ correctly when viewed from +Z.
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -38,21 +39,98 @@ def layer_color(layer: CopperLayer, n_layers: int) -> Tuple[float, float, float]
     return tuple(v / 255.0 for v in rgb)
 
 
+try:
+    import triangle as _triangle
+except ImportError:                     # GEOS triangulates alone, only more slowly
+    _triangle = None
+
+# A vertex this close to a segment it is not an end of could crash Triangle (see
+# kipi.core.mesh.mesher.pslg_problems); such a polygon is left to GEOS.
+_NEAR_MM = 1e-7
+
+
+def _outline(geom) -> Tuple[np.ndarray, np.ndarray]:
+    """The rings of a (multi)polygon as unique vertices and the segments between them."""
+    rings = shapely.get_rings(shapely.get_parts(geom))
+    coords, ring_of = shapely.get_coordinates(rings, return_index=True)
+    # Each ring's last point closes it: segments run from every point but the last.
+    last = np.r_[ring_of[1:] != ring_of[:-1], True]
+    first = np.r_[True, last[:-1]]
+    idx = np.arange(len(coords))
+    segs = np.column_stack([idx[~last], idx[~first]])
+    # As complex numbers the points sort in one dimension, much faster than by rows.
+    uniq, inverse = np.unique(coords[:, 0] + 1j * coords[:, 1], return_inverse=True)
+    segs = inverse.ravel()[segs]
+    return np.column_stack([uniq.real, uniq.imag]), segs[segs[:, 0] != segs[:, 1]]
+
+
+def _safe_for_triangle(geom, verts: np.ndarray, segs: np.ndarray) -> bool:
+    """Whether the rings neither cross nor touch, which Triangle meets only through its
+    exact arithmetic. Rings that touch are safe if they meet only at shared vertices and
+    no vertex lies on or almost on a segment it is not an end of."""
+    if shapely.is_simple(shapely.multilinestrings(shapely.get_rings(shapely.get_parts(geom)))):
+        return True
+    if not shapely.is_valid(geom):
+        return False
+    tree = shapely.STRtree(shapely.linestrings(verts[segs]))
+    k, j = tree.query(shapely.points(verts), predicate="dwithin", distance=_NEAR_MM)
+    return bool((segs[j] == k[:, None]).any(axis=1).all())
+
+
+def _triangle_fast(poly) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """The triangles of a (multi)polygon from Triangle (#202), with no points added:
+    fifteen times faster than GEOS on a plane with thousands of antipads. None when
+    Triangle is not installed, or not safe or not right for this geometry."""
+    if _triangle is None:
+        return None
+    try:
+        verts, segs = _outline(poly)
+        if len(segs) < 3 or not _safe_for_triangle(poly, verts, segs):
+            return None
+        out = _triangle.triangulate({"vertices": verts, "segments": segs}, "pQ")
+        pts = np.asarray(out["vertices"], dtype=float)
+        tris = np.asarray(out.get("triangles", np.zeros((0, 3))), dtype=np.int64)
+        if len(pts) != len(verts) or len(tris) == 0:
+            return None
+        # Holes are filled in: keep the triangles inside the polygon.
+        centers = pts[tris].mean(axis=1)
+        tris = tris[shapely.contains_xy(poly, centers[:, 0], centers[:, 1])]
+        a, b, c = pts[tris[:, 0]], pts[tris[:, 1]], pts[tris[:, 2]]
+        area = 0.5 * np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1])
+                            - (c[:, 0] - a[:, 0]) * (b[:, 1] - a[:, 1])).sum()
+        if abs(area - poly.area) > 1e-6 * max(poly.area, 1e-6):
+            return None
+        return pts, tris
+    except Exception:
+        return None
+
+
+def _geos(poly) -> Tuple[np.ndarray, np.ndarray]:
+    """A polygon's constrained Delaunay triangles from GEOS."""
+    tris = shapely.get_parts(shapely.constrained_delaunay_triangles(poly))
+    if len(tris) == 0:
+        return np.zeros((0, 2)), np.zeros((0, 3), dtype=np.int64)
+    coords = shapely.get_coordinates(tris).reshape(-1, 4, 2)[:, :3, :].reshape(-1, 2)
+    uniq, inverse = np.unique(np.round(coords, 7), axis=0, return_inverse=True)
+    return uniq, inverse.reshape(-1, 3)
+
+
 def triangulate(geom: BaseGeometry) -> Tuple[np.ndarray, np.ndarray]:
-    """Constrained Delaunay triangulation of a (multi)polygon.
+    """Triangulation of a (multi)polygon, by Triangle where it is safe, else GEOS.
 
     Returns ``(points[N,2], triangles[M,3])`` with shared vertices merged.
     """
+    whole = _triangle_fast(geom) if not geom.is_empty else None
+    if whole is not None:
+        return whole
     pts_list, tri_list, offset = [], [], 0
     for poly in iter_polygons(geom):
-        tris = shapely.get_parts(shapely.constrained_delaunay_triangles(poly))
+        pts, tris = _triangle_fast(poly) or _geos(poly)
         if len(tris) == 0:
             continue
-        coords = shapely.get_coordinates(tris).reshape(-1, 4, 2)[:, :3, :].reshape(-1, 2)
-        uniq, inverse = np.unique(np.round(coords, 7), axis=0, return_inverse=True)
-        pts_list.append(uniq)
-        tri_list.append(inverse.reshape(-1, 3) + offset)
-        offset += len(uniq)
+        pts_list.append(pts)
+        tri_list.append(tris + offset)
+        offset += len(pts)
     if not pts_list:
         return np.zeros((0, 2)), np.zeros((0, 3), dtype=np.int64)
     return np.vstack(pts_list), np.vstack(tri_list)
@@ -92,12 +170,13 @@ def slab_from_triangles(pts2: np.ndarray, tris: np.ndarray, z_bottom: float,
                      np.column_stack([xy, np.full(n, z_bottom + thickness)])])
     bottom = tris[:, ::-1]                       # faces down
     top = tris + n                               # faces up
-    # Directed edges of CCW triangles; boundary edges have no reversed twin.
+    # Directed edges of CCW triangles; boundary edges have no reversed twin, so they are
+    # the edges that only one triangle has.
     e = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]])
     e_tri = np.tile(np.arange(m), 3)
-    key = e[:, 0].astype(np.int64) * n + e[:, 1]
-    rkey = e[:, 1].astype(np.int64) * n + e[:, 0]
-    is_boundary = ~np.isin(key, rkey)
+    key = np.minimum(e[:, 0], e[:, 1]).astype(np.int64) * n + np.maximum(e[:, 0], e[:, 1])
+    _, which, count = np.unique(key, return_inverse=True, return_counts=True)
+    is_boundary = count[which.ravel()] == 1
     boundary = e[is_boundary]
     wall_tri = e_tri[is_boundary]
     i, j = boundary[:, 0], boundary[:, 1]
@@ -145,6 +224,18 @@ class SceneData:
     outline_lines: Optional[pv.PolyData] = None
 
 
+@functools.lru_cache(maxsize=None)
+def _unit_cylinder(n_sides: int) -> Tuple[np.ndarray, np.ndarray]:
+    """A capped cylinder of radius and height 1 standing on the origin: its points
+    ``(P, 3)`` and triangles ``(F, 3)``, made once for every net's vias."""
+    unit = pv.Cylinder(center=(0, 0, 0.5), direction=(0, 0, 1), radius=1.0, height=1.0,
+                       resolution=n_sides, capping=True).triangulate()
+    up = np.array(unit.points)
+    uf = np.array(unit.faces.reshape(-1, 4)[:, 1:])
+    up.flags.writeable = uf.flags.writeable = False
+    return up, uf
+
+
 def via_tubes(snap: BoardSnapshot, nets: List[str], n_sides: int = 12) -> Optional[pv.PolyData]:
     """Via barrels of the given nets as one mesh.
 
@@ -164,10 +255,7 @@ def via_tubes(snap: BoardSnapshot, nets: List[str], n_sides: int = 12) -> Option
     if not rows:
         return None
     a = np.asarray(rows)
-    unit = pv.Cylinder(center=(0, 0, 0.5), direction=(0, 0, 1), radius=1.0, height=1.0,
-                       resolution=n_sides, capping=True).triangulate()
-    up = np.asarray(unit.points)                                   # (P, 3)
-    uf = unit.faces.reshape(-1, 4)[:, 1:]                          # (F, 3) triangles
+    up, uf = _unit_cylinder(n_sides)
     n, P = len(a), len(up)
     pts = np.empty((n, P, 3))
     pts[:, :, 0] = a[:, None, 0] + up[None, :, 0] * a[:, None, 4]
