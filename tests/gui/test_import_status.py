@@ -77,3 +77,42 @@ def test_a_solve_does_not_write_the_setup_file(app, no_3d, tmp_path, monkeypatch
         assert setup_file.read_text(encoding="utf-8") == "the user's own setup"
     finally:
         w.close()
+
+
+def test_a_hyperlynx_session_file_ticks_its_power_nets_and_adds_its_links(
+        app, no_3d, tmp_path, monkeypatch):
+    from kipi.gui.main_window import MainWindow
+    sys.path.insert(0, str(Path(__file__).parents[1] / "dc"))
+    from test_hyperlynx_bud import BUD, _board
+    path = tmp_path / "board.bud"
+    path.write_text(BUD, encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(path), ""))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Discard)
+    w = MainWindow()
+    try:
+        w.show()
+        w.snapshot = _board()
+        w._load_setup(w.snapshot)
+        w._setup_path = tmp_path / "kept.kipi-setup.yml"
+        ticked = []
+
+        class Item:                     # a net list row, unticked
+            def __init__(self, net):
+                self.net = net
+
+            def checkState(self):
+                return None
+
+            def data(self, _role):
+                return self.net
+
+        monkeypatch.setattr(w, "_set_checked", lambda pred: ticked.extend(
+            n.net for n in map(Item, ("VIN", "+3V3", "GND", "+5V")) if pred(n)))
+        w.import_pdn()
+        last = w.log_view.toPlainText().splitlines()[-1]
+        assert last.startswith("== Read board.bud: ") and "3 power net(s) ticked" in last
+        assert ticked == ["VIN", "+3V3", "GND"]
+        assert [k.name for k in w.solve_panel.setup.links] == ["U1"]
+        assert {m.name for m in w.solve_panel.setup.caps} == {"Group1", "Group2"}
+    finally:
+        w.close()

@@ -16,6 +16,17 @@ milestones rather than versions that were ever set.
   read: `VRM` records are skipped, and the sink resistance `R` is not modelled, since KiPI's
   loads draw a fixed current. Anything left out is listed when the file is opened.
 
+- **HyperLynx session files** (#132). **Import…** now also reads a HyperLynx BoardSim
+  session file (`.bud`) and merges it into the setup. Its power nets (`SUPPLIES`) are
+  ticked. Its series links (`DC_CONN`) become series links from the part's two pins with
+  its DC resistance, replacing any link already on that part; both nets are ticked. Its
+  decoupling capacitor groups (`DCCGROUPS`, `DCCAPACITORS`) become capacitor models
+  holding each group's parts. A part already in another model moves to its group. Where
+  every part in a group has the same value, the capacitance, voltage rating and
+  dielectric are read from it; ESL and ESR are left to fill in. VRMs, loads and every
+  setting stay as they were. HyperLynx does not publish the file's format, so the VRM and
+  DC load sections are not read; a section with records is named in the Log.
+
 ### Changed
 - **Large boards show in 3D more than twice as fast** (#202). After a board is read,
   each net's copper is meshed for the 3D view; on a 10-layer board with 1,400 nets
