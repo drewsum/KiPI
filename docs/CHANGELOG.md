@@ -6,6 +6,16 @@ milestones rather than versions that were ever set.
 
 ## 0.9.4 (in development)
 
+### Fixed
+- **ODB++ pads drawn with the job's own symbols had no copper** (#203). A pad, drill or
+  via drawn with a symbol from the job's `symbols/` folder rather than a standard one
+  (`rect…`, `r…`, `oval…`, …) was read with no copper and a drill of size zero. PADS
+  draws every 0402 pad this way, with a symbol named `special`, so those pads could not
+  be modelled. These symbols are now read from the job, in their own units, and drawn
+  as the copper of their features: negative features cut what came before them, and a
+  symbol may be drawn with other symbols. They are turned and mirrored as the pad is.
+  Drill and via pad sizes are taken from the symbol's extent.
+
 ## 0.9.3
 
 ### Added

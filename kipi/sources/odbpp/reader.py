@@ -291,11 +291,18 @@ class _Board:
     def __init__(self, job: Job, step: str, units: feat.Units, progress: ProgressReporter):
         self.job, self.step, self.units, self.progress = job, step, units, progress
         self.layers: Dict[str, feat.LayerFeatures] = {}
+        self.symbols = feat.UserSymbols(lambda name: job.read(f"symbols/{name}/features"),
+                                        units)
         self.mirror = True                  # mirror the symbols of mirrored pads
         self.kicad = False                  # written by KiCad, with its quirks
 
     def geometry(self, f: feat.Feature, folder: str):
-        return feat.geometry(f, self.layers[folder].units, mirror=self.mirror)
+        return feat.geometry(f, self.layers[folder].units, mirror=self.mirror,
+                             library=self.symbols)
+
+    def size(self, symbol: str, folder: str) -> Optional[Tuple[float, float]]:
+        """A symbol's width and height in mm, standard or the job's own."""
+        return feat.size_of(symbol, self.layers[folder].units, self.symbols)
 
     def features(self, folder: str) -> Optional[feat.LayerFeatures]:
         if folder not in self.layers:
@@ -310,15 +317,17 @@ class _Board:
         return lf.features[ref[1]]
 
 
-def _hole_size(f: feat.Feature, lf: feat.LayerFeatures, pad_angle: float) -> Tuple[float, float]:
+def _hole_size(f: feat.Feature, lf: feat.LayerFeatures, pad_angle: float,
+               symbols: Optional[feat.UserSymbols] = None) -> Tuple[float, float]:
     """A drill's size in the pad's own frame (KiPI's ``Pad.drill_mm``)."""
     if f.kind in ("L", "A"):                       # a slot routed as a line
-        d = feat.round_width(f.symbol, lf.units) or 0.0
+        d = feat.round_width(f.symbol, lf.units) or \
+            (feat.size_of(f.symbol, lf.units, symbols) or (0.0, 0.0))[0]
         length = math.dist(f.start, f.end) + d
         along = math.degrees(math.atan2(-(f.end[1] - f.start[1]), f.end[0] - f.start[0]))
         turned = abs(((along - pad_angle) + 90) % 180 - 90) > 45
         return (d, length) if turned else (length, d)
-    size = feat.symbol_size(f.symbol, lf.units) or (0.0, 0.0)
+    size = feat.size_of(f.symbol, lf.units, symbols) or (0.0, 0.0)
     turned = abs(((f.angle_deg - pad_angle) + 90) % 180 - 90) > 45
     return (size[1], size[0]) if turned else size
 
@@ -511,7 +520,7 @@ def _pad(board: _Board, comp, pin, index: int, sn: Optional[edamod.Subnet],
                 break
     if hole is not None:
         ptype = "pth" if plated else "npth"
-        drill = _hole_size(hole[0], hole[1], pin.angle_deg)
+        drill = _hole_size(hole[0], hole[1], pin.angle_deg, board.symbols)
     else:
         ptype, drill = "smd", (0.0, 0.0)
     net = eda.nets[pin.net_index] if 0 <= pin.net_index < len(eda.nets) else ""
@@ -546,7 +555,7 @@ def _vias(board: _Board, eda, stackup: Stackup, cu_ids: Dict[str, int],
             if f is None or f.kind != "P":
                 continue
             lf = board.layers[href[0]]
-            drill = (feat.symbol_size(f.symbol, lf.units) or (0.0, 0.0))[0]
+            drill = (feat.size_of(f.symbol, lf.units, board.symbols) or (0.0, 0.0))[0]
             layer = drills[href[0]]
             a = by_folder.get(layer.start.lower())
             b = by_folder.get(layer.end.lower())
@@ -559,7 +568,7 @@ def _vias(board: _Board, eda, stackup: Stackup, cu_ids: Dict[str, int],
                 lid = cu_ids.get(ref[0])
                 if (cf is not None and lid in span and cf.kind == "P"
                         and math.dist(cf.at, f.at) <= SAME_PLACE_MM):
-                    size = feat.symbol_size(cf.symbol, board.layers[ref[0]].units)
+                    size = board.size(cf.symbol, ref[0])
                     if size:
                         pad_mm[lid] = max(pad_mm.get(lid, 0.0), size[0])
             diameter = max(pad_mm.values(), default=0.0)

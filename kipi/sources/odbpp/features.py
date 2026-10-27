@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from kipi.core.geometry.arcs import arc_points
 from kipi.core.geometry.pad_shapes import DEFAULT_MAX_ERROR_MM, circle_points, oval, rounded_rect
@@ -239,7 +239,7 @@ _CORNERS = {"1": "top_right", "2": "top_left", "3": "bottom_left", "4": "bottom_
 def symbol_outline(name: str, units: Units,
                    max_error: float = DEFAULT_MAX_ERROR_MM) -> Optional[List[Point]]:
     """The outline of a standard symbol centered on the origin, y down, in mm; None for a
-    symbol KiPI does not know (a user symbol, a thermal)."""
+    symbol KiPI does not know (a user symbol, see :class:`UserSymbols`; a thermal)."""
     s = units.symbol
     m = _RECT.match(name)
     if m:
@@ -284,6 +284,75 @@ def symbol_size(name: str, units: Units) -> Optional[Tuple[float, float]]:
     return None
 
 
+class UserSymbols:
+    """The job's own symbols, drawn in ``symbols/<name>/features`` (PADS draws every
+    0402 pad with one named ``special``). ``read`` gives a symbol file's text, or None.
+
+    A symbol is the copper of its features about its origin, y down, in mm: positive
+    features add to it and negative ones cut what came before them, in order."""
+
+    MAX_DEPTH = 4                       # a symbol drawn with symbols drawn with symbols...
+    # A size is measured on a finer drawing: a curve's points fall short of its extremes,
+    # and a 0.3 mm drill drawn as finely as copper measured 0.294 mm.
+    SIZE_ERROR_MM = 1e-5
+    SIZE_DECIMALS = 4
+
+    def __init__(self, read: Callable[[str], Optional[str]], units: Units):
+        self._read, self._units = read, units
+        self._shapes: Dict[Tuple[str, float], object] = {}
+        self._depth = 0
+
+    def shape(self, name: str, max_error: float = DEFAULT_MAX_ERROR_MM):
+        """The symbol ``name`` as a shapely geometry, or None if the job has none such."""
+        if not name:
+            return None
+        key = (name, max_error)
+        if key not in self._shapes:
+            if self._depth >= self.MAX_DEPTH:
+                return None
+            self._shapes[key] = None            # a symbol drawn with itself draws nothing
+            self._depth += 1
+            try:
+                self._shapes[key] = self._draw(name, max_error)
+            finally:
+                self._depth -= 1
+        return self._shapes[key]
+
+    def _draw(self, name: str, max_error: float):
+        from shapely.ops import unary_union
+        text = self._read(name)
+        if text is None:
+            return None
+        lf = parse(text, self._units)
+        g = None
+        for f in lf.features:
+            part = _shape(f, lf.units, max_error, True, self)
+            if part is None or part.is_empty:
+                continue
+            if f.positive:
+                g = part if g is None else unary_union([g, part])
+            elif g is not None:
+                g = g.difference(part)
+        return None if g is None or g.is_empty else g
+
+    def size(self, name: str) -> Optional[Tuple[float, float]]:
+        """The symbol's width and height in mm (its bounding box), or None."""
+        g = self.shape(name, self.SIZE_ERROR_MM)
+        if g is None:
+            return None
+        minx, miny, maxx, maxy = g.bounds
+        return (round(maxx - minx, self.SIZE_DECIMALS), round(maxy - miny, self.SIZE_DECIMALS))
+
+
+def size_of(name: str, units: Units,
+            library: Optional[UserSymbols] = None) -> Optional[Tuple[float, float]]:
+    """A standard symbol's size (:func:`symbol_size`), else a user symbol's."""
+    size = symbol_size(name, units)
+    if size is None and library is not None:
+        size = library.size(name)
+    return size
+
+
 def round_width(name: str, units: Units) -> Optional[float]:
     """The diameter of a round symbol (``r150``), the width a track is drawn with."""
     m = re.match(rf"r{_NUM}$", name)
@@ -309,16 +378,35 @@ def pad_points(f: Feature, units: Units, max_error: float = DEFAULT_MAX_ERROR_MM
 
 
 def geometry(f: Feature, units: Units, max_error: float = DEFAULT_MAX_ERROR_MM,
-             mirror: bool = True):
+             mirror: bool = True, library: Optional[UserSymbols] = None):
     """The copper of a feature as a shapely geometry, or None (negative features, text,
-    unknown symbols)."""
-    from shapely.geometry import LineString, Point as SPoint, Polygon as SPolygon
-    from shapely.ops import unary_union
+    symbols neither standard nor in ``library``)."""
     if not f.positive:
         return None
+    return _shape(f, units, max_error, mirror, library)
+
+
+def _placed(g, f: Feature, mirror: bool):
+    """A symbol's geometry ``g`` placed as the pad ``f``, as :func:`pad_points` places
+    its points."""
+    from shapely.affinity import affine_transform
+    a = math.radians(f.angle_deg)
+    c, s = math.cos(a), math.sin(a)
+    m = -1.0 if f.mirror and mirror else 1.0
+    return affine_transform(g, [m * c, s, -m * s, c, f.at[0], f.at[1]])
+
+
+def _shape(f: Feature, units: Units, max_error: float, mirror: bool,
+           library: Optional[UserSymbols]):
+    """The area a feature covers, whatever its polarity."""
+    from shapely.geometry import LineString, Point as SPoint, Polygon as SPolygon
+    from shapely.ops import unary_union
     if f.kind == "P":
         pts = pad_points(f, units, max_error, mirror)
         if pts is None:
+            user = library.shape(f.symbol, max_error) if library is not None else None
+            if user is not None:
+                return _placed(user, f, mirror)
             size = symbol_size(f.symbol, units)
             return SPoint(f.at).buffer(size[0] / 2.0, quad_segs=8) if size else None
         g = SPolygon(pts)
@@ -331,7 +419,7 @@ def geometry(f: Feature, units: Units, max_error: float = DEFAULT_MAX_ERROR_MM,
             if len(path) < 2 or path[0] == path[-1] and len(path) == 2:
                 return SPoint(path[0]).buffer(width / 2.0, quad_segs=8)
             return LineString(path).buffer(width / 2.0, quad_segs=8)
-        size = symbol_size(f.symbol, units)
+        size = size_of(f.symbol, units, library)
         if size is None:
             return None
         return LineString(path).buffer(size[0] / 2.0, cap_style="square")

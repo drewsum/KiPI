@@ -8,6 +8,7 @@ plain export's.
 """
 
 import io
+import math
 import re
 import shutil
 import subprocess
@@ -409,6 +410,91 @@ def test_a_via_pad_is_read_on_each_layer(tmp_path, snap):
     assert len(grown) == 1 and new.pad_mm[grown[0]] == pytest.approx(0.8)
     assert new.diameter_mm == pytest.approx(0.8)
     assert all(new.pad_mm[l] == old.pad_mm[l] for l in new.pad_mm if l != grown[0])
+
+
+# --- the job's own symbols -------------------------------------------------------------------
+
+def test_pads_and_drills_drawn_with_the_jobs_own_symbols(tmp_path, snap):
+    """PADS draws 0402 pads with a symbol of its own, ``special`` (#203): its copper is in
+    symbols/special/features, here in inches though the layer is in mm. The plated drills
+    are drawn with a symbol that is itself a pad of a standard symbol."""
+    files = _files()
+    cu = files["steps/pcb/layers/f.cu/features"].decode()
+    assert "\n$4 rect1000.0x600.0\n" in cu
+    files["steps/pcb/layers/f.cu/features"] = cu.replace("\n$4 rect1000.0x600.0\n",
+                                                         "\n$4 special\n")
+    drill = "steps/pcb/layers/drill_plated_f.cu-b.cu/features"
+    text = files[drill].decode()
+    assert "\n$0 r1000.0\n$1 r300.0\n" in text
+    files[drill] = text.replace("\n$0 r1000.0\n$1 r300.0\n",
+                                "\n$0 drill_symbol0\n$1 drill_symbol1\n")
+    # 0.5 mm and 0.3 mm in inches, to the nearest 0.1 micro-inch.
+    files["symbols/special/features"] = (
+        "UNITS=INCH\nF 1\nS P 0\nOB -0.019685 0.011811 I\nOS 0.019685 0.011811\n"
+        "OS 0.019685 -0.011811\nOS -0.019685 -0.011811\nOS -0.019685 0.011811\nOE\nSE\n")
+    for k, d in ((0, "1000.0"), (1, "300.0")):
+        files[f"symbols/drill_symbol{k}/features"] = f"UNITS=MM\n$0 r{d}\nP 0 0 0 P 0 8 0\n"
+    got = read_board(_zip(tmp_path / "user_symbols.zip", files))
+
+    assert [v.drill_mm for v in got.vias] == [v.drill_mm for v in snap.vias]
+    assert [p.drill_mm for p in got.pads] == [p.drill_mm for p in snap.pads]
+    for a, b in zip(snap.pads, got.pads):
+        assert a.shapes.keys() == b.shapes.keys(), a.id
+        for lid in a.shapes:
+            want = SPolygon(a.shapes[lid][0].outline)
+            have = SPolygon(b.shapes[lid][0].outline)
+            assert have.symmetric_difference(want).area < 1e-4 * want.area, a.id
+
+
+def _symbols(files):
+    return feat.UserSymbols(lambda name: files.get(name), MM)
+
+
+def test_negative_features_cut_only_what_came_before_them():
+    lib = _symbols({"cut": "UNITS=MM\n$0 s1000\n$1 s200\nP 0 0 0 P 0 8 0\nP 1 0 0 P 0 8 0\n"
+                           "P 0 0 1 N 0 8 0\nP 1 0 1 N 0 8 0\nP 1 0 1 P 0 8 0\n"})
+    assert lib.shape("cut").area == pytest.approx(2.0 - 0.04)
+    assert lib.size("cut") == pytest.approx((2.0, 1.0))
+
+
+@pytest.mark.parametrize("orient", ["8 0", "8 30", "9 30", "9 0", "1", "6"])
+def test_a_user_symbol_is_turned_and_mirrored_as_a_pad(orient):
+    """A symbol of two squares off its origin lands where its squares would, each placed
+    as a pad of its own: at the pad's place plus the square's offset, turned (and mirrored)
+    as the pad is. Mirroring sends the second square to the other side."""
+    lib = _symbols({"pair": "UNITS=MM\n$0 s1000\nP 0 0 0 P 0 8 0\nP 1 0 0 P 0 8 0\n"})
+    f = feat.parse(f"UNITS=MM\n$0 pair\nP 5 -3 0 P 0 {orient}\n", MM).features[0]
+    a = math.radians(f.angle_deg)
+    m = -1 if f.mirror else 1
+    want = SPolygon()
+    for dx in (0.0, 1.0):
+        at = (f.at[0] + m * dx * math.cos(a), f.at[1] - m * dx * math.sin(a))
+        want = want.union(feat.geometry(
+            feat.Feature("P", "s1000", at=at, angle_deg=f.angle_deg, mirror=f.mirror), MM))
+    got = feat.geometry(f, MM, library=lib)
+    # Standard symbols' points are rounded to the nanometer.
+    assert got.symmetric_difference(want).area < 1e-5
+    # A mirrored pad's symbol stays unmirrored when asked (KiCad's export).
+    plain = feat.geometry(f, MM, mirror=False, library=lib)
+    if f.mirror:
+        assert plain.symmetric_difference(want).area > 0.5
+
+
+def test_unknown_and_recursive_user_symbols_draw_nothing():
+    lib = _symbols({"me": "UNITS=MM\n$0 me\nP 0 0 0 P 0 8 0\n"})
+    assert lib.shape("me") is None and lib.shape("missing") is None
+    f = feat.parse("UNITS=MM\n$0 missing\nP 0 0 0 P 0 8 0\n", MM).features[0]
+    assert feat.geometry(f, MM, library=lib) is None
+    assert feat.size_of("missing", MM, lib) is None
+    assert feat.size_of("r100", MM, lib) == pytest.approx((0.1, 0.1))
+
+
+def test_a_line_drawn_with_a_user_symbol_takes_its_width():
+    lib = _symbols({"blob": "UNITS=MM\n$0 r400\nP 0 0 0 P 0 8 0\n"})
+    f = feat.parse("UNITS=MM\n$0 blob\nL 0 0 3 0 0 P 0\n", MM).features[0]
+    g = feat.geometry(f, MM, library=lib)
+    minx, miny, maxx, maxy = g.bounds
+    assert maxy - miny == pytest.approx(0.4)
 
 
 # --- copper with no net ----------------------------------------------------------------------
