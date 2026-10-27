@@ -559,10 +559,14 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
             allowed = c.allowed_v()
             rows.append([_e(c.name), _si(tr.step_a, "A"),
                          f"{c.slew_a_per_us:g} A/µs", _si(tr.t_rise_s, "s"),
+                         (f"{_si(float(f'{tr.spike_v:.4g}'), 'V')} "
+                          f"({_si(float(f'{tr.edge_l_h:.4g}'), 'H')})"
+                          if tr.spike_v is not None else "none"),
                          _si(tr.undershoot_v, "V"), _si(tr.overshoot_v, "V"),
                          f"±{_si(allowed, 'V')}" if allowed else ""])
-        parts.append(_table(["Probe", "Load step", "Slew rate", "Rise time", "Undershoot",
-                             "Overshoot", "± target × ΔI"], rows))
+        parts.append(_table(["Probe", "Load step", "Slew rate", "Rise time",
+                             "ESL spike (L)", "Undershoot", "Overshoot", "± target × ΔI"],
+                            rows))
         parts.append(maps_html([_transient_png(result, trs)], pdf) if pdf
                      else _transient_plot(result, trs, "trplot"))
         parts.append("<p class='note'>An estimate of the rail's deviation from its DC value "
@@ -571,7 +575,11 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                      f"its control loop bandwidth ({_hz(result.bandwidth_hz)}) by a typical "
                      "proportional-integral compensation, not the converter's own. Undershoot: "
                      "the largest dip below the DC value; overshoot: the largest rise above "
-                     "it. ± target × ΔI is the AC tolerance a flat target stands for "
+                     "it. ESL spike: L·di/dt while the load ramps, L the PDN's inductance at "
+                     "the edge's frequency, 1 / (π·rise time), on top of the capacitors' "
+                     "droop; none where the PDN is still capacitive there, as it is for a "
+                     "slow edge. It lasts only as long as the edge: zoom in on the plot to "
+                     "see it. ± target × ΔI is the AC tolerance a flat target stands for "
                      "(Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>).</p>")
 
     # ---------------- capacitors

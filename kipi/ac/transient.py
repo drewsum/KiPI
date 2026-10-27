@@ -22,10 +22,18 @@ The response is worked out on a uniform FFT grid: the load current's spectrum ti
 capacitive PDN, on log f) and, past either end of the sweep, extended as the series
 resistance and capacitance or inductance of the end point (a causal extension, as holding
 a complex value would not be). The time step resolves the load step's edge; one too fast
-for the sweep sees that extension above it. The spectrum is tapered to nothing over the
-top half of the grid (a raised cosine, past the sweep), which keeps the sampled edges from
-ringing. The load is held long enough for the rail to settle, then the hold shown is cut
+for the sweep sees that extension above it. The spectrum is tapered to nothing at the top
+of the grid (a raised cosine from DC, a Hann window), which keeps the sampled edges from
+ringing: tapered over only the top half, a fast edge's ESL spike rang 10 % past its
+corners (#200). The load is held long enough for the rail to settle, then the hold shown is cut
 to the settling time: the pulse's response is the step's less the step's again, delayed.
+
+**The edge** (#200). While the load current ramps, the PDN's inductance (the capacitors'
+ESL, their mounting and the planes' spreading inductance) drops L·di/dt across it: a
+plateau as long as the edge, on top of the capacitors' droop. It is short beside the
+window, which is sized for the loop's recovery, so it is reported on its own: the
+inductance the edge sees, Im Z / ω of the open-loop impedance at the edge's frequency
+1 / (π·t_rise), times the slew rate, and the rail's largest dip while the current ramps.
 """
 
 from __future__ import annotations
@@ -60,6 +68,20 @@ class Transient:
     overshoot_v: float            # the largest rise above it (positive)
     t_overshoot_s: float
     notes: List[str] = field(default_factory=list)
+    t_step_s: float = 0.0         # when the load starts to step up
+    edge_l_h: Optional[float] = None  # the inductance the edge sees; None: capacitive there
+    edge_v: float = 0.0           # the largest dip while the load ramps up (positive)
+
+    @property
+    def spike_v(self) -> Optional[float]:
+        """L·di/dt over the edge: the ESL spike, apart from the capacitors' droop."""
+        if self.edge_l_h is None or self.t_rise_s <= 0:
+            return None
+        return self.edge_l_h * self.step_a / self.t_rise_s
+
+    def edge_window(self) -> tuple:
+        """(start, end), seconds: the step-up edge and a little either side, to zoom to."""
+        return self.t_step_s - 2 * self.t_rise_s, self.t_step_s + 8 * self.t_rise_s
 
 
 def closed_loop(freqs, z, bandwidth_hz: float, f) -> np.ndarray:
@@ -177,13 +199,17 @@ def transient(freqs, z, bandwidth_hz: Optional[float], step_a: Optional[float],
             t, t_off = t[:m], lead + k * dt
             v = step[:m] - np.r_[np.zeros(k), step[:m - k]]
             i = load_step(t, step_a, t_rise, lead, t_off)
-    return _with_peaks(Transient(t, i, v, step_a, t_rise, t_off, 0.0, 0.0, 0.0, 0.0, notes))
+    f_edge = 1.0 / (math.pi * t_rise)
+    x = open_loop_at(freqs, z, np.array([f_edge]))[0].imag
+    edge_l = x / (2 * math.pi * f_edge) if x > 0 else None
+    return _with_peaks(Transient(t, i, v, step_a, t_rise, t_off, 0.0, 0.0, 0.0, 0.0, notes,
+                                 lead, edge_l))
 
 
 def _taper(f) -> np.ndarray:
-    """1 up to half the grid's top frequency ``f[-1]``, falling as a raised cosine to 0
-    at the top."""
-    x = np.clip((f / f[-1] - 0.5) * 2.0, 0.0, 1.0)
+    """1 at DC, falling as a raised cosine to 0 at the grid's top frequency ``f[-1]``: the
+    edges' content, a tenth of the way up or less, loses a few percent at most."""
+    x = np.clip(f / f[-1], 0.0, 1.0)
     return 0.5 * (1.0 + np.cos(np.pi * x))
 
 
@@ -192,6 +218,11 @@ def _with_peaks(tr: Transient) -> Transient:
     k_lo, k_hi = int(np.argmin(tr.v)), int(np.argmax(tr.v))
     tr.undershoot_v, tr.t_undershoot_s = float(max(-tr.v[k_lo], 0.0)), float(tr.t[k_lo])
     tr.overshoot_v, tr.t_overshoot_s = float(max(tr.v[k_hi], 0.0)), float(tr.t[k_hi])
+    # The edge, and as long again as the spectrum's taper smooths it over.
+    dt = tr.t[1] - tr.t[0] if len(tr.t) > 1 else 0.0
+    ramp = (tr.t >= tr.t_step_s) & (tr.t <= tr.t_step_s + tr.t_rise_s + max(4 * dt,
+                                                                          0.2 * tr.t_rise_s))
+    tr.edge_v = float(max(-tr.v[ramp].min(), 0.0)) if ramp.any() else 0.0
     return tr
 
 

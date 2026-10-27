@@ -61,6 +61,27 @@ def test_a_fast_edge_into_inductance_spikes_and_the_20_mhz_limit_shrinks_it():
     assert bandwidth_limited(slow).undershoot_v == pytest.approx(slow.undershoot_v, rel=0.01)
 
 
+def test_the_esl_spike_is_l_di_dt_over_the_edge():
+    """#200: 5 A at 100 A/µs into 1 nH: a 50 ns plateau of L·di/dt = 0.1 V, on top of
+    R·i and the capacitors' droop, then back to the droop once the current is flat."""
+    tr = transient(F, _rlc(l=1e-9), 50e3, 5.0, 100e6)
+    f_edge = 1 / (math.pi * 50e-9)
+    assert tr.edge_l_h == pytest.approx(1e-9 - 1 / ((2 * math.pi * f_edge) ** 2 * 100e-6),
+                                        rel=0.01)
+    assert tr.spike_v == pytest.approx(0.1, rel=0.01)
+    ramp = (tr.t > tr.t_step_s + 15e-9) & (tr.t < tr.t_step_s + 35e-9)
+    after = (tr.t > tr.t_step_s + 70e-9) & (tr.t < tr.t_step_s + 90e-9)
+    # On the ramp: L·di/dt + R·i (5 to 7.5 mV) + the droop (under 2 mV).
+    assert -tr.v[ramp] == pytest.approx(0.1 + 0.007, abs=0.006)
+    assert -tr.v[after] == pytest.approx(0.010, abs=0.004)       # 5 A × 2 mΩ, and droop
+    assert tr.spike_v < tr.edge_v < tr.spike_v + 0.015
+    lo, hi = tr.edge_window()
+    assert lo < tr.t_step_s < tr.t_step_s + tr.t_rise_s < hi
+    # A 5 µs edge sees the bank's capacitance (its resonance is 0.5 MHz): no spike.
+    slow = transient(F, _rlc(l=1e-9), 50e3, 5.0, 1e6)
+    assert slow.edge_l_h is None and slow.spike_v is None and slow.edge_v > 0
+
+
 def test_no_estimate_without_a_step_slew_or_bandwidth():
     z = _rlc()
     assert transient(F, z, None, 1.0, 1e6) is None
@@ -124,6 +145,19 @@ def test_the_transient_tab_plots_and_limits_bandwidth(app):
     assert p.transients["U1"].undershoot_v <= full
     p.chk_bw.setChecked(False)
     assert p.transients["U1"].undershoot_v == full
+    # U1's 1 µs edge sees the bank's capacitance; zoomed, the plot shows just its edge.
+    assert "no ESL spike" in p.lbl.text()
+    tr = p.transients["U1"]
+    p.chk_edge.setChecked(True)
+    k = p._scale[0]
+    lo, hi = p.ax_v.get_xlim()
+    assert lo / k <= tr.t_step_s and (tr.t_step_s + tr.t_rise_s) < hi / k < 0.2 * tr.t[-1]
+    p.chk_edge.setChecked(False)
+    assert p.ax_v.get_xlim()[1] / p._scale[0] == pytest.approx(tr.t[-1])
+    fast = _result()
+    fast.probes[0].slew_a_per_us = 100.0
+    p.set_result(fast)
+    assert "ESL spike L·di/dt = 1 nH × 100 A/µs = 100 mV" in p.lbl.text()
     r = _result()
     r.probes[0].step_a = None
     p.set_result(r)
@@ -191,6 +225,7 @@ def test_the_report_has_a_transient_section(tmp_path):
     assert transients(result)
     text = write_ac_report(tmp_path / "r.html", result, snap, setup).read_text("utf-8")
     assert "id='transient'" in text and 'id="trplot"' in text and "Undershoot" in text
+    assert "ESL spike" in text
     result.probes[0].step_a = None
     text = write_ac_report(tmp_path / "s.html", result, snap, setup).read_text("utf-8")
     assert "id='transient'" not in text

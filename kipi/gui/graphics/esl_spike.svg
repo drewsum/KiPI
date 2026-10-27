@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="180" viewBox="0 0 300 180">
+  <rect x="0" y="0" width="300" height="180" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- the load current ramping up over the edge -->
+    <text x="12" y="20" fill="{muted}">I</text>
+    <path d="M24,58 H286" stroke="{muted}" stroke-width="1" fill="none"/>
+    <path d="M24,58 H90 L150,22 H286" stroke="{fg}" stroke-width="2" fill="none" stroke-linejoin="round"/>
+    <path d="M90,64 V70 M150,64 V70 M90,67 H150" stroke="{muted}" stroke-width="1.2"/>
+    <text x="120" y="82" fill="{muted}" text-anchor="middle">t_rise</text>
+    <!-- the rail: a plateau of L·di/dt while the current ramps, on the capacitors' droop -->
+    <text x="12" y="100" fill="{muted}">V</text>
+    <path d="M24,104 H286" stroke="{muted}" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+    <path d="M24,104 H90 C110,105 130,108 150,110 C190,116 230,128 286,136" stroke="{muted}" stroke-width="1.2" stroke-dasharray="4,3" fill="none"/>
+    <path d="M24,104 H90 L92,140 C112,141 132,144 148,146 L152,110 C190,116 230,128 286,136" stroke="{spike}" stroke-width="2" fill="none" stroke-linejoin="round"/>
+    <path d="M100,104 V140" stroke="{spike}" stroke-width="1.2"/>
+    <path d="M96,108 L100,104 L104,108 M96,136 L100,140 L104,136" stroke="{spike}" stroke-width="1.2" fill="none"/>
+    <text x="160" y="152" fill="{spike}">L · di/dt over the edge</text>
+    <text x="200" y="118" fill="{muted}">the capacitors' droop</text>
+    <text x="150" y="172" fill="{muted}" text-anchor="middle" font-size="10">a fast edge into the PDN's inductance: the ESL spike</text>
+  </g>
+</svg>

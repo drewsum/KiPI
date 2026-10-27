@@ -4,6 +4,7 @@ back down, and the rail's deviation from its DC value while it steps."""
 from __future__ import annotations
 
 import html
+import math
 from typing import Optional
 
 import numpy as np
@@ -19,7 +20,7 @@ EMPTY = ("Give a probe a load step and slew rate (Probes tab) and its VRM a cont
 NOTE = ("An estimate, each probe's load step on its own: the open-loop PDN impedance with "
         "the VRM's loop closed at its control loop bandwidth (a typical compensation, not "
         "the converter's own). Dashed: ± target |Z| × ΔI, the AC tolerance a flat target "
-        "stands for. Zoom in with the toolbar to see fast edges.")
+        "stands for. Tick Zoom to edge, or zoom in with the toolbar, to see fast edges.")
 BW_LIMIT_HZ = 20e6              # the bandwidth limit, as an oscilloscope's
 
 
@@ -29,6 +30,23 @@ def time_scale(t_end: float):
         if t_end >= 2 * scale:
             return 1.0 / scale, unit
     return 1e9, "ns"
+
+
+def edge_text(tr) -> str:
+    """What the load's step-up edge does to the rail (#200): the ESL spike, L·di/dt, and
+    the rail's largest dip over the edge; or why no spike stands out."""
+    rise = _eng(tr.t_rise_s, "s", 3)
+    if tr.spike_v is None:
+        f_edge = 1.0 / (math.pi * tr.t_rise_s)
+        return (f"its {rise} edge is slow enough that the PDN is still capacitive at its "
+                f"{_eng(f_edge, 'Hz', 3)}: no ESL spike stands out from the droop "
+                f"(−{tr.edge_v * 1e3:.3g} mV over the edge)")
+    slew = tr.step_a / tr.t_rise_s / 1e6
+    # Rounded first, so 0.99997 nH reads 1 nH, not 1e+03 pH.
+    l_h = float(f"{tr.edge_l_h:.3g}")
+    return (f"ESL spike L·di/dt = {_eng(l_h, 'H', 3)} × {slew:.3g} A/µs = "
+            f"{tr.spike_v * 1e3:.3g} mV over its {rise} edge; −{tr.edge_v * 1e3:.3g} mV "
+            "there with the droop")
 
 
 class TransientPlot(QWidget):
@@ -54,10 +72,19 @@ class TransientPlot(QWidget):
             "and overshoot in the legend. The results table and report are unchanged.",
             "bw_limit", "bw"))
         self.chk_bw.toggled.connect(lambda _on: self._draw())
+        self.chk_edge = QCheckBox("Zoom to edge", self)
+        self.chk_edge.setToolTip(art_tip(
+            "Show only the load's step-up edge (#200). While the current ramps, the PDN's "
+            "inductance (the capacitors' ESL, their mounting, the planes) drops L·di/dt: "
+            "the ESL spike, as long as the edge. Beside the loop's recovery it is too short "
+            "to see unzoomed. Its size is listed above the plot.",
+            "esl_spike", "spike"))
+        self.chk_edge.toggled.connect(lambda _on: self._draw())
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         top = QHBoxLayout()
         top.addWidget(self.chk_bw)
+        top.addWidget(self.chk_edge)
         top.addStretch(1)
         # Zoom and pan: a load step's fast edges last nanoseconds, the loop's recovery
         # tens of microseconds. Without matplotlib's toolbar the plot works unzoomed.
@@ -122,7 +149,11 @@ class TransientPlot(QWidget):
             return
         names = [c.name for c in result.probes]
         t_end = max(tr.t[-1] for tr in self.transients.values())
-        k, unit = self._scale = time_scale(t_end)
+        span = (0.0, t_end)
+        if self.chk_edge.isChecked():
+            wins = [tr.edge_window() for tr in self.transients.values()]
+            span = (max(min(w[0] for w in wins), 0.0), max(w[1] for w in wins))
+        k, unit = self._scale = time_scale(span[1] - span[0])
         for name, tr in self.transients.items():
             color = COLORS[names.index(name) % len(COLORS)]
             self.ax_i.plot(tr.t * k, tr.i, color=color, lw=1.4)
@@ -141,7 +172,16 @@ class TransientPlot(QWidget):
         self.ax_i.set_ylabel("Load step (A)")
         self.ax_v.set_ylabel("Rail deviation (mV)")
         self.ax_v.set_xlabel(f"Time ({unit})")
-        self.ax_v.set_xlim(0, t_end * k)
+        self.ax_v.set_xlim(span[0] * k, span[1] * k)
+        if self.chk_edge.isChecked():
+            # Fit each axis to what the zoom shows.
+            for ax, values in ((self.ax_i, lambda tr: tr.i), (self.ax_v, lambda tr: tr.v * 1e3)):
+                seen = [values(tr)[(tr.t >= span[0]) & (tr.t <= span[1])]
+                        for tr in self.transients.values()]
+                seen = np.concatenate([x for x in seen if x.size] or [np.zeros(1)])
+                lo, hi = min(float(seen.min()), 0.0), max(float(seen.max()), 0.0)
+                pad = 0.08 * (hi - lo) or 1.0
+                ax.set_ylim(lo - pad, hi + pad)
         for ax in (self.ax_i, self.ax_v):
             ax.grid(True, color="#444", lw=0.6)
         bw = ", 20 MHz bandwidth limit" if self.chk_bw.isChecked() else ""
@@ -153,8 +193,11 @@ class TransientPlot(QWidget):
         self.canvas.draw_idle()
 
     def _notes(self) -> str:
+        edges = [f"{html.escape(name)}: {html.escape(edge_text(tr))}"
+                 for name, tr in self.transients.items()]
         notes = [f"{name}: {n}" for name, tr in self.transients.items() for n in tr.notes]
-        return "".join(f"<br>⚠ {html.escape(n)}" for n in notes)
+        return ("".join(f"<br>{e}" for e in edges)
+                + "".join(f"<br>⚠ {html.escape(n)}" for n in notes))
 
     def _hover(self, event):
         if not self.transients or event.inaxes not in (self.ax_i, self.ax_v) \

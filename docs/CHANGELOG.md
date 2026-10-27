@@ -39,6 +39,18 @@ milestones rather than versions that were ever set.
   its copper and its pad tops, and a via's tube shape is made once for every net.
 
 ### Fixed
+- **The transient's ESL spike, found and sized** (#200). While a probe's load ramps up,
+  the PDN's inductance (the capacitors' ESL, their mounting and the planes) drops L·di/dt:
+  a plateau as long as the edge. It was always in the estimate, but in a window sized for
+  the loop's recovery it was only a sliver of a pixel wide. The Transient tab now lists
+  each probe's ESL spike, the inductance at the edge's frequency times the slew rate, and
+  the rail's largest dip over the edge. A slow edge sees a PDN that is still capacitive,
+  and the tab says that no spike stands out from the droop. **Zoom to edge** shows just
+  the step-up edge, and the report's transient table has an ESL spike column. The
+  spectrum's taper now runs from DC rather than from half the grid. A fast edge's spike
+  had rung 10 % past its corners, inflating the undershoot; it now lands within 1 % of
+  L·di/dt + R·I.
+
 - **Coupled noise from an inductor lying on its side, and at a victim's ends** (#201).
   An inductor whose winding axis is set along or across the part was modelled as a
   loop as tall as its winding is wide, which reached down through the board into the
