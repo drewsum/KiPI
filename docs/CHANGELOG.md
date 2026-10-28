@@ -50,8 +50,17 @@ milestones rather than versions that were ever set.
   PASS / FAIL badges, and collapsible sections. Wide tables scroll sideways instead of
   running off the page. Each net group's 3D view in the DC report starts collapsed; click
   its bar to open it.
+- **Dark mode for reports** (#222). Every web report, and a PDF report's 3D views page, has
+  a Dark mode tickbox at the top. Until it is used, the report follows the system's light
+  or dark setting. The choice is kept in the browser for every report. Plotly plots are
+  recoloured with the page; plot images keep their white backgrounds.
 
 ### Changed
+- **Big DC reports open quickly** (#222). A net group's 3D view is now drawn only when its
+  bar is opened, and let go again when it is closed. Before, every view was read and drawn
+  as the page loaded, which was slow on a large board. Past about 16 views, the browser
+  also blanked the oldest, since it keeps only so many 3D views at once. The PDF report's
+  3D views page works the same way.
 - **Reports put their tables after the plots** (#222). The DC, AC and Coupled Noise
   reports (web page and PDF) now show the summary and every plot first. The setup and
   results tables follow, then the notes and User notes. The navigation bar follows the

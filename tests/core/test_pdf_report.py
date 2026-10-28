@@ -166,7 +166,7 @@ def test_dc_report_as_pdf(dc, tmp_path, printed):
     views = _attached(data)
     assert list(views) == ["r_3d.html"] and "r_3d.html" in html
     page = views["r_3d.html"].decode("utf-8")
-    assert page.count("Plotly.newPlot") == len(tree.groups) and "from r.pdf" in page
+    assert page.count("class='plot-data'") == len(tree.groups) and "from r.pdf" in page
     for name in tree.groups:
         assert f"<h2>{name}</h2>" in page
     assert not (tmp_path / "r_3d.html").exists()
@@ -222,7 +222,7 @@ def test_ac_report_as_pdf(ac, tmp_path, printed):
 def test_the_html_reports_are_unchanged(dc, ac, tmp_path):
     tree, scenes, snap, s = dc
     text = write_report(tmp_path / "r.html", tree, scenes, snap, s).read_text("utf-8")
-    assert text.count("Plotly.newPlot") == len(tree.groups) and "contenteditable" in text
+    assert text.count("class='plot-data'") == len(tree.groups) and "contenteditable" in text
     assert "attached" not in text and not (tmp_path / "r_3d.html").exists()
     result, asnap, a = ac
     text = write_ac_report(tmp_path / "a.html", result, asnap, a).read_text("utf-8")
@@ -339,7 +339,7 @@ def test_another_reader_finds_the_attachment(dc, tmp_path):
     path = write_report(tmp_path / "r.pdf", tree, scenes, snap, s)
     reader = pypdf.PdfReader(path, strict=True)
     content, = reader.attachments["r_3d.html"]
-    assert b"Plotly.newPlot" in content
+    assert b"class='plot-data'" in content
     assert list(reader.get_fields()) == ["User notes"]
 
 

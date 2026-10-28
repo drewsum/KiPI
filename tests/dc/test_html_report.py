@@ -26,8 +26,9 @@ def test_report_contents(tmp_path, thermal):
     path = write_report(tmp_path / "r.html", tree, scenes, snap, s)
     text = path.read_text(encoding="utf-8")
     assert text.startswith("<!DOCTYPE html>")
-    assert "Plotly.newPlot" in text                     # interactive 3D for each group
-    assert text.count("Plotly.newPlot") == len(tree.groups)
+    # an interactive 3D view for each group, drawn only when opened (#222)
+    assert text.count("class='plot-data'") == len(tree.groups)
+    assert "Plotly.newPlot" in text
     assert text.count("data:image/png;base64,") >= 2 * len(tree.groups)
     for l in tree.loads:
         assert l.name in text
@@ -45,7 +46,7 @@ def test_report_contents(tmp_path, thermal):
     assert "<style data-kipi>" in text      # a saved copy keeps the report's own styles
     # #222: the tables come after every plot, before the notes; images expand to full
     # screen, drawn at twice the size they are shown at
-    last_plot = max(text.rindex("Plotly.newPlot"), text.rindex("data:image/png"))
+    last_plot = max(text.rindex("class='plot-data'"), text.rindex("data:image/png"))
     for table in ("id='loads'", "id='vrms'", "id='pins'", "id='losses'", "id='vias'",
                   "id='layers'"):
         assert last_plot < text.index(table) < text.index("id='user-notes'"), table

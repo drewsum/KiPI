@@ -330,8 +330,19 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
                       scene=dict(aspectmode="data", xaxis_title="x (mm)",
                                  yaxis_title="y (mm)", zaxis_title=f"z ×{Z_EXAGGERATION:g}"),
                       legend=dict(orientation="h"))
-    return pio.to_html(fig, include_plotlyjs=False, full_html=False, div_id=div_id,
-                       config={"displaylogo": False})
+    # Drawn only when opened (#222): the figure waits in the page as data, which costs the
+    # browser nothing until then. "</" is escaped so the data cannot end its script.
+    data = pio.to_json(fig, validate=False).replace("</", r"<\/")
+    return (f"<div style='height:560px; width:100%;'><div id='{_e(div_id)}' "
+            "class='plotly-graph-div lazy-plot' style='height:100%; width:100%;'></div></div>"
+            f"<script type='application/json' class='plot-data' data-for='{_e(div_id)}'>"
+            f"{data}</script>")
+
+
+def _view3d(name: str, plot: str, note: str = "") -> str:
+    """A group's 3D view, collapsed until clicked open (#222)."""
+    return (f"<details class='view3d'><summary>3D view: {_e(name)}</summary>{plot}"
+            + (f"<p class='note'>{note}</p>" if note else "") + "</details>")
 
 
 # ---------------------------------------------------------------------------
@@ -340,9 +351,19 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
 
 CSS = """
 :root { --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; --card: #ffffff; --bg: #f4f6f9;
-        --accent: #2563eb; --accent-soft: #eff4ff; --head: #f8fafc;
+        --accent: #2563eb; --accent-soft: #eff4ff; --head: #f8fafc; --sub: #374151;
+        --th: #4b5563; --input: #d1d5db; --faint: #9ca3af; --bar: rgba(244, 246, 249, 0.92);
         --pass: #15803d; --pass-bg: #dcfce7; --fail: #b91c1c; --fail-bg: #fee2e2;
-        --warn: #b45309; --warn-bg: #fef3c7; }
+        --warn: #b45309; --warn-bg: #fef3c7; color-scheme: light; }
+:root[data-theme=dark] { --fg: #e5e7eb; --muted: #9ca3af; --line: #2b3444; --card: #161b26;
+        --bg: #0d1117; --accent: #60a5fa; --accent-soft: #1c2738; --head: #1b2230;
+        --sub: #cbd5e1; --th: #a3aec0; --input: #3a4556; --faint: #6b7280;
+        --bar: rgba(13, 17, 23, 0.9); --pass: #4ade80; --pass-bg: rgba(34, 197, 94, 0.16);
+        --fail: #f87171; --fail-bg: rgba(239, 68, 68, 0.16); --warn: #fbbf24;
+        --warn-bg: rgba(245, 158, 11, 0.16); color-scheme: dark; }
+.theme-toggle { float: right; font-size: 13px; color: var(--muted); cursor: pointer;
+                padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px;
+                background: var(--card); user-select: none; }
 * { box-sizing: border-box; }
 body { font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
        margin: 0 auto; padding: 32px 28px 64px; max-width: 1240px; color: var(--fg);
@@ -351,7 +372,7 @@ body { font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Aria
 h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; margin: 0; }
 h2 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 44px 0 12px;
      padding-left: 12px; border-left: 4px solid var(--accent); scroll-margin-top: 70px; }
-h3 { font-size: 15px; font-weight: 600; margin: 26px 0 8px; color: #374151; }
+h3 { font-size: 15px; font-weight: 600; margin: 26px 0 8px; color: var(--sub); }
 a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
 .meta { color: var(--muted); margin: 6px 0 18px; font-size: 13px; }
 table { border-collapse: separate; border-spacing: 0; margin: 8px 0 18px; font-size: 13px;
@@ -362,7 +383,7 @@ table { border-collapse: separate; border-spacing: 0; margin: 8px 0 18px; font-s
 th, td { padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--line); }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: var(--accent-soft); }
-th { background: var(--head); color: #4b5563; font-weight: 600; white-space: nowrap; }
+th { background: var(--head); color: var(--th); font-weight: 600; white-space: nowrap; }
 td:first-child, th:first-child { text-align: left; }
 .pass, .fail, .unjudged { display: inline-block; padding: 1px 9px; border-radius: 999px;
                           font-size: 12px; font-weight: 600; }
@@ -377,10 +398,10 @@ td:first-child, th:first-child { text-align: left; }
 .maps img { width: 560px; max-width: 100%; display: block; }
 .note { color: var(--muted); font-size: 12.5px; }
 nav { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px;
-      padding: 10px 0; margin: 0 0 8px; background: rgba(244, 246, 249, 0.92);
+      padding: 10px 0; margin: 0 0 8px; background: var(--bar);
       backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
 nav a { padding: 4px 12px; border-radius: 999px; background: var(--card);
-        border: 1px solid var(--line); color: #374151; font-size: 13px; }
+        border: 1px solid var(--line); color: var(--sub); font-size: 13px; }
 nav a:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
               text-decoration: none; }
 .vu { display: none; }
@@ -389,7 +410,7 @@ html[data-vunit=v] .vu-v { display: inline; }
 .vunit { padding: 8px 14px; margin: 8px 0; background: var(--card);
          border: 1px solid var(--line); border-radius: 10px; }
 select, button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 8px;
-                 border: 1px solid #d1d5db; background: var(--card); color: var(--fg); }
+                 border: 1px solid var(--input); background: var(--card); color: var(--fg); }
 button { cursor: pointer; } button:hover { border-color: var(--accent); color: var(--accent); }
 .layer-toggles { font-size: 13px; margin: 8px 0; }
 .layer-toggles label { margin-right: 14px; white-space: nowrap; cursor: pointer; }
@@ -417,11 +438,11 @@ fieldset { border: 1px solid var(--line); border-radius: 10px; background: var(-
                    padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; outline: none; }
 #user-notes-text:focus { border-color: var(--accent);
                          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
-#user-notes-text.empty::before { content: attr(data-placeholder); color: #9ca3af; }
+#user-notes-text.empty::before { content: attr(data-placeholder); color: var(--faint); }
 #user-notes-text img { max-width: 100%; }
 .notes-bar { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .notes-bar button { margin-right: 10px; }
-@media print { body { background: white; padding: 0; } nav { display: none; }
+@media print { body { background: white; padding: 0; } nav, .theme-toggle { display: none; }
                table, .maps figure { box-shadow: none; }
                .notes-bar { display: none; } #user-notes-text { border: none; padding: 0; }
                #user-notes-text.empty::before { content: none; } .notes-empty { display: none; } }
@@ -436,7 +457,7 @@ img { cursor: zoom-in; } #user-notes-text img { cursor: auto; }
                   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
 .plotly-graph-div.plot-full { position: fixed !important; inset: 0; z-index: 100;
                               width: 100vw !important; height: 100vh !important;
-                              background: white; border-radius: 0 !important; }
+                              background: var(--card); border-radius: 0 !important; }
 @media print { .lightbox, .plot-expand { display: none; } }
 """
 
@@ -474,6 +495,7 @@ NOTES_JS = r"""
     root.querySelectorAll(".plotly-graph-div").forEach(function (d) {
       d.innerHTML = ""; d.classList.remove("plot-full"); });
     root.querySelectorAll(".plot-expand, .lightbox").forEach(function (b) { b.remove(); });
+    root.removeAttribute("data-theme");             // the reader's own choice applies
     root.querySelectorAll("head style:not([data-kipi])").forEach(function (s) { s.remove(); });
     var st = root.querySelector("#user-notes-status");
     if (st) st.textContent = "Notes are kept in this browser as you type.";
@@ -523,7 +545,7 @@ EXPAND_JS = r"""
   document.addEventListener("toggle", function (e) {
     if (!e.target.open || !window.Plotly) return;
     e.target.querySelectorAll(".plotly-graph-div").forEach(function (d) {
-      Plotly.Plots.resize(d); });
+      if (d.layout) Plotly.Plots.resize(d); });
   }, true);
   function expand(div, button) {
     if (full) { close(); return; }
@@ -547,6 +569,104 @@ EXPAND_JS = r"""
       b.addEventListener("click", function () { expand(div, b); });
       host.parentNode.insertBefore(b, host);
     });
+  });
+})();
+"""
+
+
+# A 3D view is drawn when it is opened and let go when it is closed (#222). A big board's
+# views would otherwise all be read and drawn as the page loads, slowly, and a browser keeps
+# only so many 3D (WebGL) views at once, dropping the oldest. Once drawn, the view gets its
+# layer tickboxes' state and the page's colours.
+LAZY_JS = r"""
+(function () {
+  function draw(div) {
+    if (div._kipiDrawn || !window.Plotly) return;
+    var src = document.querySelector("script.plot-data[data-for='" + div.id + "']");
+    if (!src) return;
+    div._kipiDrawn = true;
+    var fig = JSON.parse(src.textContent);
+    Plotly.newPlot(div, fig.data, fig.layout, {displaylogo: false}).then(function () {
+      var box = document.querySelector(".layer-toggles[data-plot='" + div.id + "'] input");
+      if (box) box.dispatchEvent(new Event("change", {bubbles: true}));
+      document.dispatchEvent(new CustomEvent("kipi-plot-drawn", {detail: div}));
+    });
+  }
+  document.addEventListener("toggle", function (e) {
+    var d = e.target;
+    if (!d.querySelectorAll) return;
+    d.querySelectorAll(".lazy-plot").forEach(function (div) {
+      if (d.open) { draw(div); return; }
+      if (!div._kipiDrawn) return;
+      Plotly.purge(div);
+      div.innerHTML = "";
+      div._kipiDrawn = div._kipiDark = div._kipiLight = undefined;
+    });
+  }, true);
+})();
+"""
+
+
+# Dark mode: a tickbox at the top of every web report. The choice is kept in the browser
+# (for every report); until one is made the page follows the system's setting. Plotly's
+# plots are recoloured with it, the images keep their white backgrounds.
+THEME_TOGGLE = ("<label class='theme-toggle'><input type='checkbox' id='dark-mode'> "
+                "Dark mode</label>")
+THEME_JS = r"""
+(function () {
+  var KEY = "kipi-theme", root = document.documentElement;
+  function saved() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  var dark = saved() ? saved() === "dark"
+             : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  var DARK = {paper: "#161b26", grid: "#2b3444", zero: "#4b5563", font: "#d1d5db"};
+  function get(o, path) {
+    path.split(".").forEach(function (k) { o = o == null ? undefined : o[k]; });
+    return o;
+  }
+  function recolour(div) {
+    var L = div.layout;
+    if (!L || !window.Plotly) return;
+    var want = {"paper_bgcolor": DARK.paper, "plot_bgcolor": DARK.paper,
+                "font.color": DARK.font};
+    Object.keys(L).forEach(function (k) {
+      if (/^[xy]axis\d*$/.test(k)) {
+        want[k + ".gridcolor"] = DARK.grid;
+        want[k + ".zerolinecolor"] = DARK.zero;
+      } else if (/^scene\d*$/.test(k)) {
+        want[k + ".bgcolor"] = DARK.paper;
+        ["xaxis", "yaxis", "zaxis"].forEach(function (a) {
+          want[k + "." + a + ".gridcolor"] = DARK.grid;
+          want[k + "." + a + ".backgroundcolor"] = DARK.paper;
+        });
+      }
+    });
+    if (!div._kipiLight) {
+      div._kipiLight = {};
+      Object.keys(want).forEach(function (k) {
+        var v = get(L, k);
+        div._kipiLight[k] = v === undefined ? null : v;
+      });
+    }
+    if (div._kipiDark === dark) return;
+    div._kipiDark = dark;
+    Plotly.relayout(div, dark ? want : div._kipiLight);
+  }
+  function apply() {
+    if (dark) root.setAttribute("data-theme", "dark");
+    else root.removeAttribute("data-theme");
+    var box = document.getElementById("dark-mode");
+    if (box) box.checked = dark;
+    document.querySelectorAll(".plotly-graph-div").forEach(recolour);
+  }
+  apply();
+  document.addEventListener("kipi-plot-drawn", function (e) { recolour(e.detail); });
+  document.addEventListener("DOMContentLoaded", apply);
+  window.addEventListener("load", apply);
+  document.addEventListener("change", function (e) {
+    if (e.target.id !== "dark-mode") return;
+    dark = e.target.checked;
+    try { localStorage.setItem(KEY, dark ? "dark" : "light"); } catch (err) { /* kept for now */ }
+    apply();
   });
 })();
 """
@@ -715,11 +835,11 @@ def page(title: str, body: str, css: str, script: str = "") -> str:
     """A web page that works offline: Plotly's JavaScript in it."""
     import plotly.offline
     js = plotly.offline.get_plotlyjs()
-    extra = f"<script type='text/javascript'>{script}</script>" if script else ""
+    extra = f"<script type='text/javascript'>{THEME_JS}{script}</script>"
     return (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
             f"<title>{_e(title)}</title><style data-kipi>{css}</style>"
             f"<script type='text/javascript'>{js}</script>{extra}</head><body>"
-            + body + "</body></html>")
+            + THEME_TOGGLE + body + "</body></html>")
 
 
 def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool,
@@ -732,7 +852,8 @@ def finish(path: Path, title: str, parts: List[str], css: str, pdf: bool,
         return write_pdf(f"<html><head><meta charset='utf-8'><title>{_e(title)}</title>"
                          f"</head><body>{body}</body></html>", path, title,
                          attachments=attachments)
-    path.write_text(page(title, body, css, SORT_JS + LAYERS_JS + VUNIT_JS + EXPAND_JS),
+    path.write_text(page(title, body, css, SORT_JS + LAYERS_JS + VUNIT_JS + EXPAND_JS
+                         + LAZY_JS),
                     encoding="utf-8")
     return path
 
@@ -757,7 +878,7 @@ def views_page(title: str, meta: str, views: List[tuple]) -> bytes:
             f"<p class='note'>{_e(VIEW_NOTE)}</p>"]
     for name, view in views:
         body.append(f"<h2>{_e(name)}</h2>{view}")
-    return page(title, "".join(body), CSS, LAYERS_JS + EXPAND_JS).encode("utf-8")
+    return page(title, "".join(body), CSS, LAYERS_JS + EXPAND_JS + LAZY_JS).encode("utf-8")
 
 
 def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, setup,
@@ -995,15 +1116,13 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         toggles = layer_toggles(f"plot{gi}", [names.get(lid, str(lid)) for lid in scene.layers],
                                 bool(len(scene.via_segments)))
         if pdf:
-            views.append((name, toggles + _plotly_3d(scene, snap, f"plot{gi}")))
+            views.append((name, toggles + _view3d(name, _plotly_3d(scene, snap, f"plot{gi}"))))
             parts.append(f"<p class='note'>Interactive 3D view: {_views_link(path)}</p>")
         else:
-            # Collapsed until clicked open (#222): Plotly draws it again at its size then.
             parts.append(toggles)
-            parts.append(f"<details class='view3d'><summary>3D view: {_e(name)}</summary>"
-                         + _plotly_3d(scene, snap, f"plot{gi}")
-                         + f"<p class='note'>{_e(VIEW_NOTE)} The tickboxes hide or show a "
-                         "layer in the view and its maps.</p></details>")
+            parts.append(_view3d(name, _plotly_3d(scene, snap, f"plot{gi}"),
+                                 f"{_e(VIEW_NOTE)} The tickboxes hide or show a layer in the "
+                                 "view and its maps."))
         rows = []
         tri_layer = g.result.mesh.tri_layer
         for lid, lr in scene.layers.items():
