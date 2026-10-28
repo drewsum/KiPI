@@ -116,13 +116,6 @@ def write_report_file(write, path, progress):
         return write(path.with_suffix(".html"))
 
 
-class _Coatings:
-    """The solder masks and silkscreens, sent by the net build to the window."""
-
-    def __init__(self, coatings):
-        self.coatings = coatings
-
-
 class MainWindow(QMainWindow):
     def __init__(self, source: Optional[BoardSource] = None, tool: Optional[InstalledTool] = None,
                  snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None):
@@ -1236,27 +1229,22 @@ class MainWindow(QMainWindow):
         cache = self._copper_cache
 
         def work(progress):
-            from kipi.core.geometry.copper import net_copper
-            from kipi.core.viz.meshes import board_coatings, build_net_scene
+            from kipi.core.viz.parallel import Coatings, build_nets
             built = 0
             with progress.timed(f"Building {len(todo)} net(s)"):
-                for i, net in enumerate(todo):
-                    progress.check_cancel()
-                    if net not in cache:
-                        cache[net] = net_copper(snap, net, progress)
-                    progress.partial(build_net_scene(snap, net, cache[net], progress))
-                    built += 1
-                    progress.fraction((i + 1) / len(todo))
-            if coatings:            # hidden until asked for, so after the copper
-                progress.check_cancel()
-                with progress.timed("Building solder masks and silkscreens"):
-                    progress.partial(_Coatings(board_coatings(snap)))
+                # In processes (#210), with the solder masks and silkscreens (#209).
+                for ns in build_nets(snap, todo, cache, progress, coatings):
+                    progress.partial(ns)
+                    if not isinstance(ns, Coatings):
+                        built += 1
+                        progress.fraction(built / max(len(todo), 1))
             return built
 
         added: List[str] = []
 
         def on_net(ns):
-            if isinstance(ns, _Coatings):
+            from kipi.core.viz.parallel import Coatings
+            if isinstance(ns, Coatings):
                 self.viewer.set_coatings(ns.coatings)
                 self._coatings_wanted = False
                 return

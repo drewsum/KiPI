@@ -2587,7 +2587,12 @@ times as long. When the Log warns that the view is drawn on the processor (<i>GD
 machine; otherwise install the graphics card's driver. On a laptop with two graphics chips,
 Windows' <b>Graphics settings</b> can set Python to the high-performance one.</p>
 <p>Building the view of a large board is the slow part, and that runs on the processor, not
-the graphics card: shaping each net's copper into triangles. Tick fewer nets to build less.</p>
+the graphics card: shaping each net's copper, and the solder masks and silkscreens, into
+triangles. On a board with many nets KiPI builds them in several processes at once, up to
+eight, so the view comes in several times sooner on a processor with many cores; Task
+Manager shows those processes while it does. If a computer can't start them, KiPI builds
+the view in one process as before and the Log says why. To build in one process anyway, set
+the environment variable <code>KIPI_SERIAL_VIEW=1</code>.</p>
 </div>
 </details>
 <details>

@@ -11,7 +11,8 @@ Per-net color survives merging as a per-cell ``rgb`` array.
 
 from __future__ import annotations
 
-from typing import Dict, Hashable, Iterable, List, Optional, Set, Tuple
+import dataclasses
+from typing import Dict, Hashable, Iterable, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
 import pyvista as pv
@@ -33,11 +34,37 @@ class _Part:
         self.color = color
 
 
-def _arrays(mesh: pv.PolyData) -> Tuple[np.ndarray, np.ndarray]:
+class Packed(NamedTuple):
+    """A mesh as the batcher keeps it: float32 points and (n, 3) triangles. Pickled, it
+    is a small fraction of the cost of a pyvista mesh (#210)."""
+    points: np.ndarray
+    tris: np.ndarray
+
+
+def pack(mesh: pv.PolyData) -> Packed:
+    return Packed(*_arrays(mesh))
+
+
+def unpack(packed: Packed) -> pv.PolyData:
+    """The mesh :func:`pack` made ``packed`` from."""
+    return pv.PolyData.from_regular_faces(packed.points, packed.tris)
+
+
+def pack_scene(ns):
+    """A :class:`~kipi.core.viz.meshes.NetScene` with each mesh packed by :func:`pack`."""
+    return dataclasses.replace(
+        ns, copper=[dataclasses.replace(lm, mesh=pack(lm.mesh)) for lm in ns.copper],
+        vias=None if ns.vias is None else pack(ns.vias),
+        pads={lid: pack(m) for lid, m in ns.pads.items()})
+
+
+def _arrays(mesh: Union[pv.PolyData, Packed]) -> Tuple[np.ndarray, np.ndarray]:
     """Points (float32) and triangles of ``mesh``. A mesh of triangles only, as the
     view's meshes are, is read straight from VTK's arrays: pyvista's ``is_all_triangles``
     and ``faces`` cost over a millisecond a mesh, most of a large board's merge time
     (#205)."""
+    if isinstance(mesh, Packed):
+        return mesh
     if not (mesh.GetNumberOfVerts() or mesh.GetNumberOfLines() or mesh.GetNumberOfStrips()):
         polys = mesh.GetPolys()
         if polys.IsHomogeneous() == 3:      # every cell a triangle
@@ -116,7 +143,8 @@ class MeshBatcher:
         return net in self._net_chunks
 
     # ---------------------------------------------------------------- edits
-    def add(self, net: str, category: Category, mesh: pv.PolyData, color: RGB) -> Chunk:
+    def add(self, net: str, category: Category, mesh: Union[pv.PolyData, Packed],
+            color: RGB) -> Chunk:
         """Add one net's mesh in ``category``, replacing any earlier one there."""
         pts, tris = _arrays(mesh)
         for c in self._net_chunks.get(net, ()):

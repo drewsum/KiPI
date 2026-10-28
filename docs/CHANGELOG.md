@@ -37,6 +37,12 @@ milestones rather than versions that were ever set.
   window as the board loads, and merging the nets' meshes for drawing costs about half
   as much. On the Jetson AGX Thor demo, the longest freeze while loading drops from
   6.2 s to 0.7 s.
+- **A large board's 3D view builds in several processes** (#210). On a board with 40 nets
+  or more, the nets' copper and the solder masks and silkscreens are built by up to eight
+  worker processes at once, the biggest first, and a net bigger than a worker's share is
+  built a layer to a task. On the Jetson AGX Thor demo, the view builds in about 8 s
+  rather than 27 s. Where workers can't be started, the view is built in one process as
+  before and the Log says why; `KIPI_SERIAL_VIEW=1` builds it in one process anyway.
 
 ## 0.9.4
 

@@ -333,10 +333,12 @@ def board_body(snap: BoardSnapshot) -> Tuple[Optional[pv.PolyData], Optional[pv.
 COATING_GAP_MM = 0.002     # coatings off the copper, so their faces do not z-fight
 
 
-def board_coatings(snap: BoardSnapshot) -> List[Tuple[str, pv.PolyData, Tuple[float, ...]]]:
+def board_coatings(snap: BoardSnapshot, sides=("top", "bottom")
+                   ) -> List[Tuple[str, pv.PolyData, Tuple[float, ...]]]:
     """The solder masks and silkscreens as slabs over the board (#82): ``(kind, mesh,
-    color)`` for each. A mask is open over the pads of the copper under it; a silkscreen
-    is what it prints (see :func:`~kipi.core.geometry.silkscreen.printed_silk`)."""
+    color)`` for each, on ``sides``. A mask is open over the pads of the copper under it;
+    a silkscreen is what it prints (see
+    :func:`~kipi.core.geometry.silkscreen.printed_silk`)."""
     from kipi.core.geometry.silkscreen import mask_openings, printed_silk
     st = snap.stackup
     if not snap.outline or not st.coatings or not st.copper:
@@ -344,7 +346,7 @@ def board_coatings(snap: BoardSnapshot) -> List[Tuple[str, pv.PolyData, Tuple[fl
     board = shapely.union_all([g for g in (poly_to_shapely(p) for p in snap.outline)
                                if g is not None])
     out = []
-    for side in ("top", "bottom"):
+    for side in sides:
         cu = st.copper[0] if side == "top" else st.copper[-1]
         z = cu.z_top_mm if side == "top" else cu.z_bottom_mm
         openings = mask_openings(snap, side)
@@ -363,8 +365,9 @@ def board_coatings(snap: BoardSnapshot) -> List[Tuple[str, pv.PolyData, Tuple[fl
 
 
 def build_net_scene(snap: BoardSnapshot, net: str, layers: Dict[int, BaseGeometry],
-                    progress=None) -> NetScene:
-    """Build the meshes for one net from its per-layer copper geometry."""
+                    progress=None, holes: bool = True) -> NetScene:
+    """Build the meshes for one net from its per-layer copper geometry; with ``holes``
+    False, only its copper (as for a part of a net built in pieces)."""
     st = snap.stackup
     n = len(st.copper)
     ns = NetScene(net=net)
@@ -380,8 +383,9 @@ def build_net_scene(snap: BoardSnapshot, net: str, layers: Dict[int, BaseGeometr
         if progress is not None:
             progress.debug(f"  mesh {net} / {cu.name}: {m.n_cells} cells")
             progress.check_cancel()
-    ns.vias = via_tubes(snap, [net])
-    ns.pads = pad_tops(snap, [net])
+    if holes:
+        ns.vias = via_tubes(snap, [net])
+        ns.pads = pad_tops(snap, [net])
     return ns
 
 
