@@ -4,7 +4,21 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.4 (in development)
+## 0.9.5 (in development)
+
+### Added
+- **HyperLynx session files: VRMs and DC loads** (#132). **Import…** now also reads a
+  `.bud` file's VRMs and DC sinks. Each VRM (`PI_VRM`) becomes an ideal source at its
+  voltage, since HyperLynx says nothing of what a VRM draws from its input. It gets each
+  phase's output and ground pins, the remote sense (`SL_PWR_PIN`) and ground sense
+  (`SL_REF_PIN`) pins, and the phases' output resistance `R` in parallel as its load line.
+  A VRM of the same name is replaced. The DC sinks (`PI_SIGNAL_SOURCES`) become one load
+  per part and net, drawing the pins' currents (in pin groups where they differ). Each
+  load is grounded on the part's pins on the file's reference net. A load already on that
+  part and net gets the new current and keeps its tolerances. The VRM inductance `L`, the
+  phases' `PERCENT` and the sink resistance `R` aren't modelled, and the Log says so.
+
+## 0.9.4
 
 ### Added
 - **HyperLynx PI models for DC loads** (#149). The Loads tab's **Model ▾** menu now also
@@ -23,16 +37,9 @@ milestones rather than versions that were ever set.
   decoupling capacitor groups (`DCCGROUPS`, `DCCAPACITORS`) become capacitor models
   holding each group's parts. A part already in another model moves to its group. Where
   every part in a group has the same value, the capacitance, voltage rating and
-  dielectric are read from it; ESL and ESR are left to fill in. Its VRMs (`PI_VRM`)
-  become ideal sources at their voltage, since HyperLynx says nothing of what a VRM
-  draws: each phase's output and ground pins, the remote sense (`SL_PWR_PIN`) and ground
-  sense (`SL_REF_PIN`) pins, and the phases' output resistance `R` in parallel as the load
-  line. A VRM of the same name is replaced. Its DC sinks (`PI_SIGNAL_SOURCES`) become one
-  load per part and net, drawing the pins' currents (in pin groups where they differ),
-  grounded on the part's pins on the file's reference net. A load already on that part
-  and net gets the current and keeps its tolerances. The VRM inductance `L`, the phases'
-  `PERCENT` and the sink resistance `R` are not modelled, and the Log says so. Every
-  setting stays as it was.
+  dielectric are read from it; ESL and ESR are left to fill in. VRMs, loads and every
+  setting stay as they were. HyperLynx does not publish the file's format, so the VRM and
+  DC load sections are not read; a section with records is named in the Log.
 
 ### Changed
 - **Large boards show in 3D more than twice as fast** (#202). After a board is read,
