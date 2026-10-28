@@ -23,6 +23,8 @@ from typing import Callable, Optional
 import numpy as np
 import scipy.sparse as sp
 
+from kipi.core.memory import free_memory
+
 log = logging.getLogger("kipi")
 
 # A factorization is checked against one right-hand side; PARDISO results with a normwise
@@ -252,6 +254,10 @@ def factorize_complex(A: sp.spmatrix,
 # of columns solved together is chosen to fit. Each solve reads the whole factorization,
 # so fewer, wider blocks are faster.
 RHS_BLOCK_BYTES = 512 * 2**20
+# Where the memory free can be read, one block and its solutions may take this share of it
+# instead, if that is more (#215). On a 4.6M-unknown AC model, 45 columns at once in place
+# of 7 took a frequency from 29.8 s to 18.0 s.
+RHS_MEMORY_SHARE = 0.25
 
 _mkl = None                         # the MKL runtime pypardiso loads, once found
 _native_problem: Optional[str] = None     # why native complex PARDISO is unusable here
@@ -359,8 +365,34 @@ class _NativePardiso:
 
 
 def _symmetric_matvec(upper: sp.csr_matrix, x: np.ndarray) -> np.ndarray:
-    """A @ x for the symmetric A whose upper triangle (with the diagonal) is ``upper``."""
-    return upper @ x + upper.T @ x - upper.diagonal() * x
+    """A @ x for the symmetric A whose upper triangle (with the diagonal) is ``upper``;
+    ``x`` one vector or a block of them."""
+    d = upper.diagonal()
+    return upper @ x + upper.T @ x - (d[:, None] if x.ndim == 2 else d) * x
+
+
+def _check_block(check: Optional[np.ndarray], n: int) -> np.ndarray:
+    """The right-hand sides to check a factorization with: ``check`` if it has a column
+    that isn't zero, else ones."""
+    if check is not None and check.shape[0] == n and np.any(check):
+        return check
+    return np.ones(n, dtype=complex)
+
+
+def _worst_residual(upper: sp.csr_matrix, x: np.ndarray, b: np.ndarray) -> float:
+    """The relative residual |b - Ax| / |b| of a solve. A block is checked through one
+    random combination of its columns (each scaled to unit norm), which is solved by the
+    same combination of the solutions: one product with A rather than one per column,
+    which on a large model costs as much as the solve."""
+    if b.ndim == 2:
+        nb = np.linalg.norm(b, axis=0)
+        some = nb > 0
+        rng = np.random.default_rng(0)
+        v = np.zeros(b.shape[1], dtype=complex)
+        v[some] = (rng.standard_normal(int(some.sum()))
+                   + 1j * rng.standard_normal(int(some.sum()))) / nb[some]
+        b, x = b @ v, x @ v
+    return float(np.linalg.norm(b - _symmetric_matvec(upper, x)) / np.linalg.norm(b))
 
 
 class ComplexSeries:
@@ -377,6 +409,7 @@ class ComplexSeries:
     def __init__(self, native: bool = True):
         self._native: Optional[_NativePardiso] = None
         self._off = not native               # native PARDISO can't be used here
+        self.checked = None                  # (b, x): the last factor's check solve
 
     def _native_solver(self) -> Optional[_NativePardiso]:
         if self._native is None and not self._off:
@@ -392,7 +425,13 @@ class ComplexSeries:
         return self._native
 
     def factorize(self, upper: sp.spmatrix,
-                  warn: Optional[Callable[[str], None]] = None) -> ComplexFactor:
+                  warn: Optional[Callable[[str], None]] = None,
+                  check: Optional[Callable[[], np.ndarray]] = None) -> ComplexFactor:
+        """``check`` returns, once the matrix is factorized, the first block of right-hand
+        sides the caller will solve. That block checks the factorization in place of a
+        solve of its own (#215), and is left in :attr:`checked` as ``(b, x)`` with its
+        solutions."""
+        self.checked = None
         upper = sp.csr_matrix(upper)
         upper.sort_indices()
         n = upper.shape[0]
@@ -400,11 +439,13 @@ class ComplexSeries:
         if native is not None:
             try:
                 factor = native.factorize(upper)
-                b = np.ones(n, dtype=complex)
+                given = check() if check is not None else None
+                b = _check_block(given, n)
                 x = factor(b)
-                rel = float(np.linalg.norm(b - _symmetric_matvec(upper, x))
-                            / np.linalg.norm(b))
+                rel = _worst_residual(upper, x, b)
                 if np.isfinite(rel) and rel <= CHECK_TOL_COMPLEX:
+                    if b is given:
+                        self.checked = (b, x)
                     return factor
                 reason = f"relative residual {rel:.1e}"
             except Exception as e:
@@ -427,6 +468,14 @@ class ComplexSeries:
             self._native = None
 
 
-def rhs_block(n: int, max_cols: int = 64) -> int:
-    """How many right-hand sides of ``n`` complex unknowns to solve together."""
-    return int(np.clip(RHS_BLOCK_BYTES // (16 * max(n, 1)), 1, max_cols))
+def rhs_block(n: int, max_cols: int = 64, memory: bool = False) -> int:
+    """How many right-hand sides of ``n`` complex unknowns to solve together, at most
+    ``max_cols``. With ``memory``, as many as :data:`RHS_MEMORY_SHARE` of the memory free
+    holds, if that is more than :data:`RHS_BLOCK_BYTES` does (for one solve at a time, not
+    for threads that each take a block)."""
+    budget = RHS_BLOCK_BYTES
+    if memory:
+        free = free_memory()
+        if free is not None:
+            budget = max(budget, int(RHS_MEMORY_SHARE * free) // 2)   # block + solutions
+    return int(np.clip(budget // (16 * max(n, 1)), 1, max(max_cols, 1)))

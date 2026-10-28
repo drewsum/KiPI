@@ -76,6 +76,14 @@ milestones rather than versions that were ever set.
   solves in 42 s instead of 134 s (the ground factorizes in 10 s where AMG-CG took 104 s),
   with the same voltages to 2e-14 V. If PARDISO fails on such a system, it is solved by
   AMG-CG as before, and the Log says why.
+- **Large AC models solve each frequency faster** (#215). After factorizing, the field
+  solve works through one right-hand side per port and floating conductor. These were
+  solved 512 MB at a time, which on a large model is only a few at once, and each solve
+  reads the whole factorization. Now a solve takes as many as a quarter of the memory free
+  holds. The factorization is also checked with the first of those blocks instead of a
+  solve of its own. On the Jetson AGX Thor demo (4.6M unknowns, 45 right-hand sides), a
+  frequency drops from 27.8 s to 18.6 s, with the same impedances; the default 111
+  frequencies take about 34 minutes instead of 51.
 
 ## 0.9.4
 

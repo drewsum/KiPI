@@ -248,6 +248,61 @@ def test_rhs_block_fits_the_budget():
     assert direct.rhs_block(10) == 64
     assert direct.rhs_block(2_000_000) == 16
     assert direct.rhs_block(10**9) == 1
+    assert direct.rhs_block(10, max_cols=5) == 5
+
+
+def test_rhs_block_grows_with_free_memory(monkeypatch):
+    # #215: a quarter of the memory free for one block and its solutions, when that is
+    # more than the fixed budget; never below it, and only when asked.
+    n = 4_600_000
+    monkeypatch.setattr(direct, "free_memory", lambda: 32 * 2**30)
+    assert direct.rhs_block(n) == 7
+    assert direct.rhs_block(n, max_cols=45, memory=True) == 45
+    assert direct.rhs_block(n, max_cols=64, memory=True) == int(4 * 2**30 // (16 * n))
+    monkeypatch.setattr(direct, "free_memory", lambda: 2**30)
+    assert direct.rhs_block(n, max_cols=45, memory=True) == 7
+    monkeypatch.setattr(direct, "free_memory", lambda: None)
+    assert direct.rhs_block(n, max_cols=45, memory=True) == 7
+
+
+class _ExactNative:
+    """Native complex PARDISO stood in for by SuperLU on the full matrix."""
+    def __init__(self, wrong=False):
+        self.wrong = wrong
+
+    def factorize(self, upper):
+        from scipy.sparse.linalg import splu
+        lu = splu(sp.csc_matrix(upper + sp.triu(upper, 1).T), permc_spec="COLAMD")
+        if self.wrong:
+            return direct.ComplexFactor(lambda b: np.zeros_like(b), "pardiso")
+        return direct.ComplexFactor(lu.solve, "pardiso")
+
+
+def test_first_block_checks_the_factorization(monkeypatch):
+    # #215: the caller's first block checks the factorization in place of a solve of its
+    # own, and its solutions are handed back.
+    series = direct.ComplexSeries()
+    monkeypatch.setattr(series, "_native_solver", lambda: _ExactNative())
+    A = _ac_like(1e6)
+    b = _complex_rhs(A.shape[0])
+    f = series.factorize(_upper(A), check=lambda: b)
+    assert f.name == "pardiso"
+    got, x = series.checked
+    assert got is b and _rel(A, x, b) < 1e-10
+    # A block of zeros can't check anything: ones are used, and nothing handed back.
+    f = series.factorize(_upper(A), check=lambda: np.zeros_like(b))
+    assert f.name == "pardiso" and series.checked is None
+
+
+def test_a_wrong_factor_fails_the_block_check(monkeypatch):
+    series = direct.ComplexSeries()
+    monkeypatch.setattr(series, "_native_solver", lambda: _ExactNative(wrong=True))
+    A = _ac_like(1e6)
+    b = _complex_rhs(A.shape[0])
+    warnings = []
+    f = series.factorize(_upper(A), warnings.append, check=lambda: b)
+    assert f.name != "pardiso" and series.checked is None
+    assert warnings and _rel(A, f(b), b) < 1e-10
 
 
 @pytest.fixture

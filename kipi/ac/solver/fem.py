@@ -657,8 +657,6 @@ class ACSystem:
         nf = self.n_free
         upper = sp.csr_matrix((A.data[self._up_sel], self._up_indices, self._up_indptr),
                               shape=(nf, nf))
-        factor = (series or self._factors).factorize(upper, progress.warn)
-        self.stats.method = factor.name
         AFA = A[:nf, nf:].tocsc()
         k = AFA.shape[1]                                    # floating conductors
         RX = (self._R @ X).tocsr()
@@ -675,23 +673,44 @@ class ACSystem:
              (np.concatenate([plus[plus >= 0], minus[minus >= 0]]),
               np.concatenate([cols[plus >= 0], cols[minus >= 0]]))), shape=(self.n, P))
         # Solve A_FF y = [A_FA, B_F] in blocks, keeping only what Z needs: y at the port
-        # terminals and the floating conductors' capacitive currents R X_F y.
+        # terminals and the floating conductors' capacitive currents R X_F y. One solve
+        # alone (not a thread's) takes blocks as wide as the memory free allows (#215).
         rows = np.unique(np.concatenate([plus, minus]))
         rows = rows[(rows >= 0) & (rows < nf)]
         at = {int(r): i for i, r in enumerate(rows)}
         Y = np.zeros((len(rows), k + P), complex)
         RY = np.zeros((k, k + P), complex)
-        block = direct.rhs_block(nf)
-        for c0 in range(0, k + P, block):
-            progress.check_cancel()
-            cs = np.arange(c0, min(k + P, c0 + block))
+        width = {}
+
+        def block_rhs(c0):
+            cs = np.arange(c0, min(k + P, c0 + width["block"]))
             rhs = np.zeros((nf, len(cs)), complex, order="F")
             for j, c in enumerate(cs):
                 col = AFA[:, [c]] if c < k else B[:nf, [c - k]]
                 rhs[:, j] = col.toarray().ravel()
-            y = factor(rhs)
+            return rhs
+
+        def first_block():                  # once factorized, so the factor's memory counts
+            width["block"] = direct.rhs_block(nf, max_cols=k + P, memory=series is None)
+            return block_rhs(0)
+        solver = series or self._factors
+        factor = solver.factorize(upper, progress.warn, check=first_block)
+        self.stats.method = factor.name
+        if "block" not in width:
+            width["block"] = direct.rhs_block(nf, max_cols=k + P, memory=series is None)
+        checked = solver.checked                # the first block, solved by the check
+        for c0 in range(0, k + P, width["block"]):
+            progress.check_cancel()
+            if c0 == 0 and checked is not None:
+                rhs, y = checked
+                checked = solver.checked = None
+            else:
+                rhs = block_rhs(c0)
+                y = factor(rhs)
+            cs = np.arange(c0, c0 + rhs.shape[1])
             Y[:, cs] = y[rows]
             RY[:, cs] = RX_F @ y
+            del rhs, y
         # x_F = y_F − W x_A, with W = A_FF⁻¹ A_FA (the first k columns).
         x_port = Y[:, k:]
         x_anchor = np.zeros((k, P), complex)
