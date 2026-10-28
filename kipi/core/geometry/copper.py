@@ -104,6 +104,39 @@ def net_layer_copper(snap: BoardSnapshot, net: str, layer: int,
 
 
 
+#: Fewest points tested for being in copper that are split across threads (#216).
+THREADED_POINTS = 200_000
+#: Most threads that test points at once.
+POINT_THREADS = 8
+
+
+def contains_xy(geom: BaseGeometry, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """``shapely.contains_xy(geom, x, y)``, with many points split across threads: shapely
+    lets go of the GIL while it tests them, so this is several times faster on a large
+    board (#216). Each thread tests against a copy of its own (WKB keeps every coordinate
+    exactly): one prepared geometry used by several threads at once crashes GEOS. Any
+    trouble in the threads: tested in one."""
+    import os
+    n = len(x)
+    k = min((os.cpu_count() or 1) - 1, POINT_THREADS, n // (THREADED_POINTS // 4))
+    if n < THREADED_POINTS or k < 2:
+        return shapely.contains_xy(geom, x, y)
+    import concurrent.futures as cf
+    wkb = shapely.to_wkb(geom)
+    cuts = np.linspace(0, n, k + 1).astype(int)
+
+    def part(ab):
+        own = shapely.from_wkb(wkb)
+        shapely.prepare(own)
+        return shapely.contains_xy(own, x[ab[0]:ab[1]], y[ab[0]:ab[1]])
+    try:
+        with cf.ThreadPoolExecutor(k, thread_name_prefix="kipi-points") as pool:
+            parts = list(pool.map(part, zip(cuts[:-1], cuts[1:])))
+        return np.concatenate(parts)
+    except Exception:                       # noqa: BLE001 - no threads here: one is enough
+        return shapely.contains_xy(geom, x, y)
+
+
 def track_at(tracks: Iterable[Track], layer: int, x: float, y: float,
              net: Optional[str] = None) -> Optional[Track]:
     """The track on ``layer`` (of ``net``, when given) whose copper covers (x, y): the one

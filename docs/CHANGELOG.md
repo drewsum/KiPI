@@ -84,6 +84,11 @@ milestones rather than versions that were ever set.
   solve of its own. On the Jetson AGX Thor demo (4.6M unknowns, 45 right-hand sides), a
   frequency drops from 27.8 s to 18.6 s, with the same impedances; the default 111
   frequencies take about 34 minutes instead of 51.
+- **Large AC models build faster** (#216). Building the AC model (also used by Coupled
+  Noise) finds the mesh's outer edges and the matrix's sparsity pattern by sorting
+  integer keys, not with `np.unique` on rows. It also tests triangles for facing copper in
+  several threads, each on its own copy of the copper. The model built is identical. On the
+  Jetson AGX Thor demo (4.75M triangles) the build drops from 61 s to 43 s.
 
 ## 0.9.4
 

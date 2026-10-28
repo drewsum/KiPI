@@ -53,10 +53,11 @@ from kipi.ac.solver.near_rail import near_rail
 from kipi.ac.solver.physics import (
     EPS0_F_PER_MM, MU0_H_PER_MM, slab_difference, slab_impedance,
 )
-from kipi.core.geometry.copper import net_layer_copper
+from kipi.core.geometry.copper import contains_xy, net_layer_copper
 from kipi.core.mesh.mesher import MeshOptions, NetMesh, combine_meshes, mesh_many
 from kipi.core.model.board import BoardSnapshot, Stackup
 from kipi.core.progress import NULL, ProgressReporter
+from kipi.core.sorting import boundary_nodes, pattern
 from kipi.core.solver import direct
 from kipi.core.temperature import at as temperature_at
 from kipi.dc.solver.fem import _merge_groups, triangle_geometry
@@ -114,10 +115,7 @@ class ACStats:
 
 def _boundary_nodes(tris: np.ndarray) -> np.ndarray:
     """Nodes on edges that belong to only one triangle."""
-    e = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]])
-    e.sort(axis=1)
-    uniq, counts = np.unique(e, axis=0, return_counts=True)
-    return np.unique(uniq[counts == 1].ravel())
+    return boundary_nodes(tris, int(tris.max()) + 1 if len(tris) else 0)
 
 
 def mesh_rail_and_ground(snap: BoardSnapshot, rail_nets: Sequence[str],
@@ -400,8 +398,7 @@ class ACSystem:
         diag = np.arange(self.n)
         r = np.concatenate([r, diag])          # every kept unknown gets a diagonal entry
         cc = np.concatenate([cc, diag])
-        key = r * self.n + cc
-        uniq, inv = np.unique(key, return_inverse=True)
+        uniq, inv = pattern(r, cc, self.n)      # np.unique(r * n + cc), faster (#216)
         self._n_entries = len(uniq)
         ur, uc = uniq // self.n, uniq % self.n
         self._indices = uc.astype(np.int32 if self.n < 2**31 else np.int64)
@@ -491,9 +488,9 @@ class ACSystem:
                 j = li + step
                 while len(todo) and 0 <= j < len(layers):
                     lj = layers[j].id
-                    hit_r = (shapely.contains_xy(geom[0][lj], cen[todo, 0], cen[todo, 1])
+                    hit_r = (contains_xy(geom[0][lj], cen[todo, 0], cen[todo, 1])
                              if lj in geom[0] else np.zeros(len(todo), bool))
-                    hit_g = (shapely.contains_xy(geom[1][lj], cen[todo, 0], cen[todo, 1])
+                    hit_g = (contains_xy(geom[1][lj], cen[todo, 0], cen[todo, 1])
                              if lj in geom[1] else np.zeros(len(todo), bool))
                     hit = hit_r | hit_g
                     if hit.any():
