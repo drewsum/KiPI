@@ -26,7 +26,7 @@ from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
-    QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTabWidget,
+    QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QTableWidget, QTabWidget,
     QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -2114,7 +2114,52 @@ class PIPanel(QWidget, PartSelection):
         for sp in (self.spin_edge, self.spin_grading):
             sp.valueChanged.connect(self._settings_changed)
         self.via_rules.changed.connect(self._settings_changed)
+        self._large_pad_rows(f, s)
         return w
+
+    def _large_pad_rows(self, f: QFormLayout, s):
+        """Large terminal pads solved as copper, connected at a contact inside them (#207)."""
+        f.addRow(QLabel("<b>Large pads</b>"))
+        self.chk_large_pads = QCheckBox("Model large pads as copper shapes")
+        self.chk_large_pads.setChecked(s.large_pads_as_copper)
+        self.chk_large_pads.setToolTip(art_tip(
+            "Off: every load, VRM and series-part pad is one equipotential, as if the part "
+            "shorted all of it (a thick soldered tab nearly does). On: pads at least as "
+            "large as below are solved as copper, and the part connects only at a plated "
+            "hole's wall or at the middle of an SMD pad. Off gives the lowest drop, on a "
+            "higher one; for a soldered power tab the truth lies between, so run both on "
+            "critical rails.", "pad_contact", "contact"))
+        f.addRow(self.chk_large_pads)
+        self.sld_large_pad = QSlider(Qt.Horizontal)
+        self.sld_large_pad.setRange(1, 200)
+        self.sld_large_pad.setValue(round(s.large_pad_mm2))
+        self.lbl_large_pad = QLabel()
+        self.lbl_large_pad.setMinimumWidth(56)
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(self.sld_large_pad, 1)
+        h.addWidget(self.lbl_large_pad)
+        f.addRow("Pads larger than", row)
+        tip(f, row, "Copper area from which a terminal pad is solved as copper (a plated "
+                    "hole's drill not counted). 10 mm² takes in SO-8 and QFN power pads and "
+                    "larger, but no passives.", ("pad_contact", "pad"))
+        self.spin_contact = _spin(5, 100, s.pad_contact_share * 100, 0, " %", 5)
+        f.addRow("Contact area", self.spin_contact)
+        tip(f, self.spin_contact, "Share of a large SMD pad's area where its part connects: "
+                                  "the pad's outline shrunk about its centre, as a power die "
+                                  "sits on its tab. A plated hole's pad connects at the hole "
+                                  "wall, its lead or bolt.", ("pad_contact", "contact"))
+        self._show_large_pad()
+        self.chk_large_pads.toggled.connect(self._settings_changed)
+        self.sld_large_pad.valueChanged.connect(self._settings_changed)
+        self.spin_contact.valueChanged.connect(self._settings_changed)
+
+    def _show_large_pad(self):
+        on = self.chk_large_pads.isChecked()
+        self.lbl_large_pad.setText(f"{self.sld_large_pad.value()} mm²")
+        for wdg in (self.sld_large_pad, self.lbl_large_pad, self.spin_contact):
+            wdg.setEnabled(on)
 
     def _thermal_tab(self) -> QWidget:
         w = QWidget()
@@ -2274,6 +2319,10 @@ class PIPanel(QWidget, PartSelection):
         s.max_edge_mm = self.spin_edge.value()
         s.grading = self.spin_grading.value()
         s.via_rules = self.via_rules.rules()
+        s.large_pads_as_copper = self.chk_large_pads.isChecked()
+        s.large_pad_mm2 = float(self.sld_large_pad.value())
+        s.pad_contact_share = self.spin_contact.value() / 100
+        self._show_large_pad()
         self._on_changed()
 
     # ------------------------------------------------------------------ data
@@ -2291,6 +2340,16 @@ class PIPanel(QWidget, PartSelection):
         self.via_rules.blockSignals(True)
         self.via_rules.set_rules(setup.settings.via_rules)
         self.via_rules.blockSignals(False)
+        s = setup.settings
+        large = (self.chk_large_pads, self.sld_large_pad, self.spin_contact)
+        for wdg in large:
+            wdg.blockSignals(True)
+        self.chk_large_pads.setChecked(s.large_pads_as_copper)
+        self.sld_large_pad.setValue(round(s.large_pad_mm2))
+        self.spin_contact.setValue(s.pad_contact_share * 100)
+        for wdg in large:
+            wdg.blockSignals(False)
+        self._show_large_pad()
         self.clear_results()
         self.spin_via_limit.blockSignals(True)
         self.spin_via_limit.setValue((setup.via_current_limit_a or 0.0) * 1e3)

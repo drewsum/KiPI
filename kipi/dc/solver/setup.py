@@ -81,6 +81,12 @@ class SolveSettings:
     conductor_by_layer: Dict[str, str] = field(default_factory=dict)
     tol: float = 1e-10              # relative residual for the iterative solver
     max_iter: int = 2000
+    # Terminal pads with at least large_pad_mm2 of copper solved as copper, their part
+    # connected at a plated hole's wall or the central pad_contact_share of an SMD pad
+    # (#207); off: every terminal pad is one equipotential.
+    large_pads_as_copper: bool = False
+    large_pad_mm2: float = 10.0
+    pad_contact_share: float = 0.25
 
     def __post_init__(self):
         # A setup file stores the rules as plain objects.
@@ -97,6 +103,11 @@ class SolveSettings:
                     r.plating_mm = float(plating)
             state["via_rules"] = rules
         self.__dict__.update(state)
+
+    def pad_mesh_options(self) -> dict:
+        """The mesher's large-pad arguments (kipi.core.mesh.mesher.MeshOptions)."""
+        return {"large_pad_mm2": self.large_pad_mm2 if self.large_pads_as_copper else None,
+                "pad_contact_share": self.pad_contact_share}
 
     def rho_for(self, layer_name: str) -> float:
         """Resistivity of a copper layer at REF_TEMP_C, in ohm*mm."""

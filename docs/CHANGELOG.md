@@ -26,6 +26,14 @@ milestones rather than versions that were ever set.
   load is grounded on the part's pins on a VRM's reference net. A load already on that
   part and net gets the new current and keeps its tolerances. The phases' `PERCENT` and
   the sink resistance `R` aren't modelled, and the Log says so.
+- **Large pads can be solved as copper** (#207). In the Mesh tab, tick **Model large pads
+  as copper shapes**. Load, VRM and series-part pads at least as large as the **Pads larger
+  than** slider sets (10 mm² by default) are then solved as copper, rather than as one
+  equipotential. The part connects only at its contact: an SMD pad's outline shrunk about
+  its centre to the **Contact area** share (25% by default), or a plated hole's wall for a
+  mounting hole or through-hole lead. Current density shows inside these pads, and the
+  drop is higher than with equipotential pads; for a soldered power tab the truth lies
+  between the two. Off by default, so existing results don't change.
 
 ### Changed
 - **Large boards' 3D view builds faster** (#205). The view's net meshes are now read

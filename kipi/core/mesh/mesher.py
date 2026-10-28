@@ -17,7 +17,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import shapely
-from shapely import STRtree
+from shapely import STRtree, affinity
 import triangle
 from scipy.spatial import cKDTree
 from shapely.geometry import Point, Polygon
@@ -287,6 +287,36 @@ def _pad_geom(pad: Pad, layer: int) -> Optional[BaseGeometry]:
     return shapely.union_all(geoms) if geoms else None
 
 
+def is_large_pad(pad: Pad, opts: "MeshOptions") -> bool:
+    """Whether terminal ``pad`` is solved as copper with a smaller contact (#207): its
+    copper, on its largest layer and less any drill, is at least opts.large_pad_mm2."""
+    if opts.large_pad_mm2 is None:
+        return False
+    areas = [g.area for g in (_pad_geom(pad, lid) for lid in pad.shapes) if g is not None]
+    if not areas:
+        return False
+    hole = 0.0
+    if pad.pad_type == "pth":
+        hole = math.pi / 4 * pad.drill_mm[0] * (pad.drill_mm[1] or pad.drill_mm[0])
+    return max(areas) - hole >= opts.large_pad_mm2
+
+
+def _contact_geom(pad: Pad, layer: int, opts: "MeshOptions") -> Optional[BaseGeometry]:
+    """Where an SMD terminal pad's part connects on ``layer``: the whole pad, or for a
+    large pad its outline scaled about its centroid to opts.pad_contact_share of its area
+    (a power die on its tab, #207). A plated hole's contact is its wall (see _join)."""
+    g = _pad_geom(pad, layer)
+    if (g is None or pad.pad_type == "pth" or opts.pad_contact_share >= 1
+            or not is_large_pad(pad, opts)):
+        return g
+    f = math.sqrt(max(opts.pad_contact_share, 0.01))
+    c = g.centroid
+    origin = c if g.contains(c) else Point(pad.position)
+    contact = shapely.intersection(affinity.scale(g, f, f, origin=origin), g)
+    polys = [q for q in shapely.get_parts(contact) if q.geom_type == "Polygon" and q.area > 0]
+    return shapely.union_all(polys) if polys else g
+
+
 def _nodes_in(geom: BaseGeometry, pts: np.ndarray, tree: cKDTree, offset: int) -> np.ndarray:
     """Global ids of nodes (of one layer) inside ``geom`` grown by RING_EPS_MM."""
     minx, miny, maxx, maxy = geom.bounds
@@ -341,6 +371,10 @@ class MeshOptions:
     circle_quad_segs: int = 2
     min_edge_mm: float = 0.02
     grading: float = 0.2
+    # Terminal pads with at least this much copper are solved as copper, their part
+    # connected only at a contact inside them (#207); None: every pad is equipotential.
+    large_pad_mm2: Optional[float] = None
+    pad_contact_share: float = 0.25    # an SMD contact's share of its pad's area
 
     @property
     def max_area(self) -> float:
@@ -383,6 +417,11 @@ def mesh_layer(snap: BoardSnapshot, net: str, lid: int, terminal_pad_ids: Sequen
         progress.info(f"  {cu.name}: meshing {geom.area:.0f} mm² of copper...")
     terminal_geoms = [g for g in (_pad_geom(p, lid) for p in terminals) if g is not None]
     constraints = [g.boundary for g in terminal_geoms]
+    # A large pad's contact gets nodes of its own (its outline is a constraint too).
+    for p in terminals:
+        contact = _contact_geom(p, lid, opts)
+        if contact is not None and not contact.equals(_pad_geom(p, lid)):
+            constraints.append(contact.boundary)
     size_fn = graded_size(features, opts.min_edge_mm, opts.max_edge_mm, opts.grading)
     ring_centers = _via_ring_centers(vias, pads, lid, set(terminal_pad_ids))
     all_pts, all_tris, n, skipped = [], [], 0, 0
@@ -419,13 +458,14 @@ def _features(snap: BoardSnapshot, net: str, lid: int,
 def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = (),
              max_edge_mm: float = 0.5, min_angle_deg: float = 28.0, simplify_mm: float = 0.003,
              circle_quad_segs: int = 2, min_edge_mm: float = 0.02, grading: float = 0.2,
+             large_pad_mm2: Optional[float] = None, pad_contact_share: float = 0.25,
              progress: ProgressReporter = NULL,
              graded: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> NetMesh:
     """The net's copper meshed per layer, joined through its plated holes. The mesh is
     refined toward the holes; ``graded``, if given, picks which (a test of their xy, the
     AC solve's holes near the rail, #123)."""
     opts = MeshOptions(max_edge_mm, min_angle_deg, simplify_mm, circle_quad_segs,
-                       min_edge_mm, grading)
+                       min_edge_mm, grading, large_pad_mm2, pad_contact_share)
     return mesh_many(snap, [(net, terminal_pad_ids)], opts, progress, graded)[0]
 
 
@@ -559,21 +599,37 @@ def _join(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str],
         if bar.ring_nodes:   # even one layer: the plated wall shorts the hole edge
             mesh.barrels.append(bar)
 
-    # Terminal pads: nodes inside the pad outline on each of its layers.
+    # Terminal pads: nodes inside the pad outline on each of its layers; for a large pad
+    # (#207) only those of its contact, an SMD pad's shrunk outline or a plated hole's wall.
+    n_large = 0
     for p in terminals:
         per_layer: Dict[int, np.ndarray] = {}
-        for lid in p.shapes:
-            if lid not in layer_ranges:
-                continue
-            g = _pad_geom(p, lid)
-            if g is None:
-                continue
-            nodes = ring(lid, g)
-            if len(nodes):
-                per_layer[lid] = nodes
+        large = is_large_pad(p, opts)
+        if large and p.pad_type == "pth":
+            for lid in p.shapes:
+                hole = pad_hole(lid, p.position) if lid in layer_ranges else None
+                if hole is not None:
+                    nodes = ring(lid, hole)
+                    if len(nodes):
+                        per_layer[lid] = nodes
+        if not per_layer:
+            for lid in p.shapes:
+                if lid not in layer_ranges:
+                    continue
+                g = _contact_geom(p, lid, opts) if large else _pad_geom(p, lid)
+                if g is None:
+                    continue
+                nodes = ring(lid, g)
+                if len(nodes):
+                    per_layer[lid] = nodes
         if not per_layer:
             raise MeshError(f"Pad {p.label} on net {net} has no meshed copper")
+        n_large += large
         mesh.pad_nodes[p.id] = per_layer
+    if n_large:
+        progress.info(f"{n_large} terminal pad(s) of {opts.large_pad_mm2:g} mm² or more solved "
+                      f"as copper, connected at their plated hole or the central "
+                      f"{opts.pad_contact_share:.0%} of their area")
 
     if skipped_rings:
         progress.info(f"Skipped {skipped_rings} isolated via/PTH ring(s): with nothing else "

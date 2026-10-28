@@ -330,7 +330,8 @@ class _TreeSolver:
         prob = NetProblem(label, sources, loads, s, series=self._links_in(g), nets=nets,
                           temperature=self.temperature)
         key = (tuple(nets), tuple(sorted(prob.terminal_pad_ids())), s.max_edge_mm, s.grading,
-               s.min_edge_mm, s.circle_quad_segs, s.simplify_mm, s.min_angle_deg)
+               s.min_edge_mm, s.circle_quad_segs, s.simplify_mm, s.min_angle_deg,
+               *s.pad_mesh_options().values())
         mesh = self.mesh_cache.get(key) if self.mesh_cache is not None else None
         if mesh is None:
             with self.progress.timed(f"Meshing {label}"):
@@ -338,7 +339,7 @@ class _TreeSolver:
                                  max_edge_mm=s.max_edge_mm, min_angle_deg=s.min_angle_deg,
                                  simplify_mm=s.simplify_mm, circle_quad_segs=s.circle_quad_segs,
                                  min_edge_mm=s.min_edge_mm, grading=s.grading,
-                                 progress=self.progress)
+                                 progress=self.progress, **s.pad_mesh_options())
             if self.mesh_cache is not None:
                 self.mesh_cache[key] = mesh
         previous = self.factor_cache.get(key) if self.factor_cache is not None else None

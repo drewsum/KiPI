@@ -169,3 +169,23 @@ def test_an_isolated_converter_edits_its_input_ground(app):
     ed._store()                                            # none picked: U1's are guessed
     assert setup.vrms[1].input_ground == PinRef("U1", "PGND")
     panel.close()
+
+
+def test_large_pad_controls_edit_the_settings(app):
+    setup = two_phase()
+    panel = PIPanel()
+    panel.set_board(board(), setup)
+    s = setup.settings
+    assert not panel.sld_large_pad.isEnabled() and not s.large_pads_as_copper
+    panel.chk_large_pads.setChecked(True)
+    panel.sld_large_pad.setValue(25)
+    panel.spin_contact.setValue(40)
+    assert (s.large_pads_as_copper, s.large_pad_mm2, s.pad_contact_share) == (True, 25.0, 0.4)
+    assert panel.sld_large_pad.isEnabled() and panel.lbl_large_pad.text() == "25 mm²"
+    # Another setup's values show without editing it.
+    other = two_phase()
+    before = other.to_dict()
+    panel.set_board(board(), other)
+    assert not panel.chk_large_pads.isChecked() and panel.sld_large_pad.value() == 10
+    assert other.to_dict() == before
+    panel.close()

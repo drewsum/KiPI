@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="172" viewBox="0 0 300 172">
+  <rect x="0" y="0" width="300" height="172" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- copper the pads sit on -->
+    <rect x="12" y="30" width="276" height="106" rx="4" fill="{grid}"/>
+    <text x="150" y="20" fill="{muted}" text-anchor="middle">current spreads from the contact into the pad</text>
+    <!-- an SMD power pad (a tab) with its central contact -->
+    <rect x="30" y="46" width="132" height="74" rx="3" fill="none" stroke="{pad}" stroke-width="2"/>
+    <rect x="63" y="64.5" width="66" height="37" rx="2" fill="{contact}" fill-opacity="0.35" stroke="{contact}" stroke-width="2"/>
+    <text x="96" y="87" fill="{fg}" text-anchor="middle">contact</text>
+    <g stroke="{muted}" stroke-width="1.4" fill="{muted}">
+      <path d="M96,64 V52"/><path d="M92,55 L96,50 L100,55 Z"/>
+      <path d="M96,102 V114"/><path d="M92,111 L96,116 L100,111 Z"/>
+      <path d="M62,83 H40"/><path d="M43,79 L38,83 L43,87 Z"/>
+      <path d="M130,83 H152"/><path d="M149,79 L154,83 L149,87 Z"/>
+    </g>
+    <text x="96" y="152" fill="{pad}" text-anchor="middle">SMD pad: its middle</text>
+    <!-- a plated-hole pad, connected at its wall -->
+    <circle cx="228" cy="83" r="36" fill="none" stroke="{pad}" stroke-width="2"/>
+    <circle cx="228" cy="83" r="13" fill="{bg}" stroke="{contact}" stroke-width="3"/>
+    <g stroke="{muted}" stroke-width="1.4" fill="{muted}">
+      <path d="M228,69 V54"/><path d="M224,57 L228,52 L232,57 Z"/>
+      <path d="M228,97 V112"/><path d="M224,109 L228,114 L232,109 Z"/>
+      <path d="M214,83 H199"/><path d="M202,79 L197,83 L202,87 Z"/>
+      <path d="M242,83 H257"/><path d="M254,79 L259,83 L254,87 Z"/>
+    </g>
+    <text x="228" y="152" fill="{pad}" text-anchor="middle">plated hole: its wall</text>
+  </g>
+</svg>

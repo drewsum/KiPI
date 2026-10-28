@@ -1143,8 +1143,24 @@ many groups will be solved, e.g. <b>Solve 3 of 5 net groups</b>.</p>
     drill range, plating (µm, growing inward from the drill) and what a filled hole is
     filled with. A via the KiCad board marks as filled carries its core too when the fill
     conducts. Defaults: IPC-6012 Class 2 minimum averages.</td></tr>
+  <tr><td>Model large pads as copper shapes</td><td class="wrap">Off (the default): every
+    load, VRM and series-part pad is one equipotential, as if the part shorted all of it.
+    On: pads at least as large as <b>Pads larger than</b> are solved as copper, and the part
+    connects only at its contact. Current density then shows inside these pads, and vias
+    in them away from the contact are ordinary vias.</td></tr>
+  <tr><td>Pads larger than</td><td class="wrap">Slider, 1 to 200 mm² of copper (a plated
+    hole's drill not counted). The default of 10 mm² takes in SO-8 and QFN power pads and
+    larger, but no passives.</td></tr>
+  <tr><td>Contact area</td><td class="wrap">Where a large SMD pad's part connects: the pad's
+    outline shrunk about its centre to this share of its area (25% by default, about a power
+    die on its tab). A plated-hole pad, such as a mounting hole or a through-hole lead,
+    connects at its hole wall.</td></tr>
 </table>
 <p>The defaults suit most boards; set the via plating your fabricator states.</p>
+<p>Equipotential pads give the lowest drop, since they treat the part as a perfect conductor
+across its pad. Large pads as copper give a higher one, since they ignore the part's own tab.
+For a soldered power tab (D2PAK, TOLL) the truth lies between the two, so run both on a
+critical rail.</p>
 <figure><img src="images/setup_mesh.png" alt="The Mesh tab with the via plating rules">
 <figcaption>The Mesh tab and its via plating rules.</figcaption></figure>
 </div>

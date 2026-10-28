@@ -31,7 +31,7 @@ def run(snap: BoardSnapshot, problem: NetProblem,
                          max_edge_mm=s.max_edge_mm,
                         min_angle_deg=s.min_angle_deg, simplify_mm=s.simplify_mm,
                         circle_quad_segs=s.circle_quad_segs, min_edge_mm=s.min_edge_mm,
-                        grading=s.grading, progress=progress)
+                        grading=s.grading, progress=progress, **s.pad_mesh_options())
     sol = solve(snap, mesh, problem, progress)
     with progress.timed("Post-processing"):
         fields = compute_fields(sol)

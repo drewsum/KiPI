@@ -273,8 +273,12 @@ mesher:</p>
     drill hole, down to <i>Min edge</i> (0.02 mm), and grow again away from it. Detail is
     spent where the voltage changes fastest.</li>
   <li><b>Pads and holes.</b> Each load or VRM pad outline is built into the mesh, so the pad
-    has nodes of its own to inject or draw current. Drill holes are holes in the copper, and
-    the nodes around each rim are where the plated barrel joins that layer.</li>
+    has nodes of its own to inject or draw current. Its nodes are one equipotential, as if
+    the part shorted the whole pad. With <i>Model large pads as copper shapes</i> (Mesh tab)
+    a pad above the area threshold is meshed as copper instead, and only its contact is
+    equipotential: an SMD pad's outline shrunk about its centre, or a plated hole's wall.
+    Drill holes are holes in the copper, and the nodes around each rim are where the plated
+    barrel joins that layer.</li>
   <li><b>2.5D.</b> Each layer is a flat sheet with the copper's thickness. Vias and plated
     holes join the sheets of different layers through their barrels. Current flowing through
     the thickness of a single sheet is not modeled, which suits board copper, which is tens
