@@ -45,6 +45,11 @@ milestones rather than versions that were ever set.
   to close it. Images are now drawn at twice the resolution they are shown at, so they
   stay sharp full screen. The interactive 3D views and Plotly plots get a "Full screen"
   button that redraws them to fill the window.
+- **Reports have a new look, with 3D views collapsed** (#222). The DC, AC and Coupled Noise
+  web reports are restyled: a sticky bar of section links, card-style tables and figures,
+  PASS / FAIL badges, and collapsible sections. Wide tables scroll sideways instead of
+  running off the page. Each net group's 3D view in the DC report starts collapsed; click
+  its bar to open it.
 
 ### Changed
 - **Reports put their tables after the plots** (#222). The DC, AC and Coupled Noise
@@ -127,6 +132,9 @@ milestones rather than versions that were ever set.
   board, stopped two of the DSP board's rails from converging, so it is not used.
 
 ### Fixed
+- **The DC report's voltage unit selector did nothing** (#222). Its script ran before the
+  selector was on the page, so the tables stayed in mV from the target whatever was
+  picked. Volts and % now switch the tables as intended.
 - **Loads on negative rails pulled their pins the wrong way** (#220). A load's current
   was taken out of the copper whatever the rail's polarity, so a 1 A load on a -12 V rail
   read about -12.1 V instead of rising toward 0 V. A load's current is now what it draws

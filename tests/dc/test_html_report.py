@@ -51,6 +51,8 @@ def test_report_contents(tmp_path, thermal):
         assert last_plot < text.index(table) < text.index("id='user-notes'"), table
     assert ("id='thermal-tables'" in text) == thermal
     assert "lightbox" in text and "plot-expand" in text
+    # each group's 3D view is collapsed until clicked open
+    assert text.count("<details class='view3d'><summary>3D view: ") == len(tree.groups)
 
 
 def test_report_mesh_keeps_copper(tmp_path):

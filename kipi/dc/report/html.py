@@ -3,7 +3,8 @@
 One ``.html`` file with:
 * a summary,
 * the board temperature map when an electro-thermal solve ran,
-* per net group: an interactive 3D view (Plotly, rotate and zoom in the browser) and
+* per net group: an interactive 3D view (Plotly, rotate and zoom in the browser;
+  collapsed until clicked open, #222) and
   top-down voltage and current-density maps for every layer, with a tickbox per layer that
   hides or shows it in the view and the maps (#181),
 * after every plot (#222), the load / VRM / DC connection / pin / loss / via tables, the
@@ -137,13 +138,10 @@ def vunit_selector() -> str:
 
 
 VUNIT_JS = r"""
-(function () {
-  var sel = document.getElementById("vunit");
-  if (!sel) return;
-  sel.addEventListener("change", function () {
-    document.documentElement.setAttribute("data-vunit", sel.value);
-  });
-})();
+document.addEventListener("change", function (e) {
+  if (e.target.id === "vunit")
+    document.documentElement.setAttribute("data-vunit", e.target.value);
+});
 """
 
 
@@ -341,49 +339,104 @@ def _plotly_3d(scene, snap: BoardSnapshot, div_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 CSS = """
-body { font-family: Segoe UI, Helvetica, Arial, sans-serif; margin: 24px auto; max-width: 1180px;
-       color: #222; background: #fafafa; }
-h1 { margin-bottom: 0; } h2 { border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-top: 36px; }
-h3 { margin-top: 26px; }
-.meta { color: #666; margin-top: 4px; }
-table { border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; background: white; }
-th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: right; }
-th { background: #f0f0f0; } td:first-child, th:first-child { text-align: left; }
-.pass { color: #1a8f2c; font-weight: bold; } .fail { color: #c62828; font-weight: bold; }
-.unjudged { color: #b26a00; font-weight: bold; }
-.maps { display: flex; flex-wrap: wrap; gap: 12px; }
-.maps figure { margin: 0; background: white; border: 1px solid #ddd; padding: 6px; }
-.maps img { width: 520px; max-width: 100%; }
-.note { color: #666; font-size: 12px; }
-nav a { margin-right: 12px; }
+:root { --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; --card: #ffffff; --bg: #f4f6f9;
+        --accent: #2563eb; --accent-soft: #eff4ff; --head: #f8fafc;
+        --pass: #15803d; --pass-bg: #dcfce7; --fail: #b91c1c; --fail-bg: #fee2e2;
+        --warn: #b45309; --warn-bg: #fef3c7; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+       margin: 0 auto; padding: 32px 28px 64px; max-width: 1240px; color: var(--fg);
+       background: var(--bg); line-height: 1.5; font-size: 14px;
+       -webkit-font-smoothing: antialiased; }
+h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; margin: 0; }
+h2 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 44px 0 12px;
+     padding-left: 12px; border-left: 4px solid var(--accent); scroll-margin-top: 70px; }
+h3 { font-size: 15px; font-weight: 600; margin: 26px 0 8px; color: #374151; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+.meta { color: var(--muted); margin: 6px 0 18px; font-size: 13px; }
+table { border-collapse: separate; border-spacing: 0; margin: 8px 0 18px; font-size: 13px;
+        background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+        display: block; width: fit-content; max-width: 100%; overflow-x: auto;
+        font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--line); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--accent-soft); }
+th { background: var(--head); color: #4b5563; font-weight: 600; white-space: nowrap; }
+td:first-child, th:first-child { text-align: left; }
+.pass, .fail, .unjudged { display: inline-block; padding: 1px 9px; border-radius: 999px;
+                          font-size: 12px; font-weight: 600; }
+.pass { color: var(--pass); background: var(--pass-bg); }
+.fail { color: var(--fail); background: var(--fail-bg); }
+.unjudged { color: var(--warn); background: var(--warn-bg); }
+.maps { display: flex; flex-wrap: wrap; gap: 16px; }
+.maps figure { margin: 0; background: var(--card); border: 1px solid var(--line);
+               border-radius: 10px; padding: 8px; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+               transition: box-shadow 0.15s; }
+.maps figure:hover { box-shadow: 0 6px 18px rgba(16, 24, 40, 0.12); }
+.maps img { width: 560px; max-width: 100%; display: block; }
+.note { color: var(--muted); font-size: 12.5px; }
+nav { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 10px 0; margin: 0 0 8px; background: rgba(244, 246, 249, 0.92);
+      backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+nav a { padding: 4px 12px; border-radius: 999px; background: var(--card);
+        border: 1px solid var(--line); color: #374151; font-size: 13px; }
+nav a:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+              text-decoration: none; }
 .vu { display: none; }
 html:not([data-vunit]) .vu-mv, html[data-vunit=mv] .vu-mv, html[data-vunit=pct] .vu-pct,
 html[data-vunit=v] .vu-v { display: inline; }
-.vunit { position: sticky; top: 0; background: #fafafa; padding: 6px 0; margin: 8px 0;
-         z-index: 2; }
-.layer-toggles { font-size: 13px; margin: 6px 0; }
-.layer-toggles label { margin-right: 12px; white-space: nowrap; cursor: pointer; }
-details > summary { cursor: pointer; margin: 6px 0; }
+.vunit { padding: 8px 14px; margin: 8px 0; background: var(--card);
+         border: 1px solid var(--line); border-radius: 10px; }
+select, button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 8px;
+                 border: 1px solid #d1d5db; background: var(--card); color: var(--fg); }
+button { cursor: pointer; } button:hover { border-color: var(--accent); color: var(--accent); }
+.layer-toggles { font-size: 13px; margin: 8px 0; }
+.layer-toggles label { margin-right: 14px; white-space: nowrap; cursor: pointer; }
+input[type=checkbox] { accent-color: var(--accent); }
+details { margin: 8px 0; }
+details > summary { cursor: pointer; padding: 9px 14px; background: var(--card);
+                    border: 1px solid var(--line); border-radius: 10px; list-style: none;
+                    user-select: none; transition: background 0.15s; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "\\25B8"; display: inline-block; width: 1.2em;
+                            color: var(--muted); transition: transform 0.15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+details > summary:hover { background: var(--accent-soft); }
+details[open] > summary { margin-bottom: 8px; }
+.view3d > summary { font-weight: 600; }
+.view3d .plotly-graph-div { border: 1px solid var(--line); border-radius: 10px;
+                            overflow: hidden; background: var(--card); }
 thead th { cursor: pointer; user-select: none; }
+thead th:hover { color: var(--accent); }
 thead th[data-sort=asc]::after { content: " \\25B2"; } thead th[data-sort=desc]::after { content: " \\25BC"; }
-#user-notes-text { min-height: 4em; background: white; border: 1px solid #ccc; padding: 8px 10px;
-                   border-radius: 3px; white-space: pre-wrap; outline: none; }
-#user-notes-text:focus { border-color: #4a90d9; }
-#user-notes-text.empty::before { content: attr(data-placeholder); color: #999; }
+ul { padding-left: 22px; } li { margin: 3px 0; }
+fieldset { border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+           padding: 8px 14px; }
+#user-notes-text { min-height: 5em; background: var(--card); border: 1px solid var(--line);
+                   padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; outline: none; }
+#user-notes-text:focus { border-color: var(--accent);
+                         box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+#user-notes-text.empty::before { content: attr(data-placeholder); color: #9ca3af; }
 #user-notes-text img { max-width: 100%; }
-.notes-bar { margin-top: 6px; font-size: 12px; color: #666; }
+.notes-bar { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .notes-bar button { margin-right: 10px; }
-@media print { .notes-bar { display: none; } #user-notes-text { border: none; padding: 0; }
+@media print { body { background: white; padding: 0; } nav { display: none; }
+               table, .maps figure { box-shadow: none; }
+               .notes-bar { display: none; } #user-notes-text { border: none; padding: 0; }
                #user-notes-text.empty::before { content: none; } .notes-empty { display: none; } }
 img { cursor: zoom-in; } #user-notes-text img { cursor: auto; }
-.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.85);
-            display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.lightbox img { width: 96vw; height: 96vh; object-fit: contain; cursor: zoom-out; }
-.plot-expand { font-size: 12px; margin: 4px 0; cursor: pointer; }
-.plot-expand.on { position: fixed; top: 8px; left: 8px; z-index: 101; }
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(3px); display: flex; align-items: center;
+            justify-content: center; cursor: zoom-out; }
+.lightbox img { width: 96vw; height: 96vh; object-fit: contain; cursor: zoom-out;
+                border-radius: 6px; }
+.plot-expand { font-size: 12px; margin: 4px 0 8px; }
+.plot-expand.on { position: fixed; top: 10px; left: 10px; z-index: 101;
+                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
 .plotly-graph-div.plot-full { position: fixed !important; inset: 0; z-index: 100;
                               width: 100vw !important; height: 100vh !important;
-                              background: white; }
+                              background: white; border-radius: 0 !important; }
 @media print { .lightbox, .plot-expand { display: none; } }
 """
 
@@ -466,6 +519,12 @@ EXPAND_JS = r"""
     document.body.appendChild(box);
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  // A plot drawn while collapsed has no width to fit: fit it once it is opened.
+  document.addEventListener("toggle", function (e) {
+    if (!e.target.open || !window.Plotly) return;
+    e.target.querySelectorAll(".plotly-graph-div").forEach(function (d) {
+      Plotly.Plots.resize(d); });
+  }, true);
   function expand(div, button) {
     if (full) { close(); return; }
     full = {div: div, button: button, height: div.layout ? div.layout.height : null};
@@ -477,14 +536,16 @@ EXPAND_JS = r"""
   }
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".plotly-graph-div").forEach(function (div) {
-      var prev = div.previousElementSibling;
+      // Before Plotly's wrapper, which is the plot's height: inside, it pushes the plot
+      // over what follows.
+      var host = div.parentNode, prev = host.previousElementSibling;
       if (prev && prev.classList.contains("plot-expand")) return;
       var b = document.createElement("button");
       b.type = "button";
       b.className = "plot-expand";
       b.textContent = "⤢ Full screen";
       b.addEventListener("click", function () { expand(div, b); });
-      div.parentNode.insertBefore(b, div);
+      host.parentNode.insertBefore(b, host);
     });
   });
 })();
@@ -937,10 +998,12 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
             views.append((name, toggles + _plotly_3d(scene, snap, f"plot{gi}")))
             parts.append(f"<p class='note'>Interactive 3D view: {_views_link(path)}</p>")
         else:
+            # Collapsed until clicked open (#222): Plotly draws it again at its size then.
             parts.append(toggles)
-            parts.append(_plotly_3d(scene, snap, f"plot{gi}"))
-            parts.append(f"<p class='note'>{_e(VIEW_NOTE)} The tickboxes hide or show a "
-                         "layer in the view and its maps.</p>")
+            parts.append(f"<details class='view3d'><summary>3D view: {_e(name)}</summary>"
+                         + _plotly_3d(scene, snap, f"plot{gi}")
+                         + f"<p class='note'>{_e(VIEW_NOTE)} The tickboxes hide or show a "
+                         "layer in the view and its maps.</p></details>")
         rows = []
         tri_layer = g.result.mesh.tri_layer
         for lid, lr in scene.layers.items():
