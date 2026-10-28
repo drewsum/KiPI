@@ -2,6 +2,8 @@
 the same meshes as in one process, a net bigger than a worker's share built a layer to a
 task, and the build carried on here when a pool can't start."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -90,7 +92,8 @@ def test_small_boards_and_non_pythons_build_here(monkeypatch):
     monkeypatch.setenv(workers.SERIAL_ENV, "1")
     assert parallel.workers(1000) == 0
     monkeypatch.delenv(workers.SERIAL_ENV)
-    monkeypatch.setattr(workers.sys, "executable", r"C:\Program Files\KiCad\bin\kicad.exe")
+    # Paths in this system's own form, as sys.executable is.
+    monkeypatch.setattr(workers.sys, "executable", str(Path("KiCad", "bin", "kicad.exe")))
     assert parallel.workers(1000) == 0
-    monkeypatch.setattr(workers.sys, "executable", r"C:\venv\Scripts\KiPI.exe")   # #124
+    monkeypatch.setattr(workers.sys, "executable", str(Path("venv", "Scripts", "KiPI.exe")))  # #124
     assert parallel.workers(1000) == workers.MAX_WORKERS
