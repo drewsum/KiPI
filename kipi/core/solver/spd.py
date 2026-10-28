@@ -14,6 +14,7 @@ from typing import List, Optional
 import numpy as np
 import scipy.sparse as sp
 
+from kipi.core import eta
 from kipi.core.memory import free_memory
 from kipi.core.progress import ProgressReporter
 from kipi.core.solver import direct
@@ -110,8 +111,12 @@ class SpdSolver:
             try:
                 # Past PARDISO's usual limit SuperLU would take far too long: if PARDISO
                 # fails there, AMG-CG instead (#214).
-                self.lu = direct.factorize(A, progress.warn,
-                                           superlu=n <= DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO)
+                # Recorded under the backend that did it, for the next one's estimate.
+                with eta.predicted(progress, f"spd-factor/{direct.backend()}",
+                                   eta.factor_work(n)) as step:
+                    self.lu = direct.factorize(A, progress.warn,
+                                               superlu=n <= DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO)
+                    step["kind"] = f"spd-factor/{self.lu.name.split()[0]}"
             except direct.DirectError as e:
                 progress.warn(f"{e}; solving this system iteratively (AMG-CG)")
             else:
@@ -121,7 +126,9 @@ class SpdSolver:
         t = time.perf_counter()
         progress.info(f"AMG setup ({n} unknowns, {A.nnz} non-zeros)...")
         kw = {} if smooth == "jacobi" else {"smooth": smooth}      # jacobi: pyamg's default
-        ml = pyamg.smoothed_aggregation_solver(A, symmetry="hermitian", max_coarse=500, **kw)
+        with eta.predicted(progress, f"amg-setup/{smooth}", float(A.nnz)):
+            ml = pyamg.smoothed_aggregation_solver(A, symmetry="hermitian", max_coarse=500,
+                                                   **kw)
         self.smooth = smooth
         progress.info(f"AMG hierarchy: {len(ml.levels)} levels, operator complexity "
                       f"{ml.operator_complexity():.2f} ({time.perf_counter() - t:.2f} s)")

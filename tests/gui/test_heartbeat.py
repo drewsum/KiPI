@@ -49,6 +49,22 @@ def test_spinner_shows_the_newest_activity_and_hides_when_all_stop(app, monkeypa
     assert not beat.active and beat.isHidden() and not beat._timer.isActive()
 
 
+def test_time_left_follows_the_estimate(app, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(hb.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr("kipi.core.eta.time.monotonic", lambda: now[0])
+    beat = hb.Heartbeat()
+    estimate = hb.Estimate()
+    beat.start("task", "AC solve", estimate)
+    now[0] += 30
+    assert beat.text() == "AC solve · 0:30"              # nothing to go on yet
+    estimate.fraction(0.2)
+    assert beat.text() == "AC solve · 0:30 · about 2 min left"
+    estimate.stage()
+    estimate.expect(40.0)
+    assert beat.text() == "AC solve · 0:30 · about 40 s left"
+
+
 def test_spinner_paints(app):
     spinner = hb._Spinner()
     spinner.grab()                              # paintEvent runs without error

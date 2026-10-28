@@ -4,7 +4,18 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.5 (in development)
+## 0.9.6 (in development)
+
+### Added
+- **Time left in the status bar** (#224). While a solve runs, the spinner at the right end
+  of the status bar says about how long the step running now has left, next to the time
+  taken. A step that reports how far it is (the frequencies of an AC sweep, the nets being
+  meshed, an iterative solve converging) is extrapolated from how fast it is going. A step
+  that cannot, a factorization or an AC sweep's first frequency, is predicted from its
+  unknowns and how long steps of about that size took before on this computer, which KiPI
+  keeps in `timings.json` in its data folder; the first solve of a kind has no estimate.
+
+## 0.9.5
 
 ### Added
 - **The Log names what draws the 3D view** (#205). Once the board has drawn, the Log names

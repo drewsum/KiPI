@@ -35,6 +35,10 @@ class ProgressReporter:
     def fraction(self, value: Optional[float]):
         """Progress through the current stage, 0..1, or None if unknown."""
 
+    def expect(self, seconds: float, upto: float = 1.0):
+        """The current stage's fraction should reach ``upto`` in about ``seconds`` (a
+        prediction for a step that cannot report how far it is, see :mod:`kipi.core.eta`)."""
+
     def partial(self, result):
         """Hand over one piece of a result before the whole stage finishes."""
 

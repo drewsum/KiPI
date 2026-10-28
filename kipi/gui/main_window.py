@@ -25,6 +25,7 @@ from qtpy.QtWidgets import (
 
 from kipi import __version__
 from kipi.ac.gui.panel import ACPanel
+from kipi.core.eta import Estimate
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
 from kipi.dc.gui.pi_panel import PIPanel
@@ -805,6 +806,10 @@ class MainWindow(QMainWindow):
         prog.sig_message.connect(self.log)
         prog.sig_stage.connect(self._on_stage)
         prog.sig_fraction.connect(self._on_fraction)
+        estimate = Estimate()                    # the time left, in the status bar (#224)
+        prog.sig_stage.connect(lambda _name: estimate.stage())
+        prog.sig_fraction.connect(estimate.fraction)
+        prog.sig_expect.connect(estimate.expect)
         if on_partial is not None:
             prog.sig_partial.connect(on_partial)
         task = Task(fn, prog, self)
@@ -812,7 +817,7 @@ class MainWindow(QMainWindow):
         task.failed.connect(lambda tb: self._on_task_failed(name, tb))
         task.finished.connect(lambda t=task: self._on_task_finished(t))
         self._task = task
-        self.heartbeat.start(task, name)
+        self.heartbeat.start(task, name, estimate)
         self.progress_bar.setRange(0, 0)          # moving until the first stage reports
         self.btn_cancel.setEnabled(True)
         self.act_cancel.setEnabled(True)

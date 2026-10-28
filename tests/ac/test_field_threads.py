@@ -104,3 +104,19 @@ def test_superlu_factors_say_their_size():
     import scipy.sparse as sp
     A = sp.diags([1.0 + 1j, 2.0, 3.0]).tocsc()
     assert direct._superlu_complex(A).nbytes >= 3 * 16
+
+
+def test_the_first_frequency_is_predicted_from_the_last(superlu, monkeypatch, step_timings):
+    """#224: the first frequency reports nothing until done, so its time is predicted."""
+    monkeypatch.setattr(field, "threads", lambda *a: 0)
+    monkeypatch.setattr("kipi.core.eta.MIN_RECORD_S", 0.0)
+    expected = []
+
+    class Expect(Said):
+        def expect(self, seconds, upto=1.0):
+            expected.append((seconds, upto))
+
+    field.field_solves(system(), F, Expect())
+    assert expected == [] and list(step_timings._load()) == ["ac-frequency/superlu"]
+    field.field_solves(system(), F, Expect())
+    assert len(expected) == 1 and expected[0][0] > 0 and expected[0][1] == 1 / len(F)

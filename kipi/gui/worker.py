@@ -18,6 +18,7 @@ class QtProgress(QObject, ProgressReporter):
     sig_stage = Signal(str)
     sig_fraction = Signal(float)   # < 0 means indeterminate
     sig_partial = Signal(object)
+    sig_expect = Signal(float, float)   # seconds, the fraction they bring the stage to
 
     def __init__(self):
         QObject.__init__(self)
@@ -34,6 +35,9 @@ class QtProgress(QObject, ProgressReporter):
 
     def fraction(self, value):
         self.sig_fraction.emit(-1.0 if value is None else float(value))
+
+    def expect(self, seconds: float, upto: float = 1.0):
+        self.sig_expect.emit(float(seconds), float(upto))
 
     def partial(self, result):
         self.sig_partial.emit(result)

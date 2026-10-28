@@ -21,6 +21,17 @@ def standalone_host(monkeypatch):
     monkeypatch.setattr(host, "_current", None)
 
 
+@pytest.fixture(autouse=True)
+def step_timings(monkeypatch, tmp_path_factory):
+    """Tests keep their solve times out of this machine's history, and each starts with
+    none (#224)."""
+    import uuid
+    from kipi.core import eta
+    history = eta.History(tmp_path_factory.getbasetemp() / f"timings-{uuid.uuid4().hex}.json")
+    monkeypatch.setattr(eta, "HISTORY", history)
+    return history
+
+
 @pytest.fixture
 def plugin_host(monkeypatch):
     """Run the test as the KiCad plugin."""

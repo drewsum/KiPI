@@ -14,6 +14,7 @@ import time
 
 import numpy as np
 
+from kipi.core import eta
 from kipi.core.memory import free_memory
 from kipi.core.progress import Canceled, ProgressReporter
 from kipi.core.solver import direct
@@ -40,8 +41,14 @@ def field_solves(system, f_field: np.ndarray, progress: ProgressReporter) -> np.
     try:
         progress.check_cancel()
         progress.info(f"  [1/{n}] solving {fmt_hz(f_field[0])}")
-        zb[0], factor = system.port_impedance(2 * np.pi * f_field[0], progress,
-                                              with_factor=True)
+        # The first frequency reports nothing until it is done: predicted from earlier
+        # ones of about its size (#224).
+        rhs = system.n - system.n_free + len(system.ports)
+        with eta.predicted(progress, f"ac-frequency/{direct.backend()}",
+                           eta.factor_work(system.n_free, rhs), upto=1 / n) as step:
+            zb[0], factor = system.port_impedance(2 * np.pi * f_field[0], progress,
+                                                  with_factor=True)
+            step["kind"] = f"ac-frequency/{factor.name.split()[0]}"
         progress.fraction(1 / n)
         progress.info(f"  first frequency took {time.perf_counter() - t1:.2f} s "
                       f"({system.stats.method})")
