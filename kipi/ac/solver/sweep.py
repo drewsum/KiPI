@@ -27,6 +27,7 @@ from kipi.ac.bias import (
 )
 from kipi.ac.board_map import ACMap, MapMesh, build_map
 from kipi.ac.checks import ground_nets, rail_caps, rail_nets, validate_ac
+from kipi.ac.solver.field import field_solves
 from kipi.ac.solver.fem import ACError, ACStats, ACSystem, PortDef
 from kipi.ac.target import judged_from, target_at
 from kipi.core.model.board import BoardSnapshot
@@ -448,21 +449,10 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
 
     freqs = s.frequencies()
     f_field = s.field_frequencies()
-    zb = np.zeros((len(f_field), len(ports), len(ports)), complex)
     progress.stage(f"Field solves: {len(f_field)} frequencies, {len(ports)} ports, "
                    f"{system.n} unknowns")
     t1 = time.perf_counter()
-    try:
-        for k, f in enumerate(f_field):
-            progress.check_cancel()
-            progress.info(f"  [{k + 1}/{len(f_field)}] solving {fmt_hz(f)}")
-            zb[k] = system.port_impedance(2 * np.pi * f, progress)
-            progress.fraction((k + 1) / len(f_field))
-            if k == 0:
-                progress.info(f"  first frequency took {time.perf_counter() - t1:.2f} s "
-                              f"({system.stats.method})")
-    finally:
-        system.close()
+    zb = field_solves(system, f_field, progress)
     system.stats.times["field"] = time.perf_counter() - t1
     progress.info(f"Field solves done in {system.stats.times['field']:.2f} s")
 

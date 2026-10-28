@@ -162,9 +162,11 @@ class ComplexFactor:
     """A factorization of a complex symmetric A; call it with (n,) or (n, k) right-hand
     sides to get the solutions."""
 
-    def __init__(self, solve: Callable[[np.ndarray], np.ndarray], name: str):
+    def __init__(self, solve: Callable[[np.ndarray], np.ndarray], name: str,
+                 nbytes: int = 0):
         self._solve = solve
         self.name = name
+        self.nbytes = nbytes                 # the factors' memory, where known
 
     def __call__(self, b: np.ndarray) -> np.ndarray:
         return self._solve(np.asarray(b, dtype=complex))
@@ -173,7 +175,8 @@ class ComplexFactor:
 def _superlu_complex(A: sp.spmatrix) -> ComplexFactor:
     from scipy.sparse.linalg import splu
     lu = splu(sp.csc_matrix(A, dtype=complex), permc_spec="COLAMD")
-    return ComplexFactor(lu.solve, "superlu")
+    # L and U: a complex value and a row index each, and the permutations' few.
+    return ComplexFactor(lu.solve, "superlu", nbytes=24 * int(lu.nnz))
 
 
 def _pardiso_complex(pypardiso, A: sp.spmatrix) -> ComplexFactor:
@@ -359,9 +362,9 @@ class ComplexSeries:
     factorization is only valid until the next call to :meth:`factorize`.
     """
 
-    def __init__(self):
+    def __init__(self, native: bool = True):
         self._native: Optional[_NativePardiso] = None
-        self._off = False                    # native PARDISO can't be used here
+        self._off = not native               # native PARDISO can't be used here
 
     def _native_solver(self) -> Optional[_NativePardiso]:
         if self._native is None and not self._off:

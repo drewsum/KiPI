@@ -639,7 +639,9 @@ class ACSystem:
         X = sp.csr_matrix((xd, (xr, xc)), shape=(self.n, self.n))
         return A, X
 
-    def port_impedance(self, omega: float, progress: ProgressReporter = NULL) -> np.ndarray:
+    def port_impedance(self, omega: float, progress: ProgressReporter = NULL,
+                       series: Optional[direct.ComplexSeries] = None,
+                       with_factor: bool = False):
         """The board's port impedance matrix (ports x ports, ohms) at ``omega``.
 
         The free unknowns (every floating conductor held at its anchor) are solved
@@ -647,12 +649,15 @@ class ACSystem:
         potentials x_A follow from KCL summed over each floating conductor, where the
         copper's own currents cancel exactly and only the capacitive ones remain:
         R X [x_A; x_F] = R b.
+
+        ``series`` factorizes in place of this system's own (a thread's, #213); with
+        ``with_factor``, the factorization is returned too.
         """
         A, X = self.matrix(omega)
         nf = self.n_free
         upper = sp.csr_matrix((A.data[self._up_sel], self._up_indices, self._up_indptr),
                               shape=(nf, nf))
-        factor = self._factors.factorize(upper, progress.warn)
+        factor = (series or self._factors).factorize(upper, progress.warn)
         self.stats.method = factor.name
         AFA = A[:nf, nf:].tocsc()
         k = AFA.shape[1]                                    # floating conductors
@@ -704,7 +709,8 @@ class ACSystem:
                     out[i] = x_port[at[int(u)]]
             return out
         Z = potential(plus) - potential(minus)
-        return 0.5 * (Z + Z.T)              # symmetric up to round-off
+        Z = 0.5 * (Z + Z.T)                 # symmetric up to round-off
+        return (Z, factor) if with_factor else Z
 
     def close(self):
         """Release the solver's memory (the last factorization)."""

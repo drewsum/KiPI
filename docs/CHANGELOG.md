@@ -52,6 +52,14 @@ milestones rather than versions that were ever set.
   18.5 s to 7.3 s, and a rail with its ground for an AC solve from 17.1 s to 6.1 s. Where
   workers can't be started, or one stops, the layers left are meshed in one process and
   the Log says why; `KIPI_SERIAL=1` meshes in one process anyway.
+- **AC and Coupled Noise field solves without PARDISO solve several frequencies at once**
+  (#213). Without PARDISO, each field frequency is factorized by SuperLU on one core.
+  After the first frequency, the rest are now solved in threads, up to eight at once, as
+  many as half the free memory holds given the first one's size. The results are the
+  same as one at a time. In a 290 k-unknown test on the Jetson AGX Thor demo, nine field
+  solves drop from 15.8 s to 6.5 s. With PARDISO, which already uses every core, nothing
+  changes. If a thread fails (out of memory, say), the frequencies left are solved one at
+  a time and the Log says why.
 
 ## 0.9.4
 

@@ -2574,7 +2574,9 @@ README) for a direct solve of up to 1M unknowns.</p></div>
 in the Solve tab. In AC, lower <b>Field solves per decade</b>, raise <b>Min edge</b>, or check
 that <b>Grade only near the rail</b> is ticked. Large planes
 are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
-x86-64).</p>
+x86-64). Without it, an AC or Coupled Noise solve works on several field frequencies at once,
+one core each, as many as memory allows; the Log says how many (<i>Solving … frequencies …
+at a time</i>).</p>
 <p>A large mesh (a ground with many vias, say) is built in several processes at once, a
 copper layer to each, up to eight; Task Manager shows them while it does. The mesh is the
 same as one process makes. If a computer can't start them, KiPI meshes in one process and

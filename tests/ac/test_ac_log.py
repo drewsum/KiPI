@@ -33,5 +33,7 @@ def test_each_field_frequency_is_logged_before_it_is_solved():
     result = solve_ac(snap, setup, "VRM1", "GND", rec)
     n = len(result.field_freqs)
     logged = [l for l in rec.lines if re.match(r"\s+\[\d+/\d+\] solving ", l)]
-    assert logged == [f"  [{k + 1}/{n}] solving {fmt_hz(f)}"
-                      for k, f in enumerate(result.field_freqs)]
+    expected = [f"  [{k + 1}/{n}] solving {fmt_hz(f)}" for k, f in enumerate(result.field_freqs)]
+    # The first is solved alone; without PARDISO the rest are solved several at a time,
+    # each logged as its thread starts on it, so two starting together may swap (#213).
+    assert logged[0] == expected[0] and sorted(logged) == sorted(expected)
