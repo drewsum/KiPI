@@ -23,9 +23,16 @@ milestones rather than versions that were ever set.
   decoupling capacitor groups (`DCCGROUPS`, `DCCAPACITORS`) become capacitor models
   holding each group's parts. A part already in another model moves to its group. Where
   every part in a group has the same value, the capacitance, voltage rating and
-  dielectric are read from it; ESL and ESR are left to fill in. VRMs, loads and every
-  setting stay as they were. HyperLynx does not publish the file's format, so the VRM and
-  DC load sections are not read; a section with records is named in the Log.
+  dielectric are read from it; ESL and ESR are left to fill in. Its VRMs (`PI_VRM`)
+  become ideal sources at their voltage, since HyperLynx says nothing of what a VRM
+  draws: each phase's output and ground pins, the remote sense (`SL_PWR_PIN`) and ground
+  sense (`SL_REF_PIN`) pins, and the phases' output resistance `R` in parallel as the load
+  line. A VRM of the same name is replaced. Its DC sinks (`PI_SIGNAL_SOURCES`) become one
+  load per part and net, drawing the pins' currents (in pin groups where they differ),
+  grounded on the part's pins on the file's reference net. A load already on that part
+  and net gets the current and keeps its tolerances. The VRM inductance `L`, the phases'
+  `PERCENT` and the sink resistance `R` are not modelled, and the Log says so. Every
+  setting stays as it was.
 
 ### Changed
 - **Large boards show in 3D more than twice as fast** (#202). After a board is read,

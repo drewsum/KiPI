@@ -223,7 +223,8 @@ pre-fills what usually follows from them (a VRM's target voltage from the net na
 pins, a series link's other side and a resistor's value), and problems are shown in red.
 **Import…** fills the power tree from a Tomachie power-tree file (`<design>.pdn.json`).
 It also reads a HyperLynx BoardSim session file (`.bud`): its power nets are ticked, and its
-`DC_CONN` series links and decoupling capacitor groups are added to the setup.
+`DC_CONN` series links, decoupling capacitor groups, VRMs (as ideal sources, with their
+remote sense) and DC sinks (as loads) are added to the setup.
 
 **VRMs tab**: one entry per regulator, power input, or ideal supply. A VRM is a **Source**,
 **LDO**, **Switcher** or **Isolated** converter, with its output pins and target voltage,

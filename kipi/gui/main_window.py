@@ -1460,7 +1460,8 @@ class MainWindow(QMainWindow):
 
     def import_pdn(self):
         """Replace the power tree with the one in a Tomachie .pdn.json (#120), or merge a
-        HyperLynx session file's power nets, series links and capacitor groups (#132)."""
+        HyperLynx session file's power nets, series links, capacitor groups, VRMs and DC
+        loads (#132)."""
         if self.snapshot is None:
             QMessageBox.information(self, "KiPI", "Load or open the board first.")
             return

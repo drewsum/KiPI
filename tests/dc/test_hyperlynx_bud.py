@@ -1,5 +1,5 @@
-"""HyperLynx session files (#132): power nets, DC_CONN series links and decoupling
-capacitor groups merged into the setup; nothing else."""
+"""HyperLynx session files (#132): power nets, DC_CONN series links, decoupling
+capacitor groups, VRMs and DC sinks merged into the setup; nothing else."""
 
 import pytest
 from shapely.geometry import box
@@ -8,7 +8,7 @@ from tree_boards import board, pad, setup
 from kipi.ac.model import CapModel
 from kipi.core.model.board import Footprint
 from kipi.dc.pi.importers.hyperlynx_bud import BudImportError, import_bud, sections
-from kipi.dc.pi.model import DcLink, PinRef
+from kipi.dc.pi.model import DcLink, Load, PinGroup, PinRef
 
 # Shaped as the issue's example: the sections KiPI reads among ones it leaves alone.
 BUD = """\
@@ -44,9 +44,24 @@ BUD = """\
 (C REFDES=C99 DCCGROUP=Group2)
 }
 {PI_VRM
-(V REFDES=U1 NAME=whatever)
+(VRM ID=0 PHASES=1 NAME="POS3P3" TYPE=SIMPLE V=3.3 MAXBOOSTV=0 SL_PWR_PIN=U2|1 SL_REF_PIN=U2|2)
+(PHASE VRM=0 PERCENT=100.000000 R=0 L=2.00000e-09 PWR_NET=+3V3 REF_NET=GND PWR_PIN1=U1|2 REF_PIN1=U1|3 )
+(VRM ID=1 PHASES=2 NAME="VIN" TYPE=SIMPLE V=12 MAXBOOSTV=0)
+(PHASE VRM=1 PERCENT=60.000000 R=0.002 L=0 PWR_NET=VIN REF_NET=GND PWR_PIN1=J1|1 REF_PIN1=J1|2 )
+(PHASE VRM=1 PERCENT=40.000000 R=0.002 L=0 PWR_NET=VIN REF_NET=GND PWR_PIN1=U3|4 PWR_PIN2=U9|1 )
+(VRM ID=2 PHASES=1 NAME="GONE" TYPE=SIMPLE V=5 MAXBOOSTV=0)
+(PHASE VRM=2 PERCENT=100.000000 R=0 L=0 PWR_NET=+5V REF_NET=GND PWR_PIN1=U9|1 )
 }
 {PI_SIGNAL_SOURCES
+(DC REF_PIN=U3|1 I=0.5 R=1e+06)
+(DC REF_PIN=U3|2 I=0.25 R=1e+06)
+(DC REF_PIN=U3|4 I=0.1 R=5)
+(DC REF_PIN=U2|1 I=0.3 R=1e+06)
+(DC REF_PIN=U9|1 I=1 R=1e+06)
+(REF_DATA PIN=U1|2 REF_NET=GND )
+}
+{DC_SINKS
+(X REFDES=U1)
 }
 {END}
 """
@@ -60,6 +75,10 @@ def _board():
         snap.pads += [pad(f"{ref}_1", "+3V3", ref, "1", box(x, 0, x + 0.5, 0.5)),
                       pad(f"{ref}_2", "GND", ref, "2", box(x, 0.5, x + 0.5, 1))]
         snap.footprints.append(Footprint(ref, ref, value, (x, 0.5), "top"))
+    snap.pads += [pad("u3_1", "+3V3", "U3", "1", box(30, 0, 30.5, 0.5)),
+                  pad("u3_2", "+3V3", "U3", "2", box(31, 0, 31.5, 0.5)),
+                  pad("u3_3", "GND", "U3", "3", box(32, 0, 32.5, 0.5)),
+                  pad("u3_4", "VIN", "U3", "4", box(33, 0, 33.5, 0.5))]
     return snap
 
 
@@ -72,23 +91,27 @@ def bud(tmp_path):
 
 def test_sections_hold_their_records_and_one_liners_hold_none():
     s = sections(BUD)
-    assert s["BUD"] == [] and s["VERSION"] == [] and s["PI_SIGNAL_SOURCES"] == []
-    assert s["SUPPLIES"][1] == {"NAME": "+3V3", "VAL": "3.3", "V?": "NO", "C?": "NO"}
+    assert s["BUD"] == [] and s["VERSION"] == [] and s["TEMPERATURE"] == []
+    assert s["SUPPLIES"][1] == {"_KIND": "S", "NAME": "+3V3", "VAL": "3.3", "V?": "NO",
+                                "C?": "NO"}
     assert s["DC_CONN"][0] == {"REF_DES": "U1", "PIN1": "1", "PIN2": "2", "RDC": "0.01"}
+    assert s["PI_VRM"][0]["_KIND"] == "VRM" and s["PI_VRM"][0]["NAME"] == "POS3P3"
 
 
 def test_power_nets_series_links_and_capacitor_groups_are_read(bud):
     base = setup("ldo")
     base.links = []
     out, notes, nets = import_bud(bud, _board(), base)
-    assert nets == ["VIN", "+3V3", "GND"]
+    assert nets[:3] == ["VIN", "+3V3", "GND"] and set(nets) == {"VIN", "+3V3", "GND"}
     assert any("+5V_GONE" in n for n in notes)
     assert out.links == [DcLink("U1", PinRef("U1", "VIN", ["1"]), PinRef("U1", "+3V3", ["2"]),
                                 0.01)]
     assert any(n.startswith("FB9") for n in notes)
-    # VRMs and loads are left as they were; the VRM section is named, not guessed at.
-    assert [v.name for v in out.vrms] == ["J1", "U1"] and len(out.loads) == 1
-    assert any("PI_VRM" in n for n in notes)
+    # VRMs and loads already there stay; the file's are added.
+    assert [v.name for v in out.vrms] == ["J1", "U1", "POS3P3", "VIN"]
+    assert out.loads[0].name == "U2"
+    assert any("DC_SINKS" in n for n in notes)          # a section KiPI does not know
+    assert not any("PI_VRM" in n or "PI_SIGNAL" in n for n in notes)
     caps = {m.name: m for m in out.caps}
     assert set(caps) == {"Group1", "Group2"}
     assert caps["Group1"].refs == ["C1", "C2"]
@@ -120,3 +143,47 @@ def test_a_file_that_is_not_a_session_file_is_refused(tmp_path):
     path.write_text("{SUPPLIES\n}\n", encoding="utf-8")
     with pytest.raises(BudImportError):
         import_bud(path, board())
+
+
+def test_vrms_are_ideal_sources_with_their_phases_sense_and_load_line(bud):
+    out, notes, _ = import_bud(bud, _board(), setup("ldo"))
+    v = {x.name: x for x in out.vrms}
+    pos = v["POS3P3"]
+    assert (pos.kind, pos.voltage, pos.load_line_mohm) == ("source", 3.3, 0.0)
+    assert pos.output == PinRef("U1", "+3V3", ["2"]) and pos.ground == PinRef("U1", "GND", ["3"])
+    assert pos.sense == PinRef("U2", "+3V3", ["1"])
+    assert pos.ground_sense == PinRef("U2", "GND", ["2"])
+    vin = v["VIN"]                          # two phases of 2 mΩ: a 1 mΩ load line
+    assert vin.output == PinRef("J1", "VIN", ["1"]) and vin.ground == PinRef("J1", "GND", ["2"])
+    assert [(ph.output, ph.ground) for ph in vin.phases] == [(PinRef("U3", "VIN", ["4"]), None)]
+    assert vin.load_line_mohm == pytest.approx(1.0) and vin.sense is None
+    assert any("VIN" in n and "PERCENT" in n for n in notes)
+    assert any("U9|1" in n for n in notes)
+    assert any(n.startswith("GONE") and "not imported" in n for n in notes)
+    assert any("inductance L" in n for n in notes)
+
+
+def test_dc_sinks_are_a_load_per_part_and_net(bud):
+    base = setup("ldo")
+    base.loads = []
+    out, notes, _ = import_bud(bud, _board(), base)
+    loads = {x.name: x for x in out.loads}
+    assert set(loads) == {"U3 +3V3", "U3 VIN", "U2 +3V3"}
+    u3 = loads["U3 +3V3"]
+    assert u3.supply == PinRef("U3", "+3V3") and u3.total_current() == pytest.approx(0.75)
+    assert sorted((g.pins, g.current) for g in u3.groups) == [(["1"], 0.5), (["2"], 0.25)]
+    assert u3.ground.ref == "U3" and u3.ground.net == "GND"
+    assert loads["U3 VIN"].current == pytest.approx(0.1) and loads["U3 VIN"].groups == []
+    assert any("resistance R" in n and "U3|4" in n for n in notes)
+    assert any("U9|1" in n and "sink" in n for n in notes)
+
+
+def test_a_dc_sink_on_an_existing_load_sets_its_current_and_keeps_the_rest(bud):
+    base = setup("ldo")            # load "U2" on U2's +3V3 pin, with a tolerance
+    base.loads.append(Load("old", PinRef("U3", "+3V3", ["1", "2"]), 9.0,
+                           groups=[PinGroup(["1"], 9.0)]))
+    out, _, _ = import_bud(bud, _board(), base)
+    loads = {x.name: x for x in out.loads}
+    assert loads["U2"].current == pytest.approx(0.3) and loads["U2"].tol_min == -1.0
+    assert loads["old"].total_current() == pytest.approx(0.75)
+    assert "U2 +3V3" not in loads and "U3 +3V3" not in loads
