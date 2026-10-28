@@ -146,6 +146,7 @@ def test_multi_pad_load_splits_current_and_amg_path_agrees(monkeypatch):
     import kipi.core.solver.spd as spd
     monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
     monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
+    monkeypatch.setattr(spd, "PARDISO_MEMORY_SHARE", 0)
     amg = run(snap, prob)
     assert amg.solution.stats["method"] == "amg-cg"
     assert amg.fields.terminals[1].v_mean == pytest.approx(direct.fields.terminals[1].v_mean,

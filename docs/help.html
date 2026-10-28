@@ -2566,7 +2566,7 @@ copper with KiCad: KiPI only sees filled copper.</p></div>
 <summary>NOT CONVERGED</summary>
 <div class="body"><p>The iterative solver did not reach its tolerance on a very large group.
 Raise <b>Max edge</b> to shrink the problem, or install the optional PARDISO solver (see the
-README) for a direct solve of up to 1M unknowns.</p></div>
+README) for a direct solve of up to 1M unknowns, or more while memory allows.</p></div>
 </details>
 <details>
 <summary>Solves are slow</summary>
@@ -2574,7 +2574,8 @@ README) for a direct solve of up to 1M unknowns.</p></div>
 in the Solve tab. In AC, lower <b>Field solves per decade</b>, raise <b>Min edge</b>, or check
 that <b>Grade only near the rail</b> is ticked. Large planes
 are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
-x86-64). Without it, an AC or Coupled Noise solve works on several field frequencies at once,
+x86-64): it solves DC systems directly as long as the factorization fits in half the free
+memory, and the Log says <i>Direct solve</i> for those. Without it, an AC or Coupled Noise solve works on several field frequencies at once,
 one core each, as many as memory allows; the Log says how many (<i>Solving … frequencies …
 at a time</i>).</p>
 <p>A large mesh (a ground with many vias, say) is built in several processes at once, a

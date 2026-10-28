@@ -254,6 +254,7 @@ def test_rhs_block_fits_the_budget():
 def amg_only(monkeypatch):
     monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
     monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
+    monkeypatch.setattr(spd, "PARDISO_MEMORY_SHARE", 0)
 
 
 def _hot_spot(n):
@@ -311,3 +312,88 @@ def test_different_size_is_not_reused(amg_only):
     first = spd.SpdSolver(_poisson(30), s, NULL, {})
     second = spd.SpdSolver(_poisson(31), s, NULL, {}, previous=first)
     assert not second.reused
+
+
+# --- PARDISO past its usual size limit while memory allows (#214) ---------------------
+
+class _ExactPardiso:
+    """PARDISO stood in for by an exact factorization of the upper triangle."""
+    def __init__(self, *a, **k):
+        pass
+
+    def factorize(self, upper):
+        from scipy.sparse.linalg import splu
+        self.lu = splu(sp.csc_matrix(upper + sp.triu(upper, 1).T), permc_spec="COLAMD")
+
+    def solve(self, upper, b):
+        return self.lu.solve(b)
+
+    def free_memory(self, everything=False):
+        pass
+
+
+@pytest.fixture
+def big(monkeypatch):
+    """The 3600-unknown Poisson system counts as past PARDISO's usual limit."""
+    monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS", 100)
+    monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 1000)
+
+    class FakeModule:
+        PyPardisoSolver = _ExactPardiso
+    monkeypatch.setattr(direct, "_pardiso", FakeModule)
+    monkeypatch.setattr(direct, "_pardiso_problem", None)
+
+
+def test_pardiso_limit_grows_with_free_memory(big, monkeypatch):
+    monkeypatch.setattr(spd, "free_memory", lambda: 64 * 2**30)
+    assert spd.direct_solve_max_unknowns() == int(0.5 * 64 * 2**30 // 2048)
+    monkeypatch.setattr(spd, "free_memory", lambda: 2**20)       # nearly none free
+    assert spd.direct_solve_max_unknowns() == 1000
+    monkeypatch.setattr(spd, "free_memory", lambda: None)
+    assert spd.direct_solve_max_unknowns() == 1000
+
+
+def test_superlu_keeps_its_limit_whatever_the_memory(no_pardiso, monkeypatch):
+    monkeypatch.setattr(spd, "free_memory", lambda: 64 * 2**30)
+    assert spd.direct_solve_max_unknowns() == spd.DIRECT_SOLVE_MAX_UNKNOWNS
+
+
+def test_large_system_that_fits_is_factorized(big, monkeypatch):
+    monkeypatch.setattr(spd, "free_memory", lambda: 2**30)
+    A = _poisson()
+    stats = {}
+    s = spd.SpdSolver(A, SolveSettings(), NULL, stats)
+    assert stats["method"] == "direct (pardiso)" and s.M is None
+    b = np.ones(A.shape[0])
+    assert _rel(A, s.solve(b, NULL), b) < 1e-12
+
+
+def test_large_system_pardiso_fails_on_goes_to_amg_not_superlu(big, monkeypatch):
+    monkeypatch.setattr(spd, "free_memory", lambda: 2**30)
+
+    def out_of_memory(self, upper):
+        raise MemoryError("no room")
+    monkeypatch.setattr(_ExactPardiso, "factorize", out_of_memory)
+    called = []
+    monkeypatch.setattr(direct, "_superlu", lambda A: called.append(A))
+
+    class Warned(type(NULL)):
+        def __init__(self):
+            super().__init__()
+            self.said = []
+
+        def warn(self, text):
+            self.said.append(text)
+    p = Warned()
+    A = _poisson()
+    stats = {}
+    s = spd.SpdSolver(A, SolveSettings(), p, stats)
+    assert stats["method"] == "amg-cg" and s.lu is None and not called
+    assert any("no room" in w and "AMG-CG" in w for w in p.said)
+    b = np.ones(A.shape[0])
+    assert _rel(A, s.solve(b, NULL), b) < 1e-8
+
+
+def test_factorize_without_superlu_raises_when_pardiso_is_missing(no_pardiso):
+    with pytest.raises(direct.DirectError):
+        direct.factorize(_poisson(), superlu=False)

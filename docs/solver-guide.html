@@ -822,7 +822,8 @@ solves them:</p>
     direct limit.</td></tr>
   <tr><td>PARDISO (Intel MKL)</td><td class="wrap">A parallel sparse direct solver. It
     factorizes on every CPU core and handles complex systems too.</td><td class="wrap">Up to
-    1M unknowns, if installed.</td></tr>
+    1M unknowns, if installed, and larger DC and thermal systems while the factorization fits
+    in half the free memory.</td></tr>
 </table>
 <p>PARDISO is an optional install (the <code>pypardiso</code> package). Its benefits:</p>
 <ul>
@@ -830,7 +831,10 @@ solves them:</p>
     On a 645k-unknown rail one solve drops from about 8 s to 1.2 s, and a four-pass
     electro-thermal run from about 90 s to 34 s.</li>
   <li><b>A higher direct-solve limit.</b> With PARDISO, KiPI factorizes systems of up to 1M
-    unknowns instead of 200k. A factorization is reused for every load, power-tree iteration
+    unknowns instead of 200k, and larger DC and thermal systems while the factorization,
+    reckoned at 2 kB an unknown, fits in half the memory free. On KiCad's Jetson AGX Thor demo
+    a 4.9M-unknown ground factorizes in 10 s where AMG-CG took 104 s. If such a factorization
+    fails, that system is solved by AMG-CG, not by SuperLU. A factorization is reused for every load, power-tree iteration
     and AC port, which an iterative solver cannot do, so fine meshes stay fast.</li>
   <li><b>AC sweeps.</b> Each field frequency of an AC sweep is a complex factorization, so
     large AC models gain the most.</li>

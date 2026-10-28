@@ -134,8 +134,15 @@ def _pardiso_factor(pypardiso, A: sp.spmatrix) -> DirectFactor:
     return factor
 
 
-def factorize(A: sp.spmatrix, warn: Optional[Callable[[str], None]] = None) -> DirectFactor:
-    """Factorize a symmetric positive definite A with the best backend that works here."""
+class DirectError(RuntimeError):
+    """PARDISO could not factorize a system that SuperLU is not to be tried on."""
+
+
+def factorize(A: sp.spmatrix, warn: Optional[Callable[[str], None]] = None,
+              superlu: bool = True) -> DirectFactor:
+    """Factorize a symmetric positive definite A with the best backend that works here.
+    With ``superlu`` False (a system too big for it), a failed PARDISO factorization raises
+    :class:`DirectError` instead of falling back to SuperLU."""
     pypardiso = _pardiso_module()
     if pypardiso is not None and A.shape[0] > 0:
         try:
@@ -145,12 +152,17 @@ def factorize(A: sp.spmatrix, warn: Optional[Callable[[str], None]] = None) -> D
             if np.isfinite(err) and err <= CHECK_TOL:
                 return factor
             reason = f"backward error {err:.1e}"
-        except Exception as e:
+            del factor                       # its memory, before anything else is tried
+        except Exception as e:               # MemoryError among them
             reason = f"{type(e).__name__}: {e}"
+        if not superlu:
+            raise DirectError(f"PARDISO factorization failed ({reason})")
         msg = f"PARDISO factorization failed ({reason}); using SuperLU for this system"
         log.warning(msg)
         if warn is not None:
             warn(msg)
+    elif not superlu:
+        raise DirectError(f"PARDISO is not available ({_pardiso_problem})")
     return _superlu(A)
 
 

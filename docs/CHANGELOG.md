@@ -69,6 +69,13 @@ milestones rather than versions that were ever set.
   a second, since each one reads the board again. Boards under 4 MB, and boards with a
   model path relative to the project folder, are exported as they are. If kicad-cli
   can't export from the copy, it exports from the board itself.
+- **Large DC and thermal solves use PARDISO while memory allows** (#214). Above 1M
+  unknowns, a system used to go to AMG-CG even with PARDISO installed. Now PARDISO
+  factorizes it as long as the factorization, reckoned at 2 kB an unknown, fits in half
+  the memory free. On the Jetson AGX Thor demo, a +3V3 rail with its 4.9M-unknown ground
+  solves in 42 s instead of 134 s (the ground factorizes in 10 s where AMG-CG took 104 s),
+  with the same voltages to 2e-14 V. If PARDISO fails on such a system, it is solved by
+  AMG-CG as before, and the Log says why.
 
 ## 0.9.4
 

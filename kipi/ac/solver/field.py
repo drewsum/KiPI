@@ -9,14 +9,12 @@ factorization, as many as memory allows (#213).
 from __future__ import annotations
 
 import concurrent.futures as cf
-import ctypes
 import os
-import sys
 import time
-from typing import Optional
 
 import numpy as np
 
+from kipi.core.memory import free_memory
 from kipi.core.progress import Canceled, ProgressReporter
 from kipi.core.solver import direct
 
@@ -121,36 +119,3 @@ def _solve(system, omega: float, progress, label: str) -> np.ndarray:
         return system.port_impedance(omega, progress, series=series)
     finally:
         series.close()
-
-
-def free_memory() -> Optional[int]:
-    """Bytes of memory free for use now; None where they can't be read."""
-    try:
-        if sys.platform == "win32":
-            class Status(ctypes.Structure):
-                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                            ("ullTotalPhys", ctypes.c_ulonglong),
-                            ("ullAvailPhys", ctypes.c_ulonglong),
-                            ("ullTotalPageFile", ctypes.c_ulonglong),
-                            ("ullAvailPageFile", ctypes.c_ulonglong),
-                            ("ullTotalVirtual", ctypes.c_ulonglong),
-                            ("ullAvailVirtual", ctypes.c_ulonglong),
-                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-            st = Status()
-            st.dwLength = ctypes.sizeof(Status)
-            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
-                return int(st.ullAvailPhys)
-            return None
-        if sys.platform.startswith("linux"):
-            with open("/proc/meminfo") as f:
-                for line in f:
-                    if line.startswith("MemAvailable:"):
-                        return int(line.split()[1]) * 1024
-            return None
-        if sys.platform == "darwin":
-            # macOS gives no figure for memory free that counts what it would hand back
-            # from caches; half of all memory stands in for it.
-            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // 2
-    except (OSError, ValueError, AttributeError):
-        return None
-    return None

@@ -15,6 +15,7 @@ def _amg_only(monkeypatch):
     """These tests are about the iterative path, whatever size the direct solver takes."""
     monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS", 0)
     monkeypatch.setattr(spd, "DIRECT_SOLVE_MAX_UNKNOWNS_PARDISO", 0)
+    monkeypatch.setattr(spd, "PARDISO_MEMORY_SHARE", 0)
 
 
 def _poisson(n=200):
