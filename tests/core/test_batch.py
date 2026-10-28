@@ -28,6 +28,10 @@ def test_merges_nets_into_one_chunk_per_category():
     assert m.n_points == plane(2).n_points + plane(3).n_points
     # Triangle indices were offset into the merged point array.
     assert m.faces.reshape(-1, 4)[:, 1:].max() == m.n_points - 1
+    a, b3 = plane(2), plane(3, x=5)
+    assert (m.regular_faces == np.vstack([a.regular_faces,
+                                          b3.regular_faces + a.n_points])).all()
+    assert np.allclose(m.points, np.vstack([a.points, b3.points]))
 
 
 def test_chunk_can_filter_to_included_nets_without_dropping_stored_geometry():

@@ -15,7 +15,8 @@ from typing import Dict, Hashable, Iterable, List, Optional, Set, Tuple
 
 import numpy as np
 import pyvista as pv
-from vtkmodules.util.numpy_support import vtk_to_numpy
+from vtkmodules.util.numpy_support import numpy_to_vtkIdTypeArray, vtk_to_numpy
+from vtkmodules.vtkCommonDataModel import vtkCellArray
 
 Category = Hashable       # e.g. ("cu", layer_id), ("pad", layer_id), ("via", -1)
 RGB = Tuple[float, float, float]
@@ -77,15 +78,18 @@ class Chunk:
             return None
         offsets = np.cumsum([0] + [len(p.points) for p in parts[:-1]])
         pts = np.concatenate([p.points for p in parts])
-        tris = np.concatenate([p.tris + o for p, o in zip(parts, offsets)])
-        faces = np.empty((len(tris), 4), dtype=np.int64)
-        faces[:, 0] = 3
-        faces[:, 1:] = tris
-        rgb = np.concatenate([
-            np.tile(np.round(np.asarray(p.color) * 255).astype(np.uint8), (len(p.tris), 1))
-            for p in parts])
-        mesh = pv.PolyData(pts, faces.ravel())
-        mesh.cell_data["rgb"] = rgb
+        conn = np.concatenate([(p.tris + o).ravel() for p, o in zip(parts, offsets)])
+        # VTK's cell arrays are given directly: pyvista's legacy ``faces`` (3, a, b, c, ..)
+        # costs as much again to build and convert, in the UI thread (#209).
+        cells = vtkCellArray()
+        cells.SetData(numpy_to_vtkIdTypeArray(np.arange(0, len(conn) + 1, 3, dtype=np.int64),
+                                              deep=True),
+                      numpy_to_vtkIdTypeArray(conn.astype(np.int64, copy=False), deep=True))
+        mesh = pv.PolyData()
+        mesh.points = pts
+        mesh.SetPolys(cells)
+        colors = np.round(np.array([p.color for p in parts]) * 255).astype(np.uint8)
+        mesh.cell_data["rgb"] = np.repeat(colors, [len(p.tris) for p in parts], axis=0)
         self.mesh = mesh
         return mesh
 

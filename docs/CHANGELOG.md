@@ -32,6 +32,11 @@ milestones rather than versions that were ever set.
   straight from VTK's arrays when they are merged for drawing. On KiCad's Jetson AGX Thor
   demo (1,387 nets, 9.6 M triangles) the merge, during which the window doesn't respond,
   drops from 13.3 s to 6.9 s.
+- **The window keeps responding while a board's 3D view builds** (#209). The solder masks
+  and silkscreens are now built in the background after the nets, rather than in the
+  window as the board loads, and merging the nets' meshes for drawing costs about half
+  as much. On the Jetson AGX Thor demo, the longest freeze while loading drops from
+  6.2 s to 0.7 s.
 
 ## 0.9.4
 

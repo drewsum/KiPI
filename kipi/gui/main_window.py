@@ -116,6 +116,13 @@ def write_report_file(write, path, progress):
         return write(path.with_suffix(".html"))
 
 
+class _Coatings:
+    """The solder masks and silkscreens, sent by the net build to the window."""
+
+    def __init__(self, coatings):
+        self.coatings = coatings
+
+
 class MainWindow(QMainWindow):
     def __init__(self, source: Optional[BoardSource] = None, tool: Optional[InstalledTool] = None,
                  snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None):
@@ -158,6 +165,7 @@ class MainWindow(QMainWindow):
         self._model_source = None           # the board's ModelProvider, False if none
         self._closed = False
         self._graphics_logged = False   # the 3D view's graphics card, once a session
+        self._coatings_wanted = False   # solder masks and silkscreens to build
         self._layer_colors_from = None      # where the layer colors were last read from
         self._model_timer = QTimer(self)    # coalesce setup edits into one update
         self._model_timer.setSingleShot(True)
@@ -1064,9 +1072,9 @@ class MainWindow(QMainWindow):
         self._show_unsaved()
         self.setup_bar.setEnabled(not self._busy())
         self._show_board_summary()
-        from kipi.core.viz.meshes import board_body, board_coatings
+        from kipi.core.viz.meshes import board_body
         self.viewer.set_board(*board_body(snap))
-        self.viewer.set_coatings(board_coatings(snap))
+        self._coatings_wanted = True        # built with the nets, off the UI thread (#209)
         self.sync_nets()
 
     def _load_layer_colors(self, snap: BoardSnapshot):
@@ -1220,7 +1228,8 @@ class MainWindow(QMainWindow):
         wanted = [n.name for n in self.snapshot.nets]
         shown = set(self.viewer.nets())
         todo = [n for n in wanted if n not in shown]
-        if not todo:
+        coatings = self._coatings_wanted
+        if not todo and not coatings:
             return
 
         snap = self.snapshot
@@ -1228,7 +1237,7 @@ class MainWindow(QMainWindow):
 
         def work(progress):
             from kipi.core.geometry.copper import net_copper
-            from kipi.core.viz.meshes import build_net_scene
+            from kipi.core.viz.meshes import board_coatings, build_net_scene
             built = 0
             with progress.timed(f"Building {len(todo)} net(s)"):
                 for i, net in enumerate(todo):
@@ -1238,11 +1247,19 @@ class MainWindow(QMainWindow):
                     progress.partial(build_net_scene(snap, net, cache[net], progress))
                     built += 1
                     progress.fraction((i + 1) / len(todo))
+            if coatings:            # hidden until asked for, so after the copper
+                progress.check_cancel()
+                with progress.timed("Building solder masks and silkscreens"):
+                    progress.partial(_Coatings(board_coatings(snap)))
             return built
 
         added: List[str] = []
 
         def on_net(ns):
+            if isinstance(ns, _Coatings):
+                self.viewer.set_coatings(ns.coatings)
+                self._coatings_wanted = False
+                return
             if not ns.copper:
                 self.log(f"{ns.net}: no copper on any layer", logging.WARNING)
             self.viewer.add_net(ns, render=False)
@@ -1918,7 +1935,7 @@ class MainWindow(QMainWindow):
 
     def _apply_stackup(self, snap, st):
         from kipi.core.model.stackup import to_setup
-        from kipi.core.viz.meshes import board_body, board_coatings
+        from kipi.core.viz.meshes import board_body
         snap.stackup = st
         self.solve_panel.setup.stackup = to_setup(st) if st.edited else None
         self.log(f"Stackup: {'edited in KiPI' if st.edited else 'from KiCad'}, "
@@ -1930,7 +1947,7 @@ class MainWindow(QMainWindow):
         self._populate_layers()
         self._show_board_summary()
         self.viewer.set_board(*board_body(snap), reset_view=False)
-        self.viewer.set_coatings(board_coatings(snap))
+        self._coatings_wanted = True
         for i in range(self.layer_list.count()):
             it = self.layer_list.item(i)
             if it.checkState() != Qt.Checked:
