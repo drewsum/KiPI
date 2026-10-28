@@ -131,6 +131,7 @@ class Track:
     start: Point
     end: Point
     mid: Optional[Point] = None  # set for arc tracks (start/mid/end arc)
+    id: str = ""                 # the editor's id, where the board came from one
 
     @property
     def is_arc(self) -> bool:

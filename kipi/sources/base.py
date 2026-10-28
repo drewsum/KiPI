@@ -30,7 +30,7 @@ class Capabilities:
     """What a source can do besides reading the board once."""
     reload: bool = False          # read the board again, e.g. after it was edited
     refill_zones: bool = False    # refill the zones before reading
-    select_items: bool = False    # select a picked pad or via in the editor
+    select_items: bool = False    # select a picked pad, via or track in the editor
 
 
 class BoardSource(ABC):
@@ -53,8 +53,14 @@ class BoardSource(ABC):
         return self.caps.select_items
 
     def select(self, kind: str, item_id: str) -> None:
-        """Select the ``kind`` ("pad" or "via") with ``item_id`` in the editor."""
+        """Select the ``kind`` ("pad", "via" or "track") with ``item_id`` in the editor."""
         raise NotImplementedError(f"{self.name or 'This source'} cannot select items")
+
+    def focus(self, kind: str, item_id: str, layer_id: Optional[int] = None) -> None:
+        """Select the item, as :meth:`select`, and bring the editor's view to it, with
+        its copper layer ``layer_id`` active when given (#208). An editor that cannot
+        move its view only selects."""
+        self.select(kind, item_id)
 
 
 class ModelProvider(ABC):

@@ -440,7 +440,7 @@ def extract_board(board, refill_zones: bool = False,
             tracks.append(Track(
                 net=t.net.name, layer=t.layer, width_mm=mm(t.width),
                 start=pt(t.start), end=pt(t.end),
-                mid=pt(t.mid) if isinstance(t, ArcTrack) else None))
+                mid=pt(t.mid) if isinstance(t, ArcTrack) else None, id=t.id.value))
         n_arcs = sum(1 for t in tracks if t.is_arc)
         progress.info(f"{len(tracks)} track segments ({n_arcs} arcs)")
     progress.check_cancel()

@@ -11,6 +11,10 @@ from kipi.core.progress import NULL, ProgressReporter
 from kipi.sources.base import BoardSource, Capabilities, InstalledTool, ModelProvider
 from kipi.sources.kicad_ipc import colors, model_guess, models3d
 
+#: KiCad actions that bring the view to the selection, tried in turn: centre on it (no
+#: zoom change), else zoom to fit it.
+CENTRE_ACTIONS = ("common.Control.centerSelection", "common.Control.zoomFitSelection")
+
 
 class KiCadLiveSource(BoardSource):
     """The board open in the running KiCad PCB editor, through the IPC API.
@@ -52,6 +56,23 @@ class KiCadLiveSource(BoardSource):
 
         self.board.clear_selection()
         self.board.add_to_selection([_Ref(item_id)])
+
+    def focus(self, kind: str, item_id: str, layer_id: Optional[int] = None) -> None:
+        """The API has no call to move the view to a point, so the item is selected and
+        the view centred on the selection (#208). A KiCad without that action zooms to
+        the selection instead."""
+        self.select(kind, item_id)
+        if layer_id is not None:
+            try:                    # brings the picked layer's copper to the front
+                self.board.set_active_layer(layer_id)
+            except Exception:  # noqa: BLE001 - the view still moves
+                pass
+        if self.kicad is None:
+            return
+        from kipy.proto.common.commands.editor_commands_pb2 import RunActionStatus
+        for action in CENTRE_ACTIONS:
+            if self.kicad.run_action(action).status == RunActionStatus.RAS_OK:
+                return
 
 
 class KiCadCliModels(ModelProvider):

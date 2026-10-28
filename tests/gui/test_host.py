@@ -128,6 +128,7 @@ def test_standalone_opens_files_and_hides_kicad(app, no_3d, board_file):
     assert _toolbar(w)[:2] == ["Open…", "Save snapshot…"]          # nothing to reload yet
     assert "Open snapshot…" not in _toolbar(w)
     assert not w._act_refill.isVisible() and w.btn_select.isHidden()
+    assert w.chk_follow.isHidden()
     assert w.chk_models.isHidden()                                  # no KiCad for models
 
     w.open_path(str(board_file))
@@ -267,6 +268,30 @@ def test_the_plugin_keeps_its_toolbar(app, no_3d, plugin_host):
     assert bar[:3] == ["Load from Fake", "Open snapshot…", "Save snapshot…"]
     assert "Open…" not in bar and "(standalone)" not in w.windowTitle()
     assert w._act_refill.isVisible()
+    w.close()
+
+
+def test_a_click_in_3d_follows_in_the_editor(app, no_3d, plugin_host):
+    # #208: what is clicked is selected in the editor, which brings its view there.
+    from fake_source import FakeSource
+    from kipi.gui.main_window import MainWindow
+    from synthetic import F
+    src = FakeSource()
+    w = MainWindow(source=src)
+    _idle(app, w)
+    assert w.chk_follow.text() == "Follow in Fake" and not w.chk_follow.isHidden()
+    w.chk_follow.blockSignals(True)            # the test's ticks are not saved
+    w.chk_follow.setChecked(True)
+    z = w.snapshot.stackup.layer(F).z_top_mm
+    w._on_pick((5.0, 0.1, z))                   # on the track
+    assert src.focused == [("track", "t1", F)] and "Track 0.500 mm" in w.info.toPlainText()
+    w._on_pick(None, "v1")
+    assert src.focused[-1] == ("via", "v1", F)
+    w.chk_follow.setChecked(False)
+    w._on_pick((5.0, 0.1, z))
+    assert len(src.focused) == 2 and w.btn_select.isEnabled()
+    w.btn_select.click()
+    assert src.selected == [("track", "t1")]
     w.close()
 
 

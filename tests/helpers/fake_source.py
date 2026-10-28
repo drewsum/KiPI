@@ -12,6 +12,7 @@ class FakeSource(BoardSource):
     def __init__(self):
         self.loads = []
         self.selected = []
+        self.focused = []
 
     def load(self, progress=None, refill_zones=False):
         self.loads.append(refill_zones)
@@ -19,3 +20,6 @@ class FakeSource(BoardSource):
 
     def select(self, kind, item_id):
         self.selected.append((kind, item_id))
+
+    def focus(self, kind, item_id, layer_id=None):
+        self.focused.append((kind, item_id, layer_id))

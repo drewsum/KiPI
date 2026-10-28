@@ -144,6 +144,52 @@ def test_the_live_source_selects_by_kiid():
     assert board.calls == ["clear", ["abc-123"]]
 
 
+def test_the_live_source_centres_the_view_on_the_item():
+    # #208: no call moves the view to a point; the item is selected and centred on.
+    pytest.importorskip("kipy")
+    from kipy.proto.common.commands.editor_commands_pb2 import RunActionStatus
+    from kipi.sources.kicad_ipc.source import CENTRE_ACTIONS, KiCadLiveSource
+
+    class Board:
+        def __init__(self):
+            self.calls = []
+
+        def clear_selection(self):
+            self.calls.append("clear")
+
+        def add_to_selection(self, items):
+            self.calls.append([i.id.value for i in items])
+
+        def set_active_layer(self, layer):
+            self.calls.append(("layer", layer))
+
+    class Kicad:
+        def __init__(self, known):
+            self.known, self.ran = known, []
+
+        def run_action(self, action):
+            self.ran.append(action)
+            ok = action in self.known
+            return type("R", (), {"status": RunActionStatus.RAS_OK if ok
+                                  else RunActionStatus.RAS_INVALID})()
+
+    board, kicad = Board(), Kicad(set(CENTRE_ACTIONS))
+    KiCadLiveSource(kicad, board).focus("track", "t-1", 4)
+    assert board.calls == ["clear", ["t-1"], ("layer", 4)]
+    assert kicad.ran == ["common.Control.centerSelection"]
+    kicad = Kicad({"common.Control.zoomFitSelection"})      # a KiCad without centring
+    KiCadLiveSource(kicad, Board()).focus("via", "v-1")
+    assert kicad.ran == list(CENTRE_ACTIONS)
+
+    class NoLayer(Board):
+        def set_active_layer(self, layer):
+            raise RuntimeError("not a board layer")
+
+    kicad = Kicad(set(CENTRE_ACTIONS))
+    KiCadLiveSource(kicad, NoLayer()).focus("pad", "p-1", 99)
+    assert kicad.ran == ["common.Control.centerSelection"]    # the view still moves
+
+
 def test_installed_kicad_says_why_there_are_no_models(monkeypatch):
     from kipi.sources.kicad_ipc import models3d
     from kipi.sources.kicad_ipc.source import InstalledKiCad, KiCadCliModels, KiCadLiveSource

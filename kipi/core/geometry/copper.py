@@ -21,7 +21,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from kipi.core.geometry.arcs import arc_points as _arc_points
-from kipi.core.model.board import BoardSnapshot, Pad, Poly
+from kipi.core.model.board import BoardSnapshot, Pad, Poly, Track
 from kipi.core.progress import NULL, ProgressReporter
 
 CIRCLE_QUAD_SEGS = 8   # 32 segments per full circle
@@ -101,6 +101,27 @@ def net_layer_copper(snap: BoardSnapshot, net: str, layer: int,
         if holes is not None:
             geom = geom.difference(holes)
     return _only_polygons(geom)
+
+
+
+def track_at(tracks: Iterable[Track], layer: int, x: float, y: float,
+             net: Optional[str] = None) -> Optional[Track]:
+    """The track on ``layer`` (of ``net``, when given) whose copper covers (x, y): the one
+    whose centreline passes nearest, as a fraction of its half width."""
+    best, best_d = None, 1.0
+    for t in tracks:
+        if t.layer != layer or (net is not None and t.net != net):
+            continue
+        pts = [t.start] + (_arc_points(t.start, t.mid, t.end) if t.is_arc else [t.end])
+        half = max(t.width_mm / 2.0, 1e-6)
+        for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+            dx, dy = bx - ax, by - ay
+            u = ((x - ax) * dx + (y - ay) * dy) / max(dx * dx + dy * dy, 1e-18)
+            u = min(max(u, 0.0), 1.0)
+            d = math.hypot(x - ax - u * dx, y - ay - u * dy) / half
+            if d <= best_d:
+                best, best_d = t, d
+    return best
 
 
 def drill_holes(snap: BoardSnapshot, net: str, layer: int,

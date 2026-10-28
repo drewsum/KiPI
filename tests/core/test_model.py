@@ -52,6 +52,24 @@ def test_snapshot_roundtrip(tmp_path):
             net_layer_copper(snap, "+3V3", F).area)
 
 
+def test_the_track_under_a_point():
+    from kipi.core.geometry.copper import track_at
+    from kipi.core.model.board import Track
+    snap = make_board()
+    assert track_at(snap.tracks, F, 5.0, 0.2).id == "t1"            # inside its 0.25 mm
+    assert track_at(snap.tracks, F, 5.0, 0.3) is None
+    assert track_at(snap.tracks, F, 10.2, 0.0).id == "t1"           # round end
+    assert track_at(snap.tracks, IN1, 5.0, 0.0) is None              # another layer
+    assert track_at(snap.tracks, F, 5.0, 0.0, "GND") is None         # another net
+    arc = Track("+3V3", F, 0.2, (1.0, 0.0), (-1.0, 0.0), mid=(0.0, 1.0), id="a1")
+    narrow = Track("+3V3", F, 0.1, (-0.5, 1.08), (0.5, 1.08), id="n1")
+    assert track_at([arc], F, 0.0, 0.95).id == "a1"                  # on the arc, not chord
+    assert track_at([arc], F, 0.0, 0.0) is None
+    # Where two overlap, the one whose centreline is nearer, for its width
+    assert track_at([arc, narrow], F, 0.0, 1.04).id == "a1"
+    assert track_at([arc, narrow], F, 0.0, 1.07).id == "n1"
+
+
 def test_arc_points_pass_through_mid():
     pts = _arc_points((1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), include_start=True)
     assert pts[0] == (1.0, 0.0) and pts[-1] == (-1.0, 0.0)

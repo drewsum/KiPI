@@ -618,8 +618,16 @@ class MainWindow(QMainWindow):
         self.btn_select = QPushButton("Select", g_info)
         self.btn_select.setEnabled(False)
         self.btn_select.clicked.connect(self._select_in_source)
+        self.chk_follow = QCheckBox("Follow", g_info)
+        follow = QSettings("KiPI", "KiPI").value("view/follow_in_editor", True)
+        self.chk_follow.setChecked(str(follow).lower() not in ("false", "0"))
+        self.chk_follow.toggled.connect(
+            lambda v: QSettings("KiPI", "KiPI").setValue("view/follow_in_editor", v))
         li.addWidget(self.info, 1)
-        li.addWidget(self.btn_select)
+        row = QHBoxLayout()
+        row.addWidget(self.btn_select, 1)
+        row.addWidget(self.chk_follow)
+        li.addLayout(row)
 
         split = QSplitter(Qt.Vertical, panel)
         for w in (g_nets, g_layers, g_view, g_info):
@@ -886,9 +894,16 @@ class MainWindow(QMainWindow):
                                    "before reading (recommended)")
         self._act_refill.setVisible(src is not None and src.caps.refill_zones)
         self.btn_select.setText(f"Select in {src.name}" if src else "Select")
-        self.btn_select.setToolTip("Select the picked pad or via in "
+        self.btn_select.setToolTip("Select the picked pad, via or track in "
                                    f"{src.description if src else 'the editor'}")
         self.btn_select.setVisible(src is not None and src.caps.select_items)
+        self.chk_follow.setText(f"Follow in {src.name}" if src else "Follow")
+        self.chk_follow.setToolTip(
+            "Each pad, via or track clicked in the 3D view is selected in "
+            f"{src.description if src else 'the editor'}, which centres its view on it and "
+            "makes its copper layer the active one. Untick it to leave the editor's view "
+            "alone; Select still selects the picked item.")
+        self.chk_follow.setVisible(src is not None and src.caps.select_items)
         self._watch(src.files() if src is not None else [])
 
     # --- the board's files -----------------------------------------------------------
@@ -2247,7 +2262,7 @@ class MainWindow(QMainWindow):
 
         pad_hit = pth_obj
         from shapely.geometry import Point
-        from kipi.core.geometry.copper import poly_to_shapely
+        from kipi.core.geometry.copper import poly_to_shapely, track_at
         p0 = Point(x, y)
         for p in ([] if pad_hit is not None or best_via is not None else s.pads):
             if p.net not in shown or cu.id not in p.shapes:
@@ -2293,6 +2308,11 @@ class MainWindow(QMainWindow):
                     lines.append(f"Copper of net <b>{html.escape(net)}</b>")
                     hit_net = net
                     break
+            track = track_at(s.tracks, cu.id, x, y, hit_net) if hit_net else None
+            if track is not None and track.id:      # one the editor can select
+                self._picked = ("track", track.id)
+                lines.append(f"{'Arc track' if track.is_arc else 'Track'} "
+                             f"{track.width_mm:.3f} mm wide")
         if self.mode == "noise":
             # A clicked part's or net's field joins the field view when it is on (#146).
             part = pad_hit.footprint if pad_hit is not None else ""
@@ -2302,6 +2322,8 @@ class MainWindow(QMainWindow):
         self.info.setHtml("<br>".join(lines))
         self.btn_select.setEnabled(self._picked is not None and self._source is not None
                                    and self._source.can_select())
+        if self.btn_select.isEnabled() and self.chk_follow.isChecked():
+            self._follow_in_source(cu.id)
         if self._barrel_status:
             self.statusBar().showMessage(self._barrel_status)
         elif not probe_html:
@@ -2327,6 +2349,15 @@ class MainWindow(QMainWindow):
             self.log(f"Selected {self._picked[0]} in {source.name}")
         except Exception as e:  # noqa: BLE001
             self.log(f"Could not select in {source.name}: {e}", logging.WARNING)
+
+    def _follow_in_source(self, layer_id: int):
+        """Select the picked item in the editor and bring its view there (#208)."""
+        source = self._source
+        try:
+            source.focus(*self._picked, layer_id)
+        except Exception as e:  # noqa: BLE001
+            self.log(f"Could not show the {self._picked[0]} in {source.name}: {e}",
+                     logging.WARNING)
 
     def _unsaved(self) -> bool:
         if self.snapshot is None or self._saved is None:

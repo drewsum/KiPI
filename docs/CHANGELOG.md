@@ -7,6 +7,12 @@ milestones rather than versions that were ever set.
 ## 0.9.5 (in development)
 
 ### Added
+- **KiCad follows clicks in the 3D view** (#208). As a KiCad plugin, a pad, via or track
+  clicked in the 3D view is selected in the PCB editor. The editor centres its view on it
+  and makes its copper layer the active one. KiCad's API can't move the view to a bare
+  point, so a click on zone copper with no track under it leaves the view where it is.
+  Untick **Follow in KiCad**, under the Info box, to keep the editor's view still;
+  **Select in KiCad** now also selects a picked track.
 - **HyperLynx session files: VRMs and DC loads** (#132). **Import…** now also reads a
   `.bud` file's VRMs and DC sinks. Each VRM (`PI_VRM`) becomes an ideal source at its
   voltage, since HyperLynx says nothing of what a VRM draws from its input. It gets each

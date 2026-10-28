@@ -698,9 +698,12 @@ mode it shows the impedance plot's cursor values.</p>
 anything KiPI had to fill in because the source did not give it, such as a default stackup
 when the board's own is incomplete. Results that depend on a placeholder are only as good as
 the placeholder.</p>
-<p><b>Select in KiCad</b> selects the picked pad or via in the PCB editor, so you can find it
-in your layout. It needs a live KiCad connection (not a snapshot), so the plugin has it and
-standalone KiPI does not.</p>
+<p><b>Select in KiCad</b> selects the picked pad, via or track in the PCB editor, so you can
+find it in your layout. With <b>Follow in KiCad</b> ticked (the default), each click in 3D
+does this by itself. The editor also centres its view on the item and makes its copper layer
+the active one. KiCad can't be sent to a bare point, so a click on zone copper with no track
+under it leaves the editor's view where it is. Both need a live KiCad connection (not a
+snapshot), so the plugin has them and standalone KiPI does not.</p>
 </div>
 </details>
 

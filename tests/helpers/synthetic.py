@@ -48,7 +48,8 @@ def make_board() -> BoardSnapshot:
     return BoardSnapshot(
         board_name="synthetic.kicad_pcb", project_dir="", stackup=stackup,
         nets=[Net(0, ""), Net(1, "+3V3"), Net(2, "GND"), Net(3, "Net-(U1-Pad3)")],
-        tracks=[Track(net="+3V3", layer=F, width_mm=0.5, start=(0.0, 0.0), end=(10.0, 0.0))],
+        tracks=[Track(net="+3V3", layer=F, width_mm=0.5, start=(0.0, 0.0), end=(10.0, 0.0),
+                     id="t1")],
         vias=[Via(id="v1", net="+3V3", position=(10.0, 0.0), drill_mm=0.3, diameter_mm=0.6,
                   layers=ids)],
         pads=pads,
