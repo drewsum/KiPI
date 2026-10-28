@@ -22,7 +22,7 @@ from scipy.spatial import cKDTree
 from kipi.core.model.board import BoardSnapshot, Stackup
 from kipi.core.temperature import at as temperature_at
 from kipi.core.progress import NULL, ProgressReporter
-from kipi.core.viz.meshes import slab_from_triangles
+from kipi.core.viz.meshes import _unit_cylinder, slab_from_triangles
 
 # name -> (array, association, label, unit). Association "via" means the field lives
 # on the via barrels rather than the copper layers.
@@ -259,8 +259,11 @@ def build_result_scene(board: Union[BoardSnapshot, Stackup], result, n_sides: in
 
 
 def _via_barrels(st: Stackup, result, n_sides: int):
+    """The plated holes as one mesh of capped cylinders, coloured by current. Each is the
+    one unit cylinder scaled and moved with numpy, as the 3D view's vias are: building a
+    pyvista cylinder per hole took seconds on a large board (#217)."""
     fields = result.fields
-    blocks = []
+    rows = []                 # x, y (flipped), z_bottom, z_top, radius
     currents = []
     segments, ids = [], []
     for bar, vr in zip(result.mesh.barrels, fields.vias):
@@ -272,14 +275,21 @@ def _via_barrels(st: Stackup, result, n_sides: int):
         if z_top - z_bot < 1e-6:
             continue
         x, y = bar.position
-        cyl = pv.Cylinder(center=(x, -y, 0.5 * (z_top + z_bot)), direction=(0, 0, 1),
-                          radius=max(bar.drill_mm, 0.05) / 2, height=z_top - z_bot,
-                          resolution=n_sides, capping=True)
-        cyl.cell_data["I_mA"] = np.full(cyl.n_cells, vr.current * 1e3)
-        blocks.append(cyl)
+        rows.append((x, -y, z_bot, z_top, max(bar.drill_mm, 0.05) / 2))
         currents.append(vr.current * 1e3)
         segments.append([(x, y, z_top), (x, y, z_bot)])
         ids.append(bar.owner_id)
-    if not blocks:
+    if not rows:
         return None, (0.0, 0.0), np.zeros((0, 2, 3)), []
-    return pv.merge(blocks), (0.0, max(currents)), np.asarray(segments, dtype=float), ids
+    a = np.asarray(rows)
+    up, uf = _unit_cylinder(n_sides)
+    n, P = len(a), len(up)
+    pts = np.empty((n, P, 3))
+    pts[:, :, 0] = a[:, None, 0] + up[None, :, 0] * a[:, None, 4]
+    pts[:, :, 1] = a[:, None, 1] + up[None, :, 1] * a[:, None, 4]
+    pts[:, :, 2] = a[:, None, 2] + up[None, :, 2] * (a[:, None, 3] - a[:, None, 2])
+    tris = uf[None, :, :] + (np.arange(n) * P)[:, None, None]
+    faces = np.column_stack([np.full(n * len(uf), 3), tris.reshape(-1, 3)]).ravel()
+    mesh = pv.PolyData(pts.reshape(-1, 3), faces)
+    mesh.cell_data["I_mA"] = np.repeat(np.asarray(currents, dtype=float), len(uf))
+    return mesh, (0.0, max(currents)), np.asarray(segments, dtype=float), ids

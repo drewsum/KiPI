@@ -89,6 +89,11 @@ milestones rather than versions that were ever set.
   integer keys, not with `np.unique` on rows. It also tests triangles for facing copper in
   several threads, each on its own copy of the copper. The model built is identical. On the
   Jetson AGX Thor demo (4.75M triangles) the build drops from 61 s to 43 s.
+- **DC result views build faster** (#217). After a DC solve, the plated holes are drawn
+  from one cylinder, scaled and moved for each hole with numpy, as the 3D view's vias
+  already were (#210). Before, each hole was a pyvista cylinder of its own. The copper
+  slabs' edges are found by sorting (#216). On the Jetson AGX Thor demo, building the
+  result views drops from 16.9 s to 10.1 s (GND's 1,456 holes: 4.1 s to 0.01 s).
 
 ## 0.9.4
 

@@ -21,6 +21,7 @@ from shapely.geometry.base import BaseGeometry
 
 from kipi.core.geometry.copper import drill_holes, iter_polygons, poly_to_shapely
 from kipi.core.model.board import BoardSnapshot, CopperLayer
+from kipi.core.sorting import edge_keys, single_mask
 from kipi.core.viz.layer_colors import DEFAULT_COPPER, coating_rgb, layer_key
 
 # Copper layer colors, keyed like a KiCad color theme ("f", "in1".., "b"): KiCad's default
@@ -172,11 +173,9 @@ def slab_from_triangles(pts2: np.ndarray, tris: np.ndarray, z_bottom: float,
     top = tris + n                               # faces up
     # Directed edges of CCW triangles; boundary edges have no reversed twin, so they are
     # the edges that only one triangle has.
-    e = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]])
+    e, key = edge_keys(tris, n)
     e_tri = np.tile(np.arange(m), 3)
-    key = np.minimum(e[:, 0], e[:, 1]).astype(np.int64) * n + np.maximum(e[:, 0], e[:, 1])
-    _, which, count = np.unique(key, return_inverse=True, return_counts=True)
-    is_boundary = count[which.ravel()] == 1
+    is_boundary = single_mask(key)
     boundary = e[is_boundary]
     wall_tri = e_tri[is_boundary]
     i, j = boundary[:, 0], boundary[:, 1]
