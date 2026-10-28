@@ -37,15 +37,14 @@ Only these are read:
   each is an ideal source (``kind="source"``) at ``V``: a ``PHASE`` record's
   ``PWR_PIN<n>`` are its output pins on ``PWR_NET``, its ``REF_PIN<n>`` its ground pins
   on ``REF_NET``, and the VRM's ``SL_PWR_PIN`` / ``SL_REF_PIN`` its remote sense and
-  ground sense. The phases' ``R`` in parallel is its load line; ``L`` is AC impedance,
-  which KiPI's VRMs do not have, and ``PERCENT`` is not read, as KiPI's phases share the
-  current equally;
+  ground sense. The phases' ``R`` and ``L`` are not read, and neither is ``PERCENT``, as
+  KiPI's phases share the current equally;
 * ``PI_SIGNAL_SOURCES`` -> loads. Its ``DC`` records are DC sinks, pin by pin
   (``REF_PIN=U701|15 I=0.5``): one load per part and net, drawing the pins' currents, in
   pin groups where they differ. ``R`` (HyperLynx's sink resistance) is not modelled, as
-  KiPI's loads draw a fixed current. A load's ground is the part's pins on a
-  ``REF_DATA`` or VRM ``REF_NET`` net if it has any, else its ground net as KiPI guesses
-  it.
+  KiPI's loads draw a fixed current. A load's ground is the part's pins on a VRM's
+  ``REF_NET`` if it has any, else its ground net as KiPI guesses it. ``REF_DATA`` records
+  belong to the VRMs and are not read.
 
 The rest of the file (stackup, signal-integrity settings, ...) is not KiPI's business.
 HyperLynx keeps the file's format private, so another section that looks like a VRM or
@@ -136,7 +135,7 @@ class BudImporter:
         self.setup = copy.deepcopy(base) if base is not None else PISetup()
         self.notes: List[str] = []
         self.power_nets: List[str] = []
-        self.ref_nets: Set[str] = set()     # VRM and DC sink reference (ground) nets
+        self.ref_nets: Set[str] = set()     # the VRMs' reference (ground) nets
 
     def _net(self, name: str) -> Optional[str]:
         return self.idx.board_net(name)
@@ -267,11 +266,6 @@ class BudImporter:
             vrm = Vrm(name, out, volts, kind="source", ground=gnd, sense=sense,
                       ground_sense=gsense,
                       phases=[VrmPhase(o, None, g) for o, g, _ in rest])
-            ohms = [_number(ph.get("R")) or 0.0 for _, _, ph in sides]
-            if all(x > 0 for x in ohms):
-                vrm.load_line_mohm = 1e3 / sum(1 / x for x in ohms)
-                self.notes.append(f"{name}: output resistance R imported as a "
-                                  f"{vrm.load_line_mohm:g} mΩ load line")
             if len({_number(ph.get("PERCENT")) for _, _, ph in sides}) > 1:
                 self.notes.append(f"{name}: phases share the current equally in KiPI, not "
                                   "by their PERCENT")
@@ -280,17 +274,10 @@ class BudImporter:
             for ref in (out, gnd):
                 if ref is not None:
                     self._tick(ref.net)
-        if any(_number(ph.get("L")) for rs in phases.values() for ph in rs):
-            self.notes.append("VRM inductance L not imported: KiPI's VRMs have no AC "
-                              "impedance; their bandwidth only sets where targets apply")
 
     # ------------------------------------------------------------ DC loads
     def _loads(self):
         records = self.sections.get("PI_SIGNAL_SOURCES", [])
-        for r in records:
-            net = self._net(r.get("REF_NET", "")) if r.get(KIND) == "REF_DATA" else None
-            if net:
-                self.ref_nets.add(net)
         sinks: Dict[Tuple[str, str], Dict[str, float]] = defaultdict(dict)  # (part, net)
         missing, no_current, resistive = [], [], []
         for r in records:

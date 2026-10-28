@@ -11,12 +11,11 @@ milestones rather than versions that were ever set.
   `.bud` file's VRMs and DC sinks. Each VRM (`PI_VRM`) becomes an ideal source at its
   voltage, since HyperLynx says nothing of what a VRM draws from its input. It gets each
   phase's output and ground pins, the remote sense (`SL_PWR_PIN`) and ground sense
-  (`SL_REF_PIN`) pins, and the phases' output resistance `R` in parallel as its load line.
-  A VRM of the same name is replaced. The DC sinks (`PI_SIGNAL_SOURCES`) become one load
+  (`SL_REF_PIN`) pins; the phases' `R` and `L` are ignored. A VRM of the same name is replaced. The DC sinks (`PI_SIGNAL_SOURCES`) become one load
   per part and net, drawing the pins' currents (in pin groups where they differ). Each
-  load is grounded on the part's pins on the file's reference net. A load already on that
-  part and net gets the new current and keeps its tolerances. The VRM inductance `L`, the
-  phases' `PERCENT` and the sink resistance `R` aren't modelled, and the Log says so.
+  load is grounded on the part's pins on a VRM's reference net. A load already on that
+  part and net gets the new current and keeps its tolerances. The phases' `PERCENT` and
+  the sink resistance `R` aren't modelled, and the Log says so.
 
 ## 0.9.4
 

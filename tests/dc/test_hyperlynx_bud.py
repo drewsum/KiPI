@@ -58,7 +58,7 @@ BUD = """\
 (DC REF_PIN=U3|4 I=0.1 R=5)
 (DC REF_PIN=U2|1 I=0.3 R=1e+06)
 (DC REF_PIN=U9|1 I=1 R=1e+06)
-(REF_DATA PIN=U1|2 REF_NET=GND )
+(REF_DATA PIN=U1|2 REF_NET=NOT_A_NET )
 }
 {DC_SINKS
 (X REFDES=U1)
@@ -145,7 +145,7 @@ def test_a_file_that_is_not_a_session_file_is_refused(tmp_path):
         import_bud(path, board())
 
 
-def test_vrms_are_ideal_sources_with_their_phases_sense_and_load_line(bud):
+def test_vrms_are_ideal_sources_with_their_phases_and_sense(bud):
     out, notes, _ = import_bud(bud, _board(), setup("ldo"))
     v = {x.name: x for x in out.vrms}
     pos = v["POS3P3"]
@@ -153,14 +153,14 @@ def test_vrms_are_ideal_sources_with_their_phases_sense_and_load_line(bud):
     assert pos.output == PinRef("U1", "+3V3", ["2"]) and pos.ground == PinRef("U1", "GND", ["3"])
     assert pos.sense == PinRef("U2", "+3V3", ["1"])
     assert pos.ground_sense == PinRef("U2", "GND", ["2"])
-    vin = v["VIN"]                          # two phases of 2 mΩ: a 1 mΩ load line
+    vin = v["VIN"]                          # R and L are ignored
     assert vin.output == PinRef("J1", "VIN", ["1"]) and vin.ground == PinRef("J1", "GND", ["2"])
     assert [(ph.output, ph.ground) for ph in vin.phases] == [(PinRef("U3", "VIN", ["4"]), None)]
-    assert vin.load_line_mohm == pytest.approx(1.0) and vin.sense is None
+    assert vin.load_line_mohm == 0.0 and vin.sense is None
     assert any("VIN" in n and "PERCENT" in n for n in notes)
     assert any("U9|1" in n for n in notes)
     assert any(n.startswith("GONE") and "not imported" in n for n in notes)
-    assert any("inductance L" in n for n in notes)
+    assert not any("load line" in n or "inductance" in n for n in notes)
 
 
 def test_dc_sinks_are_a_load_per_part_and_net(bud):
@@ -176,6 +176,7 @@ def test_dc_sinks_are_a_load_per_part_and_net(bud):
     assert loads["U3 VIN"].current == pytest.approx(0.1) and loads["U3 VIN"].groups == []
     assert any("resistance R" in n and "U3|4" in n for n in notes)
     assert any("U9|1" in n and "sink" in n for n in notes)
+    assert not any("REF_DATA" in n or "NOT_A_NET" in n for n in notes)   # VRM data, ignored
 
 
 def test_a_dc_sink_on_an_existing_load_sets_its_current_and_keeps_the_rest(bud):
