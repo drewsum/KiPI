@@ -989,7 +989,8 @@ class LoadEditor(_Editor):
                             "groups, each with its own current (e.g. a core and an I/O "
                             "supply)"),
                 (self.current, "Total current the load draws, shared evenly by its supply "
-                               "pins"),
+                               "pins. Positive on a negative rail too: it is the current "
+                               "the load takes from its rail"),
                 (self.lbl_total, "Sum of the pin groups' currents"),
                 (self.ground, "Optional: the load's ground pins, to include the ground "
                               "return in the solve. Picking the supply pins fills in the same "

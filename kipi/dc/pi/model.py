@@ -950,9 +950,9 @@ def _estimated_input(setup: PISetup, groups, v: Vrm, seen=frozenset()) -> float:
     if v.kind in SWITCHING_KINDS:
         feed = next((u for u in setup.vrms if groups[u.output.net] == groups[v.input.net]),
                     None)
-        if feed is None or feed.voltage <= 0:
+        if feed is None or feed.voltage == 0:        # drawn from either polarity (#220)
             return v.quiescent_a
-        return v.voltage * i_out / (v.efficiency * feed.voltage) + v.quiescent_a
+        return abs(v.voltage) * i_out / (v.efficiency * abs(feed.voltage)) + v.quiescent_a
     return i_out + v.quiescent_a
 
 

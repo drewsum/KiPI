@@ -274,10 +274,9 @@ def test_pin_group_validation():
 
 
 def test_negative_rail_is_judged_on_its_magnitude():
-    # -3.3 V rail; the load returns 1 A, so it sits R(8) * 1 A (~3.9 mV, 0.12 %) off.
+    # -3.3 V rail; the load draws 1 A, so it sits R(8) * 1 A (~3.9 mV, 0.12 %) off.
     s = setup()
     s.vrms = [Vrm("U1", PinRef("U1", "+3V3", ["2"]), -3.3, "source")]
-    s.loads[0].current = -1.0
     for tol, verdict in ((0.1, False), (0.2, True)):
         s.loads[0].tol_min, s.loads[0].tol_max = -tol, tol
         ld = by_name(solve_tree(board(), s).loads, "U2")

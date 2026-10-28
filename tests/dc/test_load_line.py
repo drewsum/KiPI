@@ -57,7 +57,6 @@ def test_disconnected_loads_add_no_droop():
 def test_negative_rail_droops_toward_zero():
     s = setup()
     s.vrms = [Vrm("U1", PinRef("U1", "+3V3", ["2"]), -3.3, "source", load_line_mohm=10.0)]
-    s.loads[0].current = -1.0
     u1 = by_name(solve_tree(board(), s).vrms, "U1")
     assert u1.v_out == pytest.approx(-3.29, rel=1e-9)
 

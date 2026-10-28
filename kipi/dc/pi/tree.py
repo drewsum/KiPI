@@ -127,13 +127,15 @@ def _load_names(load: Load) -> List[str]:
             else [load.name])
 
 
-def _input_current(v: Vrm, v_out: float, i_out: float, v_in: float) -> float:
-    """Input current of one phase delivering ``i_out`` at ``v_out`` from ``v_in``."""
-    iq = v.quiescent_a / (len(v.phases) + 1)
+def _input_current(v: Vrm, v_out: float, i_out: float, v_in: float, sign: float) -> float:
+    """Input current of one phase delivering ``i_out`` at ``v_out`` from ``v_in``, drawn
+    from the copper; ``sign`` is the input rail's polarity, -1 on a negative rail (#220),
+    whose copper the VRM feeds current into to draw power from it."""
+    iq = sign * v.quiescent_a / (len(v.phases) + 1)
     if v.kind == "ldo":
         return i_out + iq
     if v.kind in SWITCHING_KINDS:
-        if v_in <= 0:
+        if sign * v_in <= 0:
             raise SolveError(f"VRM {v.name}: input voltage collapsed to {v_in:.3f} V")
         return v_out * i_out / (v.efficiency * v_in) + iq
     return 0.0
@@ -256,6 +258,15 @@ class _TreeSolver:
         self.tree_converged = True                   # the rails/grounds outer iteration
 
     # ------------------------------------------------------------ structure
+    def sign(self, g: Group) -> float:
+        """Rail ``g``'s polarity: -1 when its VRM drives it negative. A load's current is
+        what it draws from its rail, so on a negative rail it flows into the copper (#220)."""
+        return -1.0 if self.driver[g].voltage < 0 else 1.0
+
+    def drawn(self, l: Load, amps: float) -> float:
+        """``amps`` of load ``l`` as the current its supply pins take from the copper."""
+        return self.sign(self.groups[l.supply.net]) * amps
+
     def label_of(self, g: Group) -> str:
         """Short display name: the group's busiest net, plus how many nets it joins."""
         main = max(sorted(g), key=lambda n: self.pad_count.get(n, 0))
@@ -363,7 +374,8 @@ class _TreeSolver:
         refs = [v for v in self.setup.vrms
                 if v.kind in GROUND_REF_KINDS and v.ground and v.ground.net in g]
         sources = [VoltageSource(f"{v.name} (gnd)", self.pads(v.ground), 0.0) for v in refs]
-        loads = [CurrentLoad(f"{l.name} (return)", self.pads(l.ground), -l.total_current(),
+        loads = [CurrentLoad(f"{l.name} (return)", self.pads(l.ground),
+                             -self.drawn(l, l.total_current()),
                              optional=True)
                  for l in self.setup.loads if l.ground and l.ground.net in g]
         loads += self._vrm_ground_loads(g)
@@ -435,23 +447,23 @@ class _TreeSolver:
             if l.supply.net not in g:
                 continue
             if not l.groups:
-                loads.append(CurrentLoad(l.name, self.pads(l.supply), l.current,
-                                         optional=True))
+                loads.append(CurrentLoad(l.name, self.pads(l.supply),
+                                         self.drawn(l, l.current), optional=True))
                 continue
             for i, grp in enumerate(l.groups):
                 ref = PinRef(l.supply.ref, l.supply.net, list(grp.pins))
-                loads.append(CurrentLoad(_group_load_name(l, i), self.pads(ref), grp.current,
-                                         optional=True))
+                loads.append(CurrentLoad(_group_load_name(l, i), self.pads(ref),
+                                         self.drawn(l, grp.current), optional=True))
         return loads
 
     def _child_currents(self, rail: _Rail, vin_est: Dict[str, List[float]]) -> Dict[str, float]:
         """Input current of every phase of every VRM the rail feeds."""
-        currents = {}
+        currents, sign = {}, self.sign(self.groups[rail.vrm.output.net])
         for c in rail.children:
             share = sum(self.i_out[c.name]) / (len(c.phases) + 1)
             for k, name in enumerate(rail.child_load[c.name]):
                 currents[name] = _input_current(c, self.v_out[c.name][k], share,
-                                                vin_est[c.name][k])
+                                                vin_est[c.name][k], sign)
         return currents
 
     def _iterate_rail(self, rail: _Rail, system, demand: float, label: str,
@@ -540,8 +552,8 @@ class _TreeSolver:
         self.progress.stage(f"Rail {index + 1}/{len(self.order)}: {label} "
                             f"(from {vrm.name}){suffix}")
         rail, _, mesh, system = self._rail_system(g)
-        demand = sum(self.load_amps[l.name] for l in self.setup.loads     # fixed loads;
-                     if self.groups[l.supply.net] == g)                    # the rest vary
+        demand = sum(self.drawn(l, self.load_amps[l.name])     # fixed loads; the rest vary
+                     for l in self.setup.loads if self.groups[l.supply.net] == g)
 
         iterate = self._iterate_mesh if rail.mesh else self._iterate_rail
         sol, v_src, vin, currents, it = iterate(rail, system, demand, label, warnings)
@@ -603,7 +615,7 @@ class _TreeSolver:
         self.progress.stage(f"Ground: {label}{suffix}")
         refs, (mesh, system) = self._ground_system(g)
         currents = self._vrm_ground_returns(g)
-        currents.update({f"{l.name} (return)": -self.load_amps[l.name]
+        currents.update({f"{l.name} (return)": -self.drawn(l, self.load_amps[l.name])
                          for l in self.setup.loads if l.ground and l.ground.net in g})
         # Reference VRMs that share ground pins (offboard supplies on one connector, #219)
         # each take back the share of the return through them that their output delivers.

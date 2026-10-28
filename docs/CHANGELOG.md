@@ -116,6 +116,17 @@ milestones rather than versions that were ever set.
   to a direct solve. Forward/backward Gauss-Seidel smoothing, which helped on the Thor
   board, stopped two of the DSP board's rails from converging, so it is not used.
 
+### Fixed
+- **Loads on negative rails pulled their pins the wrong way** (#220). A load's current
+  was taken out of the copper whatever the rail's polarity, so a 1 A load on a -12 V rail
+  read about -12.1 V instead of rising toward 0 V. A load's current is now what it draws
+  from its rail on either polarity, and it flows into a negative rail's copper. VRMs on
+  negative rails sink their output current, and their input and quiescent currents are
+  drawn from the rail feeding them with its polarity, so negative LDO chains and
+  switchers fed from a negative rail are solved too (the latter stopped with "input
+  voltage collapsed"). Setups that entered a negative current on a negative rail to get
+  the right direction should enter it positive now.
+
 ## 0.9.4
 
 ### Added
