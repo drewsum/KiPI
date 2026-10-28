@@ -177,10 +177,14 @@ class ComplexFactor:
     sides to get the solutions."""
 
     def __init__(self, solve: Callable[[np.ndarray], np.ndarray], name: str,
-                 nbytes: int = 0):
+                 nbytes: int = 0, schur: Optional[np.ndarray] = None):
         self._solve = solve
         self.name = name
         self.nbytes = nbytes                 # the factors' memory, where known
+        # With Schur rows asked for (see ComplexSeries.factorize): A's Schur complement on
+        # them, in their order. A right-hand side that is zero off those rows has its
+        # solution there from this alone, x_s = S^-1 b_s, without a solve (#225).
+        self.schur = schur
 
     def __call__(self, b: np.ndarray) -> np.ndarray:
         return self._solve(np.asarray(b, dtype=complex))
@@ -282,15 +286,17 @@ def _mkl_library():
     return lib
 
 
-def _release_native(fn, pt):
-    """Free PARDISO's memory for handle ``pt`` (phase -1)."""
+def _release_native(fn, pt, iparm=None):
+    """Free PARDISO's memory for handle ``pt`` (phase -1), with the ``iparm`` it was
+    factorized with: MKL's two-level factorization faults if released with others."""
     import ctypes
     if not pt.any():
         return
     one = ctypes.c_int32(1)
     try:
         fn(pt.ctypes.data, one, one, ctypes.c_int32(6), ctypes.c_int32(-1), one, None, None,
-           None, None, one, np.zeros(64, np.int32).ctypes.data, ctypes.c_int32(0), None,
+           None, None, one, (np.zeros(64, np.int32) if iparm is None else iparm).ctypes.data,
+           ctypes.c_int32(0), None,
            None, ctypes.byref(ctypes.c_int32(0)))
     except Exception:                        # interpreter shutdown, MKL already unloaded
         pass
@@ -317,51 +323,107 @@ class _NativePardiso:
         self.pt = np.zeros(64, dtype=np.intp)        # PARDISO's handle: 64 pointers
         ip = self.iparm = np.zeros(64, dtype=np.int32)
         ip[0] = 1                            # use these values, not PARDISO's defaults
-        ip[1] = 2                            # METIS nested dissection ordering
+        # Parallel METIS nested dissection, and the two-level factorization that uses
+        # its ordering in parallel: on a 4.6M-unknown AC model with its Schur complement,
+        # 12 s for the analysis and factorization rather than 18.6 s (#225).
+        ip[1] = 3
+        ip[23] = 1
         ip[7] = 0                            # refine iteratively when pivots are perturbed
         ip[9] = 8                            # perturb pivots below 1e-8
         ip[20] = 1                           # Bunch-Kaufman pivoting
         ip[34] = 1                           # zero-based indices
-        self._pattern = None                 # (indptr, indices) analyzed, as int32
-        self._finalizer = weakref.finalize(self, _release_native, fn, self.pt)
+        self._pattern = None                 # (indptr, indices, Schur rows, perm) analyzed
+        self._finalizer = weakref.finalize(self, _release_native, fn, self.pt, ip)
 
-    def _call(self, phase: int, data, ia, ja, b=None, x=None):
+    def _call(self, phase: int, data, ia, ja, b=None, x=None, perm=None):
         ct = self._ct
         nrhs = 1 if b is None or b.ndim == 1 else b.shape[1]
         err = ct.c_int32(0)
         one = ct.c_int32(1)
         self._fn(self.pt.ctypes.data, ct.byref(one), ct.byref(one), ct.byref(ct.c_int32(6)),
                  ct.byref(ct.c_int32(phase)), ct.byref(ct.c_int32(len(ia) - 1)),
-                 data.ctypes.data, ia.ctypes.data, ja.ctypes.data, None,
+                 data.ctypes.data, ia.ctypes.data, ja.ctypes.data,
+                 None if perm is None else perm.ctypes.data,
                  ct.byref(ct.c_int32(nrhs)), self.iparm.ctypes.data, ct.byref(ct.c_int32(0)),
                  None if b is None else b.ctypes.data, None if x is None else x.ctypes.data,
                  ct.byref(err))
         if err.value:
             raise RuntimeError(f"PARDISO error {err.value} (phase {phase})")
 
-    def factorize(self, upper: sp.csr_matrix) -> ComplexFactor:
+    def factorize(self, upper: sp.csr_matrix,
+                  schur: Optional[np.ndarray] = None) -> ComplexFactor:
+        """``schur``: rows (sorted) to compute the Schur complement on as well. The rest of
+        the matrix is then factorized with those rows last, and a solve goes through the
+        partial phases with the Schur complement solved between them."""
         if upper.nnz >= 2**31 - 1:
             raise RuntimeError("too many non-zeros for 32-bit indices")
         data = np.ascontiguousarray(upper.data, dtype=complex)
         ia = np.ascontiguousarray(upper.indptr, dtype=np.int32)
         ja = np.ascontiguousarray(upper.indices, dtype=np.int32)
-        pat = self._pattern
-        if pat is None or not (np.array_equal(pat[0], ia) and np.array_equal(pat[1], ja)):
-            _release_native(self._fn, self.pt)
-            self._pattern = None
-            self._call(11, data, ia, ja)
-            self._pattern = (ia, ja)
-        ia, ja = self._pattern
-        self._call(22, data, ia, ja)
         n = len(ia) - 1
+        rows = None if schur is None else np.asarray(schur, dtype=np.int64)
+        pat = self._pattern
+        if pat is None or not (np.array_equal(pat[0], ia) and np.array_equal(pat[1], ja)
+                               and _same_rows(pat[2], rows)):
+            _release_native(self._fn, self.pt, self.iparm)
+            self._pattern = None
+            perm = None
+            if rows is not None:
+                perm = np.zeros(n, dtype=np.int32)
+                perm[rows] = 1
+            self.iparm[35] = 0 if rows is None else 2     # Schur complement, kept factor
+            try:
+                self._call(11, data, ia, ja, perm=perm)
+            except RuntimeError:
+                if self.iparm[1] == 2 and self.iparm[23] == 0:
+                    raise
+                # An MKL without them: its sequential ordering and factorization.
+                log.warning("PARDISO refused parallel ordering; using its sequential one")
+                _release_native(self._fn, self.pt, self.iparm)
+                self.iparm[1], self.iparm[23] = 2, 0
+                self._call(11, data, ia, ja, perm=perm)
+            self._pattern = (ia, ja, rows, perm)
+        ia, ja, rows, perm = self._pattern
+        if rows is None:
+            self._call(22, data, ia, ja)
 
-        def solve(b):
+            def solve(b):
+                b = np.asarray(b, dtype=complex)
+                b2 = np.asfortranarray(b.reshape(n, -1))
+                x = np.zeros_like(b2, order="F")
+                self._call(33, data, ia, ja, b2, x)
+                return x.reshape(b.shape)
+            return ComplexFactor(solve, "pardiso")
+
+        import scipy.linalg as la
+        m = len(rows)
+        out = np.zeros(m * m, dtype=complex)
+        self._call(22, data, ia, ja, x=out, perm=perm)
+        S = out.reshape(m, m)                # symmetric: row or column major alike
+        if not np.all(np.isfinite(S)):
+            raise RuntimeError("the Schur complement is not finite")
+        lu = la.lu_factor(S, check_finite=False)
+
+        def solve_schur(b):
+            # Forward and diagonal substitution leave the Schur rows' reduced right-hand
+            # side, solved here with S, before the backward substitution.
             b = np.asarray(b, dtype=complex)
             b2 = np.asfortranarray(b.reshape(n, -1))
+            y = np.zeros_like(b2, order="F")
+            self._call(331, data, ia, ja, b2, y, perm=perm)
+            z = np.zeros_like(b2, order="F")
+            self._call(332, data, ia, ja, y, z, perm=perm)
+            z[rows] = la.lu_solve(lu, y[rows], check_finite=False)
             x = np.zeros_like(b2, order="F")
-            self._call(33, data, ia, ja, b2, x)
+            self._call(333, data, ia, ja, z, x, perm=perm)
             return x.reshape(b.shape)
-        return ComplexFactor(solve, "pardiso")
+        return ComplexFactor(solve_schur, "pardiso", nbytes=2 * S.nbytes, schur=S)
+
+
+def _same_rows(a: Optional[np.ndarray], b: Optional[np.ndarray]) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return np.array_equal(a, b)
 
 
 def _symmetric_matvec(upper: sp.csr_matrix, x: np.ndarray) -> np.ndarray:
@@ -409,7 +471,13 @@ class ComplexSeries:
     def __init__(self, native: bool = True):
         self._native: Optional[_NativePardiso] = None
         self._off = not native               # native PARDISO can't be used here
+        self._schur_off = False              # a Schur complement failed here once
         self.checked = None                  # (b, x): the last factor's check solve
+
+    @property
+    def schur_ok(self) -> bool:
+        """Whether :meth:`factorize` can be asked for a Schur complement here."""
+        return not self._schur_off and self._native_solver() is not None
 
     def _native_solver(self) -> Optional[_NativePardiso]:
         if self._native is None and not self._off:
@@ -426,16 +494,31 @@ class ComplexSeries:
 
     def factorize(self, upper: sp.spmatrix,
                   warn: Optional[Callable[[str], None]] = None,
-                  check: Optional[Callable[[], np.ndarray]] = None) -> ComplexFactor:
+                  check: Optional[Callable[[], np.ndarray]] = None,
+                  schur: Optional[np.ndarray] = None) -> ComplexFactor:
         """``check`` returns, once the matrix is factorized, the first block of right-hand
         sides the caller will solve. That block checks the factorization in place of a
         solve of its own (#215), and is left in :attr:`checked` as ``(b, x)`` with its
-        solutions."""
+        solutions.
+
+        ``schur``: sorted rows to also compute the Schur complement on (the factor's
+        :attr:`ComplexFactor.schur`), where :attr:`schur_ok`. If that fails, the matrix is
+        factorized without one, and so is every later one: the caller checks which it got."""
         self.checked = None
         upper = sp.csr_matrix(upper)
         upper.sort_indices()
         n = upper.shape[0]
         native = self._native_solver() if n > 0 else None
+        if native is not None and schur is not None and len(schur) and not self._schur_off:
+            try:
+                return self._checked(native.factorize(upper, schur), upper, check)
+            except Exception as e:
+                self._schur_off = True
+                msg = (f"PARDISO's Schur complement failed ({type(e).__name__}: {e}); "
+                       "solving for each port instead")
+                log.warning(msg)
+                if warn is not None:
+                    warn(msg)
         if native is not None:
             try:
                 factor = native.factorize(upper)
@@ -459,6 +542,20 @@ class ComplexSeries:
         factor = factorize_complex(full, warn)
         if factor.name == "pardiso":
             factor.name = "pardiso (real form)"
+        return factor
+
+    def _checked(self, factor: ComplexFactor, upper: sp.csr_matrix,
+                 check: Optional[Callable[[], np.ndarray]]) -> ComplexFactor:
+        """``factor`` once a solve with it checks out (see :meth:`factorize`); raises if
+        not."""
+        given = check() if check is not None else None
+        b = _check_block(given, upper.shape[0])
+        x = factor(b)
+        rel = _worst_residual(upper, x, b)
+        if not (np.isfinite(rel) and rel <= CHECK_TOL_COMPLEX):
+            raise RuntimeError(f"relative residual {rel:.1e}")
+        if b is given:
+            self.checked = (b, x)
         return factor
 
     def close(self):

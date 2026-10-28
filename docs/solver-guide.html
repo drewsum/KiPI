@@ -841,7 +841,11 @@ solves them:</p>
     fails, that system is solved by AMG-CG, not by SuperLU. A factorization is reused for every load, power-tree iteration
     and AC port, which an iterative solver cannot do, so fine meshes stay fast.</li>
   <li><b>AC sweeps.</b> Each field frequency of an AC sweep is a complex factorization, so
-    large AC models gain the most.</li>
+    large AC models gain the most. With PARDISO, the factorization also gives the board's
+    Schur complement on the port terminals: the impedance between every pair of ports comes
+    from that small dense matrix, with no solve for each port. A rail with hundreds of
+    capacitors then costs about what one with a few does. On the Thor demo's 4.6M-unknown
+    model with 300 ports, a frequency takes 12 s rather than 56 s.</li>
 </ul>
 <p>The drawbacks: Intel MKL is about 600 MB installed, it exists only for x86-64 Windows and
 Linux (not macOS or ARM), and small boards, which solve in a second either way, gain little.

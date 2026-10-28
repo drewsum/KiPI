@@ -266,16 +266,83 @@ def test_rhs_block_grows_with_free_memory(monkeypatch):
 
 
 class _ExactNative:
-    """Native complex PARDISO stood in for by SuperLU on the full matrix."""
-    def __init__(self, wrong=False):
+    """Native complex PARDISO stood in for by SuperLU on the full matrix, the Schur
+    complement on ``schur`` rows from the inverse's block there."""
+    def __init__(self, wrong=False, schur_fails=False):
         self.wrong = wrong
+        self.schur_fails = schur_fails
+        self.calls = []
 
-    def factorize(self, upper):
+    def factorize(self, upper, schur=None):
         from scipy.sparse.linalg import splu
+        self.calls.append(schur)
         lu = splu(sp.csc_matrix(upper + sp.triu(upper, 1).T), permc_spec="COLAMD")
         if self.wrong:
             return direct.ComplexFactor(lambda b: np.zeros_like(b), "pardiso")
-        return direct.ComplexFactor(lu.solve, "pardiso")
+        S = None
+        if schur is not None:
+            if self.schur_fails:
+                raise RuntimeError("PARDISO error -1 (phase 22)")
+            e = np.zeros((upper.shape[0], len(schur)), complex)
+            e[schur, np.arange(len(schur))] = 1
+            S = np.linalg.inv(lu.solve(e)[schur])
+        return direct.ComplexFactor(lu.solve, "pardiso", schur=S)
+
+
+def _schur_reference(A, rows):
+    Ad = A.toarray()
+    rest = np.setdiff1d(np.arange(A.shape[0]), rows)
+    return (Ad[np.ix_(rows, rows)]
+            - Ad[np.ix_(rows, rest)] @ np.linalg.solve(Ad[np.ix_(rest, rest)],
+                                                       Ad[np.ix_(rest, rows)]))
+
+
+def test_schur_complement_from_the_series(monkeypatch):
+    # #225: asked for one, the factor carries the Schur complement on those rows.
+    series = direct.ComplexSeries()
+    native = _ExactNative()
+    monkeypatch.setattr(series, "_native_solver", lambda: native)
+    A = _ac_like(1e6, 12)
+    rows = np.array([3, 40, 77, 100])
+    assert series.schur_ok
+    f = series.factorize(_upper(A), schur=rows)
+    assert np.allclose(f.schur, _schur_reference(A, rows), rtol=1e-10, atol=0)
+    b = _complex_rhs(A.shape[0])
+    assert _rel(A, f(b), b) < 1e-10
+
+
+def test_a_failing_schur_complement_is_not_asked_for_again(monkeypatch):
+    series = direct.ComplexSeries()
+    native = _ExactNative(schur_fails=True)
+    monkeypatch.setattr(series, "_native_solver", lambda: native)
+    A = _ac_like(1e6, 12)
+    warnings = []
+    f = series.factorize(_upper(A), warnings.append, schur=np.array([1, 2]))
+    assert f.name == "pardiso" and f.schur is None
+    assert len(warnings) == 1 and "Schur complement failed" in warnings[0]
+    assert not series.schur_ok
+    f = series.factorize(_upper(A), warnings.append, schur=np.array([1, 2]))
+    assert f.schur is None and len(warnings) == 1
+    assert native.calls == [native.calls[0], None, None]
+
+
+def test_native_schur_complement_when_installed():
+    if direct.backend() != "pardiso":
+        pytest.skip("PARDISO not available here")
+    series = direct.ComplexSeries()
+    if not series.schur_ok:
+        pytest.skip("native complex PARDISO not available here")
+    rows = np.array([0, 17, 250, 999, 1500])
+    for omega in (1e3, 1e8):                 # a new matrix on the analysis already done
+        A = _ac_like(omega)
+        f = series.factorize(_upper(A), schur=rows)
+        assert f.schur is not None
+        assert np.allclose(f.schur, _schur_reference(A, rows), rtol=1e-8, atol=0)
+        b = _complex_rhs(A.shape[0])
+        assert _rel(A, f(b), b) < 1e-8      # a full solve through the partial phases
+    f = series.factorize(_upper(A))          # and without, analyzed again
+    assert f.schur is None and _rel(A, f(b), b) < 1e-8
+    series.close()
 
 
 def test_first_block_checks_the_factorization(monkeypatch):

@@ -15,6 +15,18 @@ milestones rather than versions that were ever set.
   unknowns and how long steps of about that size took before on this computer, which KiPI
   keeps in `timings.json` in its data folder; the first solve of a kind has no estimate.
 
+### Changed
+- **AC sweeps with many capacitors are several times faster** (#225). With PARDISO, each
+  frequency's factorization now also gives the board's Schur complement on the port
+  terminals, from which the impedance between every pair of ports follows directly. The
+  board was previously solved once for each port (each capacitor, probe and series link),
+  so a rail with hundreds of capacitors spent most of its time there. Only the floating
+  conductors are still solved in full. PARDISO also orders and factorizes in parallel now.
+  On KiCad's Jetson AGX Thor demo (4.6M unknowns, 300 ports), the first frequency takes
+  18 s rather than 65 s, and each one after it 12 s rather than 56 s, with the same
+  impedances. If the Schur complement fails, KiPI warns and solves each port as before;
+  without PARDISO nothing changes.
+
 ## 0.9.5
 
 ### Added
