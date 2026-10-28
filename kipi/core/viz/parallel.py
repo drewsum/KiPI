@@ -11,73 +11,25 @@ Wherever a pool can't start or breaks, the nets left are built here as before.
 
 from __future__ import annotations
 
-import concurrent.futures as cf
-import dataclasses
-import multiprocessing
-import os
-import pickle
-import sys
-import tempfile
-import threading
-from concurrent.futures.process import BrokenProcessPool
-from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Union
 
 from shapely.geometry.base import BaseGeometry
 
+from kipi.core import workers as pool_workers
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.viz.meshes import NetScene
+from kipi.core.workers import POOL_ERRORS, BoardPool, board, finished
 
 #: Below this many nets the pool's start (a second or two) costs more than it saves.
 MIN_NETS = 40
-#: Each worker holds the whole board; more than this rarely helps and costs memory.
-MAX_WORKERS = 8
-#: Set to 1 to build in one process only.
-SERIAL_ENV = "KIPI_SERIAL_VIEW"
-
-_snap: Optional[BoardSnapshot] = None      # in a worker: the board it builds nets of
 
 
 def workers(n_nets: int) -> int:
     """How many processes to build ``n_nets`` nets with; 0 to build them here."""
-    if n_nets < MIN_NETS or os.environ.get(SERIAL_ENV) == "1":
+    if n_nets < MIN_NETS:
         return 0
-    if not _can_spawn():
-        return 0
-    n = min((os.cpu_count() or 1) - 1, MAX_WORKERS, n_nets // 8)
-    return n if n >= 2 else 0
-
-
-def _renamed() -> bool:
-    """Whether this is KiPI.exe: a copy of Python under KiPI's name (#124)."""
-    return Path(sys.executable or "").stem.lower() == "kipi"
-
-
-def _can_spawn() -> bool:
-    """Whether a worker can be started by running this program again: a Python, or
-    KiPI.exe. KiCad's own Python, embedded in it, can't."""
-    return Path(sys.executable or "").stem.lower().startswith("python") or _renamed()
-
-
-def _spawn_renamed():
-    """Let a worker start as KiPI.exe. Python's multiprocessing takes a venv's program
-    for its redirector to the base Python and starts that instead, under the venv
-    program's name: a KiPI.exe that isn't there. KiPI.exe is the interpreter itself and
-    needs no such detour."""
-    try:
-        from multiprocessing import popen_spawn_win32
-        popen_spawn_win32.WINENV = False
-    except ImportError:                 # not Windows
-        pass
-
-
-def _start(board: str, colors):
-    global _snap
-    from kipi.core.viz import meshes
-    with open(board, "rb") as f:
-        _snap = pickle.load(f)
-    meshes.set_layer_colors(colors)
+    return pool_workers.workers(n_nets // 8)
 
 
 def _build(net: str, copper: Optional[Dict[int, BaseGeometry]],
@@ -87,12 +39,13 @@ def _build(net: str, copper: Optional[Dict[int, BaseGeometry]],
     from kipi.core.geometry.copper import net_copper, net_layer_copper
     from kipi.core.viz.batch import pack_scene
     from kipi.core.viz.meshes import build_net_scene
+    snap = board()
     if copper is None and layers is None:
-        copper = net_copper(_snap, net)
+        copper = net_copper(snap, net)
     elif copper is None:
-        copper = {lid: g for lid, g in ((lid, net_layer_copper(_snap, net, lid))
+        copper = {lid: g for lid, g in ((lid, net_layer_copper(snap, net, lid))
                                         for lid in layers) if not g.is_empty}
-    return net, copper, pack_scene(build_net_scene(_snap, net, copper, holes=holes))
+    return net, copper, pack_scene(build_net_scene(snap, net, copper, holes=holes))
 
 
 class Coatings:
@@ -106,7 +59,7 @@ class Coatings:
 def _coatings(side: str):
     from kipi.core.viz.batch import pack
     from kipi.core.viz.meshes import board_coatings
-    return [(kind, pack(mesh), color) for kind, mesh, color in board_coatings(_snap, [side])]
+    return [(kind, pack(mesh), color) for kind, mesh, color in board_coatings(board(), [side])]
 
 
 def build_nets(snap: BoardSnapshot, nets: List[str], cache: Dict[str, Dict],
@@ -121,7 +74,7 @@ def build_nets(snap: BoardSnapshot, nets: List[str], cache: Dict[str, Dict],
     if n:
         try:
             yield from _in_pool(snap, left, cache, n, progress, wanted)
-        except (OSError, RuntimeError, BrokenProcessPool) as e:
+        except POOL_ERRORS as e:
             progress.warn(f"Could not build the view in {n} processes ({e}); building "
                           f"the {len(left)} net(s) left in one")
     from kipi.core.geometry.copper import net_copper
@@ -142,19 +95,7 @@ def _in_pool(snap, left: List[str], cache, n: int, progress, wanted: list):
     """Build ``left`` in ``n`` processes, removing each net from it once yielded, and the
     coatings if ``wanted[0]``, clearing it once they are."""
     from kipi.core.viz import meshes
-    # The workers read the board from a file. Passed to them as they start, it is
-    # written down a pipe that blocks for good if a worker exits before reading it. The
-    # copy leaves out the snapshot's indexes, which each worker builds for itself.
-    fd, board = tempfile.mkstemp(prefix="kipi-board-", suffix=".pkl")
-    with os.fdopen(fd, "wb") as f:
-        pickle.dump(dataclasses.replace(snap), f, protocol=pickle.HIGHEST_PROTOCOL)
-    # Spawned everywhere: forking a process with Qt's threads running is unsafe.
-    if _renamed():
-        _spawn_renamed()
-    pool = cf.ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn"),
-                                  initializer=_start,
-                                  initargs=(board, dict(meshes._layer_colors)))
-    try:
+    with BoardPool(snap, n, dict(meshes._layer_colors)) as pool:
         progress.debug(f"Building {len(left)} net(s) in {n} processes")
         # The biggest nets first, so a ground plane isn't left to finish on its own; a
         # net bigger than a worker's share is built a layer to a task.
@@ -173,30 +114,24 @@ def _in_pool(snap, left: List[str], cache, n: int, progress, wanted: list):
                 pending.add(pool.submit(_build, net, None, [], True))   # vias and pads
             else:
                 pending.add(pool.submit(_build, net, cache.get(net)))
-        while pending:
-            progress.check_cancel()
-            done, pending = cf.wait(pending, timeout=0.2, return_when=cf.FIRST_COMPLETED)
-            for f in done:
-                if f in coats:
-                    coated[coats.index(f)] = f.result()
-                    if len(coated) == len(coats):
-                        from kipi.core.viz.batch import unpack
-                        wanted[0] = False
-                        yield Coatings([(kind, unpack(m), color) for k in sorted(coated)
-                                        for kind, m, color in coated[k]])
+        for f in finished(pending, progress):
+            if f in coats:
+                coated[coats.index(f)] = f.result()
+                if len(coated) == len(coats):
+                    from kipi.core.viz.batch import unpack
+                    wanted[0] = False
+                    yield Coatings([(kind, unpack(m), color) for k in sorted(coated)
+                                    for kind, m, color in coated[k]])
+                continue
+            net, copper, ns = f.result()
+            if net in pieces:
+                ns = _join(snap, pieces[net], copper, ns)
+                if ns is None:
                     continue
-                net, copper, ns = f.result()
-                if net in pieces:
-                    ns = _join(snap, pieces[net], copper, ns)
-                    if ns is None:
-                        continue
-                    copper = pieces.pop(net)[1]
-                cache[net] = copper
-                left.remove(net)
-                yield ns
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-        _remove_later(board, pool)
+                copper = pieces.pop(net)[1]
+            cache[net] = copper
+            left.remove(net)
+            yield ns
 
 
 def _join(snap, piece: list, copper, ns) -> Optional[NetScene]:
@@ -216,15 +151,3 @@ def _join(snap, piece: list, copper, ns) -> Optional[NetScene]:
     piece[1] = dict(sorted(piece[1].items(), key=lambda kv: order[kv[0]]))
     piece[2].copper.sort(key=lambda lm: order[lm.layer_id])
     return piece[2]
-
-
-def _remove_later(path: str, pool):
-    """Delete the board file once the workers have read it: on Windows not while one
-    still has it open, so after they stop, from a thread rather than waiting here."""
-    def remove():
-        pool.shutdown(wait=True)
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-    threading.Thread(target=remove, name="kipi-pool-cleanup", daemon=True).start()

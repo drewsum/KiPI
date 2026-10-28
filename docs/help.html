@@ -2574,7 +2574,12 @@ README) for a direct solve of up to 1M unknowns.</p></div>
 in the Solve tab. In AC, lower <b>Field solves per decade</b>, raise <b>Min edge</b>, or check
 that <b>Grade only near the rail</b> is ticked. Large planes
 are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
-x86-64).</p></div>
+x86-64).</p>
+<p>A large mesh (a ground with many vias, say) is built in several processes at once, a
+copper layer to each, up to eight; Task Manager shows them while it does. The mesh is the
+same as one process makes. If a computer can't start them, KiPI meshes in one process and
+the Log says why. To mesh in one process anyway, set the environment variable
+<code>KIPI_SERIAL=1</code>.</p></div>
 </details>
 <details>
 <summary>The 3D view is slow</summary>
@@ -2592,7 +2597,7 @@ triangles. On a board with many nets KiPI builds them in several processes at on
 eight, so the view comes in several times sooner on a processor with many cores; Task
 Manager shows those processes while it does. If a computer can't start them, KiPI builds
 the view in one process as before and the Log says why. To build in one process anyway, set
-the environment variable <code>KIPI_SERIAL_VIEW=1</code>.</p>
+the environment variable <code>KIPI_SERIAL=1</code>.</p>
 </div>
 </details>
 <details>

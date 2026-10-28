@@ -42,7 +42,16 @@ milestones rather than versions that were ever set.
   worker processes at once, the biggest first, and a net bigger than a worker's share is
   built a layer to a task. On the Jetson AGX Thor demo, the view builds in about 8 s
   rather than 27 s. Where workers can't be started, the view is built in one process as
-  before and the Log says why; `KIPI_SERIAL_VIEW=1` builds it in one process anyway.
+  before and the Log says why; `KIPI_SERIAL=1` builds it in one process anyway.
+- **Large meshes for the DC, AC and Coupled Noise solves are built in several processes**
+  (#211). Each copper layer of a net is meshed apart from the others, so when a mesh is
+  large (about 1.5 M triangles or more, spread over more than one layer), its layers are
+  meshed by up to eight worker processes at once, the largest first. Each net is then
+  joined through its plated holes as before, and the mesh is exactly the one a single
+  process makes. On the Jetson AGX Thor demo, meshing GND for a DC solve drops from
+  18.5 s to 7.3 s, and a rail with its ground for an AC solve from 17.1 s to 6.1 s. Where
+  workers can't be started, or one stops, the layers left are meshed in one process and
+  the Log says why; `KIPI_SERIAL=1` meshes in one process anyway.
 
 ## 0.9.4
 

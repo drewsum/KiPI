@@ -54,7 +54,7 @@ from kipi.ac.solver.physics import (
     EPS0_F_PER_MM, MU0_H_PER_MM, slab_difference, slab_impedance,
 )
 from kipi.core.geometry.copper import net_layer_copper
-from kipi.core.mesh.mesher import NetMesh, combine_meshes, mesh_net
+from kipi.core.mesh.mesher import MeshOptions, NetMesh, combine_meshes, mesh_many
 from kipi.core.model.board import BoardSnapshot, Stackup
 from kipi.core.progress import NULL, ProgressReporter
 from kipi.core.solver import direct
@@ -137,21 +137,15 @@ def mesh_rail_and_ground(snap: BoardSnapshot, rail_nets: Sequence[str],
     graded = None
     if ac_settings.grade_near_rail_only:
         graded = near_rail(snap, rail_nets, terminal_ids, dc_settings.circle_quad_segs)
-    meshes: List[NetMesh] = []
-    kinds = []
+    opts = MeshOptions(max_edge_mm=ac_settings.max_edge_mm,
+                       min_angle_deg=dc_settings.min_angle_deg,
+                       simplify_mm=dc_settings.simplify_mm,
+                       circle_quad_segs=dc_settings.circle_quad_segs,
+                       min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading)
+    jobs = [(net, [pid for pid in terminal_ids if pad_net.get(pid) == net]) for net in nets]
     with progress.timed("Meshing rail and ground"):
-        for net in nets:
-            progress.check_cancel()
-            progress.info(f"-- {net}")
-            mine = [pid for pid in terminal_ids if pad_net.get(pid) == net]
-            meshes.append(mesh_net(
-                snap, net, mine, max_edge_mm=ac_settings.max_edge_mm,
-                min_angle_deg=dc_settings.min_angle_deg,
-                simplify_mm=dc_settings.simplify_mm,
-                circle_quad_segs=dc_settings.circle_quad_segs,
-                min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
-                progress=progress, graded=graded))
-            kinds.append(1 if net in gnd_nets else 0)
+        meshes = mesh_many(snap, jobs, opts, progress, graded)
+    kinds = [1 if net in gnd_nets else 0 for net in nets]
     mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in snap.stackup.copper])
     node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)
                                 for m, k in zip(meshes, kinds)])

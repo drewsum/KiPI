@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("pyvista")
 
 from kipi.core.model.board import MASK, Coating
+from kipi.core import workers
 from kipi.core.viz import parallel
 from kipi.core.viz.batch import _arrays
 from kipi.core.viz.parallel import Coatings, build_nets
@@ -75,7 +76,7 @@ def test_a_pool_that_cannot_start_leaves_the_build_here(monkeypatch):
 
     def broken(*a, **k):
         raise OSError("no processes here")
-    monkeypatch.setattr(parallel.cf, "ProcessPoolExecutor", broken)
+    monkeypatch.setattr(workers.cf, "ProcessPoolExecutor", broken)
     warnings = []
     scenes, coatings, _ = built(snap, snap.net_names(), progress=Said(warnings))
     assert set(scenes) == set(snap.net_names()) and len(coatings) == 2
@@ -84,12 +85,12 @@ def test_a_pool_that_cannot_start_leaves_the_build_here(monkeypatch):
 
 def test_small_boards_and_non_pythons_build_here(monkeypatch):
     assert parallel.workers(parallel.MIN_NETS - 1) == 0
-    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 16)
-    assert parallel.workers(1000) == parallel.MAX_WORKERS
-    monkeypatch.setenv(parallel.SERIAL_ENV, "1")
+    monkeypatch.setattr(workers.os, "cpu_count", lambda: 16)
+    assert parallel.workers(1000) == workers.MAX_WORKERS
+    monkeypatch.setenv(workers.SERIAL_ENV, "1")
     assert parallel.workers(1000) == 0
-    monkeypatch.delenv(parallel.SERIAL_ENV)
-    monkeypatch.setattr(parallel.sys, "executable", r"C:\Program Files\KiCad\bin\kicad.exe")
+    monkeypatch.delenv(workers.SERIAL_ENV)
+    monkeypatch.setattr(workers.sys, "executable", r"C:\Program Files\KiCad\bin\kicad.exe")
     assert parallel.workers(1000) == 0
-    monkeypatch.setattr(parallel.sys, "executable", r"C:\venv\Scripts\KiPI.exe")   # #124
-    assert parallel.workers(1000) == parallel.MAX_WORKERS
+    monkeypatch.setattr(workers.sys, "executable", r"C:\venv\Scripts\KiPI.exe")   # #124
+    assert parallel.workers(1000) == workers.MAX_WORKERS
