@@ -437,7 +437,7 @@ class LinearSystem:
         for src in prob.sources:
             us = [self.pad_unknown[pid] for pid in src.pad_ids]
             source_pad_current[src.name] = [
-                float(flow[u]) * (weight[src.name] / held[u] if held[u] > 0 else 1 / count[u])
+                float(flow[u] * (weight[src.name] / held[u] if held[u] > 0 else 1 / count[u]))
                 for u in us]
         source_current = {name: sum(a) for name, a in source_pad_current.items()}
         series_current = {}
