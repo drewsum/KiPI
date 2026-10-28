@@ -199,11 +199,81 @@ def _out_dir(cli: List[str]) -> Optional[str]:
     return None
 
 
+# --- A smaller board for kicad-cli (#212) ------------------------------------------------
+
+#: Boards smaller than this are exported as they are: kicad-cli reads them in well under a
+#: second.
+SLIM_MIN_BYTES = 4 * 2**20
+#: Top-level board items the model export doesn't need: the tracks, vias and zones are most
+#: of a large board's file, and kicad-cli reads them all before exporting a single part.
+#: Groups and generated items (tuning patterns) refer to tracks.
+SLIM_DROP = ("segment", "arc", "via", "zone", "group", "generated")
+# A top-level item starts a line at one level of indentation: a tab, or before KiCad 7 two
+# spaces. Items inside footprints are indented further.
+_TOP_ITEM = re.compile(r"^(?:\t|  )\(([a-z_]+)", re.M)
+_MODEL_PATH = re.compile(r'\(model\s+"((?:[^"\\]|\\.)*)"')
+
+
+def slim_board(board: Path, folder: Path) -> Optional[Path]:
+    """A copy of ``board`` in ``folder`` without its :data:`SLIM_DROP` items, which
+    kicad-cli exports parts' models from in a fraction of the time; None to export from
+    ``board`` itself (a small board, a layout this does not know, or model paths the copy
+    could not resolve as the board does)."""
+    try:
+        if board.stat().st_size < SLIM_MIN_BYTES:
+            return None
+        with open(board, encoding="utf-8", newline="") as f:
+            text = f.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+    end = text.rfind("\n)")                  # the board's closing parenthesis
+    if not text.startswith("(kicad_pcb") or end < 0:
+        return None
+    starts = [(m.start(), m.group(1)) for m in _TOP_ITEM.finditer(text, 0, end)]
+    parts, at = [], 0
+    for k, (start, kind) in enumerate(starts):
+        if kind in SLIM_DROP:
+            parts.append(text[at:start])
+            at = starts[k + 1][0] if k + 1 < len(starts) else end + 1
+    if not parts:
+        return None
+    parts.append(text[at:])
+    slim = "".join(parts)
+    # Model paths name the project's folder as ${KIPRJMOD}, the copy's folder now, so it
+    # is written out. A bare relative path is looked for from the project's folder too:
+    # then the board is used as it is.
+    for path in _MODEL_PATH.findall(slim):
+        if not (path.startswith(("${", "$(", "/", "\\", "kicad-embed://"))
+                or re.match(r"[A-Za-z]:[/\\]", path)):
+            return None
+    project = board.parent.resolve().as_posix()
+    slim = slim.replace("${KIPRJMOD}", project).replace("$(KIPRJMOD)", project)
+    out = folder / board.name
+    try:
+        with open(out, "w", encoding="utf-8", newline="") as f:
+            f.write(slim)
+        pro = board.with_suffix(".kicad_pro")       # the project's text variables
+        if pro.is_file():
+            shutil.copyfile(pro, out.with_suffix(".kicad_pro"))
+    except OSError:
+        return None
+    return out
+
+
 def _export_and_read(cli, board, refs, progress):
     from kipi.core.viz.glb import read_glb
     with tempfile.TemporaryDirectory(prefix="kipi-models-", dir=_out_dir(cli)) as tmp:
         out = Path(tmp) / "models.glb"
-        text = export_glb(cli, board, refs, out, progress)
+        slim = slim_board(board, Path(tmp))
+        text = None
+        if slim is not None:
+            try:
+                text = export_glb(cli, slim, refs, out, progress)
+            except ModelError as e:
+                progress.debug(f"3D models: the board without its tracks and zones did "
+                               f"not export ({e}); exporting from the board itself")
+        if text is None:
+            text = export_glb(cli, board, refs, out, progress)
         return read_glb(out.read_bytes(), names=refs), text
 
 

@@ -60,6 +60,15 @@ milestones rather than versions that were ever set.
   solves drop from 15.8 s to 6.5 s. With PARDISO, which already uses every core, nothing
   changes. If a thread fails (out of memory, say), the frequencies left are solved one at
   a time and the Log says why.
+- **A large board's 3D part models load sooner** (#212). kicad-cli, which exports the
+  models, reads the whole board file before exporting a single part, and on a large board
+  that is most of its time. KiPI now hands it a copy of the board without its tracks,
+  vias and zones, which the models don't need. On the Jetson AGX Thor demo (85 MB, 793
+  parts with models), loading the models drops from about 7.4 s to 5.5 s, with the same
+  models. Running several kicad-cli exports at once was tried first; it gained under half
+  a second, since each one reads the board again. Boards under 4 MB, and boards with a
+  model path relative to the project folder, are exported as they are. If kicad-cli
+  can't export from the copy, it exports from the board itself.
 
 ## 0.9.4
 

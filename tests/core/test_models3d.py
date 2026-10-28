@@ -30,7 +30,8 @@ for opt in cfg.get("reject", []):
         print("Unknown argument: " + opt)
         sys.exit(1)
 time.sleep(cfg.get("sleep", 0))
-if cfg.get("fail"):
+slim = os.path.basename(os.path.dirname(args[-1])).startswith("kipi-models-")
+if cfg.get("fail") or (cfg.get("fail_slim") and slim):
     print("Failed to load board")
     sys.exit(2)
 refs = cfg.get("all", [])
@@ -219,3 +220,86 @@ def test_setup_lists_the_parts_it_models():
         probes=[Probe("P", PinRef("U7", "VOUT"), PinRef("U7", "GND"))])
     setup.loads.append(Load("empty", PinRef("", "VOUT"), 0.0))
     assert setup.part_refs() == {"L1", "L2", "U1", "U9", "U2", "U3", "R1", "C1", "C2"}
+
+
+# --- A smaller board for kicad-cli (#212) ------------------------------------------------
+
+def crlf(*lines):
+    return "".join(line + "\r\n" for line in lines)
+
+
+FOOTPRINT = ['\t(footprint "C_0805"',
+             '\t\t(property "Reference" "C1")',
+             '\t\t(zone', '\t\t\t(net 0)', '\t\t)',
+             '\t\t(model "${KIPRJMOD}/models/C_0805.step"', '\t\t\t(offset (xyz 0 0 0))', '\t\t)',
+             '\t)']
+BOARD = crlf('(kicad_pcb', '\t(version 20241229)', *FOOTPRINT,
+             '\t(segment', '\t\t(start 0 0)', '\t\t(end 1 1)', '\t)',
+             '\t(via', '\t\t(at 1 1)', '\t)',
+             '\t(gr_line', '\t\t(start 0 0)', '\t)',
+             '\t(zone', '\t\t(net 1)', '\t\t(filled_polygon', '\t\t\t(pts (xy 0 0))', '\t\t)', '\t)',
+             '\t(arc', '\t\t(start 0 0)', '\t)',
+             '\t(embedded_fonts no)',
+             '\t(group ""', '\t\t(members "a")', '\t)',
+             ')')
+
+
+@pytest.fixture
+def big(tmp_path, monkeypatch):
+    monkeypatch.setattr(models3d, "SLIM_MIN_BYTES", 0)
+    project = tmp_path / "project"
+    project.mkdir()
+    path = project / "b.kicad_pcb"
+    path.write_bytes(BOARD.encode())
+    (project / "b.kicad_pro").write_text("{}")
+    return path
+
+
+def test_the_slim_board_keeps_the_footprints_and_drops_tracks_vias_and_zones(big, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    slim = models3d.slim_board(big, out)
+    project = big.parent.resolve().as_posix()
+    kept = [line.replace("${KIPRJMOD}", project) for line in FOOTPRINT]
+    assert slim.read_bytes().decode() == crlf(
+        '(kicad_pcb', '\t(version 20241229)', *kept,
+        '\t(gr_line', '\t\t(start 0 0)', '\t)', '\t(embedded_fonts no)', ')')
+    assert (out / "b.kicad_pro").read_text() == "{}"         # its text variables
+
+
+def test_two_space_boards_are_slimmed_too(big, tmp_path):
+    big.write_text('(kicad_pcb\n  (version 20211014)\n  (footprint "R"\n    (at 0 0)\n  )\n'
+                   '  (segment (start 0 0) (end 1 1) (width 0.2))\n)\n')
+    out = tmp_path / "out"
+    out.mkdir()
+    assert models3d.slim_board(big, out).read_text() == \
+        '(kicad_pcb\n  (version 20211014)\n  (footprint "R"\n    (at 0 0)\n  )\n)\n'
+
+
+@pytest.mark.parametrize("text", [
+    BOARD.replace("${KIPRJMOD}/models/", "models/"),   # found from the project's folder
+    '(kicad_pcb\n\t(version 1)\n\t(footprint "R")\n)\n',  # nothing to drop
+    "(module R)\n",                                     # not a board
+])
+def test_boards_the_copy_cannot_stand_for_are_used_as_they_are(big, tmp_path, text):
+    big.write_text(text)
+    assert models3d.slim_board(big, tmp_path) is None
+
+
+def test_small_boards_are_used_as_they_are(big, tmp_path, monkeypatch):
+    monkeypatch.setattr(models3d, "SLIM_MIN_BYTES", 10**6)
+    assert models3d.slim_board(big, tmp_path) is None
+
+
+def test_models_are_exported_from_the_slim_board(cli, big):
+    out = models3d.load_models(cli(all=["C1"]), big, ["C1"])
+    assert out["C1"] is not None
+    calls = cli.calls()
+    assert len(calls) == 1 and Path(calls[0][-1]).parent.name.startswith("kipi-models-")
+
+
+def test_a_slim_board_kicad_cli_will_not_read_falls_back_to_the_board(cli, big):
+    out = models3d.load_models(cli(all=["C1"], fail_slim=True), big, ["C1"])
+    assert out["C1"] is not None
+    calls = cli.calls()
+    assert len(calls) == 2 and calls[-1][-1] == str(big)
