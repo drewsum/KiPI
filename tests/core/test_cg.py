@@ -65,3 +65,32 @@ def test_unreachable_tolerance_stops_early_instead_of_running_to_max_iter():
 def _quiet():
     from kipi.core.progress import NULL
     return NULL
+
+
+def test_hierarchy_uses_energy_smoothing():
+    # #218: energy-minimizing prolongation smoothing, which took 8-17% less time on large
+    # boards' systems, to the same answer.
+    A = _poisson(60)
+    b = np.ones(A.shape[0])
+    s = SpdSolver(A, SolveSettings(), spd.ProgressReporter(), {})
+    assert s.smooth == spd.AMG_SMOOTH == "energy"
+    assert _rel(A, s.solve(b, spd.ProgressReporter()), b) <= SolveSettings().tol * CG_ACCEPT_FACTOR
+
+
+def test_energy_hierarchy_that_fails_is_set_up_with_jacobi(monkeypatch):
+    A = _poisson(60)
+    b = np.ones(A.shape[0])
+    real = SpdSolver._cg
+    smooths = []
+
+    def cg(self, rhs, progress):
+        smooths.append(self.smooth)
+        if self.smooth == "energy":
+            return np.zeros_like(rhs), 1.0              # did not converge
+        return real(self, rhs, progress)
+    monkeypatch.setattr(SpdSolver, "_cg", cg)
+    stats = {}
+    s = SpdSolver(A, SolveSettings(), spd.ProgressReporter(), stats)
+    x = s.solve(b, spd.ProgressReporter())
+    assert smooths == ["energy", "jacobi"] and s.lu is None and stats["method"] == "amg-cg"
+    assert _rel(A, x, b) <= SolveSettings().tol * CG_ACCEPT_FACTOR

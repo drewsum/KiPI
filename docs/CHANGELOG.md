@@ -94,6 +94,13 @@ milestones rather than versions that were ever set.
   already were (#210). Before, each hole was a pyvista cylinder of its own. The copper
   slabs' edges are found by sorting (#216). On the Jetson AGX Thor demo, building the
   result views drops from 16.9 s to 10.1 s (GND's 1,456 holes: 4.1 s to 0.01 s).
+- **Iterative DC and thermal solves are faster** (#218). The AMG preconditioner, used for
+  systems too big to factorize (above 200k unknowns without PARDISO, as on Apple Silicon),
+  now smooths its interpolation by energy minimization. It solves 8-17% faster to the same
+  answer on every large system tried (the Jetson AGX Thor demo's ground: 88 s to 75 s).
+  If CG doesn't converge with it, the usual hierarchy is set up once before falling back
+  to a direct solve. Forward/backward Gauss-Seidel smoothing, which helped on the Thor
+  board, stopped two of the DSP board's rails from converging, so it is not used.
 
 ## 0.9.4
 

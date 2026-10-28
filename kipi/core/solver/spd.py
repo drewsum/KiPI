@@ -37,6 +37,12 @@ CG_STALL_ITERATIONS = 40
 CG_ACCEPT_FACTOR = 100     # accept a stopped CG result within this factor of tol
 CG_WARM_ACCEPT_FACTOR = 10  # skip CG when a warm start is already within this factor
 CG_REUSED_MAX_ITERATIONS = 150  # past this, a reused preconditioner is set up afresh
+# The AMG hierarchy's prolongation smoothing: energy minimization took 8-17% less time to
+# the same answer than pyamg's default Jacobi smoothing on every system above 200k
+# unknowns tried (Jetson AGX Thor rails up to 4.9M unknowns, the DSP board's rails and
+# heat model, #218). Should CG not converge with it, the default is set up once before
+# anything else is tried.
+AMG_SMOOTH = "energy"
 
 
 class _Stalled(Exception):
@@ -75,6 +81,7 @@ class SpdSolver:
         self.lu = None            # direct factorization of A itself
         self.M = None             # CG preconditioner: this matrix's AMG cycle, or a previous one's
         self.reused = False
+        self.smooth = None        # the AMG hierarchy's prolongation smoother, once set up
         n = A.shape[0]
         if (previous is not None and previous.M is not None
                 and previous.A.shape == A.shape and previous.A.nnz == A.nnz):
@@ -87,8 +94,9 @@ class SpdSolver:
         else:
             self._setup(progress)
 
-    def _setup(self, progress: ProgressReporter):
-        """Factorization (small systems) or AMG hierarchy (large ones) for A itself."""
+    def _setup(self, progress: ProgressReporter, smooth: str = AMG_SMOOTH):
+        """Factorization (small systems) or AMG hierarchy (large ones) for A itself;
+        ``smooth`` is the hierarchy's prolongation smoother."""
         A, n = self.A, self.A.shape[0]
         self.reused = False
         self.M = None
@@ -112,7 +120,9 @@ class SpdSolver:
         import pyamg
         t = time.perf_counter()
         progress.info(f"AMG setup ({n} unknowns, {A.nnz} non-zeros)...")
-        ml = pyamg.smoothed_aggregation_solver(A, symmetry="hermitian", max_coarse=500)
+        kw = {} if smooth == "jacobi" else {"smooth": smooth}      # jacobi: pyamg's default
+        ml = pyamg.smoothed_aggregation_solver(A, symmetry="hermitian", max_coarse=500, **kw)
+        self.smooth = smooth
         progress.info(f"AMG hierarchy: {len(ml.levels)} levels, operator complexity "
                       f"{ml.operator_complexity():.2f} ({time.perf_counter() - t:.2f} s)")
         self.M = ml.aspreconditioner()
@@ -131,6 +141,12 @@ class SpdSolver:
             if self.lu is not None:
                 self.x_prev = np.asarray(self.lu(rhs))
                 return self.x_prev
+            x, rel = self._cg(rhs, progress)
+        if (rel > self.s.tol * CG_ACCEPT_FACTOR and self.M is not None and not self.reused
+                and self.smooth not in (None, "jacobi")):
+            progress.info(f"AMG-CG did not converge (relative residual {rel:.1e}); setting "
+                          "the hierarchy up again with Jacobi smoothing")
+            self._setup(progress, smooth="jacobi")
             x, rel = self._cg(rhs, progress)
         if rel > self.s.tol * CG_ACCEPT_FACTOR:
             progress.warn("Iterative solve did not converge; switching this system to a "
