@@ -35,6 +35,7 @@ def test_shows_version_and_packages(app, plugin_host):
     text = _text(s)
     assert __version__ in text and "com.github.drewsum.kipi" in text and "Python" in text
     assert "KiCad plugin" in text
+    assert "Drew Maatman (drewmaatman@gmail.com)" in text      # the author
     s.close()
 
 

@@ -56,6 +56,8 @@ milestones rather than versions that were ever set.
   recoloured with the page; plot images keep their white backgrounds.
 
 ### Changed
+- **The welcome screen names its author**. An Author row, with name and email address, heads
+  the welcome screen's table.
 - **Big DC reports open quickly** (#222). A net group's 3D view is now drawn only when its
   bar is opened, and let go again when it is closed. Before, every view was read and drawn
   as the page loaded, which was slow on a large board. Past about 16 views, the browser

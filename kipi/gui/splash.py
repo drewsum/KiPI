@@ -1,5 +1,5 @@
-"""The welcome screen shown while KiPI starts: the animated logo, the version and what it
-is running on.
+"""The welcome screen shown while KiPI starts: the animated logo, its author, the version
+and what it is running on.
 
 It is the first thing KiPI shows, before the slow part of starting (#55), and says what
 KiPI is doing meanwhile. Once the main window is open it closes itself when the logo has
@@ -55,7 +55,8 @@ class Splash(QWidget):
                 LOGO_SIZE, LOGO_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         host = current_host()
-        rows = [("Version", __version__), ("Mode", host.label)]
+        rows = [("Author", f"{about.AUTHOR} ({about.EMAIL})"), ("Version", __version__),
+                ("Mode", host.label)]
         if host is Host.PLUGIN:
             rows.append(("Plugin", APP_ID))
         rows.append(("License", about.LICENSE))
@@ -71,7 +72,7 @@ class Splash(QWidget):
             f"<h1 style='margin:0'>Welcome to {about.NAME}</h1>"
             f"<p style='margin-top:4px; margin-bottom:12px;'>{html.escape(about.DESCRIPTION)}<br></p>"
             f"<table>{table}</table>"
-            f"<p style='margin-bottom:0'>{about.AUTHOR} · {about.REPO}</p>")
+            f"<p style='margin-bottom:0'>{about.REPO}</p>")
         self.status = QLabel("Starting…", frame)
         self.status.setStyleSheet(f"color: {dim}")
 
