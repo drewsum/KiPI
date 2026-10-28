@@ -27,6 +27,11 @@ def column(t, col):
     return [t.item(r, col).text() for r in range(t.rowCount())]
 
 
+def flat(points):
+    """(Hz, Ω) pairs as one flat list: pytest.approx takes no nested pairs (pytest 9.2+)."""
+    return [v for p in points for v in p]
+
+
 def mouse_click(t, col):
     """A real click on the header, which also flips Qt's own sort indicator."""
     from qtpy.QtTest import QTest
@@ -112,10 +117,10 @@ def test_target_points_sort_by_frequency_or_impedance(app):
     ed = panel.probe_list.editor
     h = ed.points.horizontalHeader()
     h.sectionClicked.emit(1)                                # |Z| ascending
-    assert probe.target_points == pytest.approx([(1e4, 0.01), (1e6, 0.02), (1e5, 0.03)])
+    assert flat(probe.target_points) == pytest.approx([1e4, 0.01, 1e6, 0.02, 1e5, 0.03])
     h.sectionClicked.emit(0)                                # frequency, then reversed
     h.sectionClicked.emit(0)
-    assert probe.target_points == pytest.approx([(1e6, 0.02), (1e5, 0.03), (1e4, 0.01)])
+    assert flat(probe.target_points) == pytest.approx([1e6, 0.02, 1e5, 0.03, 1e4, 0.01])
     assert ed.points.cellWidget(0, 0).value() == pytest.approx(1e3)      # kHz
     h.sectionClicked.emit(2)                                # the remove buttons don't sort
     assert probe.target_points[0] == pytest.approx((1e6, 0.02))
