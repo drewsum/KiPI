@@ -34,6 +34,12 @@ milestones rather than versions that were ever set.
   mounting hole or through-hole lead. Current density shows inside these pads, and the
   drop is higher than with equipotential pads; for a soldered power tab the truth lies
   between the two. Off by default, so existing results don't change.
+- **VRMs can share ground pins** (#219). Offboard supplies on one connector often share
+  its ground pins. The DC solve used to stop with "Sources … are connected directly (same
+  copper node)"; it now solves them, since each holds those pins at 0 V. The current
+  returning through shared pins is split between the VRMs by the current each one
+  delivers. Sources that share copper but are set to different voltages are still an
+  error, now one that names both voltages.
 
 ### Changed
 - **Large boards' 3D view builds faster** (#205). The view's net meshes are now read

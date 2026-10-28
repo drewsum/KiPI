@@ -298,16 +298,20 @@ class LinearSystem:
                                  "unfilled")
 
         # Which unknowns are held by which source (structure only; voltages come later).
+        # Sources may share copper, as offboard supplies on one connector share its ground
+        # pins (#219): they must then hold it at the same voltage (checked per solve), and
+        # the current through it is split between them (see solve).
         self.source_unknowns: Dict[str, List[int]] = {}
-        owner: Dict[int, str] = {}
+        owner: Dict[int, List[str]] = {}
         for src in problem.sources:
             us = sorted({self.pad_unknown[pid] for pid in src.pad_ids})
             for u in us:
-                if u in owner and owner[u] != src.name:
-                    raise SolveError(f"Sources {owner[u]} and {src.name} are connected "
-                                     "directly (same copper node)")
-                owner[u] = src.name
+                owner.setdefault(u, []).append(src.name)
             self.source_unknowns[src.name] = us
+        self.shared = {u: names for u, names in owner.items() if len(names) > 1}
+        for names in {tuple(n) for n in self.shared.values()}:
+            progress.info(f"Sources {', '.join(names)} share copper; the current through it "
+                          "is split between them")
 
         # Copper not connected to any source cannot be solved (and carries no current).
         ncomp, comp = connected_components(self.K, directed=False)
@@ -355,8 +359,13 @@ class LinearSystem:
 
     def solve(self, voltages: Optional[Dict[str, float]] = None,
               currents: Optional[Dict[str, float]] = None,
-              progress: ProgressReporter = NULL) -> Solution:
-        """Solve with per-source voltages and per-load currents (defaults: the problem's)."""
+              progress: ProgressReporter = NULL,
+              source_weights: Optional[Dict[str, float]] = None) -> Solution:
+        """Solve with per-source voltages and per-load currents (defaults: the problem's).
+
+        Copper that several sources hold carries a current that is theirs together; each
+        pad of theirs on it takes a share in proportion to its source's weight in
+        ``source_weights`` (default 1: an even share per pad)."""
         t0 = time.perf_counter()
         prob = self.problem
         volts = {s.name: s.voltage for s in prob.sources}
@@ -374,6 +383,12 @@ class LinearSystem:
             share = amps[load.name] / len(pads)
             for pid in pads:
                 f[self.pad_unknown[pid]] -= share
+
+        for names in self.shared.values():
+            vs = [volts[n] for n in names]
+            if max(vs) - min(vs) > 1e-9 * max(1.0, max(abs(v) for v in vs)):
+                raise SolveError(f"Sources {' and '.join(names)} share copper but are set to "
+                                 f"different voltages ({', '.join(f'{v:g} V' for v in vs)})")
 
         # Solve for u = V - v_ref rather than V itself. Drops are ~1e-4 of the rail
         # voltage, so with absolute volts the source term would dominate the right-hand
@@ -409,13 +424,22 @@ class LinearSystem:
             if e.g is not None and drops[e.link]:
                 flow[e.node_a] -= e.g * drops[e.link]
                 flow[e.node_b] += e.g * drops[e.link]
-        source_current = {name: float(flow[us].sum())
-                          for name, us in self.source_unknowns.items()}
-        # Per pad: pads that touch share one unknown, and so share its current.
+        # Per pad: source pads that touch, or that sources share, are one unknown, and so
+        # share its current, by weight (evenly where the weights on it are all zero).
+        weight = {src.name: 1.0 for src in prob.sources}
+        weight.update(source_weights or {})
+        held, count = np.zeros(self.nm), np.zeros(self.nm)
+        for src in prob.sources:
+            for pid in src.pad_ids:
+                held[self.pad_unknown[pid]] += weight[src.name]
+                count[self.pad_unknown[pid]] += 1
         source_pad_current = {}
         for src in prob.sources:
             us = [self.pad_unknown[pid] for pid in src.pad_ids]
-            source_pad_current[src.name] = [float(flow[u]) / us.count(u) for u in us]
+            source_pad_current[src.name] = [
+                float(flow[u]) * (weight[src.name] / held[u] if held[u] > 0 else 1 / count[u])
+                for u in us]
+        source_current = {name: sum(a) for name, a in source_pad_current.items()}
         series_current = {}
         for e in self.series:
             if e.gmat is not None:                      # into side A's group

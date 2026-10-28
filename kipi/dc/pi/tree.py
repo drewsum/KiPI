@@ -605,7 +605,11 @@ class _TreeSolver:
         currents = self._vrm_ground_returns(g)
         currents.update({f"{l.name} (return)": -self.load_amps[l.name]
                          for l in self.setup.loads if l.ground and l.ground.net in g})
-        sol = system.solve(currents=currents, progress=NULL)
+        # Reference VRMs that share ground pins (offboard supplies on one connector, #219)
+        # each take back the share of the return through them that their output delivers.
+        weights = {f"{v.name} (gnd)": sum(abs(i) for i in self.i_out.get(v.name, [0.0]))
+                   for v in refs}
+        sol = system.solve(currents=currents, progress=NULL, source_weights=weights)
         warnings.extend(f"{label}: {w}" for w in sol.warnings)
         self.ground_solutions[g] = sol
         return (label, sorted(g), "ground", ", ".join(v.name for v in refs), mesh, sol, 1)
