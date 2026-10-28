@@ -32,6 +32,11 @@ def test_the_report_has_every_section(board, tmp_path):
     assert "SIG_LOOP" in text and "data:image/png" in text
     assert "hotspots" in text and "CISPR" in text and "Radiated estimate" in text
     assert report_name("cn", "U1 / buck").startswith("cn_U1_buck_noise_report_")
+    # #222: the tables come after every plot, and the plots are shown at half their pixels
+    last_plot = text.rindex("data:image/png")
+    for table in ("id='victims'", "id='hot-loops'", "id='scan'", "id='hotspots'"):
+        assert last_plot < text.index(table) < text.index("id='user-notes'"), table
+    assert "<img src='data:image/png;base64," in text and "' width='" in text
 
 
 def test_the_pdf_plots_fit_the_page(board, tmp_path, monkeypatch):

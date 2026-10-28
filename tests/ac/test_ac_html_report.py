@@ -36,6 +36,10 @@ def test_report_has_every_section(solved, tmp_path):
     assert "contenteditable='true'" in text and "href='#user-notes'" in text    # #128
     assert text.rindex("<h2") == text.index("<h2 id='user-notes'")     # the last section
     assert "100n (one part)" in text                                   # model curve
+    # #222: the tables come after every plot
+    last_plot = text.rindex("Plotly.newPlot")
+    for table in ("id='probes'", "id='caps'", "id='model'"):
+        assert last_plot < text.index(table) < text.index("id='user-notes'"), table
     assert "C3" in text and "no model" in text                         # left out, mapped
     import re
     ids = re.findall(r"""id=['"]([^'"]+)['"]""", text)

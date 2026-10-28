@@ -1,12 +1,14 @@
 """Self-contained HTML (or PDF) report for an AC impedance solve of one rail.
 
 One ``.html`` file with:
-* a summary and the probe table (worst impedance against each target, PASS / FAIL),
+* a summary,
 * an interactive impedance plot (Plotly: zoom, pan, hover, click a legend entry to hide a
   curve): |Z| at every probe, the targets, and each capacitor model on its own,
 * a board map of the rail's copper with the probes and the capacitors in the model,
 * the estimated transient response at each probe with a load step (#166),
-* the capacitor models, series links, sweep and mesh settings, and solver statistics.
+* after every plot (#222), the probe table (worst impedance against each target, PASS /
+  FAIL), the transient table, the capacitor models, series links, sweep and mesh settings,
+  and solver statistics.
 
 Plotly's JavaScript is embedded once, so the report works offline and can be shared as a
 single file. It uses the same layout and styling as the DC report.
@@ -464,7 +466,8 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     path = Path(path)
     pdf = path.suffix.lower() == ".pdf"
     freqs = result.freqs
-    parts: List[str] = []
+    parts: List[str] = []                       # the summary and the plots
+    tables: List[str] = []                      # then the tables (#222)
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     s = setup.ac
     st = result.stats
@@ -475,9 +478,10 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                  f"<div class='meta'>{_e(snap.board_name)} · {now} · KiPI {__version__} · "
                  f"solved in {result.solve_s:.1f} s</div>")
     if not pdf:
-        parts.append("<nav><a href='#probes'>Probes</a> <a href='#impedance'>Impedance</a> "
-                     "<a href='#map'>Board map</a>"
+        parts.append("<nav><a href='#impedance'>Impedance</a> <a href='#map'>Board map</a>"
                      + (" <a href='#transient'>Transient</a>" if trs else "")
+                     + " <a href='#probes'>Probes</a>"
+                     + (" <a href='#transient-table'>Transient by probe</a>" if trs else "")
                      + " <a href='#caps'>Capacitors</a> "
                      "<a href='#model'>Model</a>"
                      + (" <a href='#notes'>Notes</a>" if result.warnings or result.missing_caps
@@ -505,15 +509,15 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
             margin = f"{20 * math.log10(t[0] / zmax):+.2f} dB"
         rows.append([_e(c.name), pins, _ohms(float(np.min(c.mag))), _ohms(zmax), _hz(fmax),
                      _e(_target_text(c)), margin, _verdict(ok)])
-    parts.append("<h2 id='probes'>Probes</h2>")
-    parts.append(_table(["Probe", "Pins (rail / ground)", "Min |Z|", "Worst |Z|", "at",
+    tables.append("<h2 id='probes'>Probes</h2>")
+    tables.append(_table(["Probe", "Pins (rail / ground)", "Min |Z|", "Worst |Z|", "at",
                          "Target", "Margin", "Result"], rows))
-    parts.append("<p class='note'>Worst |Z|: where the impedance comes closest to (or furthest "
+    tables.append("<p class='note'>Worst |Z|: where the impedance comes closest to (or furthest "
                  "over) the probe's target, up to where the target applies; the highest "
                  "impedance in the sweep without one. Margin: target over |Z| there (positive "
                  "passes).</p>")
     if getattr(result, "bandwidth_hz", None):
-        parts.append(f"<p class='note'>The VRM is out of circuit, so this is the open-loop PDN "
+        tables.append(f"<p class='note'>The VRM is out of circuit, so this is the open-loop PDN "
                      f"impedance. Below the converter's control loop bandwidth "
                      f"({_hz(result.bandwidth_hz)}) the loop holds the rail, so targets are "
                      "drawn and judged only above it.</p>")
@@ -551,6 +555,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     if trs:
         info("Report: transient")
         parts.append("<h2 id='transient'>Transient</h2>")
+        tables.append("<h2 id='transient-table'>Transient by probe</h2>")
         rows = []
         for c in result.probes:
             tr = trs.get(c.name)
@@ -564,9 +569,9 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                           if tr.spike_v is not None else "none"),
                          _si(tr.undershoot_v, "V"), _si(tr.overshoot_v, "V"),
                          f"±{_si(allowed, 'V')}" if allowed else ""])
-        parts.append(_table(["Probe", "Load step", "Slew rate", "Rise time",
-                             "ESL spike (L)", "Undershoot", "Overshoot", "± target × ΔI"],
-                            rows))
+        tables.append(_table(["Probe", "Load step", "Slew rate", "Rise time",
+                              "ESL spike (L)", "Undershoot", "Overshoot", "± target × ΔI"],
+                             rows))
         parts.append(maps_html([_transient_png(result, trs)], pdf) if pdf
                      else _transient_plot(result, trs, "trplot"))
         parts.append("<p class='note'>An estimate of the rail's deviation from its DC value "
@@ -581,6 +586,9 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                      "slow edge. It lasts only as long as the edge: zoom in on the plot to "
                      "see it. ± target × ΔI is the AC tolerance a flat target stands for "
                      "(Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>).</p>")
+
+    # ---------------- tables, after every plot (#222)
+    parts += tables
 
     # ---------------- capacitors
     parts.append("<h2 id='caps'>Capacitor models</h2>")

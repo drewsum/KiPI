@@ -1,8 +1,9 @@
 """HTML (or PDF) report of a Coupled Noise solve (#69).
 
-One file with the aggressor's operating point and parasitics, its waveforms, each
-victim's noise against its margin (with the mechanisms apart), the scan's estimates and
-the notes. Plots are images, the same in the web page and the PDF; the layout and styling
+One file with the aggressor's operating point, its waveforms, each victim's noise against
+its margin (with the mechanisms apart) and the field maps, then, after every plot (#222),
+the tables: the victims, the hot loops' parasitics, the scan's estimates and the hotspots;
+then the notes. Plots are images, the same in the web page and the PDF; the layout and styling
 are the DC and AC reports'.
 """
 
@@ -17,7 +18,7 @@ import numpy as np
 
 from kipi import __version__
 from kipi.core.naming import timestamp
-from kipi.dc.report.html import CSS, _e, _png, _table, _verdict, finish, notes_section
+from kipi.dc.report.html import CSS, _e, _png, _table, _verdict, finish, notes_section, web_img
 
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf")
 MAX_VICTIM_PLOTS = 8
@@ -81,7 +82,7 @@ def _img(pdf: bool, src: str) -> str:
     # than the page, and is cut off, so it is given the page's width.
     if pdf:
         return f"<p><img src='{src}' width='{PDF_IMAGE_PX}'></p>"
-    return f"<p><img src='{src}' style='max-width:100%'></p>"
+    return f"<p>{web_img(src, 'max-width:100%')}</p>"
 
 
 MAP_FLOOR = 1e-2               # the field map leaves out what is under this share of its peak
@@ -189,12 +190,16 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     parts: List[str] = [
         f"<h1>KiPI Coupled Noise report: {_e(result.aggressor)}</h1>"
         f"<div class='meta'>{_e(snap.board_name)} · {now} · KiPI {__version__}</div>"]
+    tables: List[str] = []                      # after every plot (#222)
     if not pdf:
         emi = getattr(result, "emi", None)
-        parts.append("<nav><a href='#victims'>Victims</a> <a href='#aggressor'>Aggressor</a> "
+        parts.append("<nav><a href='#aggressor'>Aggressor</a> "
                      "<a href='#waveforms'>Waveforms</a> <a href='#noise'>Victim noise</a>"
-                     + (" <a href='#scan'>Scan</a>" if result.scan else "")
                      + (" <a href='#emi'>Near field and emissions</a>" if emi is not None else "")
+                     + " <a href='#victims'>Victims</a> <a href='#hot-loops'>Hot loops</a>"
+                     + (" <a href='#scan'>Scan</a>" if result.scan else "")
+                     + (" <a href='#hotspots'>Hotspots</a>" if emi is not None
+                        and (emi.h_hotspots or emi.e_hotspots) else "")
                      + " <a href='#notes'>Notes</a> <a href='#user-notes'>User notes</a></nav>")
     judged = [v.passed for v in result.victims]
     if judged:
@@ -202,7 +207,7 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
                      "victim(s) within their noise margin).</p>")
 
     # ---------------- victims
-    parts.append("<h2 id='victims'>Victims</h2>")
+    tables.append("<h2 id='victims'>Victims</h2>")
     if result.victims:
         rows = []
         for v in result.victims:
@@ -211,25 +216,25 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
                          _e(f"{v.driver} → {v.receiver}"), f"{v.peak_v * 1e3:.4g}",
                          f"{v.margin_v * 1e3:.4g}", f"{v.ratio * 100:.3g} %", _e(by),
                          _e(v.dominant), _verdict(v.passed)])
-        parts.append(_table(["Victim", "Net", "Driver → receiver", "Peak (mV)",
+        tables.append(_table(["Victim", "Net", "Driver → receiver", "Peak (mV)",
                              "Margin (mV)", "Of margin", "By mechanism (mV)", "Dominant",
                              "Result"], rows))
-        parts.append("<p class='note'>Peak: the largest noise at the receiver over a "
+        tables.append("<p class='note'>Peak: the largest noise at the receiver over a "
                      "switching period, all mechanisms added as phasors. Scanned nets use "
                      "the scan's default driver and logic level.</p>")
         splits = [(v, sp) for v in result.victims for sp in getattr(v, "splits", [])]
         if splits:
-            parts.append("<h3>Plane splits crossed</h3>")
-            parts.append(_table(
+            tables.append("<h3>Plane splits crossed</h3>")
+            tables.append(_table(
                 ["Victim", "At (mm)", "Layer", "From", "To", "Detour (mm)", "Series L (nH)"],
                 [[_e(v.name), f"{sp.x_mm:.1f}, {sp.y_mm:.1f}", _e(sp.layer), _e(sp.from_ref),
                   _e(sp.to_ref), f"{sp.detour_mm:.3g}", f"{sp.l_h * 1e9:.3g}"]
                  for v, sp in splits]))
-            parts.append("<p class='note'>Where a victim's reference plane stops or changes "
+            tables.append("<p class='note'>Where a victim's reference plane stops or changes "
                          "under it, its return current detours; the detour's inductance "
                          "(Johnson's slot estimate) is in series with the trace there.</p>")
     else:
-        parts.append("<p>No victims were solved.</p>")
+        tables.append("<p>No victims were solved.</p>")
 
     # ---------------- aggressor
     parts.append("<h2 id='aggressor'>Aggressor</h2>")
@@ -241,9 +246,10 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
              f"{h.f_ring_hz / 1e6:.4g}" if h.f_ring_hz else "", f"{h.zeta:.3g}",
              f"{h.qrr_c * 1e9:.3g}" + (" (assumed)" if h.qrr_default else "")]
             for h in result.hot_loops]
-    parts.append(_table(["Phase", "Hot loop (nH)", "Switch node C (pF)", "Coss (pF)",
-                         "Copper C (pF)", "Loop R (mΩ)", "Ringing (MHz)", "ζ (hard edge)",
-                         "Qrr (nC)"], rows))
+    tables.append("<h2 id='hot-loops'>Hot loops</h2>")
+    tables.append(_table(["Phase", "Hot loop (nH)", "Switch node C (pF)", "Coss (pF)",
+                          "Copper C (pF)", "Loop R (mΩ)", "Ringing (MHz)", "ζ (hard edge)",
+                          "Qrr (nC)"], rows))
 
     # ---------------- waveforms
     if progress is not None:
@@ -268,7 +274,7 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
                  f"data-spectrum-limited='{spectrum_limited}'")
         parts.append(f"<div class='noise-plot' data-plot='{plot_id}' {attrs}><h3>{_e(title)} "
                      f"<label><input type='checkbox' class='plot-visible' checked> show</label></h3>"
-                     f"<img src='{full}' style='max-width:100%'></div>")
+                     f"{web_img(full, 'max-width:100%')}</div>")
 
     plot([(p.switch_node.name, p.switch_node) for p in wf.phases], "Switch node", "V")
     plot([(p.inductor.name, p.inductor) for p in wf.phases], "Inductor currents", "A")
@@ -284,9 +290,10 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
     if probes:
         plot([(f"{n} (AC probe)", s) for n, s in probes.items()], "Ripple at AC probes", "V")
         n = wf.samples_per_period()
-        parts.append(_table(["AC probe", "Ripple (mV p-p)", "Ripple (mV rms)"],
-                            [[_e(name), f"{np.ptp(s.samples(n)) * 1e3:.4g}",
-                              f"{s.ac_rms() * 1e3:.3g}"] for name, s in probes.items()]))
+        tables.append("<h2 id='probe-ripple'>Ripple at AC probes</h2>")
+        tables.append(_table(["AC probe", "Ripple (mV p-p)", "Ripple (mV rms)"],
+                             [[_e(name), f"{np.ptp(s.samples(n)) * 1e3:.4g}",
+                               f"{s.ac_rms() * 1e3:.3g}"] for name, s in probes.items()]))
 
     # ---------------- victim noise
     parts.append("<h2 id='noise'>Victim noise</h2>")
@@ -308,19 +315,21 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
 
     # ---------------- scan
     if result.scan:
-        parts.append("<h2 id='scan'>Scan</h2>")
+        tables.append("<h2 id='scan'>Scan</h2>")
         rows = [[_e(r.net), f"{r.distance_mm:.3g}", f"{r.estimate_v * 1e3:.4g}",
                  f"{r.capacitive_v * 1e3:.4g}", f"{r.inductive_v * 1e3:.4g}",
                  "yes" if r.solved else ""] for r in result.scan]
-        parts.append(_table(["Net", "Distance (mm)", "Estimate (mV)", "Capacitive (mV)",
+        tables.append(_table(["Net", "Distance (mm)", "Estimate (mV)", "Capacitive (mV)",
                              "Inductive (mV)", "Solved in full"], rows))
-        parts.append("<p class='note'>The estimate ranks the nets near the aggressor quickly; "
+        tables.append("<p class='note'>The estimate ranks the nets near the aggressor quickly; "
                      "the worst are solved in full (above, marked scan).</p>")
 
     # ---------------- near field and emissions (#146)
     emi = getattr(result, "emi", None)
     if emi is not None:
         parts.append("<h2 id='emi'>Near field and emissions</h2>")
+        if emi.h_hotspots or emi.e_hotspots:
+            tables.append("<h2 id='hotspots'>Near-field hotspots</h2>")
         if progress is not None:
             progress.info("Report: field maps")
         for spots, fmap, what in ((emi.h_hotspots, getattr(emi, "h_map", None), "H field (A/m)"),
@@ -332,10 +341,11 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
                         parts.append(_img(pdf, _field_map_png(fmap, spots, snap, emi.height_mm)))
                     except Exception:            # geometry trouble: the table still serves
                         pass
-                parts.append(_table(["#", "x, y (mm)", "Peak", "At (MHz)", "Mostly from"],
-                                    [[str(i), f"{s.x_mm:.1f}, {s.y_mm:.1f}", f"{s.value:.3g}",
-                                      f"{s.f_hz / 1e6:.4g}", _e(s.source)]
-                                     for i, s in enumerate(spots, 1)]))
+                tables.append(f"<h3>{what} hotspots, {emi.height_mm:g} mm over the board</h3>")
+                tables.append(_table(["#", "x, y (mm)", "Peak", "At (MHz)", "Mostly from"],
+                                     [[str(i), f"{s.x_mm:.1f}, {s.y_mm:.1f}", f"{s.value:.3g}",
+                                       f"{s.f_hz / 1e6:.4g}", _e(s.source)]
+                                      for i, s in enumerate(spots, 1)]))
         if emi.radiated_dbuv is not None and len(emi.radiated_dbuv):
             f = emi.radiated_f
             keep = np.isfinite(emi.limit_dbuv) if emi.limit_dbuv is not None else np.ones(len(f), bool)
@@ -356,6 +366,9 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
             ax.legend(fontsize=8)
             parts.append(_img(pdf, _png(fig)))
         parts.append("<p class='note'>" + " ".join(_e(n) for n in emi.notes) + "</p>")
+
+    # ---------------- tables, after every plot (#222)
+    parts += tables
 
     # ---------------- notes
     warnings = list(result.warnings) + [f"{v.name}: {w}" for v in result.victims

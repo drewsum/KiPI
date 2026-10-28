@@ -40,8 +40,18 @@ milestones rather than versions that were ever set.
   returning through shared pins is split between the VRMs by the current each one
   delivers. Sources that share copper but are set to different voltages are still an
   error, now one that names both voltages.
+- **Report plots open full screen** (#222). In the DC, AC and Coupled Noise web reports,
+  click any plot image to see it as large as the window allows; click again or press Esc
+  to close it. Images are now drawn at twice the resolution they are shown at, so they
+  stay sharp full screen. The interactive 3D views and Plotly plots get a "Full screen"
+  button that redraws them to fill the window.
 
 ### Changed
+- **Reports put their tables after the plots** (#222). The DC, AC and Coupled Noise
+  reports (web page and PDF) now show the summary and every plot first. The setup and
+  results tables follow, then the notes and User notes. The navigation bar follows the
+  new order. The DC report's per-layer tables are gathered under a new Layers section,
+  and its thermal tables under Electro-thermal tables.
 - **Large boards' 3D view builds faster** (#205). The view's net meshes are now read
   straight from VTK's arrays when they are merged for drawing. On KiCad's Jetson AGX Thor
   demo (1,387 nets, 9.6 M triangles) the merge, during which the window doesn't respond,

@@ -43,6 +43,14 @@ def test_report_contents(tmp_path, thermal):
     assert "contenteditable='true'" in text and "user-notes-save" in text
     assert text.rindex("<h2") == text.index("<h2 id='user-notes'")       # the last section
     assert "<style data-kipi>" in text      # a saved copy keeps the report's own styles
+    # #222: the tables come after every plot, before the notes; images expand to full
+    # screen, drawn at twice the size they are shown at
+    last_plot = max(text.rindex("Plotly.newPlot"), text.rindex("data:image/png"))
+    for table in ("id='loads'", "id='vrms'", "id='pins'", "id='losses'", "id='vias'",
+                  "id='layers'"):
+        assert last_plot < text.index(table) < text.index("id='user-notes'"), table
+    assert ("id='thermal-tables'" in text) == thermal
+    assert "lightbox" in text and "plot-expand" in text
 
 
 def test_report_mesh_keeps_copper(tmp_path):
