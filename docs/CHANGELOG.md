@@ -7,6 +7,10 @@ milestones rather than versions that were ever set.
 ## 0.9.5 (in development)
 
 ### Added
+- **The Log names what draws the 3D view** (#205). Once the board has drawn, the Log names
+  the OpenGL renderer (the graphics card). It warns when that is a renderer that draws on
+  the processor instead, as over Remote Desktop or with no graphics driver, which makes a
+  large board slow to turn.
 - **KiCad follows clicks in the 3D view** (#208). As a KiCad plugin, a pad, via or track
   clicked in the 3D view is selected in the PCB editor. The editor centres its view on it
   and makes its copper layer the active one. KiCad's API can't move the view to a bare
@@ -22,6 +26,12 @@ milestones rather than versions that were ever set.
   load is grounded on the part's pins on a VRM's reference net. A load already on that
   part and net gets the new current and keeps its tolerances. The phases' `PERCENT` and
   the sink resistance `R` aren't modelled, and the Log says so.
+
+### Changed
+- **Large boards' 3D view builds faster** (#205). The view's net meshes are now read
+  straight from VTK's arrays when they are merged for drawing. On KiCad's Jetson AGX Thor
+  demo (1,387 nets, 9.6 M triangles) the merge, during which the window doesn't respond,
+  drops from 13.3 s to 6.9 s.
 
 ## 0.9.4
 

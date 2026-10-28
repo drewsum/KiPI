@@ -157,6 +157,7 @@ class MainWindow(QMainWindow):
         self._guess_wanted = False          # Guess models clicked: run once models are in
         self._model_source = None           # the board's ModelProvider, False if none
         self._closed = False
+        self._graphics_logged = False   # the 3D view's graphics card, once a session
         self._layer_colors_from = None      # where the layer colors were last read from
         self._model_timer = QTimer(self)    # coalesce setup edits into one update
         self._model_timer.setSingleShot(True)
@@ -1252,8 +1253,28 @@ class MainWindow(QMainWindow):
         def done(built):
             self.viewer.render()
             self.log(f"Added {len(added)} net(s); {len(self.viewer.nets())} net(s) shown")
+            self._log_graphics()
 
         self._run(work, done, "Building view", on_partial=on_net)
+
+    def _log_graphics(self):
+        """Name what draws the 3D view, once it has drawn (#205). The view draws on the
+        graphics card through OpenGL; a renderer that draws on the processor instead
+        makes a large board slow to turn."""
+        if self._graphics_logged:
+            return
+        self._graphics_logged = True
+        from kipi.gui.viewer3d import software_renderer
+        name = self.viewer.graphics()
+        if not name:
+            return
+        if software_renderer(name):
+            self.log(f"3D view: drawn by {name}, on the processor rather than a graphics "
+                     "card, so a large board turns slowly. This is usual over Remote "
+                     "Desktop or in a virtual machine; otherwise install the graphics "
+                     "card's driver.", logging.WARNING)
+        else:
+            self.log(f"3D view: drawn by {name}")
 
     # ============================================================ PI Models markers
     def _sync_pi_markers(self):

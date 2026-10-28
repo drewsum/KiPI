@@ -2577,6 +2577,20 @@ are cheap; long fine traces are not. PARDISO helps a lot on large boards (Window
 x86-64).</p></div>
 </details>
 <details>
+<summary>The 3D view is slow</summary>
+<div class="body"><p>The 3D view draws on the graphics card through OpenGL. Once the board
+has drawn, the Log names what draws it (<i>3D view: drawn by …</i>). On a board with
+millions of triangles, a graphics card turns the view in a few milliseconds a frame. With
+<b>Opacity</b> below 100% the see-through layers are sorted every frame, which takes several
+times as long. When the Log warns that the view is drawn on the processor (<i>GDI Generic</i>,
+<i>llvmpipe</i>), turning it is slow. That is usual over Remote Desktop or in a virtual
+machine; otherwise install the graphics card's driver. On a laptop with two graphics chips,
+Windows' <b>Graphics settings</b> can set Python to the high-performance one.</p>
+<p>Building the view of a large board is the slow part, and that runs on the processor, not
+the graphics card: shaping each net's copper into triangles. Tick fewer nets to build less.</p>
+</div>
+</details>
+<details>
 <summary>An AC curve looks wrong</summary>
 <div class="body"><ul>
   <li>Check the notes for capacitors left out for having no model.</li>

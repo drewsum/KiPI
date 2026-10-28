@@ -69,6 +69,16 @@ _FIELD_ARROW_SHARE = 0.7
 _FIELD_ARROW_COLOR = (0.95, 0.95, 0.95)
 
 
+# OpenGL renderers that draw on the processor, not a graphics card: Windows' own (Remote
+# Desktop, no driver), Mesa's and Chrome's.
+_SOFTWARE_GL = ("gdi generic", "llvmpipe", "softpipe", "swiftshader", "basic render")
+
+
+def software_renderer(name: str) -> bool:
+    """Whether the OpenGL renderer ``name`` draws without a graphics card (#205)."""
+    return any(s in name.lower() for s in _SOFTWARE_GL)
+
+
 def _bar_format(lo: float, hi: float, log_scale: bool) -> str:
     """Tick label format with enough decimals to tell the labels apart.
 
@@ -1289,6 +1299,18 @@ class Viewer3D(QWidget):
         """Three-quarter view from the front-left, looking down at about 40 degrees."""
         self.plotter.view_vector((-0.45, -0.75, 0.75), viewup=(0, 0, 1))
         self._fit(1.4)
+
+    def graphics(self) -> str:
+        """The OpenGL renderer drawing the view, as its driver names it (e.g. "NVIDIA
+        GeForce RTX 4070/PCIe/SSE2"), or "" when it cannot be told (#205)."""
+        try:
+            report = self.plotter.render_window.ReportCapabilities()
+        except Exception:  # noqa: BLE001 - only for the log
+            return ""
+        for line in report.splitlines():
+            if line.startswith("OpenGL renderer string:"):
+                return line.split(":", 1)[1].strip()
+        return ""
 
     def screenshot(self, path: str):
         self.plotter.screenshot(path, transparent_background=False)

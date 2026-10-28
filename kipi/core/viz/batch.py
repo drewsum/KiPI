@@ -15,6 +15,7 @@ from typing import Dict, Hashable, Iterable, List, Optional, Set, Tuple
 
 import numpy as np
 import pyvista as pv
+from vtkmodules.util.numpy_support import vtk_to_numpy
 
 Category = Hashable       # e.g. ("cu", layer_id), ("pad", layer_id), ("via", -1)
 RGB = Tuple[float, float, float]
@@ -32,6 +33,18 @@ class _Part:
 
 
 def _arrays(mesh: pv.PolyData) -> Tuple[np.ndarray, np.ndarray]:
+    """Points (float32) and triangles of ``mesh``. A mesh of triangles only, as the
+    view's meshes are, is read straight from VTK's arrays: pyvista's ``is_all_triangles``
+    and ``faces`` cost over a millisecond a mesh, most of a large board's merge time
+    (#205)."""
+    if not (mesh.GetNumberOfVerts() or mesh.GetNumberOfLines() or mesh.GetNumberOfStrips()):
+        polys = mesh.GetPolys()
+        if polys.IsHomogeneous() == 3:      # every cell a triangle
+            conn = vtk_to_numpy(polys.GetConnectivityArray())
+            data = mesh.GetPoints()
+            pts = (np.zeros((0, 3), np.float32) if data is None
+                   else vtk_to_numpy(data.GetData()).astype(np.float32))
+            return pts, conn.reshape(-1, 3).astype(np.int64, copy=False)
     if not mesh.is_all_triangles:
         mesh = mesh.triangulate()
     pts = np.asarray(mesh.points, dtype=np.float32)

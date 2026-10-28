@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 pv = pytest.importorskip("pyvista")
@@ -81,3 +82,17 @@ def test_re_adding_replaces_and_recolor_marks_dirty():
     assert (chunk.build().cell_data["rgb"] == [0, 0, 255]).all()
     b.set_color("A", ("cu", 3), BLUE)
     assert b.take_dirty() == []
+
+
+
+@pytest.mark.parametrize("mesh", [plane(3), pv.Plane(i_resolution=2, j_resolution=1),
+                                  pv.Sphere().merge(pv.Line())],
+                         ids=["triangles", "quads", "with lines"])
+def test_meshes_are_read_as_pyvista_reads_them(mesh):
+    # #205: triangles are read straight from VTK's arrays, the rest through pyvista.
+    from kipi.core.viz.batch import _arrays
+    tri = mesh if mesh.is_all_triangles else mesh.triangulate()
+    pts, tris = _arrays(mesh)
+    assert pts.dtype == np.float32 and tris.dtype == np.int64
+    assert np.array_equal(pts, np.asarray(tri.points, dtype=np.float32))
+    assert np.array_equal(tris, tri.faces.reshape(-1, 4)[:, 1:])
