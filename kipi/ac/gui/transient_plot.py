@@ -19,7 +19,9 @@ EMPTY = ("Give a probe a load step and slew rate (Probes tab) and its VRM a cont
          "bandwidth, then solve the rail to see the estimated transient response here.")
 NOTE = ("An estimate, each probe's load step on its own: the open-loop PDN impedance with "
         "the VRM's loop closed at its control loop bandwidth (a typical compensation, not "
-        "the converter's own). Dashed: ± target |Z| × ΔI, the AC tolerance a flat target "
+        "the converter's own) and regulating to its load line, if it has one. Undershoot "
+        "and overshoot are measured from the voltage the rail settles to (dotted, with a "
+        "load line). Dashed: ± target |Z| × ΔI about it, the AC tolerance a flat target "
         "stands for. Tick Zoom to edge, or zoom in with the toolbar, to see fast edges.")
 BW_LIMIT_HZ = 20e6              # the bandwidth limit, as an oscilloscope's
 
@@ -160,14 +162,17 @@ class TransientPlot(QWidget):
             self.ax_v.plot(tr.t * k, tr.v * 1e3, color=color, lw=1.6,
                            label=f"{name}: −{tr.undershoot_v * 1e3:.3g} / "
                                  f"+{tr.overshoot_v * 1e3:.3g} mV")
-            for x, y in ((tr.t_undershoot_s, -tr.undershoot_v), (tr.t_overshoot_s,
-                                                                 tr.overshoot_v)):
-                self.ax_v.plot([x * k], [y * 1e3], "o", ms=5, mfc="none", mew=1.4,
-                               color=color)
+            for x in (tr.t_undershoot_s, tr.t_overshoot_s):
+                self.ax_v.plot([x * k], [np.interp(x, tr.t, tr.v) * 1e3], "o", ms=5,
+                               mfc="none", mew=1.4, color=color)
+            settled = tr.settled
+            if tr.load_line_ohm:
+                self.ax_v.plot(tr.t * k, settled * 1e3, color=color, lw=1.0, ls=":")
             allowed = next(c for c in result.probes if c.name == name).allowed_v()
             if allowed:
                 for y in (allowed, -allowed):
-                    self.ax_v.axhline(y * 1e3, color=color, lw=1.0, ls="--", alpha=0.8)
+                    self.ax_v.plot(tr.t * k, (settled + y) * 1e3, color=color, lw=1.0,
+                                   ls="--", alpha=0.8)
         self.ax_v.axhline(0, color="#666", lw=0.8)
         self.ax_i.set_ylabel("Load step (A)")
         self.ax_v.set_ylabel("Rail deviation (mV)")

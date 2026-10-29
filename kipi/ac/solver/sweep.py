@@ -82,13 +82,14 @@ class ProbeCurve:
                 i = np.flatnonzero(sel)[int(np.argmax(self.mag[sel] / t[sel]))]
         return float(self.mag[i]), float(freqs[i])
 
-    def transient(self, freqs: np.ndarray, bandwidth_hz: Optional[float]):
+    def transient(self, freqs: np.ndarray, bandwidth_hz: Optional[float],
+                  load_line_ohm: float = 0.0):
         """The estimated response to the probe's load step
-        (:func:`kipi.ac.transient.transient`); None without a step, slew rate or VRM
-        bandwidth."""
+        (:func:`kipi.ac.transient.transient`), the VRM regulating to its load line
+        ``load_line_ohm``; None without a step, slew rate or VRM bandwidth."""
         from kipi.ac.transient import transient
         slew = self.slew_a_per_us * 1e6 if self.slew_a_per_us else None
-        return transient(freqs, self.z, bandwidth_hz, self.step_a, slew)
+        return transient(freqs, self.z, bandwidth_hz, self.step_a, slew, load_line_ohm)
 
     def allowed_v(self) -> Optional[float]:
         """The AC tolerance the flat target implies, target |Z| times the load step
@@ -121,6 +122,7 @@ class ACResult:
     warnings: List[str] = field(default_factory=list)
     solve_s: float = 0.0
     bandwidth_hz: Optional[float] = None  # the VRM's control loop bandwidth, if given
+    load_line_ohm: float = 0.0            # the VRM's load line (#227), 0 = none
     report_path: Optional[Path] = None    # the HTML report, when one was written
     board_map: Optional[ACMap] = None     # what the Board map tab shows (#67)
     # DC bias (#74) and aging (#109): {reference: (DC volts or None, derated farads)} for
@@ -464,6 +466,7 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
             z, die_probes = terminate(zi, freqs, ports), []
     probe_ports = [p for p in ports if p.kind == "probe"] + die_probes
     bandwidth = vrm.bandwidth_khz * 1e3 if vrm.bandwidth_khz else None
+    r_ll = (vrm.load_line_mohm or 0.0) * 1e-3
     curves = []
     for i, p in enumerate(probe_ports):
         pr = p.element
@@ -489,9 +492,11 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                          "control loop bandwidth to close its loop with")
             progress.warn(notes[-1])
             continue
-        tr = c.transient(freqs, bandwidth)
+        tr = c.transient(freqs, bandwidth, r_ll)
+        droop = (f", settling {r_ll * c.step_a * 1e3:.4g} mV low on the load line"
+                 if r_ll else "")
         progress.info(f"  {c.name}: a {c.step_a:g} A load step dips about "
-                      f"{tr.undershoot_v * 1e3:.4g} mV; its release rises about "
+                      f"{tr.undershoot_v * 1e3:.4g} mV{droop}; its release rises about "
                       f"{tr.overshoot_v * 1e3:.4g} mV (estimate)")
         for note in tr.notes:
             notes.append(f"Probe {c.name}: {note}")
@@ -501,5 +506,6 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
                     links=links, plane_capacitance_f=system.total_plane_capacitance,
                     stats=system.stats, warnings=notes + system.warnings,
                     solve_s=time.perf_counter() - t0, bandwidth_hz=bandwidth,
+                    load_line_ohm=r_ll,
                     board_map=board_map, cap_bias=cap_bias,
                     bias_note=bias_notes[0] if bias_notes else "", deratings=deratings)

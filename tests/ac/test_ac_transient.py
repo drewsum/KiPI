@@ -82,6 +82,27 @@ def test_the_esl_spike_is_l_di_dt_over_the_edge():
     assert slow.edge_l_h is None and slow.spike_v is None and slow.edge_v > 0
 
 
+def test_the_rail_settles_on_the_vrm_load_line():
+    """#227: a 5 mΩ load line holds the rail 5 mV low while 1 A is drawn, and the dip and
+    rise are measured from there, not from the DC value."""
+    r_ll = 5e-3
+    assert closed_loop(F, _rlc(), 50e3, np.array([0.0]), r_ll)[0] == r_ll
+    assert abs(closed_loop(F, _rlc(), 50e3, np.array([10.0]), r_ll)[0]) == pytest.approx(
+        r_ll, rel=0.05)
+    tr = transient(F, _rlc(), 50e3, 1.0, 1e6, r_ll)
+    assert tr.notes == [] and tr.load_line_ohm == r_ll
+    held = tr.v[(tr.t > tr.t_release_s - 0.05 * (tr.t_release_s - tr.t_step_s))
+                & (tr.t < tr.t_release_s - 5 * tr.t_rise_s)]
+    assert held == pytest.approx(-r_ll, abs=0.02 * r_ll)            # settled on the line
+    assert abs(tr.v[-1]) < 0.02 * r_ll                              # and back after release
+    assert tr.settled.min() == pytest.approx(-r_ll)
+    k = int(np.argmin(tr.v - tr.settled))
+    assert tr.undershoot_v == pytest.approx(tr.settled[k] - tr.v[k])
+    assert tr.undershoot_v < -tr.v.min()                    # less than the dip from DC
+    flat = transient(F, _rlc(), 50e3, 1.0, 1e6)
+    assert flat.load_line_ohm == 0 and np.all(flat.settled == 0)
+
+
 def test_no_estimate_without_a_step_slew_or_bandwidth():
     z = _rlc()
     assert transient(F, z, None, 1.0, 1e6) is None
@@ -107,6 +128,8 @@ def test_a_probe_curve_carries_its_step_and_allowed_swing():
     assert list(trs) == ["U1"]                           # U2 has no load step
     assert r.probes[0].allowed_v() == pytest.approx(0.03)     # 30 mΩ × 1 A
     assert r.probes[1].allowed_v() is None
+    r.load_line_ohm = 5e-3                                # #227: the VRM's load line
+    assert transients(r)["U1"].load_line_ohm == 5e-3
     r.bandwidth_hz = None
     assert transients(r) == {}
 

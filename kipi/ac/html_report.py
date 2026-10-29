@@ -192,10 +192,18 @@ def _transient_plot(result, trs: Dict, div_id: str) -> str:
                                  line=dict(color=color, width=2),
                                  hovertemplate=(f"{_e(name)}<br>%{{x:.4s}}s<br>%{{y:.4s}}V"
                                                 "<extra></extra>")), row=2, col=1)
+        settled = tr.settled
+        if tr.load_line_ohm:
+            fig.add_trace(go.Scatter(x=tr.t, y=settled, name=f"{name} settled",
+                                     legendgroup=name, showlegend=False, hoverinfo="skip",
+                                     line=dict(color=color, width=1, dash="dot")), row=2, col=1)
         allowed = result.probes[k].allowed_v()
         if allowed:
             for y in (allowed, -allowed):
-                fig.add_hline(y=y, line=dict(color=color, width=1, dash="dash"), row=2, col=1)
+                fig.add_trace(go.Scatter(x=tr.t, y=settled + y, legendgroup=name,
+                                         showlegend=False, hoverinfo="skip",
+                                         line=dict(color=color, width=1, dash="dash")),
+                              row=2, col=1)
     fig.update_xaxes(exponentformat="SI", ticksuffix="s", gridcolor="#e6e6e6")
     fig.update_xaxes(title_text="Time", row=2, col=1)
     fig.update_yaxes(exponentformat="SI", ticksuffix="A", title_text="Load step",
@@ -221,10 +229,13 @@ def _transient_png(result, trs: Dict) -> str:
         color = COLORS[k % len(COLORS)]
         ax_i.plot(tr.t, tr.i, color=color, lw=1.2)
         ax_v.plot(tr.t, tr.v, color=color, lw=1.4, label=name)
+        settled = tr.settled
+        if tr.load_line_ohm:
+            ax_v.plot(tr.t, settled, color=color, lw=0.9, ls=":")
         allowed = result.probes[k].allowed_v()
         if allowed:
             for y in (allowed, -allowed):
-                ax_v.axhline(y, color=color, lw=0.9, ls="--")
+                ax_v.plot(tr.t, settled + y, color=color, lw=0.9, ls="--")
     ax_v.axhline(0, color="#999", lw=0.6)
     ax_v.xaxis.set_major_formatter(EngFormatter(unit="s"))
     ax_i.yaxis.set_major_formatter(EngFormatter(unit="A"))
@@ -578,14 +589,19 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
                      "while each probe's load steps up and, once the rail has settled, back "
                      "down: the open-loop PDN impedance above, with the VRM's loop closed at "
                      f"its control loop bandwidth ({_hz(result.bandwidth_hz)}) by a typical "
-                     "proportional-integral compensation, not the converter's own. Undershoot: "
-                     "the largest dip below the DC value; overshoot: the largest rise above "
-                     "it. ESL spike: L·di/dt while the load ramps, L the PDN's inductance at "
+                     "proportional-integral compensation, not the converter's own"
+                     + (f", regulating to its {result.load_line_ohm * 1e3:g} mΩ load line, "
+                        "so the rail settles that times the load step below its DC value "
+                        "(dotted)" if getattr(result, "load_line_ohm", 0.0) else "")
+                     + ". Undershoot: the largest dip below the voltage the rail settles "
+                     "to; overshoot: the largest rise above it. ESL spike: L·di/dt while "
+                     "the load ramps, L the PDN's inductance at "
                      "the edge's frequency, 1 / (π·rise time), on top of the capacitors' "
                      "droop; none where the PDN is still capacitive there, as it is for a "
                      "slow edge. It lasts only as long as the edge: zoom in on the plot to "
                      "see it. ± target × ΔI is the AC tolerance a flat target stands for "
-                     "(Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>).</p>")
+                     "(Z<sub>target</sub> = V<sub>AC</sub> / I<sub>step</sub>), dashed about the "
+                     "settled voltage.</p>")
 
     # ---------------- tables, after every plot (#222)
     parts += tables

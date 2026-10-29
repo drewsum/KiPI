@@ -811,7 +811,9 @@ class ACPanel(QWidget, PartSelection):
                                    "in the sweep without one. Undershoot and overshoot: the "
                                    "estimated dip when the probe's load steps up and rise "
                                    "when it steps back down (the Transient tab), for probes "
-                                   "with a load step")
+                                   "with a load step, from the voltage the rail settles to "
+                                   "(below its DC value by the VRM's load line times the "
+                                   "step, if it has one)")
         make_sortable(self.tbl_probes)
         self.txt_notes = QLabel(g_res)
         self.txt_notes.setWordWrap(True)

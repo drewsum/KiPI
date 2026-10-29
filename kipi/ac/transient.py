@@ -13,9 +13,17 @@ where w_c is the VRM's control loop bandwidth and gm puts the loop gain T = Z G 
 there. The double pole makes the loop give up well above the bandwidth, even into the
 rising impedance of an inductive PDN. The rail then sees the closed-loop impedance
 Z / (1 + T): the PDN's own above the bandwidth, and nothing at DC (the loop's integrator
-holds the rail at its DC value, which the DC solve gives). Only the bandwidth comes from
-the setup: the compensation is a typical one, about 60 degrees of phase margin into a
-capacitive PDN, not the converter's own.
+holds the rail at its DC value, which the DC solve gives, or at its load line: below).
+Only the bandwidth comes from the setup: the compensation is a typical one, about 60
+degrees of phase margin into a capacitive PDN, not the converter's own.
+
+**The load line** (#227). A VRM with a load line R_LL regulates to its set voltage less
+R_LL times its output current (adaptive voltage positioning): the error it amplifies is
+the rail's deviation plus R_LL times the current it drives. Its current is then
+-G / (1 + G R_LL) times the deviation, and the closed-loop impedance tends to R_LL at DC
+in place of nothing: after the step up the rail settles R_LL·ΔI below its DC value. The
+undershoot and overshoot are measured from that settled voltage, -R_LL times the load
+current at each instant, not from the DC value.
 
 The response is worked out on a uniform FFT grid: the load current's spectrum times
 -Z / (1 + T), back to time. Z is interpolated between sweep points (jw Z, smooth for a
@@ -63,7 +71,7 @@ class Transient:
     step_a: float
     t_rise_s: float
     t_release_s: float            # when the load steps back down
-    undershoot_v: float           # the largest dip below the DC value (positive)
+    undershoot_v: float           # the largest dip below the settled voltage (positive)
     t_undershoot_s: float
     overshoot_v: float            # the largest rise above it (positive)
     t_overshoot_s: float
@@ -71,6 +79,13 @@ class Transient:
     t_step_s: float = 0.0         # when the load starts to step up
     edge_l_h: Optional[float] = None  # the inductance the edge sees; None: capacitive there
     edge_v: float = 0.0           # the largest dip while the load ramps up (positive)
+    load_line_ohm: float = 0.0    # the VRM's load line (#227)
+
+    @property
+    def settled(self) -> np.ndarray:
+        """The voltage the rail settles to (deviation from DC, volts) at the load current
+        of each instant: -R_LL·i, or the DC value without a load line."""
+        return -self.load_line_ohm * self.i
 
     @property
     def spike_v(self) -> Optional[float]:
@@ -84,10 +99,10 @@ class Transient:
         return self.t_step_s - 2 * self.t_rise_s, self.t_step_s + 8 * self.t_rise_s
 
 
-def closed_loop(freqs, z, bandwidth_hz: float, f) -> np.ndarray:
+def closed_loop(freqs, z, bandwidth_hz: float, f, load_line_ohm: float = 0.0) -> np.ndarray:
     """The closed-loop impedance at ``f`` (Hz, 0 allowed) of the open-loop PDN impedance
     ``z`` sampled at ``freqs``, with the converter's loop crossing over at
-    ``bandwidth_hz``."""
+    ``bandwidth_hz`` and regulating to its load line ``load_line_ohm`` (#227)."""
     f = np.asarray(f, dtype=float)
     zo = open_loop_at(freqs, z, f)
     wc = 2 * math.pi * bandwidth_hz
@@ -98,8 +113,11 @@ def closed_loop(freqs, z, bandwidth_hz: float, f) -> np.ndarray:
     shape_c = (1 + wc / ZERO_RATIO / sc) / (1 + sc / (POLE_RATIO * wc)) ** 2
     gm = 1.0 / abs(open_loop_at(freqs, z, np.array([bandwidth_hz]))[0] * shape_c)
     with np.errstate(divide="ignore", invalid="ignore"):
-        zc = zo / (1 + zo * gm * shape)
-    zc[f == 0] = 0.0                     # the integrator holds the rail at DC
+        g = gm * shape
+        if load_line_ohm > 0:
+            g = g / (1 + g * load_line_ohm)
+        zc = zo / (1 + zo * g)
+    zc[f == 0] = max(load_line_ohm, 0.0)  # the integrator holds the rail to the load line
     return zc
 
 
@@ -143,15 +161,17 @@ def load_step(t, step_a: float, t_rise: float, t_on: float, t_off: float) -> np.
 
 
 def transient(freqs, z, bandwidth_hz: Optional[float], step_a: Optional[float],
-              slew_a_per_s: Optional[float]) -> Optional[Transient]:
+              slew_a_per_s: Optional[float],
+              load_line_ohm: float = 0.0) -> Optional[Transient]:
     """The estimated response to a load step of ``step_a`` at ``slew_a_per_s`` at a probe
-    whose open-loop impedance is ``z`` at ``freqs``; None without a positive step, slew
-    rate and bandwidth."""
+    whose open-loop impedance is ``z`` at ``freqs``, its VRM with a load line of
+    ``load_line_ohm``; None without a positive step, slew rate and bandwidth."""
     if not (step_a and step_a > 0 and slew_a_per_s and slew_a_per_s > 0
             and bandwidth_hz and bandwidth_hz > 0):
         return None
     freqs = np.asarray(freqs, dtype=float)
     notes = []
+    r_ll = max(load_line_ohm or 0.0, 0.0)
     t_rise = step_a / slew_a_per_s
     wc = 2 * math.pi * bandwidth_hz
     hold = max(HOLD_PER_WC / wc, 20 * t_rise)
@@ -175,21 +195,22 @@ def transient(freqs, z, bandwidth_hz: Optional[float], step_a: Optional[float],
     t_off = lead + t_rise + hold
     i = load_step(t, step_a, t_rise, lead, t_off)
     f = np.fft.rfftfreq(n, dt)
-    zc = closed_loop(freqs, z, bandwidth_hz, f)
+    zc = closed_loop(freqs, z, bandwidth_hz, f, r_ll)
     v = np.fft.irfft(-zc * _taper(f) * np.fft.rfft(i), n)
     before = (t > t_off - 0.1 * hold) & (t < t_off - 0.02 * hold)
     # The response to the step up alone, short of the release (the taper smooths each
-    # edge a little either side).
+    # edge a little either side), and how far it is from the load line's settled voltage.
     step = v[t < t_off - 0.02 * hold]
-    peak = max(float(np.max(np.abs(step))), 1e-30)
-    if before.any() and np.max(np.abs(v[before])) > SETTLED * peak:
+    off = step + r_ll * i[:len(step)]
+    peak = max(float(np.max(np.abs(off))), 1e-30)
+    if before.any() and np.max(np.abs(v[before] + r_ll * i[before])) > SETTLED * peak:
         notes.append("The rail had not settled before the load stepped back down: the "
                      "loop is slow or poorly damped into this PDN")
     else:
         # Show a hold only as long as the rail takes to settle: the pulse's response is
         # the step's less the step's again, delayed to the release.
-        k_peak = int(np.argmax(np.abs(step)))
-        out_of = np.flatnonzero(np.abs(step[k_peak:]) > SHOWN_SETTLED * peak)
+        k_peak = int(np.argmax(np.abs(off)))
+        out_of = np.flatnonzero(np.abs(off[k_peak:]) > SHOWN_SETTLED * peak)
         settle = t[k_peak + out_of[-1]] - lead if out_of.size else t[k_peak] - lead
         shown = min(max(1.5 * settle, 20 * t_rise, SHOWN_PER_WC / wc), hold)
         k = int(round((t_rise + shown) / dt))
@@ -203,7 +224,7 @@ def transient(freqs, z, bandwidth_hz: Optional[float], step_a: Optional[float],
     x = open_loop_at(freqs, z, np.array([f_edge]))[0].imag
     edge_l = x / (2 * math.pi * f_edge) if x > 0 else None
     return _with_peaks(Transient(t, i, v, step_a, t_rise, t_off, 0.0, 0.0, 0.0, 0.0, notes,
-                                 lead, edge_l))
+                                 lead, edge_l, load_line_ohm=r_ll))
 
 
 def _taper(f) -> np.ndarray:
@@ -214,15 +235,17 @@ def _taper(f) -> np.ndarray:
 
 
 def _with_peaks(tr: Transient) -> Transient:
-    """``tr`` with its undershoot and overshoot (and when they happen) found in ``v``."""
-    k_lo, k_hi = int(np.argmin(tr.v)), int(np.argmax(tr.v))
-    tr.undershoot_v, tr.t_undershoot_s = float(max(-tr.v[k_lo], 0.0)), float(tr.t[k_lo])
-    tr.overshoot_v, tr.t_overshoot_s = float(max(tr.v[k_hi], 0.0)), float(tr.t[k_hi])
+    """``tr`` with its undershoot and overshoot (and when they happen) found in ``v``, from
+    the voltage the rail settles to (#227)."""
+    off = tr.v - tr.settled
+    k_lo, k_hi = int(np.argmin(off)), int(np.argmax(off))
+    tr.undershoot_v, tr.t_undershoot_s = float(max(-off[k_lo], 0.0)), float(tr.t[k_lo])
+    tr.overshoot_v, tr.t_overshoot_s = float(max(off[k_hi], 0.0)), float(tr.t[k_hi])
     # The edge, and as long again as the spectrum's taper smooths it over.
     dt = tr.t[1] - tr.t[0] if len(tr.t) > 1 else 0.0
     ramp = (tr.t >= tr.t_step_s) & (tr.t <= tr.t_step_s + tr.t_rise_s + max(4 * dt,
                                                                           0.2 * tr.t_rise_s))
-    tr.edge_v = float(max(-tr.v[ramp].min(), 0.0)) if ramp.any() else 0.0
+    tr.edge_v = float(max(-off[ramp].min(), 0.0)) if ramp.any() else 0.0
     return tr
 
 
@@ -248,9 +271,10 @@ def transients(result) -> dict:
     """Probe name -> its estimated :class:`Transient`, for the probes of an AC result that
     have a load step (and a VRM bandwidth to close the loop with)."""
     bw = getattr(result, "bandwidth_hz", None)
+    r_ll = getattr(result, "load_line_ohm", 0.0) or 0.0
     out = {}
     for c in result.probes:
-        tr = c.transient(result.freqs, bw) if hasattr(c, "transient") else None
+        tr = c.transient(result.freqs, bw, r_ll) if hasattr(c, "transient") else None
         if tr is not None:
             out[c.name] = tr
     return out

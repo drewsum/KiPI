@@ -918,13 +918,16 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     current.</td></tr>
   <tr><td>Output current limit</td><td class="wrap">Optional. The VRM row shows PASS if its total
     output current (all phases) is at most this.</td></tr>
-  <tr><td>Load line</td><td class="wrap">Optional, DC only (adaptive voltage positioning). The
+  <tr><td>Load line</td><td class="wrap">Optional (adaptive voltage positioning). The
     VRM regulates to its regulated voltage less this resistance times its output current: what its
     connected loads and the VRMs it feeds actually draw, so a
     <a href="#ts-no-path">disconnected</a> load adds no droop. Drops are still measured from
     the regulated voltage, so the droop counts against each load's tolerance. The Notes tab, the
     HTML report and the VRM CSV show the droop and the voltage it regulates to
-    (<b>V target</b>). <b>none</b> holds the regulated voltage.</td></tr>
+    (<b>V target</b>). In AC mode the VRM's loop regulates to it in the estimated transient
+    response: the rail settles the load line times the load step below its DC value, and the
+    undershoot and overshoot are measured from that settled voltage. <b>none</b> holds the
+    regulated voltage.</td></tr>
   <tr><td>Dropout</td><td class="wrap">LDO only: the least input-to-output difference at which it
     still regulates.</td></tr>
   <tr><td>Input range</td><td class="wrap">Optional input range, min and max on one row, in
@@ -1820,19 +1823,24 @@ saved results keep it. Results saved by KiPI before 0.7.2 have no map.</p>
 <b>Load step</b> and <b>slew rate</b>: the load steps up by ΔI, holds until the rail has
 settled, and steps back down. The top plot is the load current. The lower plot is the
 rail's deviation from its DC value: the <b>undershoot</b> when the load steps up and the
-<b>overshoot</b> when it steps back down. Each probe's step is worked out on its own, with
-the other probes drawing nothing extra. A circle marks each peak, and the legend gives them
-in mV. Dashed lines at ± target |Z| × ΔI show the AC tolerance a flat target stands for
+<b>overshoot</b> when it steps back down, each measured from the voltage the rail settles
+to. Without a load line that is the DC value. With one (the VRM's <b>Load line</b>), the
+rail settles the load line times ΔI lower while the load is up, drawn dotted, and the
+undershoot and overshoot are measured from that line, not from the DC value. Each probe's
+step is worked out on its own, with the other probes drawing nothing extra. A circle marks
+each peak, and the legend gives them in mV. Dashed lines at ± target |Z| × ΔI about the
+settled voltage show the AC tolerance a flat target stands for
 (Z<sub>target</sub> = V<sub>AC</sub> / ΔI).</p>
 <p>How it is worked out: the AC solve gives the <b>open-loop</b> impedance, with the VRM out of
 circuit, and a step into that alone would never recover. So the converter's loop is closed
 again from its <b>Control loop bandwidth</b>: the VRM drives the rail from its voltage error
 with a typical proportional-integral compensation, crossing over at the bandwidth with
 about 60° of phase margin. Above the bandwidth the rail sees the PDN's own impedance; at DC
-the loop holds it exactly (the DC solve gives the DC value). The load current's spectrum
+the loop holds it exactly (the DC solve gives the DC value), or at its load line, which
+it regulates to as a real VRM with adaptive voltage positioning does. The load current's spectrum
 times that closed-loop impedance, back in time, is the response. Only the bandwidth comes
 from your setup, so treat the result as an estimate. The converter's real compensation,
-its output impedance and any load-line will change the slow part, while the fast part
+and its output impedance will change the slow part, while the fast part
 (ESL, plane and via inductance, capacitor resonances) comes from the solve. A linear model
 mirrors itself, so the overshoot on release matches the undershoot on the step.</p>
 <table>

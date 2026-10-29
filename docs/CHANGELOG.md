@@ -15,6 +15,15 @@ milestones rather than versions that were ever set.
   unknowns and how long steps of about that size took before on this computer, which KiPI
   keeps in `timings.json` in its data folder; the first solve of a kind has no estimate.
 
+### Fixed
+- **The AC transient follows the VRM's load line** (#227). A VRM with a **Load line**
+  regulates to its set voltage less the load line times its output current, and the
+  estimated transient's loop now does too: while the load is up the rail settles the load
+  line times the load step below its DC value (drawn dotted), rather than recovering to the
+  DC value. The undershoot and overshoot, in the plot's legend, the results table, the Log
+  and the report, are measured from that settled voltage, and the ± target × ΔI lines are
+  drawn about it. The VRM's Load line field is no longer grayed in AC mode.
+
 ### Changed
 - **AC sweeps with many capacitors are several times faster** (#225). With PARDISO, each
   frequency's factorization now also gives the board's Schur complement on the port

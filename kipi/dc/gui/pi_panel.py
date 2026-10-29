@@ -594,7 +594,10 @@ class VrmEditor(_Editor):
                                  "current, i.e. the current its connected loads and the "
                                  "VRMs it feeds actually draw. Drops are still measured "
                                  "from the target voltage, so the droop counts against each "
-                                 "load's tolerance. 'none' holds the target voltage."),
+                                 "load's tolerance. In AC mode the estimated transient "
+                                 "settles this times the load step low, and its undershoot "
+                                 "and overshoot are measured from there. 'none' holds the "
+                                 "target voltage."),
                 (self.dropout, "LDO dropout: the least input-to-output difference it "
                                "regulates at. Below it, its loads are marked VRM OUT OF "
                                "REGULATION."),
@@ -698,7 +701,7 @@ class VrmEditor(_Editor):
         self.form.setRowVisible(self.acc_row, kind != "source")
         self.form.setRowVisible(self.btn_accuracy_calc, kind != "source")
         dc = self.mode == "dc"
-        dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.load_line, self.n_phases,
+        dc_only = (self.kind, self.eff, self.iq, self.i_limit, self.n_phases,
                    self.input, self.sense, self.ground_sense, self.dropout, self.mesh,
                    self.n_points)
         ac_only = (self.bandwidth, self.acc_row)
