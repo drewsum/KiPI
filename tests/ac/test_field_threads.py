@@ -81,11 +81,11 @@ class System:
 
 
 def test_threads_only_for_superlu_and_as_memory_allows(monkeypatch):
-    monkeypatch.setattr(field.os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(field, "spare", lambda: 15)
     monkeypatch.setattr(field, "free_memory", lambda: 64 * 2**30)
     assert field.threads(System(), Factor("pardiso"), 20) == 0
     assert field.threads(System(), Factor("pardiso (real form)"), 20) == 0
-    assert field.threads(System(), Factor("superlu"), 20) == field.MAX_THREADS
+    assert field.threads(System(), Factor("superlu"), 20) == 15
     assert field.threads(System(), Factor("superlu"), 3) == 3
     assert field.threads(System(), Factor("superlu"), 1) == 0
     # 64 GB free, half for the threads: a little over 8 GB each leaves room for 3.

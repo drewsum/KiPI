@@ -87,8 +87,8 @@ def test_a_pool_that_cannot_start_leaves_the_build_here(monkeypatch):
 
 def test_small_boards_and_non_pythons_build_here(monkeypatch):
     assert parallel.workers(parallel.MIN_NETS - 1) == 0
-    monkeypatch.setattr(workers.os, "cpu_count", lambda: 16)
-    assert parallel.workers(1000) == workers.MAX_WORKERS
+    monkeypatch.setattr(workers, "spare", lambda: 19)
+    assert parallel.workers(1000) == 19
     monkeypatch.setenv(workers.SERIAL_ENV, "1")
     assert parallel.workers(1000) == 0
     monkeypatch.delenv(workers.SERIAL_ENV)
@@ -96,4 +96,4 @@ def test_small_boards_and_non_pythons_build_here(monkeypatch):
     monkeypatch.setattr(workers.sys, "executable", str(Path("KiCad", "bin", "kicad.exe")))
     assert parallel.workers(1000) == 0
     monkeypatch.setattr(workers.sys, "executable", str(Path("venv", "Scripts", "KiPI.exe")))  # #124
-    assert parallel.workers(1000) == workers.MAX_WORKERS
+    assert parallel.workers(1000) == 19

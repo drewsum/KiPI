@@ -3,24 +3,22 @@
 With PARDISO each factorization already uses every core, so the frequencies are solved
 one at a time. Without it, each is a SuperLU factorization on one core, which leaves the
 GIL while it works: several frequencies are solved at once, in threads, each with its own
-factorization, as many as memory allows (#213).
+factorization, as many as memory and the spare cores allow (#213, #226).
 """
 
 from __future__ import annotations
 
 import concurrent.futures as cf
-import os
 import time
 
 import numpy as np
 
 from kipi.core import eta
+from kipi.core.cores import spare
 from kipi.core.memory import free_memory
 from kipi.core.progress import Canceled, ProgressReporter
 from kipi.core.solver import direct
 
-#: Most frequencies solved at once.
-MAX_THREADS = 8
 #: Of the memory free, the share the threads' factorizations may take.
 MEMORY_SHARE = 0.5
 #: Threads where the free memory can't be read.
@@ -76,7 +74,7 @@ def threads(system, factor, n_left: int) -> int:
     nf = system.n_free
     each = factor.nbytes + 2 * 16 * nf * direct.rhs_block(nf) + 64 * system.stats.nnz
     free = free_memory()
-    n = min((os.cpu_count() or 1) - 1, MAX_THREADS, n_left)
+    n = min(spare(), n_left)
     if free is None:
         n = min(n, UNKNOWN_MEMORY_THREADS)
     else:

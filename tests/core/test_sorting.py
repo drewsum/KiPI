@@ -70,7 +70,7 @@ def test_pattern_falls_back_to_unique(monkeypatch):
 
 def test_points_in_copper_in_threads_match_one(monkeypatch):
     monkeypatch.setattr(copper, "THREADED_POINTS", 1000)
-    monkeypatch.setattr("os.cpu_count", lambda: 8)
+    monkeypatch.setattr("kipi.core.cores.cores", lambda: 8)
     rng = np.random.default_rng(4)
     g = shapely.union_all(shapely.buffer(shapely.points(rng.uniform(0, 50, (200, 2))), 2.0))
     shapely.prepare(g)

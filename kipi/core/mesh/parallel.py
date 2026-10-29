@@ -143,5 +143,5 @@ def mesh_layers(snap: BoardSnapshot, jobs: Sequence[Tuple[str, Sequence[str]]],
     except workers.POOL_ERRORS as e:
         progress.warn(f"Could not mesh in {n} processes ({e}); meshing in one")
         return None
-    progress.debug(f"Meshing {len(jobs)} net(s) in {n} processes")
+    progress.debug(f"Meshing {len(jobs)} net(s) in {pooled.pool.n} processes")
     return pooled

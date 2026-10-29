@@ -104,10 +104,9 @@ def net_layer_copper(snap: BoardSnapshot, net: str, layer: int,
 
 
 
-#: Fewest points tested for being in copper that are split across threads (#216).
+#: Fewest points tested for being in copper that are split across threads (#216), as
+#: many threads as there are spare cores (#226), each with at least a quarter of these.
 THREADED_POINTS = 200_000
-#: Most threads that test points at once.
-POINT_THREADS = 8
 
 
 def contains_xy(geom: BaseGeometry, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -116,9 +115,9 @@ def contains_xy(geom: BaseGeometry, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     board (#216). Each thread tests against a copy of its own (WKB keeps every coordinate
     exactly): one prepared geometry used by several threads at once crashes GEOS. Any
     trouble in the threads: tested in one."""
-    import os
+    from kipi.core.cores import spare
     n = len(x)
-    k = min((os.cpu_count() or 1) - 1, POINT_THREADS, n // (THREADED_POINTS // 4))
+    k = min(spare(), n // (THREADED_POINTS // 4))
     if n < THREADED_POINTS or k < 2:
         return shapely.contains_xy(geom, x, y)
     import concurrent.futures as cf

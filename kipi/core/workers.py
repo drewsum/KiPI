@@ -6,6 +6,8 @@ worker processes, gives each the board once, and runs tasks that read it through
 :func:`board`. Their results should be plain arrays: they cross between processes in a
 fraction of the time objects take.
 
+A pool has a process for each spare core, as many as half the memory free holds (#226).
+
 Wherever a pool can't start or breaks (:data:`POOL_ERRORS`), the callers do the work left
 in this process.
 """
@@ -24,11 +26,19 @@ from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import Iterator, Optional, Set
 
+from kipi.core.cores import spare
+from kipi.core.memory import free_memory
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.progress import NULL, ProgressReporter
 
-#: Each worker holds the whole board; more than this rarely helps and costs memory.
-MAX_WORKERS = 8
+#: A worker's memory: Python and its libraries, plus this many times the board's file
+#: (its copy of the board, its indexes and what it builds; Thor's demo: 21 MB, ~370 MB).
+WORKER_BYTES = 256 * 2**20
+WORKER_BOARD_FILES = 16
+#: Of the memory free, the share the workers may take.
+MEMORY_SHARE = 0.5
+#: Most workers where the free memory can't be read.
+UNKNOWN_MEMORY_WORKERS = 8
 #: Set to 1 to do everything in one process.
 SERIAL_ENV = "KIPI_SERIAL"
 #: What a pool that can't start or has broken raises.
@@ -46,8 +56,18 @@ def workers(n_tasks: int) -> int:
     """How many processes to run ``n_tasks`` tasks in; 0 to run them here."""
     if os.environ.get(SERIAL_ENV) == "1" or not can_spawn():
         return 0
-    n = min((os.cpu_count() or 1) - 1, MAX_WORKERS, n_tasks)
+    n = min(spare(), n_tasks)
     return n if n >= 2 else 0
+
+
+def fit(n: int, board_bytes: int) -> int:
+    """Of ``n`` workers, how many memory holds with a board file of ``board_bytes``:
+    at least 2, since the caller wants a pool."""
+    free = free_memory()
+    if free is None:
+        return min(n, UNKNOWN_MEMORY_WORKERS)
+    each = WORKER_BYTES + WORKER_BOARD_FILES * board_bytes
+    return max(min(n, int(MEMORY_SHARE * free // each)), min(n, 2))
 
 
 def _renamed() -> bool:
@@ -83,7 +103,8 @@ def _start(path: str, colors):
 
 
 class BoardPool:
-    """``n`` worker processes holding ``snap``; with ``colors``, the 3D view's layer
+    """Up to ``n`` worker processes holding ``snap``, as many as memory holds (:attr:`n`);
+    with ``colors``, the 3D view's layer
     colors set in each. A context manager: leaving it stops the workers, dropping tasks
     not yet started."""
 
@@ -95,11 +116,12 @@ class BoardPool:
         try:
             with os.fdopen(fd, "wb") as f:
                 pickle.dump(dataclasses.replace(snap), f, protocol=pickle.HIGHEST_PROTOCOL)
+                self.n = fit(n, f.tell())
             # Spawned everywhere: forking a process with Qt's threads running is unsafe.
             if _renamed():
                 _spawn_renamed()
             self._pool = cf.ProcessPoolExecutor(
-                n, mp_context=multiprocessing.get_context("spawn"),
+                self.n, mp_context=multiprocessing.get_context("spawn"),
                 initializer=_start, initargs=(self._path, colors))
         except BaseException:
             _remove(self._path)

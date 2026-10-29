@@ -2618,8 +2618,8 @@ machine; otherwise install the graphics card's driver. On a laptop with two grap
 Windows' <b>Graphics settings</b> can set Python to the high-performance one.</p>
 <p>Building the view of a large board is the slow part, and that runs on the processor, not
 the graphics card: shaping each net's copper, and the solder masks and silkscreens, into
-triangles. On a board with many nets KiPI builds them in several processes at once, up to
-eight, so the view comes in several times sooner on a processor with many cores; Task
+triangles. On a board with many nets KiPI builds them in several processes at once, one for
+each core but one (as many as half the free memory holds), so the view comes in several times sooner on a processor with many cores; Task
 Manager shows those processes while it does. If a computer can't start them, KiPI builds
 the view in one process as before and the Log says why. To build in one process anyway, set
 the environment variable <code>KIPI_SERIAL=1</code>.</p>

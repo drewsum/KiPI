@@ -26,6 +26,13 @@ milestones rather than versions that were ever set.
   18 s rather than 65 s, and each one after it 12 s rather than 56 s, with the same
   impedances. If the Schur complement fails, KiPI warns and solves each port as before;
   without PARDISO nothing changes.
+- **Every core is used, not at most eight** (#226). Building the 3D view, meshing for a
+  solve, testing points against copper, and an AC sweep's frequencies without PARDISO were
+  each split across at most eight processes or threads. They now use every core but one,
+  counting only the cores KiPI is allowed to run on. Each worker process holds its own copy
+  of the board, so the view and the meshes start only as many as half the free memory
+  holds (eight where the free memory can't be read). On a 20-thread processor, KiCad's
+  Jetson AGX Thor demo builds its 3D view in about 9.5 s rather than 22 s.
 
 ## 0.9.5
 

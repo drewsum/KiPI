@@ -96,6 +96,7 @@ def _in_pool(snap, left: List[str], cache, n: int, progress, wanted: list):
     coatings if ``wanted[0]``, clearing it once they are."""
     from kipi.core.viz import meshes
     with BoardPool(snap, n, dict(meshes._layer_colors)) as pool:
+        n = pool.n
         progress.debug(f"Building {len(left)} net(s) in {n} processes")
         # The biggest nets first, so a ground plane isn't left to finish on its own; a
         # net bigger than a worker's share is built a layer to a task.
