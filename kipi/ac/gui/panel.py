@@ -26,7 +26,7 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
-from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
+from kipi.ac.gui.caps import add_file_buttons, describe_cap, models_from_values, new_cap
 from kipi.ac.gui.packages import PackageEditor, describe as describe_package, new_package
 from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel, Probe
 from kipi.ac.package import open_removed_dies, sync_die_probes
@@ -706,6 +706,7 @@ class ACPanel(QWidget, PartSelection):
                             "none yet (capacitance read from the value; enter ESL and ESR)")
         b_values.clicked.connect(self._models_from_values)
         self.cap_list.layout().insertWidget(0, b_values)
+        add_file_buttons(self.cap_list, self)
         self.probe_list = ItemList(lambda: self.setup.probes, ProbeEditor(self),
                                    self._new_probe, self._describe_probe, noun="probe")
         # A probe on a DC load's pins, picked from a dropdown of the setup's loads and

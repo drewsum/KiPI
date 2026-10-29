@@ -513,13 +513,7 @@ class PISetup:
             stackup=d.get("stackup") or None,
             legacy_laminate_k=float(d.get("thermal", {}).get("laminate_k_w_mk") or 0.0),
             settings=_settings(d.get("settings", {}), known),
-            caps=[CapModel(c["name"], c.get("capacitance_f", 0.0), c.get("esl_h", 0.0),
-                           c.get("esr_ohm", 0.0), list(c.get("refs", [])),
-                           c.get("rated_v"),
-                           c.get("kept_at_rated_pct", DEFAULT_KEPT_AT_RATED_PCT),
-                           c.get("dielectric", ""), c.get("aging_pct_per_decade", 0.0),
-                           c.get("mfg_tolerance_pct"), SpiceRef.from_dict(c.get("spice")))
-                  for c in d.get("caps", [])],
+            caps=[cap_from_dict(c) for c in d.get("caps", [])],
             probes=[Probe(p["name"], pin(p["rail"]), pin(p["ground"]), p.get("target_ohm"),
                           p.get("target_hz"), bool(p.get("target_custom", False)),
                           [(float(f), float(z)) for f, z in p.get("target_points", [])],
@@ -656,6 +650,15 @@ def link_bias(setup: PISetup, link: DcLink) -> float:
     amps += sum(_estimated_input(setup, groups, v) for v in setup.vrms
                 if v.input and v.input.net in side)
     return float(amps)
+
+
+def cap_from_dict(c: dict) -> CapModel:
+    """A capacitor model from its saved data (the setup file's, or a model file's, #229)."""
+    return CapModel(c["name"], c.get("capacitance_f", 0.0), c.get("esl_h", 0.0),
+                    c.get("esr_ohm", 0.0), list(c.get("refs", [])), c.get("rated_v"),
+                    c.get("kept_at_rated_pct", DEFAULT_KEPT_AT_RATED_PCT),
+                    c.get("dielectric", ""), c.get("aging_pct_per_decade", 0.0),
+                    c.get("mfg_tolerance_pct"), SpiceRef.from_dict(c.get("spice")))
 
 
 def biased_link(setup: PISetup, link: DcLink,

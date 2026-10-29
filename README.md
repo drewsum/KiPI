@@ -315,7 +315,8 @@ adds:
 
 * **Capacitors tab**: RLC models (capacitance, ESL, ESR) for the decoupling capacitors, each
   shared by a group of identical parts, or the maker's SPICE model. **Models from values**
-  starts one model per capacitor value. Models can be derated for DC bias, temperature,
+  starts one model per capacitor value, and **Import…** / **Export…** move a model between
+  setups as a YAML file named after it. Models can be derated for DC bias, temperature,
   aging and tolerance. **Important**: model capacitors of the same value in different case
   sizes separately.
 * **Probes tab**: where to plot the PDN impedance, usually a device's supply and ground pins,

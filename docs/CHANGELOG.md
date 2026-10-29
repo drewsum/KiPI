@@ -14,6 +14,13 @@ milestones rather than versions that were ever set.
   that cannot, a factorization or an AC sweep's first frequency, is predicted from its
   unknowns and how long steps of about that size took before on this computer, which KiPI
   keeps in `timings.json` in its data folder; the first solve of a kind has no estimate.
+- **Capacitor model files** (#229). **Export…** in the Capacitors tab (AC and Coupled
+  Noise) writes the selected model to a YAML file named after it: its capacitance, ESL
+  and ESR, voltage rating and the capacitance kept at it, dielectric, aging rate,
+  manufacturing tolerance and SPICE model (the subcircuit's text and fitted values).
+  **Import…** adds the models in one or more such files to the setup, with no parts yet;
+  a name already taken gets " (2)". The parts that use a model belong to the board, so
+  they are not saved. Without PyYAML the file is written as JSON, which YAML reads too.
 
 ### Fixed
 - **The AC transient follows the VRM's load line** (#227). A VRM with a **Load line**

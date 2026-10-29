@@ -24,7 +24,7 @@ from qtpy.QtWidgets import (
     QSlider, QSpinBox, QTableWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from kipi.ac.gui.caps import describe_cap, models_from_values, new_cap
+from kipi.ac.gui.caps import add_file_buttons, describe_cap, models_from_values, new_cap
 from kipi.ac.gui.panel import CapEditor
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.nets import classify_nets, sorted_nets
@@ -828,6 +828,7 @@ class NoisePanel(QWidget, PartSelection):
                             "none yet (capacitance read from the value; enter ESL and ESR)")
         b_values.clicked.connect(self._models_from_values)
         self.cap_list.layout().insertWidget(0, b_values)
+        add_file_buttons(self.cap_list, self)
         self.victim_list = ItemList(lambda: self.setup.victims, VictimEditor(self),
                                     self._new_victim, self._describe_victim, noun="victim")
         self.tabs.addTab(self.agg_list, "Aggressors")

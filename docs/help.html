@@ -1457,6 +1457,14 @@ are required.</p>
     among the capacitors that have none yet, named after the value, with the capacitance read
     from it, and the voltage rating when the value gives one (<code>10uF 6.3V X5R</code>).
     Enter ESL and ESR yourself.</td></tr>
+  <tr><td><b>Import…</b> / <b>Export…</b></td><td class="wrap">Export writes the selected
+    model to a YAML file named after it (<code>GRM188R61A226ME15.yml</code>): its
+    capacitance, ESL and ESR, voltage rating and the capacitance kept at it, dielectric,
+    aging, manufacturing tolerance and SPICE model, everything but the parts that use it.
+    Import adds the models in one or more such files, e.g. to reuse a part's model on
+    another board; each starts with no parts, so tick the capacitors that use it. A model
+    whose name is taken is imported as <i>name</i> (2). The same buttons are in the Coupled
+    Noise mode's Capacitors tab.</td></tr>
   <tr><td>Capacitance</td><td class="wrap">Per part, with no DC bias. For a ceramic, enter
     its <b>Voltage rating</b> to estimate DC bias, or enter the effective value at the rail's
     voltage if the datasheet gives it.</td></tr>

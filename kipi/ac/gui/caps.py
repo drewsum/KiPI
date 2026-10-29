@@ -1,14 +1,15 @@
 """The capacitor-model list's helpers, shared by the AC and Coupled Noise panels (#69).
 
 Both panels edit the same models (``PISetup.caps``) with :class:`kipi.ac.gui.panel.CapEditor`;
-these make, describe and bulk-create them.
+these make, describe, bulk-create, export and import them.
 """
 
 from __future__ import annotations
 
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
-from qtpy.QtWidgets import QMessageBox, QWidget
+from qtpy.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QPushButton, QWidget
 
 from kipi.ac.checks import capacitor_candidates
 from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel
@@ -68,3 +69,81 @@ def models_from_values(parent: QWidget, snapshot: BoardSnapshot, setup: PISetup,
                                    dielectric=diel,
                                    aging_pct_per_decade=AGING_PCT_PER_DECADE.get(diel, 0.0)))
     return True
+
+
+FILE_FILTER = "KiPI capacitor model (*.yml *.yaml *.json)"
+
+
+def export_cap(parent: QWidget, m: Optional[CapModel], start: str = "") -> Optional[Path]:
+    """Write ``m`` to a YAML file named after it (#229), where the user picks; the path,
+    or None if cancelled."""
+    from kipi.ac import cap_file
+    if m is None:
+        return None
+    name = cap_file.file_name(m)
+    path, _ = QFileDialog.getSaveFileName(parent, "Export capacitor model",
+                                          str(Path(start) / name) if start else name,
+                                          FILE_FILTER)
+    if not path:
+        return None
+    try:
+        return cap_file.write(path, m)
+    except OSError as e:
+        QMessageBox.warning(parent, "KiPI", f"Could not write {path}:\n{e}")
+        return None
+
+
+def import_caps(parent: QWidget, setup: PISetup, start: str = "") -> List[str]:
+    """Add the models in the YAML files the user picks to ``setup`` (#229), renamed where
+    a model of that name exists; their names (none: cancelled or nothing read)."""
+    from kipi.ac import cap_file
+    paths, _ = QFileDialog.getOpenFileNames(parent, "Import capacitor models", start,
+                                            FILE_FILTER)
+    added, failed = [], []
+    for path in paths:
+        try:
+            m = cap_file.read(path)
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            failed.append(f"{Path(path).name}: {e}")
+            continue
+        # " (2)", not _unique's counting on: a part number ending ...ME15 is not ...ME16.
+        taken, base, k = {x.name for x in setup.caps}, m.name, 2
+        while m.name in taken:
+            m.name, k = f"{base} ({k})", k + 1
+        setup.caps.append(m)
+        added.append(m.name)
+    if failed:
+        QMessageBox.warning(parent, "KiPI", "Could not import:\n" + "\n".join(failed))
+    return added
+
+
+def add_file_buttons(cap_list, panel) -> None:
+    """Import… and Export… under a panel's capacitor-model list (#229). ``panel`` has
+    ``setup``, ``snapshot`` and ``_on_changed``."""
+    row = QHBoxLayout()
+    b_import = QPushButton("Import…")
+    b_import.setToolTip("Add capacitor models from model files (YAML) exported from KiPI, "
+                        "e.g. from another board's setup. They start with no parts: tick "
+                        "the capacitors that use each one.")
+    b_export = QPushButton("Export…")
+    b_export.setToolTip("Write the selected capacitor model to a YAML file named after it: "
+                        "its values, DC bias, dielectric, aging, tolerance and SPICE "
+                        "model, without the parts that use it, to import into another "
+                        "setup")
+
+    def start() -> str:
+        snap = panel.snapshot
+        return str(snap.project_dir) if snap is not None and snap.project_dir else ""
+
+    def do_import():
+        names = import_caps(panel, panel.setup, start())
+        if names:
+            cap_list.reload()
+            cap_list.select_name(names[-1])
+            panel._on_changed()
+
+    b_import.clicked.connect(do_import)
+    b_export.clicked.connect(lambda: export_cap(panel, cap_list.current(), start()))
+    row.addWidget(b_import)
+    row.addWidget(b_export)
+    cap_list.layout().insertLayout(1, row)
