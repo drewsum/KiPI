@@ -41,9 +41,10 @@ class _Notes(ProgressReporter):
         self.said.append((level, text))
 
 
-def _layer(net: str, ids: Sequence[str], lid: int, opts: MeshOptions, features: np.ndarray):
+def _layer(net: str, ids: Sequence[str], lid: int, opts: MeshOptions, features: np.ndarray,
+           far=None):
     notes = _Notes()
-    return mesh_layer(workers.board(), net, lid, ids, opts, features, notes), notes.said
+    return mesh_layer(workers.board(), net, lid, ids, opts, features, notes, far), notes.said
 
 
 def _area(poly) -> float:
@@ -82,15 +83,15 @@ class Pooled:
     """Layers being meshed in a pool; :meth:`layers` gives a net's as they come in."""
 
     def __init__(self, snap: BoardSnapshot, jobs, opts: MeshOptions, features,
-                 tasks: List[Tuple[str, int]], n: int):
-        self.snap, self.opts, self.features = snap, opts, features
+                 tasks: List[Tuple[str, int]], n: int, far=None):
+        self.snap, self.opts, self.features, self.far = snap, opts, features, far
         self.ids = dict(jobs)
         self.pool = workers.BoardPool(snap, n)
         self.futures: Dict[Tuple[str, int], cf.Future] = {}
         try:
             for net, lid in tasks:
                 self.futures[net, lid] = self.pool.submit(
-                    _layer, net, self.ids[net], lid, opts, features[net, lid][0])
+                    _layer, net, self.ids[net], lid, opts, features[net, lid][0], far)
         except BaseException:
             self.close()
             raise
@@ -118,7 +119,7 @@ class Pooled:
                                   "left in one")
             progress.check_cancel()
             out.append(mesh_layer(self.snap, net, cu.id, self.ids[net], self.opts,
-                                  self.features[net, cu.id][0], progress))
+                                  self.features[net, cu.id][0], progress, self.far))
         return out
 
     def close(self):
@@ -126,7 +127,8 @@ class Pooled:
 
 
 def mesh_layers(snap: BoardSnapshot, jobs: Sequence[Tuple[str, Sequence[str]]],
-                opts: MeshOptions, features, progress: ProgressReporter) -> Optional[Pooled]:
+                opts: MeshOptions, features, progress: ProgressReporter,
+                far=None) -> Optional[Pooled]:
     """``jobs``' layers started in a pool, the largest first; None to mesh them here (a
     small mesh, or no pool to be had)."""
     sizes = {(net, cu.id): estimate(snap, net, cu.id, opts, len(features[net, cu.id][0]))
@@ -139,7 +141,7 @@ def mesh_layers(snap: BoardSnapshot, jobs: Sequence[Tuple[str, Sequence[str]]],
         return None
     tasks = sorted(sizes, key=sizes.get, reverse=True)
     try:
-        pooled = Pooled(snap, jobs, opts, features, tasks, n)
+        pooled = Pooled(snap, jobs, opts, features, tasks, n, far)
     except workers.POOL_ERRORS as e:
         progress.warn(f"Could not mesh in {n} processes ({e}); meshing in one")
         return None

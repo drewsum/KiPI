@@ -136,17 +136,22 @@ def mesh_rail_and_ground(snap: BoardSnapshot, rail_nets: Sequence[str],
         raise ACError(f"Pads are not on the rail or its ground: {stray}")
     # Via grading only near the rail: far stitching vias carry almost none of its
     # current, and grading them is most of a large board's mesh (#123).
-    graded = None
-    if ac_settings.grade_near_rail_only:
-        graded = near_rail(snap, rail_nets, terminal_ids, dc_settings.circle_quad_segs)
+    # Coarser ground far from the rail, every piece of copper kept (#228).
+    coarsen = ac_settings.coarsen_far
+    zone = None
+    if ac_settings.grade_near_rail_only or coarsen:
+        zone = near_rail(snap, rail_nets, terminal_ids, dc_settings.circle_quad_segs)
     opts = MeshOptions(max_edge_mm=ac_settings.max_edge_mm,
                        min_angle_deg=dc_settings.min_angle_deg,
                        simplify_mm=dc_settings.simplify_mm,
                        circle_quad_segs=dc_settings.circle_quad_segs,
-                       min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading)
+                       min_edge_mm=ac_settings.min_edge_mm, grading=ac_settings.grading,
+                       far_max_edge_mm=ac_settings.far_max_edge_mm if coarsen else None)
     jobs = [(net, [pid for pid in terminal_ids if pad_net.get(pid) == net]) for net in nets]
     with progress.timed("Meshing rail and ground"):
-        meshes = mesh_many(snap, jobs, opts, progress, graded)
+        meshes = mesh_many(snap, jobs, opts, progress,
+                           zone if ac_settings.grade_near_rail_only else None,
+                           zone if coarsen else None)
     kinds = [1 if net in gnd_nets else 0 for net in nets]
     mesh = combine_meshes(meshes, " + ".join(nets), [c.id for c in snap.stackup.copper])
     node_kind = np.concatenate([np.full(m.n_nodes, k, dtype=np.int8)

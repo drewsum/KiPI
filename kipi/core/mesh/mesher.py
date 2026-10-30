@@ -194,12 +194,14 @@ def _triangulate(data: dict, switches: str, cap: int) -> dict:
 
 
 def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: float,
-                 min_angle: float, size_fn=None, warn=None) -> Tuple[np.ndarray, np.ndarray]:
+                 min_angle: float, size_fn=None, warn=None,
+                 points: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
     """Quality-mesh a polygon (with holes) honoring extra constraint lines inside it.
 
     ``size_fn(xy) -> h`` optionally gives the desired edge length at triangle centroids;
-    the mesh is then refined once more with per-triangle area limits. ``warn(text)``
-    receives notes when the mesher has to fall back.
+    the mesh is then refined once more with per-triangle area limits. ``points`` ((N, 2),
+    inside the polygon) are made nodes. ``warn(text)`` receives notes when the mesher has
+    to fall back.
     """
     warn = warn or (lambda _t: None)
     clipped_constraints = [g for g in (_clip_constraint(c, poly) for c in constraints)
@@ -215,6 +217,8 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
             return None
         if pslg_problems(verts, segs):
             raise MeshCapHit()      # treat malformed input like a non-converging mesh
+        if points is not None and len(points):
+            verts = np.vstack([verts, points])
         data = {"vertices": verts, "segments": segs}
         if holes:
             data["holes"] = np.array([[h.x, h.y] for h in holes])
@@ -276,6 +280,81 @@ def graded_size(features: np.ndarray, h_min: float, h_max: float, grading: float
         d = np.maximum(dist - radius[idx], 0.0)
         return np.clip(h_min + grading * d, h_min, h_max)
     return size
+
+
+def zone_size(features: np.ndarray, opts: "MeshOptions", far):
+    """:func:`graded_size`, and with ``far`` (#228), edges that grow by ``far_grading`` a mm
+    beyond ``far.margin`` of what it measures from, to ``far_max_edge_mm``."""
+    if far is None:
+        return graded_size(features, opts.min_edge_mm, opts.max_edge_mm, opts.grading)
+    lo, hi = opts.max_edge_mm, max(opts.far_max_edge_mm, opts.max_edge_mm)
+    graded = graded_size(features, opts.min_edge_mm, hi, opts.grading)
+
+    def size(xy: np.ndarray) -> np.ndarray:
+        h = np.clip(lo + opts.far_grading * (far.distance(xy) - far.margin), lo, hi)
+        return h if graded is None else np.minimum(h, graded(xy))
+    return size
+
+
+def trim_far_holes(poly: Polygon, far, opts: "MeshOptions",
+                   own_holes: np.ndarray) -> Tuple[Polygon, np.ndarray]:
+    """``poly`` with its holes beyond ``far.margin`` trimmed (#228), each of which costs a
+    ring of fine triangles though, far from what the mesh is for, little of its current
+    passes them. Those no wider than ``far_fill_mm`` (antipads, the net's own drills) are
+    filled, the net's own holes among them to be joined at their centers instead, which
+    are returned to be made nodes. The others are kept, outlined to ``far_simplify_mm``:
+    zone fills trace their arcs finely, and every short edge seeds fine triangles."""
+    none = np.zeros((0, 2))
+    rings = list(poly.interiors)
+    if not rings:
+        return poly, none
+    b = np.array([r.bounds for r in rings])
+    size = np.maximum(b[:, 2] - b[:, 0], b[:, 3] - b[:, 1])
+    is_far = far.distance((b[:, :2] + b[:, 2:]) / 2) - size / 2 > far.margin
+    if not is_far.any():
+        return poly, none
+    fill = is_far & (size <= opts.far_fill_mm)
+    kept = [r for r, f in zip(rings, fill) if not f]
+    out = Polygon(poly.exterior, kept)
+    if opts.far_simplify_mm > 0:
+        coarse = [Polygon(r).simplify(opts.far_simplify_mm).exterior if f else r
+                  for r, f, gone in zip(rings, is_far, fill) if not gone]
+        trial = Polygon(poly.exterior, [r for r in coarse if len(r.coords) >= 4])
+        if trial.is_valid:              # else a coarser hole would cross another
+            out = trial
+    pts = none
+    if len(own_holes) and fill.any():
+        tree = STRtree([Polygon(r) for r, f in zip(rings, fill) if f])
+        hit, _ = tree.query(shapely.points(own_holes[:, :2]), predicate="intersects")
+        pts = own_holes[np.unique(hit), :2]
+    return out, pts
+
+
+def far_dead_ends(polys: Sequence[Polygon], far, own_holes: np.ndarray,
+                  terminals: Sequence[BaseGeometry]) -> np.ndarray:
+    """Which of ``polys`` are islands wholly beyond ``far.margin`` that touch at most one
+    of the net's plated holes (#228) and no terminal: no current can pass through such
+    an island, so leaving it out changes nothing but the mesh's size."""
+    out = np.zeros(len(polys), dtype=bool)
+    if not len(polys):
+        return out
+    b = shapely.bounds(np.asarray(polys, dtype=object))
+    centers = (b[:, :2] + b[:, 2:]) / 2
+    reach = np.hypot(b[:, 2] - b[:, 0], b[:, 3] - b[:, 1]) / 2
+    cand = np.flatnonzero(far.distance(centers) - reach > far.margin)
+    if not len(cand):
+        return out
+    outlines = [Polygon(polys[k].exterior) for k in cand]
+    holes = np.zeros(len(cand), dtype=int)
+    if len(own_holes):
+        k, _ = STRtree(shapely.points(own_holes[:, :2])).query(outlines, predicate="contains")
+        holes = np.bincount(k, minlength=len(cand))
+    dead = holes <= 1
+    if terminals:
+        k, _ = STRtree(list(terminals)).query(outlines, predicate="intersects")
+        dead[k] = False
+    out[cand[dead]] = True
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -375,10 +454,21 @@ class MeshOptions:
     # connected only at a contact inside them (#207); None: every pad is equipotential.
     large_pad_mm2: Optional[float] = None
     pad_contact_share: float = 0.25    # an SMD contact's share of its pad's area
+    # Beyond a zone's margin (#228: the AC solve's rail) edges grow by far_grading a mm to
+    # far_max_edge_mm, holes no wider than far_fill_mm are filled and the others outlined
+    # to far_simplify_mm, and dead-end islands are left out; None: no zone.
+    far_max_edge_mm: Optional[float] = None
+    far_grading: float = 0.5
+    far_fill_mm: float = 2.0
+    far_simplify_mm: float = 0.05
 
     @property
     def max_area(self) -> float:
         return math.sqrt(3) / 4 * self.max_edge_mm ** 2
+
+    @property
+    def far_max_area(self) -> float:
+        return math.sqrt(3) / 4 * max(self.far_max_edge_mm or 0.0, self.max_edge_mm) ** 2
 
 
 @dataclass
@@ -388,6 +478,7 @@ class LayerMesh:
     points: np.ndarray
     tris: np.ndarray
     skipped_rings: int
+    dead_ends: int = 0          # far islands left out (#228, far_dead_ends)
 
 
 def _terminals(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str]) -> List[Pad]:
@@ -401,9 +492,11 @@ def _terminals(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str]) -
 
 def mesh_layer(snap: BoardSnapshot, net: str, lid: int, terminal_pad_ids: Sequence[str],
                opts: MeshOptions, features: np.ndarray,
-               progress: ProgressReporter = NULL) -> Optional[LayerMesh]:
+               progress: ProgressReporter = NULL, far=None) -> Optional[LayerMesh]:
     """``net``'s copper on layer ``lid`` meshed, refined toward the plated holes
-    ``features`` ((x, y, radius) rows); None where it has none."""
+    ``features`` ((x, y, radius) rows); None where it has none. With ``far`` (#228) and
+    ``opts.far_max_edge_mm``, the mesh coarsens beyond ``far.margin`` of what
+    ``far.distance(xy)`` measures from."""
     cu = snap.stackup.layer(lid)
     _, vias, pads, _ = snap.items_on_net(net)
     terminals = _terminals(snap, net, terminal_pad_ids)
@@ -422,27 +515,39 @@ def mesh_layer(snap: BoardSnapshot, net: str, lid: int, terminal_pad_ids: Sequen
         contact = _contact_geom(p, lid, opts)
         if contact is not None and not contact.equals(_pad_geom(p, lid)):
             constraints.append(contact.boundary)
-    size_fn = graded_size(features, opts.min_edge_mm, opts.max_edge_mm, opts.grading)
+    if not opts.far_max_edge_mm:
+        far = None
+    size_fn = zone_size(features, opts, far)
+    max_area = opts.max_area if far is None else opts.far_max_area
+    own_holes = _hole_features(snap, net, lid) if far is not None else None
     ring_centers = _via_ring_centers(vias, pads, lid, set(terminal_pad_ids))
-    all_pts, all_tris, n, skipped = [], [], 0, 0
-    for poly in iter_polygons(geom):
-        if poly.area < 1e-6:
-            continue
+    all_pts, all_tris, n, skipped, n_dead = [], [], 0, 0, 0
+    polys = [poly for poly in iter_polygons(geom) if poly.area >= 1e-6]
+    dead_end = (far_dead_ends(polys, far, own_holes, terminal_geoms) if far is not None
+                else np.zeros(len(polys), dtype=bool))
+    for poly, gone in zip(polys, dead_end):
         if _is_dead_via_ring(poly, ring_centers, terminal_geoms):
             skipped += 1
             continue
-        pts, tris = mesh_polygon(poly, constraints, opts.max_area, opts.min_angle_deg,
-                                 size_fn, warn=progress.warn)
+        if gone:
+            n_dead += 1
+            continue
+        extra = None
+        if far is not None:
+            poly, extra = trim_far_holes(poly, far, opts, own_holes)
+        pts, tris = mesh_polygon(poly, constraints, max_area, opts.min_angle_deg,
+                                 size_fn, warn=progress.warn, points=extra)
         if len(tris) == 0:
             continue
         all_pts.append(pts)
         all_tris.append(tris + n)
         n += len(pts)
     if not all_pts:
-        return LayerMesh(lid, np.zeros((0, 2)), np.zeros((0, 3), dtype=np.int64), skipped)
+        return LayerMesh(lid, np.zeros((0, 2)), np.zeros((0, 3), dtype=np.int64), skipped,
+                         n_dead)
     tris = np.vstack(all_tris)
     progress.info(f"  {cu.name}: {n} nodes, {len(tris)} triangles")
-    return LayerMesh(lid, np.vstack(all_pts), tris, skipped)
+    return LayerMesh(lid, np.vstack(all_pts), tris, skipped, n_dead)
 
 
 def _features(snap: BoardSnapshot, net: str, lid: int,
@@ -460,18 +565,22 @@ def mesh_net(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str] = ()
              circle_quad_segs: int = 2, min_edge_mm: float = 0.02, grading: float = 0.2,
              large_pad_mm2: Optional[float] = None, pad_contact_share: float = 0.25,
              progress: ProgressReporter = NULL,
-             graded: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> NetMesh:
+             graded: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+             far=None, far_max_edge_mm: Optional[float] = None) -> NetMesh:
     """The net's copper meshed per layer, joined through its plated holes. The mesh is
     refined toward the holes; ``graded``, if given, picks which (a test of their xy, the
-    AC solve's holes near the rail, #123)."""
+    AC solve's holes near the rail, #123); ``far`` with ``far_max_edge_mm`` coarsens it
+    away from the rail (#228, :func:`mesh_layer`)."""
     opts = MeshOptions(max_edge_mm, min_angle_deg, simplify_mm, circle_quad_segs,
-                       min_edge_mm, grading, large_pad_mm2, pad_contact_share)
-    return mesh_many(snap, [(net, terminal_pad_ids)], opts, progress, graded)[0]
+                       min_edge_mm, grading, large_pad_mm2, pad_contact_share,
+                       far_max_edge_mm)
+    return mesh_many(snap, [(net, terminal_pad_ids)], opts, progress, graded, far)[0]
 
 
 def mesh_many(snap: BoardSnapshot, jobs: Sequence[Tuple[str, Sequence[str]]],
               opts: Optional[MeshOptions] = None, progress: ProgressReporter = NULL,
-              graded: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> List[NetMesh]:
+              graded: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+              far=None) -> List[NetMesh]:
     """Each of ``jobs``' nets (with its terminal pad ids) meshed as by :func:`mesh_net`.
     A large job's layers are meshed in several processes (#211); the meshes are the
     same either way."""
@@ -482,7 +591,7 @@ def mesh_many(snap: BoardSnapshot, jobs: Sequence[Tuple[str, Sequence[str]]],
         _terminals(snap, net, ids)                  # pads not on the net stop it here
     features = {(net, lid): _features(snap, net, lid, graded)
                 for net, _ in jobs for lid in layers}
-    pooled = parallel.mesh_layers(snap, jobs, opts, features, progress)
+    pooled = parallel.mesh_layers(snap, jobs, opts, features, progress, far)
     try:
         out = []
         for k, (net, ids) in enumerate(jobs):
@@ -494,7 +603,7 @@ def mesh_many(snap: BoardSnapshot, jobs: Sequence[Tuple[str, Sequence[str]]],
                 for li, lid in enumerate(layers):
                     progress.check_cancel()
                     meshed.append(mesh_layer(snap, net, lid, ids, opts, features[net, lid][0],
-                                             progress))
+                                             progress, far))
                     progress.fraction((k + (li + 1) / len(layers)) / len(jobs))
             else:
                 meshed = pooled.layers(net, progress)
@@ -525,6 +634,7 @@ def _join(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str],
     _, vias, pads, _ = snap.items_on_net(net)
     terminals = _terminals(snap, net, terminal_pad_ids)
     skipped_rings = sum(m.skipped_rings for m in meshed)
+    dead_ends = sum(m.dead_ends for m in meshed)
     meshed = [m for m in meshed if len(m.tris)]
     if not meshed:
         raise MeshError(f"Net {net} has no copper to mesh")
@@ -631,6 +741,9 @@ def _join(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str],
                       f"as copper, connected at their plated hole or the central "
                       f"{opts.pad_contact_share:.0%} of their area")
 
+    if dead_ends:
+        progress.info(f"Left out {dead_ends} island(s) of copper far from the rail that touch "
+                      "at most one plated hole: no current passes through them")
     if skipped_rings:
         progress.info(f"Skipped {skipped_rings} isolated via/PTH ring(s): with nothing else "
                       "attached they cannot carry current")

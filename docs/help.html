@@ -1742,6 +1742,16 @@ Distribution System Design Methodology and Capacitor Selection for Modern CMOS T
     be most of the mesh on a board stitched with many. All the copper is kept either way, so
     the low-frequency return still takes every path it has. On an 8-layer board it halved the
     solve and changed the impedance by under 0.002 %.</td></tr>
+  <tr><td>Coarsen far from the rail, up to</td><td class="wrap">On by default, 5 mm. Beyond the
+    same margin the elements grow from <b>Max edge</b> by half a mm per mm to this size, holes
+    up to 2 mm across (antipads, ground vias) are filled, the ground vias joined at their
+    centers instead, and islands that touch at most one plated hole, which no current passes
+    through, are left out. A small rail on a large board's ground is otherwise mostly a mesh
+    of ground it hardly uses: on a 10-layer board a 300 mm² rail went from 2.2 M unknowns to
+    0.8 M and solved in a third of the time, its impedance moved by at most 0.05 %. A rail
+    spread over the whole board has little far ground and gains little. Every other piece of
+    copper is kept, so the low-frequency return still takes every path. Untick it to mesh the
+    whole ground at <b>Max edge</b>.</td></tr>
 </table>
 <p>The via plating rules come from the DC setup's Mesh tab; copper resistivity and the
 dielectric <b>Loss tangent</b> and <b>Default εr</b> from the
@@ -2610,7 +2620,7 @@ README) for a direct solve of up to 1M unknowns, or more while memory allows.</p
 <summary>Solves are slow</summary>
 <div class="body"><p>Raise <b>Max edge</b>, analyze fewer nets at once, and untick unneeded groups
 in the Solve tab. In AC, lower <b>Field solves per decade</b>, raise <b>Min edge</b>, or check
-that <b>Grade only near the rail</b> is ticked. Large planes
+that <b>Grade only near the rail</b> and <b>Coarsen far from the rail</b> are ticked. Large planes
 are cheap; long fine traces are not. PARDISO helps a lot on large boards (Windows and Linux,
 x86-64): it solves DC systems directly as long as the factorization fits in half the free
 memory, and the Log says <i>Direct solve</i> for those. Without it, an AC or Coupled Noise solve works on several field frequencies at once,

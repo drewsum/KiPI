@@ -248,6 +248,10 @@ class ACSettings:
     # Grade the mesh only at plated holes near the rail (#123, kipi.ac.solver.near_rail);
     # off: at every hole of the rail and its ground.
     grade_near_rail_only: bool = True
+    # Beyond the same margin, let the mesh coarsen to far_max_edge_mm and fill the small
+    # holes (#228, kipi.core.mesh.mesher.trim_far_holes); off: max_edge_mm everywhere.
+    coarsen_far: bool = True
+    far_max_edge_mm: float = 5.0
     # Dielectric
     loss_tangent: float = 0.02
     default_er: float = 4.3               # where the stackup has no dielectric constant

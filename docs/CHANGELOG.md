@@ -32,6 +32,19 @@ milestones rather than versions that were ever set.
   drawn about it. The VRM's Load line field is no longer grayed in AC mode.
 
 ### Changed
+- **A small rail on a large board's ground solves several times faster** (#228). Beyond
+  the margin already used for via grading (five board thicknesses of the rail's copper and
+  parts, at least 5 mm), the AC mesh now coarsens: its elements grow from Max edge to
+  **Coarsen far from the rail, up to** (Mesh tab, 5 mm), holes up to 2 mm across
+  (antipads, ground vias) are filled, the ground vias joined at their centers instead, the
+  outlines of larger holes are traced more coarsely, and islands of copper that touch at
+  most one plated hole, which no current passes through, are left out. All other copper
+  is kept, so the low-frequency return still takes every path it has. On the 10-layer
+  Jetson AGX Thor demo board a 300 mm² rail went from 2.2 M unknowns to 0.8 M and from
+  138 s to 45 s, its impedance moved by at most 0.05 %. A rail spread over the whole
+  board has little far ground and gains little (3.2 M unknowns to 2.4 M, in the same
+  time; 0.02 % up to 100 MHz, 0.3 % at a 270 MHz resonance). Coupled Noise's board model
+  meshes the same way.
 - **AC sweeps with many capacitors are several times faster** (#225). With PARDISO, each
   frequency's factorization now also gives the board's Schur complement on the port
   terminals, from which the impedance between every pair of ports follows directly. The

@@ -326,7 +326,8 @@ adds:
   CMOS Technology"](https://doi.org/10.1109/6040.784476), IEEE Trans. Adv. Packaging, 1999.
   Targets apply above the VRM's **Control loop bandwidth**.
 * **Sweep tab**: frequency range and resolution, and the capacitor deratings.
-* **Mesh tab**: mesh size and minimum edge at plated holes.
+* **Mesh tab**: mesh size and minimum edge at plated holes. Ground far from the rail is
+  meshed coarsely, every piece of copper that can carry current kept.
 
 | Capacitor models | Target calculator |
 |---|---|
