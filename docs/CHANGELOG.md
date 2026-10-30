@@ -32,6 +32,11 @@ milestones rather than versions that were ever set.
   drawn about it. The VRM's Load line field is no longer grayed in AC mode.
 
 ### Changed
+- **A new icon** (#73), drawn by hand: the plugin's toolbar icons, the window and taskbar
+  icon, the About and welcome screens' animated logo and the README's. The animated logo
+  still flashes its planes through a voltage drop, temperature and current density map.
+  `tools/make_icons.py` makes every size, the .ico and the animation from
+  `resources/kipi_1080.png`.
 - **A small rail on a large board's ground solves several times faster** (#228). Beyond
   the margin already used for via grading (five board thicknesses of the rail's copper and
   parts, at least 5 mm), the AC mesh now coarsens: its elements grow from Max edge to
