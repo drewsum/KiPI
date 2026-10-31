@@ -3,7 +3,8 @@
 Each iteration solves every rail and ground group with copper resistivity at the
 current temperature, gathers all the heat on the board (copper and barrel losses of
 every group, DC-connection parts, VRM conversion losses and, if asked for, the heat the
-loads put out) onto one grid, and solves the board temperature. The user chooses how many
+loads put out) onto one grid, and solves the board temperature, with any edge boundaries
+(#221) held at their temperatures. The user chooses how many
 iterations to run; the change in peak temperature per iteration is reported so
 convergence can be judged.
 """
@@ -36,11 +37,13 @@ class ThermalResult:
     dielectrics: list = field(default_factory=list)      # (material, mm, Dielectric) used
     load_heat_w: Dict[str, float] = field(default_factory=dict)   # per load, if included
     layers: List[int] = field(default_factory=list)     # copper layer id of each temps layer
+    edge_w: List[tuple] = field(default_factory=list)   # (name, degC, W taken) per edge boundary
 
     def __setstate__(self, state):
         # Results saved before load heat was an option (#62), broken down by kind, or
         # solved per layer: those have one (ny, nx) sheet for every layer.
-        self.__dict__.update({"load_heat_w": {}, "heat_by_kind": {}, "layers": [], **state})
+        self.__dict__.update({"load_heat_w": {}, "heat_by_kind": {}, "layers": [], "edge_w": [],
+                              **state})
         if "temps" in state and np.ndim(self.temps) == 2:
             self.temps = np.asarray(self.temps)[None]
 
@@ -48,6 +51,14 @@ class ThermalResult:
         """"copper 0.12 W, loads 1.4 W, ..." largest first."""
         return ", ".join(f"{k} {w:.3g} W" for k, w in
                          sorted(self.heat_by_kind.items(), key=lambda kv: -kv[1]))
+
+    def edges_text(self) -> str:
+        """"; edges held: Frame at 60 °C takes 1.2 W" (#221), or "" without any."""
+        if not self.edge_w:
+            return ""
+        return "; edges held: " + ", ".join(
+            f"{name} at {t:g} °C {'takes' if w >= 0 else 'gives'} {abs(w):.3g} W"
+            for name, t, w in self.edge_w)
 
     @property
     def t_max(self) -> float:
@@ -250,6 +261,9 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
         new = model.solve(heat)
         dt = float(np.nanmax(np.abs(new - temps)))
         temps = new
+        edge_w = model.edge_heat(temps)
+        for name, t, w in edge_w:
+            progress.info(f"  edge {name} at {t:g} °C takes {w * 1e3:.1f} mW")
         history.append({"iteration": it, "heat_w": heat_total, "t_max": float(np.nanmax(temps)),
                         "dt_max": dt})
         progress.info(f"Iteration {it}: {heat_total * 1e3:.1f} mW into the board, peak "
@@ -257,7 +271,7 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
                       f"max change {dt:.3f} °C")
     tree.thermal = ThermalResult(thermal, model.x, model.y, temps, history, heat_w=heat_total,
                                  heat_by_kind=by_kind, dielectrics=model.dielectrics,
-                                 load_heat_w=loads_w, layers=model.layers)
+                                 load_heat_w=loads_w, layers=model.layers, edge_w=edge_w)
     tree.solve_s = time.perf_counter() - t0
     if n > 1 and history[-1]["dt_max"] > 0.05 * max(history[-1]["t_max"] - thermal.ambient_c, 1e-9):
         tree.warnings.append(f"Electro-thermal solve may not have settled: the last iteration "

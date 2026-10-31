@@ -15,8 +15,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from qtpy.QtCore import QObject, QSettings, QSize, Qt, Signal
-from qtpy.QtGui import QGuiApplication, QMovie, QPixmap
+from qtpy.QtCore import QObject, QSettings, Qt, Signal
+from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QMessageBox, QPushButton,
     QVBoxLayout, QWidget,
@@ -55,7 +55,8 @@ def icon_path() -> Optional[Path]:
 
 
 def animated_icon_path() -> Optional[Path]:
-    """The icon with its planes flashing through the result maps (also the README logo)."""
+    """The icon with its planes flashing through the result maps: the README logo, and
+    what the splash and About play if they cannot read the frame strip (see logo.py)."""
     p = _RESOURCES / "kipi.gif"
     return p if p.is_file() else None
 
@@ -235,11 +236,10 @@ class AboutDialog(QDialog):
         self.setWindowTitle(f"About {NAME}")
 
         icon = QLabel(self)
-        self.movie = self._animate(icon)
-        path = icon_path()
-        if self.movie is None and path is not None:
-            icon.setPixmap(QPixmap(str(path)).scaled(
-                ICON_SIZE, ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        from kipi.gui import logo     # it imports this module
+        self.movie = logo.animate(icon, ICON_SIZE, self)
+        if self.movie is None:
+            logo.still(icon, ICON_SIZE)
         icon.setAlignment(Qt.AlignTop)
 
         dep_rows = "".join(f"<tr><td>{html.escape(k)}</td><td>&nbsp;&nbsp;{html.escape(v)}</td></tr>"
@@ -373,18 +373,3 @@ class AboutDialog(QDialog):
             self._show_stats(parse_stats(data))
         except RuntimeError:   # the dialog was deleted while the fetch ran
             pass
-
-    def _animate(self, label: QLabel) -> Optional[QMovie]:
-        """Play the animated icon, or None to fall back to the still one: the GIF can be
-        missing, and some Qt builds ship without the GIF image plugin."""
-        path = animated_icon_path()
-        if path is None:
-            return None
-        movie = QMovie(str(path), parent=self)
-        if not movie.isValid():
-            return None
-        movie.setScaledSize(QSize(ICON_SIZE, ICON_SIZE))
-        label.setMovie(movie)
-        movie.setSpeed(200)
-        movie.start()
-        return movie

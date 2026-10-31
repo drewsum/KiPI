@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from qtpy.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from kipi import __version__  # noqa: E402
-from kipi.gui import about  # noqa: E402
+from kipi.gui import about, logo  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -35,13 +35,14 @@ def test_dialog_names_the_version_and_repo(app):
 def test_dialog_icon_is_animated(app):
     assert about.animated_icon_path() is not None
     d = about.AboutDialog()
-    assert d.movie is not None and d.movie.frameCount() > 1
-    assert any(lb.movie() is d.movie for lb in d.findChildren(QLabel))
+    assert isinstance(d.movie, logo.LogoPlayer) and d.movie.frameCount() > 1
+    assert d.movie.label.pixmap().width() == about.ICON_SIZE * d.movie.dpr
 
 
 def test_dialog_falls_back_to_the_still_icon_without_gif_support(app, monkeypatch):
-    # As on a Qt build without the GIF image plugin: QMovie cannot read the file.
-    monkeypatch.setattr(about.QMovie, "isValid", lambda self: False)
+    # No frame strip, and a Qt build without the GIF image plugin: QMovie cannot read it.
+    monkeypatch.setattr(logo, "frames_path", lambda: None)
+    monkeypatch.setattr(logo.QMovie, "isValid", lambda self: False)
     d = about.AboutDialog()
     assert d.movie is None
     assert any(lb.pixmap() is not None and not lb.pixmap().isNull()
@@ -53,7 +54,8 @@ def test_toolbar_has_stackup_help_and_about_after_open_results(app, no_3d):
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
     names = [a.text() for a in w.findChild(QToolBar).actions() if a.text()]
-    assert names[-5:] == ["Open results…", "Stackup", "Power tree", "Help", "About"]
+    assert names[-6:] == ["Open results…", "Stackup", "Power tree", "Tolerance", "Help",
+                          "About"]
     w.act_power_tree.trigger()                       # the power tree window (#58) opens
     assert w.power_tree_window is not None and w.power_tree_window.isVisible()
     w.close()

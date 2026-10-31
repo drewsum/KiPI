@@ -4,7 +4,46 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.6 (in development)
+## 0.9.7 (in development)
+
+### Added
+- **Tolerance stack-up** (#167). A **Tolerance** button beside **Power tree** (Ctrl+Shift+T)
+  opens a window of its own (like Power tree's), a diagram of how the tolerances add up at
+  its top (Diagram hides it), with a row for each load ticked in its **Loads** pane (those
+  with a tolerance, with Select all and Select none; none at first), grouped under its VRM. Each side is added apart: the DC drop (the mean of the load's pins)
+  plus the VRM's DC accuracy against the DC tolerance; the ripple at the load's AC probe
+  (Coupled Noise; several switchers as the root sum of squares) plus the AC transient's
+  undershoot or overshoot against the AC tolerance; all of them against the tolerance; and a
+  PASS/FAIL per load once every part is known (a FAIL as soon as one is exceeded). Values
+  come from the results loaded now, solved or opened; a new one is highlighted until
+  clicked (or **Accept all new**), and kept values are saved, with where and when they came
+  from, in a tolerance file of their own (`<board>.kipi-tolerance.yml` beside the setup,
+  opened with the board; **Open…**, **Save** and **Save as…** in the window), so the modes
+  can be run one at a time. A part not known yet is
+  greyed with what to run. Values show in mV, % or volts; **20 MHz limit** takes the ripple
+  and transient through a scope's bandwidth limit; **Report** writes one load's stack-up as
+  a web page or PDF.
+- **Board edge boundaries** (#221). The Thermal tab has an optional **Edge boundaries**
+  row: **Edit…** opens a top-down view of the board where you mark stretches of its edge
+  to hold at a fixed temperature, as a conduction-cooled heatframe, cold wall or wedge
+  lock does. Click an edge to take its straight side, or drag along it to take part of
+  it; each boundary has a name, a temperature and the width of the strip it clamps. Every
+  copper layer in that strip is held at the temperature, and the Thermal tab, the Notes and
+  the HTML report say how much heat each boundary takes from the board. A solve without
+  boundaries is unchanged: the board loses heat by convection alone. Boundaries are saved
+  with the setup.
+
+### Fixed
+- **A sharp logo on the splash and in About** (#231). The animated logo looked rough: a
+  GIF has only 256 colours and pixels that are either fully transparent or fully opaque,
+  so the outline was jagged, and Qt then scaled it down again, and up again on a display
+  scaled above 100 %. Both now play a strip of full-colour frames with smooth edges
+  (`resources/kipi_frames.png`, made by `tools/make_icons.py` at twice the splash's size),
+  scaled once for the display they are on. The GIF stays as the README logo, and is
+  played instead if the strip cannot be read; the still icon is now sharp on scaled
+  displays too.
+
+## 0.9.6
 
 ### Added
 - **Time left in the status bar** (#224). While a solve runs, the spinner at the right end

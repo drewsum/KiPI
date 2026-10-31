@@ -57,8 +57,15 @@ MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"),
 VIEW_KEYS = {"iso": "Home", "top": "Z", "bottom": "Shift+Z"}
 KEYS = {"open": "Ctrl+O", "reload": "F5", "save": "Ctrl+S", "screenshot": "F12",
         "results": "Ctrl+Shift+O", "stackup": "Ctrl+L", "power_tree": "Ctrl+T",
+        "tolerance": "Ctrl+Shift+T",
         "help": "F1", "solve": "Ctrl+Return", "cancel": "Esc", "dc": "Ctrl+1", "ac": "Ctrl+2",
         "noise": "Ctrl+3"}
+
+
+def _now() -> str:
+    """When a solve finished, as the Tolerance window notes it."""
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 def with_keys(tip: str, keys: str) -> str:
@@ -209,6 +216,7 @@ class MainWindow(QMainWindow):
         self._build_left_panel()
         self._build_log_dock()
         self._build_solve_dock()
+        self._build_tolerance_window()
         self._build_shortcuts()
         self.stackup_window = StackupWindow(self)
         self.stackup_window.stackup_changed.connect(self._stackup_changed)
@@ -286,6 +294,11 @@ class MainWindow(QMainWindow):
                                   "Block diagram of the setup: VRMs (by type), rails, series "
                                   "links, loads and capacitors, in the direction power flows",
                                   KEYS["power_tree"])
+        self.act_tolerance = act("Tolerance", self.show_tolerance,
+                                 "Each load's tolerance stack-up: DC drop, VRM accuracy, ripple "
+                                 "and transient against its DC, AC and total tolerances, from "
+                                 "the DC, AC and Noise results",
+                                 KEYS["tolerance"])
         tb.addSeparator()
         self.act_help = act("Help", self.show_help, "Open the KiPI user guide in your browser",
                             KEYS["help"])
@@ -433,6 +446,49 @@ class MainWindow(QMainWindow):
         if self.power_tree_window is None:
             self.power_tree_window = PowerTreeWindow(self)
         self.power_tree_window.show_tree(self.solve_panel.setup, self.snapshot)
+
+    def _build_tolerance_window(self):
+        """The Tolerance window (#167): a window of its own, as Power tree's is, hidden
+        until asked for. It is built now so it hears of every result as it comes."""
+        from kipi.tolerance.gui.table import ToleranceWindow
+        self.tolerance_window = ToleranceWindow(self)
+        self.tolerance_view = self.tolerance_window.view
+        self.tolerance_view.log = self.log
+        self.tolerance_view.report_requested.connect(self._tolerance_report)
+        for panel in self._panels().values():
+            panel.setup_changed.connect(self.tolerance_view.refresh)
+
+    def show_tolerance(self):
+        w = self.tolerance_window
+        if w.isMinimized():
+            w.showNormal()
+        w.show()
+        w.raise_()
+        w.activateWindow()
+        self.tolerance_view.refresh()
+
+    def _sync_tolerance(self):
+        """The Tolerance window on the setup now, with the AC and Noise results the panels
+        still hold."""
+        v = self.tolerance_view
+        v.keep(self.ac_panel.held_results(), self.noise_panel.held_results())
+        v.set_setup(self.solve_panel.setup)
+
+    def _tolerance_report(self, name: str, fmt: str):
+        row = self.tolerance_view.stack_of(name)
+        if row is None:
+            return
+        from kipi.tolerance.report import report_name, write_load_report
+        load, st, fresh = row
+        table = self.tolerance_view.data
+        entry = copy.deepcopy(table.entries.get(name))
+        bw, hints = table.bw_limit, dict(fresh.hints)
+        board = self.snapshot.board_name if self.snapshot else ""
+        self._write_report(
+            "tolerance", lambda p, progress: write_load_report(p, board, load, st, entry, bw,
+                                                               hints),
+            self._report_path(report_name(self._results_stem(), name, fmt=fmt)),
+            lambda path: self.log(f"Wrote the tolerance report of {name} to {path}"))
 
     def _refresh_power_tree(self):
         w = self.power_tree_window
@@ -1498,6 +1554,8 @@ class MainWindow(QMainWindow):
             panel.set_board(snap, setup)
         self.setup_bar.set_label(label)
         self._refresh_power_tree()
+        self.tolerance_view.open_default(snap.board_name, project_dir)
+        self._sync_tolerance()
         self.plot.clear()
         self.board_map.clear()
         self.transient_plot.clear()
@@ -1569,6 +1627,7 @@ class MainWindow(QMainWindow):
         for panel in self._panels().values():
             panel.set_board(self.snapshot, setup)
         self._refresh_power_tree()
+        self._sync_tolerance()
         self.setup_bar.set_label(f"{label} - not saved")
         # Last in the Log, under the notes, so it is the line in view.
         self.log(f"== Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
@@ -1594,11 +1653,13 @@ class MainWindow(QMainWindow):
             self.log(f"Could not save the setup: {e}", logging.WARNING)
 
     # ------------------------------------------------------------ solve
-    def _set_tree(self, tree, scenes):
+    def _set_tree(self, tree, scenes, source: str = "DC solve", when: str = ""):
         """The DC result every other part of the window reads: the capacitors' DC bias in
-        an AC solve (#74) and the DC drop in the AC target calculator."""
+        an AC solve (#74), the DC drop in the AC target calculator and the Tolerance
+        window (#167), which notes ``source`` and ``when``."""
         self._tree, self._scenes = tree, scenes
         self.ac_panel.set_dc_result(tree)
+        self.tolerance_view.set_dc(tree, source, when or _now())
 
     def run_solve(self, setup):
         snap = self.snapshot
@@ -1765,6 +1826,7 @@ class MainWindow(QMainWindow):
                 self.ac_panel.show_error(error)
                 return
             self.ac_panel.show_result(result)
+            self.tolerance_view.add_ac(result, "AC solve", _now())
 
         def partial(board_map):
             """The solve's board map as it fills: shown while the rail solves."""
@@ -1820,6 +1882,7 @@ class MainWindow(QMainWindow):
                 self.noise_panel.show_error(error)
                 return
             self.noise_panel.show_result(result)
+            self.tolerance_view.add_noise(result, "Noise solve", _now())
 
         def partial(result):
             """The waveforms, shown while the coupling solves."""
@@ -1863,6 +1926,8 @@ class MainWindow(QMainWindow):
             self.log(f"Results are for {data['board']}, not {self.snapshot.board_name}",
                      logging.WARNING)
         left_out = self.noise_panel.load_results(data["results"])
+        self.tolerance_view.set_noise(self.noise_panel.held_results(), Path(path).name,
+                                      str(data.get("saved", "")))
         if left_out:
             self.log(f"No aggressor in the setup named {', '.join(left_out)}; their results "
                      f"were left out", logging.WARNING)
@@ -2048,7 +2113,8 @@ class MainWindow(QMainWindow):
             if self.snapshot is not None and data["board"] != self.snapshot.board_name:
                 self.log(f"Results are for {data['board']}, not {self.snapshot.board_name}",
                          logging.WARNING)
-            self._set_tree(data["tree"], data["scenes"])
+            self._set_tree(data["tree"], data["scenes"], Path(path).name,
+                           str(data.get("saved", "")))
             first = (self._tree.loads[0].group if self._tree.loads
                      else next(iter(self._tree.groups)))
             self.solve_panel.show_results(self._tree, first)
@@ -2122,6 +2188,8 @@ class MainWindow(QMainWindow):
             self.log(f"Results are for {data['board']}, not {self.snapshot.board_name}",
                      logging.WARNING)
         left_out = self.ac_panel.load_results(data["results"])
+        self.tolerance_view.set_ac(self.ac_panel.held_results(), Path(path).name,
+                                   str(data.get("saved", "")))
         if left_out:
             self.log(f"No VRM in the setup for rail(s) {', '.join(left_out)}; their results "
                      f"were left out", logging.WARNING)
@@ -2409,16 +2477,18 @@ class MainWindow(QMainWindow):
         self.setup_bar.set_unsaved(self._unsaved())
 
     def _keep_or_drop_changes(self) -> bool:
-        """The setup file is written only by Save. Before the setup is left (closing, or
-        reading a board again), ask about changes not saved; False means stay."""
-        if not self._unsaved():
-            return True
-        answer = QMessageBox.question(
-            self, "KiPI", "The PI setup has changes that are not saved. Save them?",
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
-        if answer == QMessageBox.Save:
-            self._save_setup()
-        return answer != QMessageBox.Cancel
+        """The setup and tolerance files are written only by Save. Before they are left
+        (closing, or reading a board again), ask about changes not saved; False means
+        stay."""
+        if self._unsaved():
+            answer = QMessageBox.question(
+                self, "KiPI", "The PI setup has changes that are not saved. Save them?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+            if answer == QMessageBox.Cancel:
+                return False
+            if answer == QMessageBox.Save:
+                self._save_setup()
+        return self.tolerance_view.keep_or_drop()
 
     # ============================================================ close
     def closeEvent(self, event):

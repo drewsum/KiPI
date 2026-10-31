@@ -1051,7 +1051,8 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      + f"; peak <b>{tmax:.1f} °C</b> at "
                      f"({x:.1f}, {y:.1f}) mm{th.peak_layer(snap.stackup)}. Ambient "
                      f"{th.settings.ambient_c:g} °C, airflow "
-                     f"{th.settings.airflow_m_s:g} m/s, {len(th.history)} iteration(s).</p>")
+                     f"{th.settings.airflow_m_s:g} m/s{_e(th.edges_text())}, "
+                     f"{len(th.history)} iteration(s).</p>")
         if getattr(th, "heat_by_kind", None):
             parts.append(f"<p>Heat by source: {_e(th.heat_breakdown())}.</p>")
         heat_rows = ([[_e(k), "load", _num(v)] for k, v in loads_w.items()] if with_loads

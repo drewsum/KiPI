@@ -191,6 +191,8 @@ ol.steps > li { margin-bottom: 6px; }
       </ol></li>
     <li><a href="#noise-solving">Solving an aggressor</a></li>
     <li><a href="#noise-results">Waveforms and parasitics</a></li>
+    <li class="group">Across modes</li>
+    <li><a href="#tolerance">Tolerance stack-up</a></li>
     <li class="group">Workflows</li>
     <li><a href="#workflows">Step-by-step workflows</a></li>
     <li class="group">Reference</li>
@@ -444,6 +446,9 @@ of decimals, plus more when a small typed value needs them.</p>
     them, are left out. Hover a block for its pins;
     drag to pan, <kbd>Ctrl</kbd> + wheel to zoom, <b>Save image…</b> for a PNG. It redraws
     as the setup changes.</td></tr>
+  <tr><td><b>Tolerance</b></td><td class="wrap">Opens the <a href="#tolerance">Tolerance
+    window</a>: each load's DC drop, VRM accuracy, ripple and transient against its DC, AC
+    and total tolerances, with a PASS/FAIL per load.</td></tr>
   <tr><td><b>Help</b> <kbd>F1</kbd></td><td class="wrap">Opens this guide in your web
     browser.</td></tr>
   <tr><td><b>About</b></td><td class="wrap">Version, author and project links, and how often
@@ -750,6 +755,8 @@ tooltip names its key. On macOS, <b>Ctrl</b> is the <b>Command</b> key.</p>
   <tr><td><b>Ctrl+Shift+O</b></td><td class="wrap"><b>Open results…</b></td></tr>
   <tr><td><b>Ctrl+L</b></td><td class="wrap">The <a href="#stackup">Stackup window</a></td></tr>
   <tr><td><b>Ctrl+T</b></td><td class="wrap">The <b>Power tree</b></td></tr>
+  <tr><td><b>Ctrl+Shift+T</b></td><td class="wrap">The <a href="#tolerance">Tolerance
+    window</a></td></tr>
   <tr><td><b>Ctrl+1</b> / <b>Ctrl+2</b> / <b>Ctrl+3</b></td><td class="wrap">DC / AC / Coupled Noise mode</td></tr>
   <tr><td><b>Ctrl+Enter</b></td><td class="wrap">Solve: <b>Solve all</b> in DC mode,
     <b>Solve rail</b> in AC mode, when the button can be pressed</td></tr>
@@ -1197,6 +1204,15 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     each load heats the board with the power it draws: the sum over its supply and ground
     pins of pin current × pin voltage, spread over those pins. A load without ground pins is
     taken as returning at 0 V.</td></tr>
+  <tr><td>Edge boundaries</td><td class="wrap">Optional. <b>Edit…</b> opens a top-down view
+    of the board where you mark stretches of its edge to hold at a fixed temperature, as a
+    conduction-cooled heatframe, cold wall or wedge lock does. Click an edge to take its
+    straight side, drag along it to take part of it, or press <b>Whole edge</b>. Each
+    boundary has a temperature and a <i>strip width</i>, how far in from the edge the frame
+    clamps (<i>edge cells</i>: the grid's cells along the edge alone). Every layer there is
+    held at the boundary's temperature, and the results say how much heat each boundary
+    takes from the board (or gives, if it is hotter). Without any, the board loses heat by
+    convection alone.</td></tr>
   <tr><td>Max copper temperature</td><td class="wrap">Optional limit: copper hotter than this
     on any layer is FAIL.</td></tr>
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
@@ -1205,7 +1221,8 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
 conversion loss and, with <b>Include load power dissipation</b>, the loads. Each copper layer
 has its own temperature: heat goes onto the layer it is made on (a part's on the layers of its
 pads), crosses the laminate to the layers above and below, and goes down plated holes on any
-net. Only the top and bottom layers lose heat to the air. The report's
+net. Only the top and bottom layers lose heat to the air; edge boundaries, if any, take
+heat from every layer. The report's
 <b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
@@ -2288,6 +2305,59 @@ the results: check it, as its currents have nowhere real to go.</p>
 </div>
 </details>
 
+<!-- ================================================================== TOLERANCE -->
+<h2 id="tolerance">Tolerance stack-up</h2>
+<details open>
+<summary>The Tolerance window: every result against each load's tolerances</summary>
+<div class="body">
+<p><b>Tolerance</b> on the toolbar (<b>Ctrl+Shift+T</b>) opens a window of its own, as
+<b>Power tree</b> does, which can be maximized, minimized or closed. A diagram at its top
+shows how the parts add up against each tolerance (untick <b>Diagram</b> to hide it). It has
+a row for each DC load ticked in the <b>Loads</b> pane on its left, as nets are in the main
+window's Nets pane (a new table shows none; <b>Select all</b> and <b>Select none</b> tick or
+untick the loads the filter lists). The pane lists the loads with a tolerance (DC setup,
+Loads: <b>Tolerance</b>, <b>DC tolerance</b> or <b>AC tolerance</b>). Rows are grouped under
+the VRM driving each load, and adds up what takes the load's voltage
+from nominal, each side apart:</p>
+<table>
+  <tr><th>Column</th><th>From</th></tr>
+  <tr><td>DC drop</td><td class="wrap">The DC solve: nominal less the load's effective voltage
+    (the mean of its pins). A boost counts on the side above.</td></tr>
+  <tr><td>VRM accuracy</td><td class="wrap">The VRM's DC accuracy, from the setup (grey: not
+    set, taken as 0).</td></tr>
+  <tr><td>DC sum</td><td class="wrap">DC drop + VRM accuracy, against the <b>DC
+    tolerance</b>.</td></tr>
+  <tr><td>Ripple</td><td class="wrap">Coupled Noise: the ripple's lowest and highest points at
+    the load's AC probe, from each aggressor that lists the probe under ripple probes.
+    Several aggressors add as the root sum of squares. "—": no switcher on the rail.</td></tr>
+  <tr><td>Transient</td><td class="wrap">AC: the undershoot and overshoot of the estimated
+    transient at the load's probe (it needs a load step and the VRM's bandwidth).</td></tr>
+  <tr><td>AC sum</td><td class="wrap">Ripple + transient, against the <b>AC
+    tolerance</b>.</td></tr>
+  <tr><td>Total</td><td class="wrap">Every part, against the <b>Tolerance</b>.</td></tr>
+  <tr><td>Verdict</td><td class="wrap">PASS once every tolerance the load has is met with all
+    its parts known; FAIL as soon as any is exceeded (parts only add, so a missing one cannot
+    rescue it); else <i>incomplete</i>.</td></tr>
+</table>
+<p>A load's probe is the AC probe on its pins (<b>Probe from load</b> in AC mode makes
+one). The window takes its values from the results loaded now, solved or opened from
+files, so the three modes can be run one at a time: a value new from them is highlighted;
+click it, or <b>Accept all new</b>, to keep it. A part no result gives yet is greyed,
+saying what to run.</p>
+<p>The table is a <b>tolerance file</b> of its own, apart from the setup:
+<code>&lt;board&gt;.kipi-tolerance.yml</code> beside the setup, opened with the board when it
+is there. It holds the kept values, with where and when each came from (so the table is there
+when the results are not), the loads ticked and the 20 MHz choice. <b>Save</b> writes it,
+<b>Save as…</b> writes another (one per board revision, say) and <b>Open…</b> opens one. The
+window's title names the file, with <b>*</b> while it has changes not saved; closing KiPI or
+reading the board again asks about them.</p>
+<p><b>Show</b> switches between mV and % from nominal and the voltage each side reaches.
+<b>20 MHz limit</b> takes the ripple and transient through a scope's 20 MHz bandwidth limit
+(both are kept, so it needs no new solve). <b>Report</b> writes the selected load's
+stack-up (each part, its source, the sums, margins and verdict) as a web page or PDF.</p>
+</div>
+</details>
+
 <!-- ================================================================== WORKFLOWS -->
 <h2 id="workflows">Step-by-step workflows</h2>
 
@@ -2444,6 +2514,10 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>&lt;board&gt;.kipi-setup.yml</code></td><td class="wrap">The setup: ticked nets, VRMs,
     loads, series links, mesh, copper and thermal settings, capacitor models, probes and the
     sweep, in YAML. Saved next to the board on <b>Save</b> and on every solve.</td></tr>
+  <tr><td><code>&lt;board&gt;.kipi-tolerance.yml</code></td><td class="wrap">The
+    <a href="#tolerance">Tolerance window</a>'s table: the values kept from the results, the
+    loads shown and the 20 MHz choice. Written by the window's <b>Save</b>; opened with the
+    board, or any other with <b>Open…</b>.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.json</code></td><td class="wrap">A setup saved by KiPI
     before 0.8.0. It still opens, with a warning, when there is no <code>.yml</code> setup;
     the next save writes the <code>.yml</code> and leaves the JSON file alone. JSON setups

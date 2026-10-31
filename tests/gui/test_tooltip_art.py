@@ -90,6 +90,9 @@ def test_every_drawing_shows_in_a_tooltip(app, no_3d):
     from kipi.gui.main_window import MainWindow
     w = MainWindow()
     tips = " ".join(c.toolTip() for c in w.findChildren(QWidget))
+    # Or shown in a window, as the Tolerance window's diagram is.
+    tips += " ".join(f"/{c.property('art')}-" for c in w.findChildren(QWidget)
+                     if c.property("art"))
     w.close()
     for name in ta.names():
         assert f"/{name}-" in tips, name
