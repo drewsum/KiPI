@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "updated": "2026-10-30T09:57:49Z",
+  "updated": "2026-10-31T09:35:43Z",
   "clones": {
-    "total": 7594,
+    "total": 8210,
     "since": "2026-10-04",
-    "uniques_14d": 664,
+    "uniques_14d": 605,
     "daily": {
       "2026-10-04": {
         "count": 0,
@@ -109,13 +109,17 @@
       "2026-10-29": {
         "count": 570,
         "uniques": 76
+      },
+      "2026-10-30": {
+        "count": 616,
+        "uniques": 35
       }
     }
   },
   "release_downloads": {
-    "total": 79,
+    "total": 85,
     "by_release": {
-      "v0.9.6": 2,
+      "v0.9.6": 8,
       "v0.9.5": 6,
       "v0.9.4": 10,
       "v0.9.3": 5,
