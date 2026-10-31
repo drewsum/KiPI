@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/drewsum/KiPI/actions/workflows/ci.yml/badge.svg)](https://github.com/drewsum/KiPI/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![KiCad 9.0+](https://img.shields.io/badge/KiCad-9.0%2B-314cb0.svg?logo=kicad&logoColor=white)](#requirements)
+[![KiCad 9.0.3+](https://img.shields.io/badge/KiCad-9.0.3%2B-314cb0.svg?logo=kicad&logoColor=white)](#requirements)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#requirements)
 [![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab.svg?logo=python&logoColor=white)](#requirements)
 
@@ -40,7 +40,7 @@ control in KiPI has a tooltip. This README is an overview; the user guide has th
 
 ![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
-**Status: 1.0.0 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
+**Status: 1.0.0 (stable)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
 
 ## Install
 
@@ -59,9 +59,10 @@ KiPI runs two ways, from the same folder:
 
 #### Requirements
 
-* **KiCad 9.0 or later.** Developed on KiCad 10 and confirmed on KiCad 9. Before 9.0.3,
-  KiCad cannot say which layers a plated pad has copper on, so pads are kept on every layer
-  (KiPI warns in its log), and 9.0.0 cannot report net classes.
+* **KiCad 9.0.3 or later.** Developed on KiCad 10 and confirmed on KiCad 9. The Plugin and
+  Content Manager offers KiPI from 9.0.3. A manual install still runs on 9.0.0 to 9.0.2,
+  with less: KiCad cannot say which layers a plated pad has copper on there, so pads are
+  kept on every layer (KiPI warns in its log), and 9.0.0 cannot report net classes.
 * **Python 3.10 to 3.13**, the one KiCad runs plugins with (some dependencies have no
   prebuilt packages for Python 3.14 yet).
   * **Windows:** KiCad's own Python 3.11. Nothing to do.

@@ -27,7 +27,7 @@
     "versions": [
         {
             "status": "stable",
-            "kicad_version": "9.0",
+            "kicad_version": "9.0.3",
             "runtime": "ipc",
             "platforms": ["windows", "macos", "linux"]
         }

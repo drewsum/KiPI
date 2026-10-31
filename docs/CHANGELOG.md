@@ -16,6 +16,11 @@ milestones rather than versions that were ever set.
   its sha256 and sizes, ready for the metadata repository. Release download counts in
   About now count the zips only.
 
+### Changed
+- **KiPI is stable.** The README no longer calls it alpha, and the minimum KiCad is now
+  9.0.3, which the Plugin and Content Manager package requires. A manual install still
+  runs on 9.0.0 to 9.0.2, with the limits the README lists.
+
 ## 0.9.7
 
 ### Added
