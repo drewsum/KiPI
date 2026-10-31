@@ -11,16 +11,17 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from qtpy.QtCore import Qt, Signal
-from qtpy.QtGui import QBrush, QColor, QFont
+from qtpy.QtCore import QEvent, QRectF, QSize, Qt, Signal
+from qtpy.QtGui import QBrush, QColor, QFont, QImage, QPainter
 from qtpy.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
+    QCheckBox, QComboBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSizePolicy,
+    QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from kipi.dc.pi import vunits
 from kipi.gui.report_option import ReportOption
-from kipi.gui.tooltip_art import art_tip
+from kipi.gui import tooltip_art
 from kipi.tolerance.evaluate import CHECK_NAMES, Stack, has_any_tolerance, pair, stack
 from kipi.tolerance.gather import Fresh, Gatherer, Loaded, driver
 from kipi.tolerance.model import KIND_NAMES, KINDS, Contribution
@@ -35,10 +36,68 @@ MISSING = QColor("#999")
 PASS, FAIL = QColor("#60d060"), QColor("#ff6060")
 EMPTY = ("Loads appear here once they have a tolerance (DC loads setup: Tolerance, DC "
          "tolerance or AC tolerance).")
+DIAGRAM = "tolerance_budget"            # the drawing above the table
 HINT = ("Each side adds apart: DC drop + VRM accuracy against the DC tolerance, ripple + "
         "transient against the AC tolerance, all of them against the tolerance. A "
         "highlighted value is new from the results loaded now: click it, or Accept all new, "
         "to keep it in the setup; Save writes it.")
+
+
+class Banner(QWidget):
+    """A drawing from kipi/gui/graphics shown in the window, in its palette (as the
+    tooltips' are): its own size where there is room, scaled down to the width where not.
+    Without SVG support it has nothing to show (:meth:`available` is False)."""
+
+    def __init__(self, name: str, parent=None):
+        super().__init__(parent)
+        self.name = name
+        self.setProperty("art", name)          # the drawing is in use (tooltip art test)
+        self._img: Optional[QImage] = None
+        self._w = self._h = 0
+        # Any width the window gives it (the drawing shrinks), its height from that width.
+        policy = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self._load()
+
+    def _load(self):
+        shown = tooltip_art.image(self.name, (), self.palette())
+        self._img = QImage(str(shown[0])) if shown else None
+        if self._img is not None and self._img.isNull():
+            self._img = None
+        self._w, self._h = (shown[1], shown[2]) if self._img is not None else (0, 0)
+        self.updateGeometry()
+        self.update()
+
+    def available(self) -> bool:
+        return self._img is not None
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.PaletteChange:
+            self._load()                       # a light or dark theme picked meanwhile
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, w: int) -> int:
+        return round(self._h * min(1.0, w / self._w)) if self._w else 0
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._w, self._h)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, self.heightForWidth(self.width()))
+
+    def paintEvent(self, event):
+        if self._img is None:
+            return
+        s = min(1.0, self.width() / self._w)
+        w, h = self._w * s, self._h * s
+        p = QPainter(self)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.drawImage(QRectF((self.width() - w) / 2, 0, w, h), self._img)
+        p.end()
 
 
 class ToleranceWindow(QDialog):
@@ -50,7 +109,7 @@ class ToleranceWindow(QDialog):
         self.setWindowTitle("KiPI — Tolerance stack-up")
         self.setWindowFlag(Qt.WindowMaximizeButtonHint, True)
         self.setWindowFlag(Qt.WindowMinimizeButtonHint, True)
-        self.resize(1250, 460)
+        self.resize(1250, 640)
         self.view = ToleranceView(self)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -88,6 +147,14 @@ class ToleranceView(QWidget):
         top.addWidget(QLabel("Show", self))
         top.addWidget(self.cmb_unit)
         top.addWidget(self.chk_bw)
+        self.banner = Banner(DIAGRAM, self)
+        self.chk_diagram = QCheckBox("Diagram", self)
+        self.chk_diagram.setToolTip("Show how the tolerances add up, above the table")
+        self.chk_diagram.setChecked(True)
+        self.chk_diagram.toggled.connect(self.banner.setVisible)
+        self.chk_diagram.setVisible(self.banner.available())
+        self.banner.setVisible(self.banner.available())
+        top.addWidget(self.chk_diagram)
         top.addStretch(1)
         top.addWidget(self.btn_accept)
         top.addWidget(self.report_option)
@@ -98,7 +165,7 @@ class ToleranceView(QWidget):
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setToolTip(art_tip(HINT, "tolerance_stack"))
+        self.table.setToolTip(HINT)
         self.table.cellClicked.connect(self._clicked)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.lbl = QLabel(self)
@@ -107,6 +174,7 @@ class ToleranceView(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(top)
+        lay.addWidget(self.banner)
         lay.addWidget(self.table, 1)
         lay.addWidget(self.lbl)
         self._headers()

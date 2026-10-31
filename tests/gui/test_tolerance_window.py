@@ -92,3 +92,33 @@ def test_the_window_takes_results_into_the_setup(app, no_3d, tmp_path, opened_in
         assert [Path(p) for p in opened_in_browser] == [written]
     finally:
         w.close()
+
+
+def test_the_diagram_sits_above_the_table_and_shrinks_to_fit(app):
+    from kipi.tolerance.gui.table import ToleranceWindow
+    win = ToleranceWindow()
+    v = win.view
+    try:
+        b = v.banner
+        assert b.available()
+        win.resize(1250, 640)
+        win.show()
+        app.processEvents()
+        assert b.isVisible() and b.geometry().bottom() < v.table.geometry().top()
+        assert b.height() == b.heightForWidth(b.width()) == 192          # full size
+        # It asks for no width of its own, and is as tall as the width it is given needs
+        # (the offscreen platform's top bar, without fonts, is too wide to shrink to).
+        assert b.minimumSizeHint().width() == 0
+        assert b.heightForWidth(450) == 96 and b.heightForWidth(2000) == 192
+        v.chk_diagram.setChecked(False)
+        assert not b.isVisible()
+    finally:
+        win.close()
+
+
+def test_without_svg_support_the_window_has_no_diagram(app, monkeypatch):
+    from kipi.gui import tooltip_art
+    from kipi.tolerance.gui.table import ToleranceView
+    monkeypatch.setattr(tooltip_art, "image", lambda *a, **k: None)
+    v = ToleranceView()
+    assert not v.banner.available() and v.banner.isHidden() and v.chk_diagram.isHidden()
