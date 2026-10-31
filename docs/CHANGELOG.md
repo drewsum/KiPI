@@ -9,8 +9,8 @@ milestones rather than versions that were ever set.
 ### Added
 - **Tolerance stack-up** (#167). A **Tolerance** button beside **Power tree** (Ctrl+Shift+T)
   opens a window of its own (like Power tree's), a diagram of how the tolerances add up at
-  its top (Diagram hides it), with a row for each load picked with **Loads…** (of those
-  with a tolerance; none at first), grouped under its VRM. Each side is added apart: the DC drop (the mean of the load's pins)
+  its top (Diagram hides it), with a row for each load ticked in its **Loads** pane (those
+  with a tolerance, with Select all and Select none; none at first), grouped under its VRM. Each side is added apart: the DC drop (the mean of the load's pins)
   plus the VRM's DC accuracy against the DC tolerance; the ripple at the load's AC probe
   (Coupled Noise; several switchers as the root sum of squares) plus the AC transient's
   undershoot or overshoot against the AC tolerance; all of them against the tolerance; and a

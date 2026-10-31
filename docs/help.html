@@ -2313,9 +2313,11 @@ the results: check it, as its currents have nowhere real to go.</p>
 <p><b>Tolerance</b> on the toolbar (<b>Ctrl+Shift+T</b>) opens a window of its own, as
 <b>Power tree</b> does, which can be maximized, minimized or closed. A diagram at its top
 shows how the parts add up against each tolerance (untick <b>Diagram</b> to hide it). It has
-a row for each DC load picked with <b>Loads…</b> (a new table shows none; it offers the loads
-with a tolerance: DC setup, Loads: <b>Tolerance</b>, <b>DC tolerance</b> or <b>AC
-tolerance</b>), grouped under the VRM driving it, and adds up what takes the load's voltage
+a row for each DC load ticked in the <b>Loads</b> pane on its left, as nets are in the main
+window's Nets pane (a new table shows none; <b>Select all</b> and <b>Select none</b> tick or
+untick the loads the filter lists). The pane lists the loads with a tolerance (DC setup,
+Loads: <b>Tolerance</b>, <b>DC tolerance</b> or <b>AC tolerance</b>). Rows are grouped under
+the VRM driving each load, and adds up what takes the load's voltage
 from nominal, each side apart:</p>
 <table>
   <tr><th>Column</th><th>From</th></tr>
@@ -2345,7 +2347,7 @@ saying what to run.</p>
 <p>The table is a <b>tolerance file</b> of its own, apart from the setup:
 <code>&lt;board&gt;.kipi-tolerance.yml</code> beside the setup, opened with the board when it
 is there. It holds the kept values, with where and when each came from (so the table is there
-when the results are not), the loads picked and the 20 MHz choice. <b>Save</b> writes it,
+when the results are not), the loads ticked and the 20 MHz choice. <b>Save</b> writes it,
 <b>Save as…</b> writes another (one per board revision, say) and <b>Open…</b> opens one. The
 window's title names the file, with <b>*</b> while it has changes not saved; closing KiPI or
 reading the board again asks about them.</p>

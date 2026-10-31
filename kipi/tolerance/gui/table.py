@@ -5,8 +5,8 @@ the load's DC, AC and total tolerances.
 The cells show what the tolerance file keeps (by default ``<board>.kipi-tolerance.yml``
 beside the setup, opened with the board). A value the results loaded now give differently is
 highlighted: clicking it (or Accept all new) takes it into the table, which Save then
-writes. A part no result gives yet is greyed, saying what to run. Only the loads picked with
-Loads… are shown; a new table shows none.
+writes. A part no result gives yet is greyed, saying what to run. Only the loads ticked in
+the Loads pane are shown; a new table shows none.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from typing import Dict, List, Optional
 from qtpy.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from qtpy.QtGui import QBrush, QColor, QFont, QImage, QPainter
 from qtpy.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QHeaderView,
-    QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QSplitter,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from kipi.dc.pi import vunits
@@ -42,7 +42,7 @@ MISSING = QColor("#999")
 PASS, FAIL = QColor("#60d060"), QColor("#ff6060")
 EMPTY = ("Loads can be shown here once they have a tolerance (DC loads setup: Tolerance, DC "
          "tolerance or AC tolerance).")
-NONE_PICKED = "No loads picked yet: Loads… picks the ones to show."
+NONE_PICKED = "No loads ticked yet: tick the ones to show under Loads, on the left."
 DIAGRAM = "tolerance_budget"            # the drawing above the table
 HINT = ("Each side adds apart: DC drop + VRM accuracy against the DC tolerance, ripple + "
         "transient against the AC tolerance, all of them against the tolerance. A "
@@ -131,45 +131,6 @@ class ToleranceWindow(QDialog):
                             + (" *" if v.unsaved() else ""))
 
 
-class LoadFilterDialog(QDialog):
-    """Which of the loads with a tolerance the table shows."""
-
-    def __init__(self, loads, shown, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Loads in the tolerance table")
-        self.list = QListWidget(self)
-        for ld in loads:
-            it = QListWidgetItem(f"{ld.name}  ({ld.supply.ref} on {ld.supply.net})", self.list)
-            it.setData(Qt.UserRole, ld.name)
-            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked if ld.name in shown else Qt.Unchecked)
-        btn_all = QPushButton("All", self)
-        btn_all.clicked.connect(lambda: self._check_all(Qt.Checked))
-        btn_none = QPushButton("None", self)
-        btn_none.clicked.connect(lambda: self._check_all(Qt.Unchecked))
-        box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
-        box.accepted.connect(self.accept)
-        box.rejected.connect(self.reject)
-        row = QHBoxLayout()
-        row.addWidget(btn_all)
-        row.addWidget(btn_none)
-        row.addStretch(1)
-        row.addWidget(box)
-        lay = QVBoxLayout(self)
-        lay.addWidget(QLabel("Show these loads (those with a tolerance):", self))
-        lay.addWidget(self.list, 1)
-        lay.addLayout(row)
-        self.resize(420, 420)
-
-    def _check_all(self, state):
-        for i in range(self.list.count()):
-            self.list.item(i).setCheckState(state)
-
-    def checked(self) -> List[str]:
-        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
-                if self.list.item(i).checkState() == Qt.Checked]
-
-
 class ToleranceView(QWidget):
     changed = Signal()                          # the table or its file changed
     report_requested = Signal(str, str)         # load name, "html" or "pdf"
@@ -196,10 +157,6 @@ class ToleranceView(QWidget):
         self.btn_save_as = QPushButton("Save as…", self)
         self.btn_save_as.setToolTip("Save the table to another tolerance file")
         self.btn_save_as.clicked.connect(self.save_as)
-        self.btn_loads = QPushButton("Loads…", self)
-        self.btn_loads.setToolTip("Pick the loads the table shows, of those with a tolerance. "
-                                  "Saved in the tolerance file.")
-        self.btn_loads.clicked.connect(self.pick_loads)
 
         self.cmb_unit = QComboBox(self)
         for unit, label in vunits.UNITS:
@@ -218,7 +175,7 @@ class ToleranceView(QWidget):
         self.report_option = ReportOption("the selected load's stack-up", self._report,
                                           lambda _fmt: None, self)
         top = QHBoxLayout()
-        for b in (self.btn_open, self.btn_save, self.btn_save_as, self.btn_loads):
+        for b in (self.btn_open, self.btn_save, self.btn_save_as):
             top.addWidget(b)
         top.addSpacing(12)
         top.addWidget(QLabel("Show", self))
@@ -248,13 +205,49 @@ class ToleranceView(QWidget):
         self.lbl = QLabel(self)
         self.lbl.setWordWrap(True)
         self.lbl.setStyleSheet("color: #999;")
+        right = QWidget(self)
+        lr = QVBoxLayout(right)
+        lr.setContentsMargins(0, 0, 0, 0)
+        lr.addWidget(self.banner)
+        lr.addWidget(self.table, 1)
+        lr.addWidget(self.lbl)
+        self.split = QSplitter(Qt.Horizontal, self)
+        self.split.addWidget(self._build_loads_pane())
+        self.split.addWidget(right)
+        self.split.setStretchFactor(1, 1)
+        self.split.setSizes([230, 1000])
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(top)
-        lay.addWidget(self.banner)
-        lay.addWidget(self.table, 1)
-        lay.addWidget(self.lbl)
+        lay.addWidget(self.split, 1)
         self._headers()
+
+    def _build_loads_pane(self) -> QGroupBox:
+        """The loads the table shows, ticked as nets are in the main window's Nets pane."""
+        g = QGroupBox("Loads", self)
+        self.load_filter = QLineEdit(g)
+        self.load_filter.setPlaceholderText("Filter loads…")
+        self.load_filter.setToolTip("Show only loads whose name, part or net contains this "
+                                    "text")
+        self.load_filter.textChanged.connect(self._apply_load_filter)
+        self.load_list = QListWidget(g)
+        self.load_list.setToolTip("Tick the loads the table shows, of those with a tolerance. "
+                                  "Saved in the tolerance file.")
+        self.load_list.itemChanged.connect(self._load_item_changed)
+        self.btn_all = QPushButton("Select all", g)
+        self.btn_all.setToolTip("Tick every load listed (those the filter shows)")
+        self.btn_all.clicked.connect(lambda: self._tick_listed(True))
+        self.btn_none = QPushButton("Select none", g)
+        self.btn_none.setToolTip("Untick every load listed (those the filter shows)")
+        self.btn_none.clicked.connect(lambda: self._tick_listed(False))
+        row = QHBoxLayout()
+        row.addWidget(self.btn_all, 1)
+        row.addWidget(self.btn_none, 1)
+        lay = QVBoxLayout(g)
+        lay.addWidget(self.load_filter)
+        lay.addWidget(self.load_list, 1)
+        lay.addLayout(row)
+        return g
 
     # ------------------------------------------------------------------ inputs
     def set_setup(self, setup) -> None:
@@ -347,10 +340,52 @@ class ToleranceView(QWidget):
         """The setup's loads with a tolerance, which the filter offers."""
         return [ld for ld in (self.setup.loads if self.setup else []) if has_any_tolerance(ld)]
 
-    def pick_loads(self) -> None:
-        d = LoadFilterDialog(self.candidates(), set(self.data.loads), self)
-        if d.exec() == QDialog.Accepted:
-            self.set_loads(d.checked())
+    def _fill_loads(self) -> None:
+        """The Loads pane: every load with a tolerance, ticked if the table shows it."""
+        shown = set(self.data.loads)
+        lst = self.load_list
+        loads = self.candidates()
+        lst.blockSignals(True)
+        if [ld.name for ld in loads] == [lst.item(i).data(Qt.UserRole)
+                                         for i in range(lst.count())]:
+            # The same loads: only the ticks (no rebuild under a click being handled).
+            for i in range(lst.count()):
+                want = Qt.Checked if lst.item(i).data(Qt.UserRole) in shown else Qt.Unchecked
+                if lst.item(i).checkState() != want:
+                    lst.item(i).setCheckState(want)
+            lst.blockSignals(False)
+            return
+        lst.clear()
+        for ld in loads:
+            it = QListWidgetItem(f"{ld.name}  ({ld.supply.ref} on {ld.supply.net})", lst)
+            it.setData(Qt.UserRole, ld.name)
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Checked if ld.name in shown else Qt.Unchecked)
+        lst.blockSignals(False)
+        self._apply_load_filter()
+
+    def _apply_load_filter(self, *_):
+        text = self.load_filter.text().strip().lower()
+        for i in range(self.load_list.count()):
+            it = self.load_list.item(i)
+            it.setHidden(bool(text) and text not in it.text().lower())
+
+    def _ticked(self) -> List[str]:
+        lst = self.load_list
+        return [lst.item(i).data(Qt.UserRole) for i in range(lst.count())
+                if lst.item(i).checkState() == Qt.Checked]
+
+    def _load_item_changed(self, _item):
+        self.set_loads(self._ticked())
+
+    def _tick_listed(self, on: bool) -> None:
+        lst = self.load_list
+        lst.blockSignals(True)
+        for i in range(lst.count()):
+            if not lst.item(i).isHidden():
+                lst.item(i).setCheckState(Qt.Checked if on else Qt.Unchecked)
+        lst.blockSignals(False)
+        self.set_loads(self._ticked())
 
     def set_loads(self, names: List[str]) -> None:
         """Show ``names`` of the loads offered; picks of loads the setup lacks now stay."""
@@ -435,6 +470,7 @@ class ToleranceView(QWidget):
     def _fill(self, *_):
         self._dirty = False
         self._headers()
+        self._fill_loads()
         t = self.table
         keep = self.selected_load()
         t.clearSpans()
@@ -630,8 +666,6 @@ class ToleranceView(QWidget):
 
     def _update_buttons(self):
         self.btn_accept.setEnabled(self.setup is not None and bool(self.pending()))
-        n, m = len(self.rows_shown()), len(self.candidates())
-        self.btn_loads.setText(f"Loads ({n} of {m})…")
         self.report_option.set_available(self.selected_load() is not None)
 
     def _report(self, fmt: str):

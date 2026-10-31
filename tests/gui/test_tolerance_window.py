@@ -61,10 +61,20 @@ def test_the_window_keeps_results_in_its_own_file(app, no_3d, tmp_path, opened_i
         assert win.windowFlags() & Qt.WindowMinimizeButtonHint
         t = v.table
         # A new table shows no loads until they are picked; only U2 has a tolerance.
-        assert t.rowCount() == 0 and "Loads…" in v.lbl.text()
-        assert [ld.name for ld in v.candidates()] == ["U2"]
-        assert v.btn_loads.text() == "Loads (0 of 1)…"
-        v.set_loads(["U2"])
+        assert t.rowCount() == 0 and "under Loads" in v.lbl.text()
+        lst = v.load_list
+        assert v.load_list.isVisible() and lst.count() == 1
+        assert lst.item(0).data(Qt.UserRole) == "U2" and lst.item(0).checkState() == Qt.Unchecked
+        v.btn_all.click()                                     # Select all
+        assert v.data.loads == ["U2"] and lst.item(0).checkState() == Qt.Checked
+        v.btn_none.click()                                    # Select none
+        assert v.data.loads == [] and t.rowCount() == 0
+        v.load_filter.setText("nothing like it")
+        assert lst.item(0).isHidden()
+        v.btn_all.click()                                     # only the loads listed
+        assert v.data.loads == []
+        v.load_filter.setText("")
+        lst.item(0).setCheckState(Qt.Checked)                 # a tick, as by a click
         assert v.unsaved() and win.windowTitle().endswith("tree.kipi-tolerance.yml *")
         assert [r is None for r in v._rows] == [True, False]
         assert t.item(0, 0).text().startswith("U1: +3V3")
@@ -103,6 +113,7 @@ def test_the_window_keeps_results_in_its_own_file(app, no_3d, tmp_path, opened_i
         assert v.save_as() and v.path == other and ToleranceTable.load(other).loads == []
         monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(path), ""))
         assert v.open_file() and v.path == path and v.data.loads == ["U2"]
+        assert lst.item(0).checkState() == Qt.Checked         # the pane follows the file
 
         # Closing asks about a table not saved, and Cancel keeps the window open.
         v.set_loads([])
