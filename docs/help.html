@@ -2313,10 +2313,10 @@ the results: check it, as its currents have nowhere real to go.</p>
 <p><b>Tolerance</b> on the toolbar (<b>Ctrl+Shift+T</b>) opens a window of its own, as
 <b>Power tree</b> does, which can be maximized, minimized or closed. A diagram at its top
 shows how the parts add up against each tolerance (untick <b>Diagram</b> to hide it). It has
-a row for every
-DC load with a tolerance (DC setup, Loads: <b>Tolerance</b>, <b>DC tolerance</b> or
-<b>AC tolerance</b>), grouped under the VRM driving it, and adds up what takes the load's
-voltage from nominal, each side apart:</p>
+a row for each DC load picked with <b>Loads…</b> (a new table shows none; it offers the loads
+with a tolerance: DC setup, Loads: <b>Tolerance</b>, <b>DC tolerance</b> or <b>AC
+tolerance</b>), grouped under the VRM driving it, and adds up what takes the load's voltage
+from nominal, each side apart:</p>
 <table>
   <tr><th>Column</th><th>From</th></tr>
   <tr><td>DC drop</td><td class="wrap">The DC solve: nominal less the load's effective voltage
@@ -2340,9 +2340,15 @@ voltage from nominal, each side apart:</p>
 <p>A load's probe is the AC probe on its pins (<b>Probe from load</b> in AC mode makes
 one). The window takes its values from the results loaded now, solved or opened from
 files, so the three modes can be run one at a time: a value new from them is highlighted;
-click it, or <b>Accept all new</b>, to keep it. Kept values are saved in the setup file
-(the setup's <b>Save</b>), with where and when each came from, so the table is there when
-the results are not. A part no result gives yet is greyed, saying what to run.</p>
+click it, or <b>Accept all new</b>, to keep it. A part no result gives yet is greyed,
+saying what to run.</p>
+<p>The table is a <b>tolerance file</b> of its own, apart from the setup:
+<code>&lt;board&gt;.kipi-tolerance.yml</code> beside the setup, opened with the board when it
+is there. It holds the kept values, with where and when each came from (so the table is there
+when the results are not), the loads picked and the 20 MHz choice. <b>Save</b> writes it,
+<b>Save as…</b> writes another (one per board revision, say) and <b>Open…</b> opens one. The
+window's title names the file, with <b>*</b> while it has changes not saved; closing KiPI or
+reading the board again asks about them.</p>
 <p><b>Show</b> switches between mV and % from nominal and the voltage each side reaches.
 <b>20 MHz limit</b> takes the ripple and transient through a scope's 20 MHz bandwidth limit
 (both are kept, so it needs no new solve). <b>Report</b> writes the selected load's
@@ -2505,7 +2511,11 @@ them a model or confirm they really do not belong on this rail.</p>
     It saves hours of reading datasheets and typing values in.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.yml</code></td><td class="wrap">The setup: ticked nets, VRMs,
     loads, series links, mesh, copper and thermal settings, capacitor models, probes and the
-    sweep, in YAML, and the values kept in the <a href="#tolerance">Tolerance window</a>. Saved next to the board on <b>Save</b> and on every solve.</td></tr>
+    sweep, in YAML. Saved next to the board on <b>Save</b> and on every solve.</td></tr>
+  <tr><td><code>&lt;board&gt;.kipi-tolerance.yml</code></td><td class="wrap">The
+    <a href="#tolerance">Tolerance window</a>'s table: the values kept from the results, the
+    loads shown and the 20 MHz choice. Written by the window's <b>Save</b>; opened with the
+    board, or any other with <b>Open…</b>.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.json</code></td><td class="wrap">A setup saved by KiPI
     before 0.8.0. It still opens, with a warning, when there is no <code>.yml</code> setup;
     the next save writes the <code>.yml</code> and leaves the JSON file alone. JSON setups

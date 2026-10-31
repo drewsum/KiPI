@@ -2,20 +2,25 @@
 driving it, adding the DC drop, the VRM's DC accuracy, the ripple and the transient against
 the load's DC, AC and total tolerances.
 
-The cells show what the setup keeps. A value the results loaded now give differently is
-highlighted: clicking it (or Accept all new) takes it into the setup, which Save then
-writes. A part no result gives yet is greyed, saying what to run.
+The cells show what the tolerance file keeps (by default ``<board>.kipi-tolerance.yml``
+beside the setup, opened with the board). A value the results loaded now give differently is
+highlighted: clicking it (or Accept all new) takes it into the table, which Save then
+writes. A part no result gives yet is greyed, saying what to run. Only the loads picked with
+Loads… are shown; a new table shows none.
 """
 
 from __future__ import annotations
 
+import copy
+import logging
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from qtpy.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from qtpy.QtGui import QBrush, QColor, QFont, QImage, QPainter
 from qtpy.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSizePolicy,
-    QTableWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QHeaderView,
+    QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -24,7 +29,8 @@ from kipi.gui.report_option import ReportOption
 from kipi.gui import tooltip_art
 from kipi.tolerance.evaluate import CHECK_NAMES, Stack, has_any_tolerance, pair, stack
 from kipi.tolerance.gather import Fresh, Gatherer, Loaded, driver
-from kipi.tolerance.model import KIND_NAMES, KINDS, Contribution
+from kipi.tolerance import model
+from kipi.tolerance.model import KIND_NAMES, KINDS, Contribution, ToleranceTable
 
 COLUMNS = ["Load", "Nominal", "DC drop", "VRM accuracy", "DC sum", "Ripple", "Transient",
            "AC sum", "Total", "Verdict"]
@@ -34,13 +40,14 @@ NEW_BG = QColor(255, 176, 0, 90)            # a value not accepted yet: amber, e
 GROUP_BG = QColor(128, 128, 128, 50)
 MISSING = QColor("#999")
 PASS, FAIL = QColor("#60d060"), QColor("#ff6060")
-EMPTY = ("Loads appear here once they have a tolerance (DC loads setup: Tolerance, DC "
+EMPTY = ("Loads can be shown here once they have a tolerance (DC loads setup: Tolerance, DC "
          "tolerance or AC tolerance).")
+NONE_PICKED = "No loads picked yet: Loads… picks the ones to show."
 DIAGRAM = "tolerance_budget"            # the drawing above the table
 HINT = ("Each side adds apart: DC drop + VRM accuracy against the DC tolerance, ripple + "
         "transient against the AC tolerance, all of them against the tolerance. A "
         "highlighted value is new from the results loaded now: click it, or Accept all new, "
-        "to keep it in the setup; Save writes it.")
+        "to keep it in the table; Save writes the tolerance file.")
 
 
 class Banner(QWidget):
@@ -111,22 +118,88 @@ class ToleranceWindow(QDialog):
         self.setWindowFlag(Qt.WindowMinimizeButtonHint, True)
         self.resize(1250, 640)
         self.view = ToleranceView(self)
+        self.view.changed.connect(self._title)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.view)
+        self._title()
+
+    def _title(self):
+        v = self.view
+        name = v.path.name if v.path is not None else "not saved"
+        self.setWindowTitle(f"KiPI — Tolerance stack-up — {name}"
+                            + (" *" if v.unsaved() else ""))
+
+
+class LoadFilterDialog(QDialog):
+    """Which of the loads with a tolerance the table shows."""
+
+    def __init__(self, loads, shown, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Loads in the tolerance table")
+        self.list = QListWidget(self)
+        for ld in loads:
+            it = QListWidgetItem(f"{ld.name}  ({ld.supply.ref} on {ld.supply.net})", self.list)
+            it.setData(Qt.UserRole, ld.name)
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Checked if ld.name in shown else Qt.Unchecked)
+        btn_all = QPushButton("All", self)
+        btn_all.clicked.connect(lambda: self._check_all(Qt.Checked))
+        btn_none = QPushButton("None", self)
+        btn_none.clicked.connect(lambda: self._check_all(Qt.Unchecked))
+        box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        row = QHBoxLayout()
+        row.addWidget(btn_all)
+        row.addWidget(btn_none)
+        row.addStretch(1)
+        row.addWidget(box)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Show these loads (those with a tolerance):", self))
+        lay.addWidget(self.list, 1)
+        lay.addLayout(row)
+        self.resize(420, 420)
+
+    def _check_all(self, state):
+        for i in range(self.list.count()):
+            self.list.item(i).setCheckState(state)
+
+    def checked(self) -> List[str]:
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
+                if self.list.item(i).checkState() == Qt.Checked]
 
 
 class ToleranceView(QWidget):
-    changed = Signal()                          # the setup's tolerance table was edited
+    changed = Signal()                          # the table or its file changed
     report_requested = Signal(str, str)         # load name, "html" or "pdf"
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup = None
+        self.data = ToleranceTable()            # what the tolerance file holds
+        self._saved = ToleranceTable()          # as last opened or saved
+        self.path: Optional[Path] = None        # the tolerance file; None: not saved yet
+        self.start_dir = ""                     # where Save as and Open start
+        self.log = lambda text, level=logging.INFO: None   # the main window's log
         self.loaded = Loaded()
         self.gatherer = Gatherer()
         self._rows: List[Optional[tuple]] = []   # per table row: (load, Stack, Fresh); None: VRM
         self._dirty = True
+
+        self.btn_open = QPushButton("Open…", self)
+        self.btn_open.setToolTip("Open a tolerance file (.kipi-tolerance.yml)")
+        self.btn_open.clicked.connect(self.open_file)
+        self.btn_save = QPushButton("Save", self)
+        self.btn_save.setToolTip("Save the table to its tolerance file")
+        self.btn_save.clicked.connect(self.save)
+        self.btn_save_as = QPushButton("Save as…", self)
+        self.btn_save_as.setToolTip("Save the table to another tolerance file")
+        self.btn_save_as.clicked.connect(self.save_as)
+        self.btn_loads = QPushButton("Loads…", self)
+        self.btn_loads.setToolTip("Pick the loads the table shows, of those with a tolerance. "
+                                  "Saved in the tolerance file.")
+        self.btn_loads.clicked.connect(self.pick_loads)
 
         self.cmb_unit = QComboBox(self)
         for unit, label in vunits.UNITS:
@@ -136,14 +209,18 @@ class ToleranceView(QWidget):
         self.cmb_unit.currentIndexChanged.connect(self._fill)
         self.chk_bw = QCheckBox("20 MHz limit", self)
         self.chk_bw.setToolTip("Take the ripple and the transient through a 20 MHz bandwidth "
-                               "limit, as a scope's limit shows them. Saved with the setup.")
+                               "limit, as a scope's limit shows them. Saved in the tolerance "
+                               "file.")
         self.chk_bw.toggled.connect(self._bw_toggled)
         self.btn_accept = QPushButton("Accept all new", self)
-        self.btn_accept.setToolTip("Keep every highlighted value in the setup")
+        self.btn_accept.setToolTip("Keep every highlighted value in the table")
         self.btn_accept.clicked.connect(self.accept_all)
         self.report_option = ReportOption("the selected load's stack-up", self._report,
                                           lambda _fmt: None, self)
         top = QHBoxLayout()
+        for b in (self.btn_open, self.btn_save, self.btn_save_as, self.btn_loads):
+            top.addWidget(b)
+        top.addSpacing(12)
         top.addWidget(QLabel("Show", self))
         top.addWidget(self.cmb_unit)
         top.addWidget(self.chk_bw)
@@ -182,10 +259,107 @@ class ToleranceView(QWidget):
     # ------------------------------------------------------------------ inputs
     def set_setup(self, setup) -> None:
         self.setup = setup
+        self.refresh()
+
+    def set_table(self, table: ToleranceTable, path: Optional[Path]) -> None:
+        """Show ``table``, as saved in ``path`` (None: not saved anywhere yet)."""
+        self.data, self._saved = table, copy.deepcopy(table)
+        self.path = Path(path) if path is not None else None
+        if self.path is not None:
+            self.start_dir = str(self.path.parent)
         self.chk_bw.blockSignals(True)
-        self.chk_bw.setChecked(bool(setup and setup.tolerance.bw_limit))
+        self.chk_bw.setChecked(table.bw_limit)
         self.chk_bw.blockSignals(False)
         self.refresh()
+        self.changed.emit()
+
+    # ------------------------------------------------------------------ file
+    def open_default(self, board: str, project_dir: str) -> None:
+        """The board's tolerance file beside its setup, if it has one; else an empty table
+        to be saved there."""
+        self.start_dir = project_dir or ""
+        found = model.find(board, project_dir)
+        table, path = ToleranceTable(), model.default_path(board, project_dir)
+        if found is not None:
+            try:
+                table, path = ToleranceTable.load(found), found
+                self.log(f"Loaded tolerance file {found}")
+            except Exception as e:  # noqa: BLE001 - a bad file must not block the board
+                self.log(f"Could not read {found}: {e}", logging.WARNING)
+        self.set_table(table, path)
+
+    def unsaved(self) -> bool:
+        return self.data != self._saved
+
+    def open_file(self) -> bool:
+        if not self.keep_or_drop():
+            return False
+        path, _ = QFileDialog.getOpenFileName(self, "Open tolerance file", self.start_dir,
+                                              f"{model.FILE_FILTER};;All files (*)")
+        if not path:
+            return False
+        try:
+            table = ToleranceTable.load(path)
+        except Exception as e:  # noqa: BLE001 - any unreadable file
+            QMessageBox.warning(self, "KiPI", f"Could not read {Path(path).name}:\n\n{e}")
+            return False
+        self.set_table(table, path)
+        self.log(f"Opened tolerance file {path}")
+        return True
+
+    def save(self) -> bool:
+        if self.path is None:
+            return self.save_as()
+        return self._write(self.path)
+
+    def save_as(self) -> bool:
+        start = self.path or Path(self.start_dir or ".") / f"kipi{model.SUFFIX}"
+        path, _ = QFileDialog.getSaveFileName(self, "Save tolerance file", str(start),
+                                              model.FILE_FILTER)
+        return bool(path) and self._write(Path(path))
+
+    def _write(self, path: Path) -> bool:
+        try:
+            self.path = self.data.save(path)
+        except OSError as e:
+            QMessageBox.warning(self, "KiPI", f"Could not save {path.name}:\n\n{e}")
+            return False
+        self.start_dir = str(self.path.parent)
+        self._saved = copy.deepcopy(self.data)
+        self.log(f"Saved the tolerance table to {self.path}")
+        self.changed.emit()
+        return True
+
+    def keep_or_drop(self) -> bool:
+        """Before the table is left (another file, board or closing), ask about changes not
+        saved; False means stay."""
+        if not self.unsaved():
+            return True
+        answer = QMessageBox.question(
+            self, "KiPI", "The tolerance table has changes that are not saved. Save them?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+        if answer == QMessageBox.Save:
+            return self.save()
+        return answer == QMessageBox.Discard
+
+    # ------------------------------------------------------------------ load filter
+    def candidates(self) -> list:
+        """The setup's loads with a tolerance, which the filter offers."""
+        return [ld for ld in (self.setup.loads if self.setup else []) if has_any_tolerance(ld)]
+
+    def pick_loads(self) -> None:
+        d = LoadFilterDialog(self.candidates(), set(self.data.loads), self)
+        if d.exec() == QDialog.Accepted:
+            self.set_loads(d.checked())
+
+    def set_loads(self, names: List[str]) -> None:
+        """Show ``names`` of the loads offered; picks of loads the setup lacks now stay."""
+        offered = {ld.name for ld in self.candidates()}
+        loads = [n for n in self.data.loads if n not in offered] + list(names)
+        if set(loads) != set(self.data.loads):
+            self.data.loads = loads
+            self._fill()
+            self.changed.emit()
 
     def set_dc(self, tree, source: str = "", when: str = "") -> None:
         self.loaded.dc = (tree, source, when) if tree is not None else None
@@ -240,15 +414,17 @@ class ToleranceView(QWidget):
             [c if i in (0, 1, 9) else f"{c} ({u})" for i, c in enumerate(COLUMNS)])
 
     def rows(self) -> List[tuple]:
-        """(VRM or None, [load, ...]) in the setup's order, loads with a tolerance only."""
+        """(VRM or None, [load, ...]) in the setup's order: the loads picked that have a
+        tolerance."""
         from kipi.dc.pi.model import net_groups
         setup = self.setup
         if setup is None:
             return []
         groups = net_groups(setup)
+        shown = set(self.data.loads)
         by_vrm: Dict[str, list] = {}
         for ld in setup.loads:
-            if has_any_tolerance(ld):
+            if ld.name in shown and has_any_tolerance(ld):
                 v = driver(setup, ld, groups)
                 by_vrm.setdefault(v.name if v else "", []).append(ld)
         out = [(v, by_vrm[v.name]) for v in setup.vrms if v.name in by_vrm]
@@ -271,7 +447,7 @@ class ToleranceView(QWidget):
             return
         from kipi.dc.pi.model import net_groups
         groups = net_groups(setup)
-        bw = setup.tolerance.bw_limit
+        bw = self.data.bw_limit
         unit = self.unit()
         live = []
         for vrm, loads in self.rows():
@@ -290,7 +466,7 @@ class ToleranceView(QWidget):
             t.setSpan(r, 0, 1, len(COLUMNS))
             for ld in loads:
                 fresh = self.gatherer.fresh(setup, ld, self.loaded, groups)
-                st = stack(ld, setup.tolerance.entries.get(ld.name), vrm, bw,
+                st = stack(ld, self.data.entries.get(ld.name), vrm, bw,
                            fresh.not_applicable)
                 r = t.rowCount()
                 t.insertRow(r)
@@ -304,7 +480,7 @@ class ToleranceView(QWidget):
         t.resizeColumnsToContents()
         t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         n = sum(1 for x in self._rows if x)
-        self.lbl.setText(EMPTY if not n else
+        self.lbl.setText((NONE_PICKED if self.candidates() else EMPTY) if not n else
                          f"{n} load(s). " + ("Ripple and transient through a 20 MHz limit."
                                              if bw else "Ripple and transient at full "
                                                         "bandwidth."))
@@ -315,7 +491,7 @@ class ToleranceView(QWidget):
     def _fill_row(self, r: int, ld, st: Stack, fresh: Fresh, unit: str, bw: bool):
         t = self.table
         nominal = st.nominal
-        entry = self.setup.tolerance.entries.get(ld.name)
+        entry = self.data.entries.get(ld.name)
         name = QTableWidgetItem(ld.name)
         name.setToolTip(f"{ld.supply.ref} on {ld.supply.net}\nTolerance: "
                         f"{ld.tolerance_label() or 'not set'}\nDC tolerance: "
@@ -366,7 +542,7 @@ class ToleranceView(QWidget):
             was = (f"kept: {pair(kept.sides(bw), nominal, vunits.MV)} mV from {kept.source} "
                    f"{kept.when}" if kept is not None else "nothing kept yet")
             item.setToolTip(f"New from {new.source} {new.when}: {new.detail}\n{was}\n"
-                            "Click to keep it in the setup.")
+                            "Click to keep it in the table.")
             return item
         if kept is not None:
             item = QTableWidgetItem(pair(kept.sides(bw), nominal, unit))
@@ -394,7 +570,7 @@ class ToleranceView(QWidget):
             if row is None:
                 continue
             ld, _, fresh = row
-            entry = self.setup.tolerance.entries.get(ld.name)
+            entry = self.data.entries.get(ld.name)
             for kind in KINDS:
                 new = fresh.values.get(kind)
                 if new is not None and not new.same_values(entry.get(kind) if entry else None):
@@ -404,7 +580,7 @@ class ToleranceView(QWidget):
     def accept(self, load: str, kind: str) -> bool:
         for name, k, new in self.pending():
             if (name, k) == (load, kind):
-                self.setup.tolerance.accept(name, k, new)
+                self.data.accept(name, k, new)
                 self._fill()
                 self.changed.emit()
                 return True
@@ -413,7 +589,7 @@ class ToleranceView(QWidget):
     def accept_all(self) -> None:
         todo = self.pending()
         for name, kind, new in todo:
-            self.setup.tolerance.accept(name, kind, new)
+            self.data.accept(name, kind, new)
         if todo:
             self._fill()
             self.changed.emit()
@@ -423,9 +599,7 @@ class ToleranceView(QWidget):
             self.accept(self._rows[row][0].name, PART_COLUMN[col])
 
     def _bw_toggled(self, on: bool):
-        if self.setup is None:
-            return
-        self.setup.tolerance.bw_limit = on
+        self.data.bw_limit = on
         self._fill()
         self.changed.emit()
 
@@ -443,6 +617,10 @@ class ToleranceView(QWidget):
                 self.table.selectRow(r)
                 return
 
+    def rows_shown(self) -> list:
+        """The loads with a row now."""
+        return [row[0] for row in self._rows if row]
+
     def stack_of(self, name: str):
         """(load, Stack, Fresh) of a load shown, or None."""
         return next((row for row in self._rows if row and row[0].name == name), None)
@@ -452,6 +630,8 @@ class ToleranceView(QWidget):
 
     def _update_buttons(self):
         self.btn_accept.setEnabled(self.setup is not None and bool(self.pending()))
+        n, m = len(self.rows_shown()), len(self.candidates())
+        self.btn_loads.setText(f"Loads ({n} of {m})…")
         self.report_option.set_available(self.selected_load() is not None)
 
     def _report(self, fmt: str):

@@ -1,7 +1,6 @@
-"""The tolerance stack-up (#167): what the setup keeps, the values gathered from results,
-and the sums against the load's tolerances."""
+"""The tolerance stack-up (#167): what the tolerance file keeps, the values gathered from
+results, and the sums against the load's tolerances."""
 
-import json
 import math
 from types import SimpleNamespace
 
@@ -10,11 +9,12 @@ import pytest
 
 from kipi.ac.solver.sweep import ACResult, ProbeCurve
 from kipi.ac.model import Probe
-from kipi.dc.pi.model import PISetup, PinRef, Vrm
+from kipi.dc.pi.model import PinRef, Vrm
 from kipi.noise.model import Aggressor
 from kipi.noise.waveforms import Spectrum
 from kipi.tolerance.evaluate import deviation_limits, pair, stack
 from kipi.tolerance.gather import Gatherer, Loaded, probe_for_load, ripple_peaks
+from kipi.tolerance import model
 from kipi.tolerance.model import Contribution, LoadEntry, ToleranceTable
 from tree_boards import board, setup as tree_setup
 
@@ -56,22 +56,39 @@ def _noise(agg, probe, amp=0.005):
     return SimpleNamespace(aggressor=agg, waveforms=wf)
 
 
-# ------------------------------------------------------------------ the setup keeps it
-def test_the_table_saves_with_the_setup():
-    s = _setup()
-    s.tolerance.accept("U2", "dc", Contribution(0.01, 0.0, None, None, "DC solve", "now", "x"))
-    s.tolerance.bw_limit = True
-    back = PISetup.from_dict(json.loads(json.dumps(s.to_dict())))
-    assert back.tolerance == s.tolerance
-    assert PISetup.from_dict({}).tolerance == ToleranceTable()
+# ------------------------------------------------------------------ the tolerance file
+def _table():
+    t = ToleranceTable(bw_limit=True, loads=["U2"])
+    t.accept("U2", "dc", Contribution(0.01, 0.0, None, None, "DC solve", "now", "x"))
+    t.accept("U3", "ripple", Contribution(0.004, 0.005, 0.003, 0.004, "n.kipinoise", "t", "d"))
+    return t
 
 
-def test_entries_of_loads_gone_and_unknown_keys_are_left_out():
-    d = _setup().to_dict()
-    d["tolerance"] = {"entries": {"U2": {"dc": {"below_v": 0.01, "spare": 1}},
-                                  "GONE": {"dc": {"below_v": 0.02}}}}
-    t = PISetup.from_dict(d).tolerance
+def test_the_table_saves_to_its_own_file(tmp_path):
+    t = _table()
+    path = t.save(model.default_path("board.kicad_pcb", str(tmp_path)))
+    assert path.name == "board.kipi-tolerance.yml"
+    assert model.find("board.kicad_pcb", str(tmp_path)) == path
+    assert ToleranceTable.load(path) == t
+    assert "setup" not in path.read_text(encoding="utf-8")
+    assert model.find("other.kicad_pcb", str(tmp_path)) is None
+    assert ToleranceTable.from_dict({}) == ToleranceTable()          # shows no loads
+
+
+def test_without_pyyaml_it_is_json(tmp_path, monkeypatch):
+    from kipi.core import yaml_io
+    monkeypatch.setattr(yaml_io, "yaml", None)
+    path = _table().save(model.default_path("board", str(tmp_path)))
+    assert path.name == "board.kipi-tolerance.json"
+    assert ToleranceTable.load(path) == _table()
+
+
+def test_empty_entries_and_unknown_keys_are_left_out_and_newer_files_refused():
+    t = ToleranceTable.from_dict({"entries": {"U2": {"dc": {"below_v": 0.01, "spare": 1}},
+                                              "U3": {}}, "loads": ["U2"]})
     assert list(t.entries) == ["U2"] and t.entries["U2"].dc.below_v == 0.01
+    with pytest.raises(ValueError):
+        ToleranceTable.from_dict({"format_version": model.FORMAT_VERSION + 1})
 
 
 # ------------------------------------------------------------------ limits and sums
@@ -230,10 +247,3 @@ def test_vrm_with_accuracy_needs_no_result():
     assert st.parts["accuracy"] == approx((0.05, 0.05)) and st.accuracy_set
     assert st.parts["dc"] is None and st.checks["dc"].passed is None
 
-
-def test_kept_values_ride_along_in_a_results_file(tmp_path):
-    from kipi.core import results_io
-    s = _setup()
-    s.tolerance.accept("U2", "ripple", Contribution(0.004, 0.005, 0.003, 0.004, "n", "t", "d"))
-    path = results_io.write(tmp_path / "r.kipires", {}, {"setup": s})
-    assert results_io.read(path)["data"]["setup"].tolerance == s.tolerance

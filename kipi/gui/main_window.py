@@ -453,7 +453,7 @@ class MainWindow(QMainWindow):
         from kipi.tolerance.gui.table import ToleranceWindow
         self.tolerance_window = ToleranceWindow(self)
         self.tolerance_view = self.tolerance_window.view
-        self.tolerance_view.changed.connect(self._show_unsaved)
+        self.tolerance_view.log = self.log
         self.tolerance_view.report_requested.connect(self._tolerance_report)
         for panel in self._panels().values():
             panel.setup_changed.connect(self.tolerance_view.refresh)
@@ -480,9 +480,9 @@ class MainWindow(QMainWindow):
             return
         from kipi.tolerance.report import report_name, write_load_report
         load, st, fresh = row
-        setup = self.solve_panel.setup
-        entry = copy.deepcopy(setup.tolerance.entries.get(name))
-        bw, hints = setup.tolerance.bw_limit, dict(fresh.hints)
+        table = self.tolerance_view.data
+        entry = copy.deepcopy(table.entries.get(name))
+        bw, hints = table.bw_limit, dict(fresh.hints)
         board = self.snapshot.board_name if self.snapshot else ""
         self._write_report(
             "tolerance", lambda p, progress: write_load_report(p, board, load, st, entry, bw,
@@ -1554,6 +1554,7 @@ class MainWindow(QMainWindow):
             panel.set_board(snap, setup)
         self.setup_bar.set_label(label)
         self._refresh_power_tree()
+        self.tolerance_view.open_default(snap.board_name, project_dir)
         self._sync_tolerance()
         self.plot.clear()
         self.board_map.clear()
@@ -2476,16 +2477,18 @@ class MainWindow(QMainWindow):
         self.setup_bar.set_unsaved(self._unsaved())
 
     def _keep_or_drop_changes(self) -> bool:
-        """The setup file is written only by Save. Before the setup is left (closing, or
-        reading a board again), ask about changes not saved; False means stay."""
-        if not self._unsaved():
-            return True
-        answer = QMessageBox.question(
-            self, "KiPI", "The PI setup has changes that are not saved. Save them?",
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
-        if answer == QMessageBox.Save:
-            self._save_setup()
-        return answer != QMessageBox.Cancel
+        """The setup and tolerance files are written only by Save. Before they are left
+        (closing, or reading a board again), ask about changes not saved; False means
+        stay."""
+        if self._unsaved():
+            answer = QMessageBox.question(
+                self, "KiPI", "The PI setup has changes that are not saved. Save them?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Save)
+            if answer == QMessageBox.Cancel:
+                return False
+            if answer == QMessageBox.Save:
+                self._save_setup()
+        return self.tolerance_view.keep_or_drop()
 
     # ============================================================ close
     def closeEvent(self, event):
