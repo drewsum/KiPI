@@ -34,6 +34,23 @@ def stroke(line_pts: Sequence[tuple], width_mm: float):
     return LineString(line_pts).buffer(width_mm / 2.0, quad_segs=SHAPE_QUAD_SEGS)
 
 
+def stroke_segments(segments: Sequence[tuple], width_mm: float) -> List:
+    """Stroked segments ``((x1, y1), (x2, y2))`` of one width, as :func:`stroke` draws
+    each. Consecutive segments where one ends and the next starts (a stroke-font glyph's
+    strokes) are stroked as one path, which merges several times faster."""
+    import shapely
+    if width_mm <= 0 or not segments:
+        return []
+    paths: List[list] = []
+    for start, end in segments:
+        if paths and paths[-1][-1] == start:
+            paths[-1].append(end)
+        else:
+            paths.append([start, end])
+    lines = [shapely.LineString(p) for p in paths]
+    return list(shapely.buffer(lines, width_mm / 2.0, quad_segs=SHAPE_QUAD_SEGS))
+
+
 def area(shape, width_mm: float, filled: bool):
     """A closed shape: its interior when filled, plus its stroke along the boundary."""
     parts = []

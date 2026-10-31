@@ -47,6 +47,13 @@ milestones rather than versions that were ever set.
   whose footprints hid long data fields on F.SilkS (nine of about 5,000 characters each),
   that was 400,000 extra strokes, and reading the silkscreen took minutes instead of about
   a second. Reading the board file was not affected.
+- **Reading a lot of silkscreen text from the running KiCad is fast.** KiPI strokes each
+  glyph's joined strokes as one path, reads KiCad's text strokes straight from its reply,
+  and buffers them all at once: a board's text merges about three times faster. Past
+  100,000 strokes on a side (some 3,000 designators), it leaves out the largest texts
+  and says which, so even a board with megabytes of silkscreen text reads in seconds;
+  the board above, with its hidden fields shown, reads in 6.5 s rather than about three
+  minutes.
 
 ## 0.9.7
 
