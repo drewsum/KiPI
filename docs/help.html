@@ -1197,6 +1197,15 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     each load heats the board with the power it draws: the sum over its supply and ground
     pins of pin current × pin voltage, spread over those pins. A load without ground pins is
     taken as returning at 0 V.</td></tr>
+  <tr><td>Edge boundaries</td><td class="wrap">Optional. <b>Edit…</b> opens a top-down view
+    of the board where you mark stretches of its edge to hold at a fixed temperature, as a
+    conduction-cooled heatframe, cold wall or wedge lock does. Click an edge to take its
+    straight side, drag along it to take part of it, or press <b>Whole edge</b>. Each
+    boundary has a temperature and a <i>strip width</i>, how far in from the edge the frame
+    clamps (<i>edge cells</i>: the grid's cells along the edge alone). Every layer there is
+    held at the boundary's temperature, and the results say how much heat each boundary
+    takes from the board (or gives, if it is hotter). Without any, the board loses heat by
+    convection alone.</td></tr>
   <tr><td>Max copper temperature</td><td class="wrap">Optional limit: copper hotter than this
     on any layer is FAIL.</td></tr>
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
@@ -1205,7 +1214,8 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
 conversion loss and, with <b>Include load power dissipation</b>, the loads. Each copper layer
 has its own temperature: heat goes onto the layer it is made on (a part's on the layers of its
 pads), crosses the laminate to the layers above and below, and goes down plated holes on any
-net. Only the top and bottom layers lose heat to the air. The report's
+net. Only the top and bottom layers lose heat to the air; edge boundaries, if any, take
+heat from every layer. The report's
 <b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>

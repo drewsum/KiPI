@@ -6,6 +6,17 @@ milestones rather than versions that were ever set.
 
 ## 0.9.7 (in development)
 
+### Added
+- **Board edge boundaries** (#221). The Thermal tab has an optional **Edge boundaries**
+  row: **Edit…** opens a top-down view of the board where you mark stretches of its edge
+  to hold at a fixed temperature, as a conduction-cooled heatframe, cold wall or wedge
+  lock does. Click an edge to take its straight side, or drag along it to take part of
+  it; each boundary has a name, a temperature and the width of the strip it clamps. Every
+  copper layer in that strip is held at the temperature, and the Thermal tab, the Notes and
+  the HTML report say how much heat each boundary takes from the board. A solve without
+  boundaries is unchanged: the board loses heat by convection alone. Boundaries are saved
+  with the setup.
+
 ### Fixed
 - **A sharp logo on the splash and in About** (#231). The animated logo looked rough: a
   GIF has only 256 colours and pixels that are either fully transparent or fully opaque,

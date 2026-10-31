@@ -28,13 +28,20 @@ and conduct about as well as the laminate, so they hold heat in only a little.
 
 Convection per face: h = 10 + 3.8 v W/(m^2 K), v the airflow speed in m/s (natural
 convection plus radiation at v = 0; a flat-plate forced-convection fit above that).
+
+Edge boundaries (#221), if any, hold stretches of the board edge at a fixed temperature, as
+a conduction-cooled heatframe or wedge lock clamping the board does: every layer of the
+cells within the boundary's strip of the edge is tied to its temperature through a
+conductance far larger than any other in the model, which fixes it there and lets the heat
+the frame takes (or gives) be read off. Without any, the board loses heat by convection
+alone.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import scipy.sparse as sp
@@ -49,6 +56,29 @@ from kipi.core.progress import NULL, ProgressReporter
 
 H_NATURAL_W_M2K = 10.0      # natural convection + radiation, per face
 H_PER_M_S = 3.8             # added per m/s of airflow, per face
+FIX_FACTOR = 1e6            # an edge boundary's tie, against the largest other conductance
+
+
+@dataclass
+class EdgeBoundary:
+    """A stretch of the board edge held at ``temp_c`` (#221): ``points`` follow the edge,
+    KiCad mm. The cells within ``width_mm`` of it are held (0: the edge row of cells)."""
+    name: str = "Edge"
+    temp_c: float = 25.0
+    width_mm: float = 0.0
+    points: List[List[float]] = field(default_factory=list)
+
+    def length_mm(self) -> float:
+        a = np.asarray(self.points, dtype=float).reshape(-1, 2)
+        return float(np.hypot(*np.diff(a, axis=0).T).sum()) if len(a) > 1 else 0.0
+
+    def geometry(self):
+        """The edge as a shapely line (a point if it has one point), None if empty."""
+        if not self.points:
+            return None
+        if len(self.points) == 1:
+            return shapely.Point(self.points[0])
+        return shapely.LineString(self.points)
 
 
 @dataclass
@@ -64,6 +94,19 @@ class ThermalSettings:
     # PASS / FAIL limits on the solved copper's temperature, per layer (None = no limit)
     max_temp_c: Optional[float] = None
     max_rise_c: Optional[float] = None      # above ambient
+    # Stretches of the board edge held at a fixed temperature (#221); none: convection only
+    edges: List[EdgeBoundary] = field(default_factory=list)
+
+    def __post_init__(self):
+        # From a setup file, each boundary is a dict.
+        self.edges = [e if isinstance(e, EdgeBoundary) else
+                      EdgeBoundary(**{k: v for k, v in e.items()
+                                      if k in EdgeBoundary.__dataclass_fields__})
+                      for e in (self.edges or [])]
+
+    def __setstate__(self, state):
+        # Results saved before edge boundaries (#221) have none.
+        self.__dict__.update({"edges": [], **state})
 
     def limits_set(self) -> bool:
         return self.max_temp_c is not None or self.max_rise_c is not None
@@ -133,7 +176,7 @@ class BoardThermalModel:
         )
         self.settings = settings
         st = snap.stackup
-        board = _board_geometry(snap)
+        board = board_geometry(snap)
         minx, miny, maxx, maxy = board.bounds
         span = max(maxx - minx, maxy - miny)
         d = settings.grid_mm if settings.grid_mm > 0 else max(span / 250.0, 0.2)
@@ -231,6 +274,7 @@ class BoardThermalModel:
             self.g_conv[li] += d * d / (r + silk[side] * coating_resistance(st, side, SILK))
         self.g_conv[:, ~self.inside] = 0.0
         diag += self.g_conv[:, self.inside].T.ravel()
+        self._fix_edges(X, Y, nl, diag, progress)
         A = sp.coo_matrix((np.concatenate(vals + [diag]),
                            (np.concatenate(rows + [np.arange(n)]),
                             np.concatenate(cols + [np.arange(n)]))), shape=(n, n)).tocsc()
@@ -239,7 +283,35 @@ class BoardThermalModel:
         progress.info(f"Thermal grid {nx} x {ny} x {nl} layer(s) ({n_cells} cells inside the "
                       f"board, {d:.2f} mm), {n_holes} plated hole(s) joining layers, "
                       f"h = {settings.h_w_mm2_k() * 1e6:.1f} W/m²K per face, "
+                      f"{len(self.edge_cells)} edge boundary(ies), "
                       f"direct solve ({self._solve.name})")
+
+    def _fix_edges(self, X, Y, nl: int, diag: np.ndarray, progress: ProgressReporter):
+        """Tie every layer of each edge boundary's cells to its temperature (a later
+        boundary wins where two overlap); ``diag`` gains the ties."""
+        self.t_fixed = np.full(X.shape, np.nan)
+        self.edge_cells: List[np.ndarray] = []      # per boundary: the cells it holds
+        owner = -np.ones(X.shape, dtype=np.int64)
+        for k, e in enumerate(self.settings.edges):
+            line = e.geometry()
+            if line is None:
+                self.edge_cells.append(np.zeros(X.shape, dtype=bool))
+                continue
+            near = self.inside & (shapely.distance(line, shapely.points(X, Y))
+                                  <= max(e.width_mm, self.d))
+            if not near.any():
+                progress.warn(f"Edge boundary {e.name!r} is not on the board; it holds no "
+                              "copper at a fixed temperature")
+            owner[near] = k
+            self.t_fixed[near] = e.temp_c
+        self.edge_cells = [owner == k for k in range(len(self.settings.edges))]
+        held = ~np.isnan(self.t_fixed) & self.inside
+        self.g_fix = np.zeros((nl,) + X.shape)
+        if held.any():
+            self.g_fix[:, held] = FIX_FACTOR * float(diag.max())
+            diag += self.g_fix[:, self.inside].T.ravel()
+        rise = np.nan_to_num(self.t_fixed - self.settings.ambient_c)
+        self._b_fix = (self.g_fix * rise)[:, self.inside].T.ravel()
 
     def _add_barrels(self, gv: np.ndarray, snap: BoardSnapshot, via_rules) -> int:
         """Add each plated hole's barrel, between every pair of neighboring layers it
@@ -305,17 +377,27 @@ class BoardThermalModel:
     def solve(self, heat: np.ndarray) -> np.ndarray:
         """Temperature (degC) per layer and grid cell; NaN outside the board."""
         nl = len(heat)
-        rise = self._solve(heat[:, self.inside].T.ravel()).reshape(-1, nl).T
+        rise = self._solve(heat[:, self.inside].T.ravel() + self._b_fix).reshape(-1, nl).T
         t = np.full(heat.shape, np.nan)
         t[:, self.inside] = self.settings.ambient_c + rise
         return t
+
+    def edge_heat(self, temps: np.ndarray) -> List[Tuple[str, float, float]]:
+        """(name, degC, W) per edge boundary: the heat it takes from the board in ``temps``
+        (negative: heat it gives)."""
+        out = []
+        for e, cells in zip(self.settings.edges, self.edge_cells):
+            w = self.g_fix[:, cells] * (temps[:, cells] - self.t_fixed[cells])
+            out.append((e.name, e.temp_c, float(np.nansum(w))))
+        return out
 
     def sampler(self, temps: np.ndarray) -> LayerTemperatures:
         """T(xy): the hottest layer at each point, or each point's own with ``on_layers``."""
         return LayerTemperatures(self.x, self.y, temps, self.layers, self.settings.ambient_c)
 
 
-def _board_geometry(snap: BoardSnapshot):
+def board_geometry(snap: BoardSnapshot):
+    """The board's shape (shapely): its outline, or a box around its copper without one."""
     polys = [g for g in (poly_to_shapely(p) for p in snap.outline) if g is not None]
     if polys:
         return shapely.union_all(polys)

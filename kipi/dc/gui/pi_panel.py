@@ -180,6 +180,13 @@ def tip(form: QFormLayout, field: QWidget, text: str, art: Optional[tuple] = Non
         label.setToolTip(shown)
 
 
+def edges_summary(edges) -> str:
+    """"none: convection only", or each boundary's name and temperature."""
+    if not edges:
+        return "none: the board loses heat by convection alone"
+    return ", ".join(f"{e.name} {e.temp_c:g} °C" for e in edges)
+
+
 def make_searchable(combo: QComboBox):
     """Let the user type to filter a combo box (substring, case-insensitive).
 
@@ -1973,7 +1980,8 @@ class PIPanel(QWidget, PartSelection):
         self.lbl_thermal.setText(
             f"Peak copper temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
             f"({x:.1f}, {y:.1f}) mm{self._peak_layer(th)}; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
-            f"ambient {ambient:g} °C, airflow {th.settings.airflow_m_s:g} m/s.<br>{judged}")
+            f"ambient {ambient:g} °C, airflow {th.settings.airflow_m_s:g} m/s"
+            f"{html.escape(th.edges_text())}.<br>{judged}")
         details = ["Iterations: " + ", ".join(
             f"{h['iteration']}: {h['t_max']:.2f} °C (Δ {h['dt_max']:.3f})" for h in th.history)]
         if th.dielectrics:
@@ -2192,6 +2200,22 @@ class PIPanel(QWidget, PartSelection):
             "ground pins of pin current × pin voltage, spread over those pins. Off: only "
             "copper, via, DC connection and VRM conversion losses heat the board.")
         f.addRow(self.chk_load_power)
+        self.btn_edges = QPushButton("Edit…")
+        self.lbl_edges = QLabel()
+        self.lbl_edges.setStyleSheet("color: #999;")
+        edges = QHBoxLayout()
+        edges.setContentsMargins(0, 0, 0, 0)
+        edges.addWidget(self.btn_edges)
+        edges.addWidget(self.lbl_edges, 1)
+        f.addRow("Edge boundaries", edges)
+        edge_tip = art_tip(
+            "Optional: hold stretches of the board edge at a fixed temperature, as a "
+            "conduction-cooled heatframe, cold wall or wedge lock does. The button opens a "
+            "view of the board to mark them on. Without any, the board loses heat by "
+            "convection alone.", "edge_boundary", "edge")
+        self.btn_edges.setToolTip(edge_tip)
+        f.labelForField(edges).setToolTip(edge_tip)
+        self.btn_edges.clicked.connect(self._edit_edges)
         tip(f, self.spin_ambient, "Temperature of the air around the board")
         tip(f, self.spin_iters, "Electrical and thermal solves to alternate. Three is usually "
                                 "enough; the Notes tab shows how much each one changed.")
@@ -2241,10 +2265,23 @@ class PIPanel(QWidget, PartSelection):
         for wdg in (self.spin_ambient, self.spin_iters, self.spin_airflow, self.spin_tgrid,
                     self.chk_load_power, self.spin_max_t, self.spin_max_rise):
             wdg.setEnabled(t.enabled)
+        self.btn_edges.setEnabled(t.enabled and self.snapshot is not None)
+        self.lbl_edges.setText(edges_summary(t.edges))
         self.btn_solve.setText(self._solve_label())
         if getattr(self, "_tree", None) is not None:
             self._fill_thermal()        # the limits grade the last solve straight away
         self._on_changed()
+
+    def _edit_edges(self):
+        """Mark the board edge boundaries on a view of the board (#221)."""
+        if self.snapshot is None:
+            return
+        from kipi.dc.gui.edge_boundaries import EdgeBoundaryDialog
+        t = self.setup.thermal
+        dlg = EdgeBoundaryDialog(self.snapshot, t.edges, t.ambient_c, self)
+        if dlg.exec() == QDialog.Accepted:
+            t.edges = dlg.boundaries()
+            self._thermal_changed()
 
     def _solve_tab(self) -> QWidget:
         w = QWidget()
@@ -2658,8 +2695,8 @@ class PIPanel(QWidget, PartSelection):
                             f"{_load_heat(th)}, peak "
                             f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm"
                             f"{self._peak_layer(th)}, ambient "
-                            f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s "
-                            "(details in the Thermal tab)")
+                            f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s"
+                            f"{html.escape(th.edges_text())} (details in the Thermal tab)")
             if getattr(th, "heat_by_kind", None):
                 notes.insert(1, "&nbsp;&nbsp;heat by source: "
                                 + html.escape(th.heat_breakdown()))
