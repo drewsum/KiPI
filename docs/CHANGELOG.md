@@ -4,7 +4,9 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.6 (in development)
+## 0.9.7 (in development)
+
+## 0.9.6
 
 ### Added
 - **Time left in the status bar** (#224). While a solve runs, the spinner at the right end
