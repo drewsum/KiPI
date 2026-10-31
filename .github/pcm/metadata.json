@@ -1,0 +1,35 @@
+{
+    "$schema": "https://go.kicad.org/pcm/schemas/v2",
+    "name": "KiPI",
+    "description": "Power integrity: DC IR drop, current density, via currents and temperature in 3D, and AC PDN impedance over frequency",
+    "description_full": "KiPI is a power integrity analyzer for KiCad boards.\n\nDC: IR drop, current density with flow arrows, via and pad currents, and copper temperature from Joule heating, shown in 3D on the board's real copper.\n\nAC: PDN impedance over frequency at each load, against its target impedance, with the board's planes, vias, decoupling capacitors (SPICE or S-parameter models) and VRMs.\n\nKiPI installs its Python dependencies (NumPy, SciPy, PySide6, PyVista and others, about 250 MB) into the plugin's environment the first time it starts. It also runs on its own, with a launcher, and imports boards from other layout tools.",
+    "identifier": "com.github.drewsum.kipi",
+    "type": "plugin",
+    "author": {
+        "name": "Drew Maatman",
+        "contact": {
+            "github": "https://github.com/drewsum"
+        }
+    },
+    "maintainer": {
+        "name": "Drew Maatman",
+        "contact": {
+            "github": "https://github.com/drewsum"
+        }
+    },
+    "license": "GPL-3.0",
+    "resources": {
+        "Homepage": "https://github.com/drewsum/KiPI",
+        "Bug Tracker": "https://github.com/drewsum/KiPI/issues",
+        "Changelog": "https://github.com/drewsum/KiPI/blob/main/docs/CHANGELOG.md"
+    },
+    "tags": ["pcbnew", "pcb", "simulation", "power-integrity", "pdn", "ir-drop", "thermal", "visualization"],
+    "versions": [
+        {
+            "status": "stable",
+            "kicad_version": "9.0",
+            "runtime": "ipc",
+            "platforms": ["windows", "macos", "linux"]
+        }
+    ]
+}

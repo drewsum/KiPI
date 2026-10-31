@@ -5,7 +5,7 @@
 Clone counts come from the Traffic API, which needs a token with read access to the
 repo's administration (``TRAFFIC_TOKEN``) and keeps only the last 14 days, so each run
 merges the days it sees into the history already in the file. Release downloads are the
-public ``download_count`` of every release asset (``GITHUB_TOKEN`` only raises the rate
+public ``download_count`` of every release zip (``GITHUB_TOKEN`` only raises the rate
 limit). Without ``TRAFFIC_TOKEN`` the clone history is kept as it was and a warning says why.
 
 Standard library only, so the workflow needs no installs.
@@ -47,9 +47,11 @@ def merge_clones(daily: Dict[str, Dict[str, int]], days: List[dict]) -> Dict[str
 
 
 def release_downloads(releases: List[dict]) -> Dict[str, int]:
-    """Downloads of each release's uploaded assets, by tag. GitHub does not count the
-    automatic "Source code" archives, so a release without assets reads 0."""
-    return {r["tag_name"]: sum(int(a.get("download_count", 0)) for a in r.get("assets", []))
+    """Downloads of each release's uploaded zips (the manual-install zip and the PCM one),
+    by tag. Other assets, such as the PCM ``metadata.json``, are not installs. GitHub does
+    not count the automatic "Source code" archives, so a release without zips reads 0."""
+    return {r["tag_name"]: sum(int(a.get("download_count", 0)) for a in r.get("assets", [])
+                               if str(a.get("name", "")).lower().endswith(".zip"))
             for r in releases}
 
 

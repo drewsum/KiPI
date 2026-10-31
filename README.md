@@ -40,7 +40,7 @@ control in KiPI has a tooltip. This README is an overview; the user guide has th
 
 ![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
-**Status: 0.9.7 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
+**Status: 1.0.0 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
 
 ## Install
 
@@ -72,7 +72,23 @@ KiPI runs two ways, from the same folder:
     example from python.org or Homebrew) and select it as the **Python interpreter** in
     *Preferences → Plugins*.
 
-#### Steps
+#### From the Plugin and Content Manager
+
+1. In KiCad, enable **Preferences → Plugins → Enable KiCad API**.
+2. Open **Plugin and Content Manager** from the KiCad project window, find **KiPI** under
+   *Plugins*, and click **Install**. Until KiPI is listed in KiCad's repository, download
+   `KiPI-<version>-pcm.zip` from the
+   [latest release](https://github.com/drewsum/KiPI/releases/latest) and use
+   **Install from File…** instead.
+3. Restart the PCB editor, as in step 3 below. PCM offers each new release as an update.
+
+PCM keeps KiPI in its own folder (`3rdparty/plugins/com_github_drewsum_kipi` beside the
+plugins folder) and replaces it on update. If you also have a manual copy in
+`plugins/KiPI`, remove it first, or KiCad shows two KiPI buttons. Shortcuts made by the
+standalone launcher from a PCM install point into that folder, so they stop working if
+you uninstall KiPI in PCM.
+
+#### Manually
 
 1. In KiCad, enable **Preferences → Plugins → Enable KiCad API**.
 2. Clone, link (or copy) this repo into your KiCad plugins folder, or uncompress the release source zip. The examples use KiCad 10's
@@ -453,6 +469,22 @@ After changing a board there, rerun `python examples/validation/make_boards.py [
 CI runs ruff and the test suite for every push and pull request on Windows, Linux (Python
 3.10 to 3.13) and macOS; the accuracy tests run for pull requests into `main`.
 `tests/helpers/kicad_fake.py` stands in for each KiCad version from 9.0.0 to 10.0.6.
+
+### Releases
+
+Publishing a GitHub release runs `.github/workflows/release.yml`, which attaches three
+files:
+- `KiPI-<tag>.zip`, for manual installs.
+- `KiPI-<tag>-pcm.zip`, the same files for KiCad's Plugin and Content Manager.
+- `metadata.json`, that version's entry with its sha256 and sizes.
+
+The PCM metadata that stays the same from release to release is in
+`.github/pcm/metadata.json`. To publish a version in PCM, add its entry (the job summary
+shows it too) to `packages/com.github.drewsum.kipi/metadata.json` in a merge request to
+[KiCad's metadata repository](https://gitlab.com/kicad/addons/metadata). The first time,
+add `resources/kipi_64.png` there as `icon.png` as well. Once a version is merged, its zip
+can't change, so never replace a release's PCM zip. Tag a release `vX.Y.Z`: a tag like
+`v1.0.0-rc1` gets the manual zip only, since PCM version numbers can't have suffixes.
 
 ### Codebase Layout
 

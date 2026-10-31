@@ -4,7 +4,19 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.7 (in development)
+## 1.0.0 (in development)
+
+### Added
+- **KiCad Plugin and Content Manager package** (#7). Each release now has
+  `KiPI-<version>-pcm.zip` beside `KiPI-<version>.zip`. It holds the same files under
+  `plugins/`, plus the PCM metadata and a 64 px icon, so KiPI can be installed and updated
+  from KiCad's Plugin and Content Manager (or with **Install from File…** until it is
+  listed). The release workflow builds it from the manual zip, checks it against the rules
+  of KiCad's metadata repository, and attaches `metadata.json`, that version's entry with
+  its sha256 and sizes, ready for the metadata repository. Release download counts in
+  About now count the zips only.
+
+## 0.9.7
 
 ### Added
 - **Tolerance stack-up** (#167). A **Tolerance** button beside **Power tree** (Ctrl+Shift+T)

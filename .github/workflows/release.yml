@@ -4,6 +4,11 @@ name: Release zip
 # assets only, not of the automatic "Source code" archives, so this is what makes release
 # downloads countable (stats.yml adds them up). Run it by hand with a tag to add the zip
 # to an existing release.
+#
+# It also attaches the KiCad Plugin and Content Manager package (#7): KiPI-<tag>-pcm.zip,
+# the same files under plugins/ with the PCM metadata and icon, and metadata.json, that
+# version's entry with its sha256 and sizes for the KiCad metadata repository. See
+# .github/scripts/pcm_package.py. A tag PCM can't take (v1.0.0-rc1) gets the zip only.
 
 on:
   release:
@@ -32,11 +37,39 @@ jobs:
       - name: Build zip
         run: git archive --format=zip --prefix=KiPI/ -o "KiPI-$TAG.zip" HEAD -- . ':!tests' ':!.github'
 
-      # Replacing an existing asset would reset its download count, so leave it alone.
+      # Built from the zip above, so both hold the same files. A prerelease is "testing".
+      - name: Build PCM package
+        run: |
+          status=stable
+          if [ "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = "true" ]; then
+            status=testing
+          fi
+          python3 .github/scripts/pcm_package.py "$TAG" "KiPI-$TAG.zip" pcm --status "$status"
+          if [ -f pcm/metadata.json ]; then
+            {
+              echo "### PCM package"
+              echo "Add this version entry to \`packages/com.github.drewsum.kipi/metadata.json\`"
+              echo "in https://gitlab.com/kicad/addons/metadata:"
+              echo '```json'
+              python3 -c "import json; print(json.dumps(json.load(open('pcm/metadata.json'))['versions'][0], indent=4))"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Replacing an existing asset would reset its download count, so leave it alone. For
+      # the PCM zip it would also break the sha256 already in KiCad's metadata repository.
       - name: Upload to the release
         run: |
-          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx "KiPI-$TAG.zip"; then
-            echo "::notice::KiPI-$TAG.zip is already attached to $TAG"
-          else
-            gh release upload "$TAG" "KiPI-$TAG.zip"
+          attached=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          upload() {
+            if printf '%s\n' "$attached" | grep -qx "$(basename "$1")"; then
+              echo "::notice::$(basename "$1") is already attached to $TAG"
+            else
+              gh release upload "$TAG" "$1"
+            fi
+          }
+          upload "KiPI-$TAG.zip"
+          if [ -f pcm/metadata.json ]; then
+            upload "pcm/KiPI-$TAG-pcm.zip"
+            upload pcm/metadata.json
           fi

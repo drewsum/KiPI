@@ -1,5 +1,6 @@
-"""KiPI icons from resources/kipi_1080.png: the 24/48/256 px PNGs, the .ico, and the
-animated logo (the planes flashing through result maps, as the 0.7.0 gif did): as a GIF
+"""KiPI icons from resources/kipi_1080.png: the 24/48/64/256 px PNGs (64 is the Plugin and
+Content Manager icon, #7), the .ico, and the animated logo (the planes flashing through
+result maps, as the 0.7.0 gif did): as a GIF
 for the README, and as a strip of full-colour, smoothly edged frames that the splash and
 About play (#231; a GIF has 256 colours and on/off transparency, so its outline is jagged).
 
@@ -16,7 +17,7 @@ from PIL import Image
 RESOURCES = Path(__file__).resolve().parents[1] / "resources"
 SRC = RESOURCES / "kipi_1080.png"
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else RESOURCES
-PNG_SIZES = (24, 48, 256)
+PNG_SIZES = (24, 48, 64, 256)
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 GIF_SIZE = 256
 STRIP_SIZE = 320                          # twice the splash's 160 px logo, for 2x displays
