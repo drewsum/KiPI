@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="180" viewBox="0 0 300 180">
+  <rect x="0" y="0" width="300" height="180" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <text x="150" y="18" fill="{fg}" text-anchor="middle">each side adds up against its tolerance</text>
+    <!-- the tolerance band about nominal -->
+    <rect x="40" y="30" width="60" height="136" fill="{grid}" stroke="{muted}" stroke-width="1"/>
+    <path d="M34,98 H106" stroke="{fg}" stroke-width="1.4"/>
+    <text x="36" y="94" fill="{fg}" text-anchor="end">nominal</text>
+    <text x="70" y="44" fill="{muted}" text-anchor="middle">tolerance</text>
+    <!-- below nominal: DC drop, accuracy, ripple, transient, stacked down -->
+    <rect x="58" y="98" width="24" height="22" fill="{fg}" fill-opacity="0.55"/>
+    <rect x="58" y="120" width="24" height="10" fill="{muted}" fill-opacity="0.8"/>
+    <rect x="58" y="130" width="24" height="8" fill="{accent}" fill-opacity="0.5"/>
+    <rect x="58" y="138" width="24" height="16" fill="{warn}" fill-opacity="0.7"/>
+    <g fill="{fg}">
+      <text x="120" y="113">DC drop</text>
+      <text x="120" y="128">+ VRM accuracy</text>
+      <text x="120" y="141">+ ripple</text>
+      <text x="120" y="154">+ transient</text>
+    </g>
+    <g stroke="{muted}" stroke-width="1">
+      <path d="M84,109 H116 M84,125 H116 M84,135 H116 M84,147 H116"/>
+    </g>
+    <!-- the brackets: DC, AC and total -->
+    <g stroke="{accent}" stroke-width="1.4" fill="none">
+      <path d="M216,98 h6 v32 h-6"/>
+      <path d="M216,130 h6 v24 h-6"/>
+      <path d="M244,98 h6 v56 h-6"/>
+    </g>
+    <g fill="{accent}">
+      <text x="226" y="118">DC</text>
+      <text x="226" y="146">AC</text>
+      <text x="254" y="130">total</text>
+    </g>
+    <!-- above nominal: the boost side, smaller -->
+    <rect x="58" y="80" width="24" height="18" fill="{fg}" fill-opacity="0.25"/>
+    <text x="120" y="86" fill="{muted}">the same above nominal</text>
+  </g>
+</svg>

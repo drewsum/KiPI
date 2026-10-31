@@ -191,6 +191,8 @@ ol.steps > li { margin-bottom: 6px; }
       </ol></li>
     <li><a href="#noise-solving">Solving an aggressor</a></li>
     <li><a href="#noise-results">Waveforms and parasitics</a></li>
+    <li class="group">Across modes</li>
+    <li><a href="#tolerance">Tolerance stack-up</a></li>
     <li class="group">Workflows</li>
     <li><a href="#workflows">Step-by-step workflows</a></li>
     <li class="group">Reference</li>
@@ -444,6 +446,9 @@ of decimals, plus more when a small typed value needs them.</p>
     them, are left out. Hover a block for its pins;
     drag to pan, <kbd>Ctrl</kbd> + wheel to zoom, <b>Save image…</b> for a PNG. It redraws
     as the setup changes.</td></tr>
+  <tr><td><b>Tolerance</b></td><td class="wrap">Opens the <a href="#tolerance">Tolerance
+    window</a>: each load's DC drop, VRM accuracy, ripple and transient against its DC, AC
+    and total tolerances, with a PASS/FAIL per load.</td></tr>
   <tr><td><b>Help</b> <kbd>F1</kbd></td><td class="wrap">Opens this guide in your web
     browser.</td></tr>
   <tr><td><b>About</b></td><td class="wrap">Version, author and project links, and how often
@@ -750,6 +755,8 @@ tooltip names its key. On macOS, <b>Ctrl</b> is the <b>Command</b> key.</p>
   <tr><td><b>Ctrl+Shift+O</b></td><td class="wrap"><b>Open results…</b></td></tr>
   <tr><td><b>Ctrl+L</b></td><td class="wrap">The <a href="#stackup">Stackup window</a></td></tr>
   <tr><td><b>Ctrl+T</b></td><td class="wrap">The <b>Power tree</b></td></tr>
+  <tr><td><b>Ctrl+Shift+T</b></td><td class="wrap">The <a href="#tolerance">Tolerance
+    window</a></td></tr>
   <tr><td><b>Ctrl+1</b> / <b>Ctrl+2</b> / <b>Ctrl+3</b></td><td class="wrap">DC / AC / Coupled Noise mode</td></tr>
   <tr><td><b>Ctrl+Enter</b></td><td class="wrap">Solve: <b>Solve all</b> in DC mode,
     <b>Solve rail</b> in AC mode, when the button can be pressed</td></tr>
@@ -2298,6 +2305,49 @@ the results: check it, as its currents have nowhere real to go.</p>
 </div>
 </details>
 
+<!-- ================================================================== TOLERANCE -->
+<h2 id="tolerance">Tolerance stack-up</h2>
+<details open>
+<summary>The Tolerance window: every result against each load's tolerances</summary>
+<div class="body">
+<p><b>Tolerance</b> on the toolbar (<b>Ctrl+Shift+T</b>) opens a window of its own, as
+<b>Power tree</b> does, which can be maximized, minimized or closed. It has a row for every
+DC load with a tolerance (DC setup, Loads: <b>Tolerance</b>, <b>DC tolerance</b> or
+<b>AC tolerance</b>), grouped under the VRM driving it, and adds up what takes the load's
+voltage from nominal, each side apart:</p>
+<table>
+  <tr><th>Column</th><th>From</th></tr>
+  <tr><td>DC drop</td><td class="wrap">The DC solve: nominal less the load's effective voltage
+    (the mean of its pins). A boost counts on the side above.</td></tr>
+  <tr><td>VRM accuracy</td><td class="wrap">The VRM's DC accuracy, from the setup (grey: not
+    set, taken as 0).</td></tr>
+  <tr><td>DC sum</td><td class="wrap">DC drop + VRM accuracy, against the <b>DC
+    tolerance</b>.</td></tr>
+  <tr><td>Ripple</td><td class="wrap">Coupled Noise: the ripple's lowest and highest points at
+    the load's AC probe, from each aggressor that lists the probe under ripple probes.
+    Several aggressors add as the root sum of squares. "—": no switcher on the rail.</td></tr>
+  <tr><td>Transient</td><td class="wrap">AC: the undershoot and overshoot of the estimated
+    transient at the load's probe (it needs a load step and the VRM's bandwidth).</td></tr>
+  <tr><td>AC sum</td><td class="wrap">Ripple + transient, against the <b>AC
+    tolerance</b>.</td></tr>
+  <tr><td>Total</td><td class="wrap">Every part, against the <b>Tolerance</b>.</td></tr>
+  <tr><td>Verdict</td><td class="wrap">PASS once every tolerance the load has is met with all
+    its parts known; FAIL as soon as any is exceeded (parts only add, so a missing one cannot
+    rescue it); else <i>incomplete</i>.</td></tr>
+</table>
+<p>A load's probe is the AC probe on its pins (<b>Probe from load</b> in AC mode makes
+one). The window takes its values from the results loaded now, solved or opened from
+files, so the three modes can be run one at a time: a value new from them is highlighted;
+click it, or <b>Accept all new</b>, to keep it. Kept values are saved in the setup file
+(the setup's <b>Save</b>), with where and when each came from, so the table is there when
+the results are not. A part no result gives yet is greyed, saying what to run.</p>
+<p><b>Show</b> switches between mV and % from nominal and the voltage each side reaches.
+<b>20 MHz limit</b> takes the ripple and transient through a scope's 20 MHz bandwidth limit
+(both are kept, so it needs no new solve). <b>Report</b> writes the selected load's
+stack-up (each part, its source, the sums, margins and verdict) as a web page or PDF.</p>
+</div>
+</details>
+
 <!-- ================================================================== WORKFLOWS -->
 <h2 id="workflows">Step-by-step workflows</h2>
 
@@ -2453,7 +2503,7 @@ them a model or confirm they really do not belong on this rail.</p>
     It saves hours of reading datasheets and typing values in.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.yml</code></td><td class="wrap">The setup: ticked nets, VRMs,
     loads, series links, mesh, copper and thermal settings, capacitor models, probes and the
-    sweep, in YAML. Saved next to the board on <b>Save</b> and on every solve.</td></tr>
+    sweep, in YAML, and the values kept in the <a href="#tolerance">Tolerance window</a>. Saved next to the board on <b>Save</b> and on every solve.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.json</code></td><td class="wrap">A setup saved by KiPI
     before 0.8.0. It still opens, with a warning, when there is no <code>.yml</code> setup;
     the next save writes the <code>.yml</code> and leaves the JSON file alone. JSON setups

@@ -1428,6 +1428,10 @@ class ACPanel(QWidget, PartSelection):
             text = self.txt_notes.text() if self.result is not None else ""
             self.txt_notes.setText(f"{text}<br>{note}" if text else note)
 
+    def held_results(self) -> Dict[str, object]:
+        """The last results of each rail held now, by VRM name."""
+        return dict(self._results)
+
     def load_results(self, results: Dict[str, object]) -> List[str]:
         """Results opened from a file, in place of the ones held. Rails whose VRM is not in
         the setup cannot be selected, so they are left out; their names are returned. The

@@ -7,6 +7,19 @@ milestones rather than versions that were ever set.
 ## 0.9.7 (in development)
 
 ### Added
+- **Tolerance stack-up** (#167). A **Tolerance** button beside **Power tree** (Ctrl+Shift+T)
+  opens a window of its own (like Power tree's) with a row for every load that has a tolerance,
+  grouped under its VRM. Each side is added apart: the DC drop (the mean of the load's pins)
+  plus the VRM's DC accuracy against the DC tolerance; the ripple at the load's AC probe
+  (Coupled Noise; several switchers as the root sum of squares) plus the AC transient's
+  undershoot or overshoot against the AC tolerance; all of them against the tolerance; and a
+  PASS/FAIL per load once every part is known (a FAIL as soon as one is exceeded). Values
+  come from the results loaded now, solved or opened; a new one is highlighted until
+  clicked (or **Accept all new**), and kept values are saved in the setup file with where
+  and when they came from, so the modes can be run one at a time. A part not known yet is
+  greyed with what to run. Values show in mV, % or volts; **20 MHz limit** takes the ripple
+  and transient through a scope's bandwidth limit; **Report** writes one load's stack-up as
+  a web page or PDF.
 - **Board edge boundaries** (#221). The Thermal tab has an optional **Edge boundaries**
   row: **Edit…** opens a top-down view of the board where you mark stretches of its edge
   to hold at a fixed temperature, as a conduction-cooled heatframe, cold wall or wedge

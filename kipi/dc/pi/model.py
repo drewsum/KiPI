@@ -44,6 +44,7 @@ from kipi.ac.model import (
 from kipi.core.model.spice import SpiceRef, constant_drop_ref
 from kipi.dc.solver.setup import SHORT_OHMS, SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
+from kipi.tolerance.model import ToleranceTable
 from kipi.noise.model import (
     Aggressor, NoiseSettings, Victim, aggressor_from_dict, settings_from_dict as noise_settings,
     victim_from_dict,
@@ -427,6 +428,9 @@ class PISetup:
     aggressors: List[Aggressor] = field(default_factory=list)
     victims: List[Victim] = field(default_factory=list)
     noise: NoiseSettings = field(default_factory=NoiseSettings)
+    # Each load's stack-up (#167): the drop, ripple and transient accepted from solves, the
+    # only solved values a setup keeps.
+    tolerance: ToleranceTable = field(default_factory=ToleranceTable)
 
     def pin_nets(self) -> set:
         """Nets the VRMs, loads, series links and probes have pins on."""
@@ -527,6 +531,8 @@ class PISetup:
                         for a in d.get("aggressors", [])],
             victims=[victim_from_dict(v, pin) for v in d.get("victims", [])],
             noise=noise_settings(d.get("noise", {})),
+            tolerance=ToleranceTable.from_dict(d.get("tolerance"),
+                                               [l["name"] for l in d.get("loads", [])]),
         )
 
     def save(self, path) -> Path:

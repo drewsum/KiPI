@@ -1463,6 +1463,10 @@ class NoisePanel(QWidget, PartSelection):
         if result.aggressor == (self.cmb_agg.currentData() or ""):
             self._display(result)
 
+    def held_results(self) -> Dict[str, object]:
+        """The last results of each aggressor held now, by name."""
+        return dict(self._results)
+
     def load_results(self, results: Dict[str, object]) -> List[str]:
         """Results opened from a file, in place of the ones held. Aggressors not in the setup
         are left out; their names are returned."""
