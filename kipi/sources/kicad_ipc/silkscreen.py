@@ -17,12 +17,13 @@ def _side(layer) -> str:
     return silk.silk_side(BoardLayer.Name(layer)) if layer else None
 
 
-def _shown(item) -> bool:
-    """Whether a text item is drawn: a footprint field when it is visible (KiCad 9.0.1
-    says so on the field, earlier on its text)."""
+def _shown(item, field_flags: bool) -> bool:
+    """Whether a text item is drawn: a footprint field when it is visible. KiCad 9.0.1
+    on says so on the field and leaves its text's flag set (``field_flags``); 9.0.0
+    says so only on the text."""
     from kipy.board_types import Field
     if isinstance(item, Field):
-        return item.visible or item.text.attributes.visible
+        return item.visible if field_flags else item.text.attributes.visible
     return True
 
 
@@ -53,10 +54,15 @@ def read_silkscreen(board, shapes: Iterable, footprints: Iterable,
         side = _side(s.layer)
         if side:
             parts[side].append(shape_geometry(s))
+    from kipy.board_types import Field
+    items = list(board.get_text()) + [t for fp in footprints for t in fp.texts_and_fields]
+    # KiCad 9.0.0 reports every field hidden on the field itself; later versions show
+    # the references, so a board where any field is visible there has the field flags.
+    field_flags = any(isinstance(t, Field) and t.visible for t in items)
     texts: Dict[str, list] = {"top": [], "bottom": []}
-    for t in list(board.get_text()) + [t for fp in footprints for t in fp.texts_and_fields]:
+    for t in items:
         side = _side(t.layer)
-        if side and _shown(t):
+        if side and _shown(t, field_flags):
             texts[side].append(t)
     for side, items in texts.items():
         if not items:

@@ -40,6 +40,14 @@ milestones rather than versions that were ever set.
   9.0.3, which the Plugin and Content Manager package requires. A manual install still
   runs on 9.0.0 to 9.0.2, with the limits the README lists.
 
+### Fixed
+- **Hidden footprint fields are no longer printed on the silkscreen** when reading from the
+  running KiCad. KiCad 9.0.1 on marks a hidden field on the field and leaves its text's
+  flag set, and KiPI read either flag as shown, so it drew hidden fields too. On a board
+  whose footprints hid long data fields on F.SilkS (nine of about 5,000 characters each),
+  that was 400,000 extra strokes, and reading the silkscreen took minutes instead of about
+  a second. Reading the board file was not affected.
+
 ## 0.9.7
 
 ### Added
