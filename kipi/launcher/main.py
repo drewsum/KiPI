@@ -6,8 +6,14 @@
     python kipi_launcher.py --reset       # delete KiPI's environment; set up on next start
     python kipi_launcher.py --add-pardiso | --remove-pardiso
     python kipi_launcher.py --create-shortcut   # add KiPI to the Start menu / app menu / Applications
+    python kipi_launcher.py --own-env     # KiPI's own environment, even beside KiCad's
 
 ``kipi_launcher.pyw`` does the same with no console window (double-click it).
+
+A KiPI in KiCad's plugin folders (the Plugin and Content Manager's, or a copy in
+``plugins``) runs in the environment KiCad made for its plugin, adding its packages to it
+if they are not there, rather than in a second one of its own (#7). If KiCad has not made
+it, or the Python it was made from is gone, KiPI uses its own as before.
 """
 
 from __future__ import annotations
@@ -31,6 +37,8 @@ from kipi.launcher.state import load, needs_setup
 LAUNCHER_ENV = "KIPI_LAUNCHER"
 LAUNCHER_PYTHON_ENV = "KIPI_LAUNCHER_PYTHON"
 KEEP_LOGS = 10
+KICAD_INTRO = ("KiPI runs in the plugin environment KiCad made for it, and installs the rest "
+               "of its packages into it ({reason}).")
 
 
 class Log:
@@ -68,6 +76,8 @@ def parse(argv: Optional[List[str]]) -> argparse.Namespace:
                       help="add KiPI to the Start menu (Windows), applications menu "
                            "(Linux) or Applications folder (macOS)")
     ap.add_argument("--console", action="store_true", help="set up in this terminal")
+    ap.add_argument("--own-env", action="store_true",
+                    help="use KiPI's own environment, not the one KiCad made for its plugin")
     ap.add_argument("--no-launch", action="store_true", help="set up only; do not start KiPI")
     # KiPI asking for its own setup to change: wait for it to close, as its environment
     # cannot change while it runs.
@@ -82,6 +92,13 @@ def make_ui(console: bool, windowed: bool):
             from kipi.launcher.ui_tk import TkUI
             return TkUI()
         except Exception:  # noqa: BLE001 - no window after all: fall back to the terminal
+            pass
+    if not console:
+        try:                # KiCad's Python: wx but no Tk (#7)
+            from kipi.launcher import ui_wx
+            if ui_wx.available():
+                return ui_wx.WxUI()
+        except Exception:  # noqa: BLE001
             pass
     if windowed:
         return _MessageBoxUI()
@@ -134,6 +151,44 @@ def choose_python(env: Path, fresh: bool):
     return system.find_python(commands)
 
 
+def kicad_env_for(own_env: bool, log: "Log") -> Optional[Path]:
+    """KiCad's plugin environment to run in, if KiPI is in KiCad's plugin folders and it
+    can run KiPI (#7); else None, for KiPI's own."""
+    if own_env:
+        return None
+    from kipi.launcher import kicad_env
+    env, why = kicad_env.find(paths.KIPI_ROOT)
+    if env is None:
+        if kicad_env.kicad_version(paths.KIPI_ROOT):
+            log.write(f"Not using KiCad's plugin environment: {why}")
+        return None
+    py = system.probe([str(paths.env_python(env))])
+    if py is None or not system.is_supported(py.version):
+        log.write(f"Not using KiCad's plugin environment {env}: its Python "
+                  f"{py.version_text if py else 'does not run'} ({system.supported_text()} "
+                  "is needed)")
+        return None
+    log.write(f"Using KiCad's plugin environment {env}")
+    return env
+
+
+def kicad_reason(env: Path, req: Path, log: "Log") -> Optional[str]:
+    """Why KiPI's packages have to be added to KiCad's environment, or None (recording an
+    environment that has them all already)."""
+    from kipi.launcher import kicad_env, plugin_setup
+    previous = load(env)
+    wanted = deps.requirements_hash(req)
+    if previous is not None and previous.requirements_hash == wanted:
+        return None
+    unmet = kicad_env.unmet_in(env, req)
+    if unmet == []:
+        py = system.probe([str(paths.env_python(env))])
+        kicad_env.adopt(env, wanted, py.version_text if py else "")
+        log.write(f"KiCad's plugin environment {env} has every package; recorded it")
+        return None
+    return plugin_setup.FIRST if previous is None else plugin_setup.CHANGED
+
+
 def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
     args = parse(argv)
     if os.environ.get("KICAD_API_SOCKET"):
@@ -143,9 +198,10 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
         return kipi_entry.main()
 
     data = paths.data_dir()
-    env = paths.env_dir(data)
     req = paths.requirements_file()
     log = Log(paths.log_dir(data))
+    kicad = kicad_env_for(args.own_env, log)
+    env = kicad or paths.env_dir(data)
     ui = make_ui(args.console, windowed)
     if args.create_shortcut:
         from kipi.launcher.shortcut import ShortcutError, create
@@ -164,8 +220,14 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
     pardiso_ok, pardiso_why = system.pardiso_supported()
     # Ticked by default wherever it can be had (#129); after that, whatever was chosen.
     want_pardiso = previous.pardiso if previous else pardiso_ok
-    reason = needs_setup(env, deps.requirements_hash(req))
+    reason = kicad_reason(env, req, log) if kicad else needs_setup(env, deps.requirements_hash(req))
     fresh, ask = False, True
+    if kicad and (args.reset or args.repair):
+        ui.error(f"KiPI runs in the environment KiCad made for its plugin ({env}). To start "
+                 "it again from nothing, use Recreate Plugin Environment on KiPI in KiCad's "
+                 "Preferences > Plugins (KiPI sets it up on its next start), or run the "
+                 "launcher with --own-env to use an environment of KiPI's own.")
+        return 2
     try:
         if args.reset:
             remove_env(env, data)
@@ -188,7 +250,10 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
 
     if reason:
         log.write(f"Setup: {reason}")
-        python, problems = choose_python(env, fresh)
+        if kicad:       # its own Python, which has pip: KiCad made it with venv
+            python, problems = system.probe([str(paths.env_python(env))]), []
+        else:
+            python, problems = choose_python(env, fresh)
         if python is None:
             found = "".join(f"\n  {p}" for p in problems)
             ui.error(f"KiPI needs {system.supported_text()} to set up its environment, and "
@@ -200,7 +265,8 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
         log.write(f"Plan ({plan.source or 'names only'}"
                   + (f"; {plan.note}" if plan.note else "") + "): "
                   + ", ".join(f"{p.name} {p.version}" for p in plan.packages))
-        summary = Summary(reason, python, env, plan, pardiso_ok, pardiso_why, want_pardiso)
+        summary = Summary(reason, python, env, plan, pardiso_ok, pardiso_why, want_pardiso,
+                          intro=KICAD_INTRO.format(reason=reason) if kicad else "")
         choice = ui.confirm(summary) if ask else want_pardiso
         if choice is None:
             ui.info("Setup canceled; nothing was changed.")
@@ -213,6 +279,9 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
             def line(text):
                 log.write(text)
                 on_line(text)
+            if kicad:
+                return perform(summary, choice, data, req, line, on_fraction, register,
+                               owned=False)
             return perform(summary, choice, data, req, line, on_fraction, register, fresh)
 
         try:

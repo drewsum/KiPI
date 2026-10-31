@@ -16,6 +16,25 @@ milestones rather than versions that were ever set.
   its sha256 and sizes, ready for the metadata repository. Release download counts in
   About now count the zips only.
 
+- **The plugin sets itself up on the first click** (#7). KiCad used to install all of
+  KiPI's packages (about 250 MB) in the background with nothing on screen, so the button
+  took minutes to appear. Now `requirements.txt` is only kicad-python: the button appears
+  within seconds, and the first click shows the setup window standalone KiPI has (every
+  package with its size, PARDISO, Install), then installs into KiCad's plugin environment
+  for KiPI with its own pip and opens KiPI. The window is wxPython, which KiCad's Python
+  has (it has no Tk on Windows); else Tk; else the desktop's dialogs (osascript, zenity or
+  kdialog); else it installs without asking. It runs in a process of its own, so wx never
+  meets KiPI's Qt. A second click while it is open does nothing, and canceling leaves KiPI
+  closed until the next click. An environment KiCad already filled is recorded as set up,
+  without asking, and a new KiPI asks only if a requirement is not met. PARDISO is chosen
+  in the setup window there, rather than in a dialog of its own.
+- **Standalone KiPI uses KiCad's plugin environment** (#7). A KiPI in KiCad's plugin
+  folders (installed by the Plugin and Content Manager, or copied into `plugins`) runs in
+  the environment KiCad made for its plugin, installing what is missing there, rather than
+  in a second one. It falls back to its own environment when KiCad has not made one, its
+  Python is gone or unsupported; `--own-env` always uses its own, and `--repair` and
+  `--reset` point at KiCad's *Recreate Plugin Environment* instead.
+
 ### Changed
 - **KiPI is stable.** The README no longer calls it alpha, and the minimum KiCad is now
   9.0.3, which the Plugin and Content Manager package requires. A manual install still

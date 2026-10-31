@@ -31,7 +31,7 @@ class ConsoleUI:
         None: the user said no."""
         w = self.write
         w("")
-        w("KiPI needs to set up its own Python environment: " + s.reason + ".")
+        w(s.intro_text())
         w(f"It goes in {s.env}")
         w(f"and uses Python {s.python.version_text} ({s.python.executable}).")
         w("")

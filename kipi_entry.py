@@ -11,6 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def main() -> int:
+    # KiCad installed only kicad-python; the first click installs the rest, with a setup
+    # screen, before anything imports it (#7).
+    from kipi.launcher import plugin_setup
+    if not plugin_setup.ensure():
+        return 1
     # Windows: on to KiPI.exe, so Task Manager shows KiPI rather than Python (#124).
     from kipi.launcher.named_exe import relaunch
     code = relaunch([os.path.abspath(__file__), *sys.argv[1:]])

@@ -148,8 +148,7 @@ class TkUI:
         page = self._page()
         answer = {"value": None, "done": False}
         ttk.Label(page, text="Set up KiPI", font=("TkDefaultFont", 12, "bold")).pack(anchor="w")
-        self._label(page, f"KiPI needs to set up its own Python environment: {s.reason}. "
-                          "Nothing is installed until you click Install.")
+        self._label(page, f"{s.intro_text()} Nothing is installed until you click Install.")
         self._label(page, f"Location: {s.env}\nPython {s.python.version_text}: "
                           f"{s.python.executable}", foreground="gray25")
 

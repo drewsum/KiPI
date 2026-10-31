@@ -11,8 +11,13 @@ Environment* removes it, and KiPI asks again (with the earlier choice ticked) un
 turned down.
 
 The choice is kept in KiPI's QSettings, outside the environment, so it outlives the
-environment. Removing PARDISO waits for the next start, before anything has loaded MKL
-(Windows will not delete a library that is in use). Wherever any of this cannot work
+environment. Since #7 the plugin's first start shows KiPI's setup screen, which asks
+about PARDISO with everything else: an environment it set up has a record of the answer
+(:mod:`kipi.launcher.state`), which then decides, and this asks only in environments
+KiCad filled before that (recorded as adopted).
+
+Removing PARDISO waits for the next start, before anything has loaded MKL (Windows will
+not delete a library that is in use). Wherever any of this cannot work
 (outside a virtual environment, no pip, no network), KiPI goes on with SciPy's solver.
 """
 
@@ -44,6 +49,32 @@ PIP_OPTIONS = ["--no-input", "--only-binary", ":all:"]
 
 def _settings() -> QSettings:
     return QSettings("KiPI", "KiPI")
+
+
+def _env() -> Path:
+    return Path(sys.prefix)
+
+
+def _set_choice(value: str) -> None:
+    """Remember "on" or "off", in QSettings and in the setup record if there is one."""
+    _settings().setValue(CHOICE_KEY, value)
+    try:
+        from kipi.launcher.state import load, save
+        rec = load(_env())
+        if rec is not None and rec.pardiso != (value == "on"):
+            rec.pardiso = value == "on"
+            save(_env(), rec)
+    except OSError as e:
+        log.warning("Could not update the setup record: %s", e)
+
+
+def _choice_from_setup() -> None:
+    """Where KiPI's setup screen asked (#7), its answer is the choice."""
+    from kipi.launcher.kicad_env import ADOPTED
+    from kipi.launcher.state import load
+    rec = load(_env())
+    if rec is not None and rec.tool != ADOPTED:
+        _settings().setValue(CHOICE_KEY, "on" if rec.pardiso else "off")
 
 
 def _flag(value) -> bool:
@@ -237,6 +268,7 @@ def _startup(splash) -> None:
         log.info("PARDISO not offered: %s", why)
         return
     _remove_pending(None)
+    _choice_from_setup()
     choice = _settings().value(CHOICE_KEY)
     if not should_offer(choice, installed(), can):
         _off_unless_chosen()
@@ -257,7 +289,7 @@ def _apply(parent, want: bool, was_installed: bool, now: bool) -> None:
     loaded MKL yet, so it can go at once)."""
     s = _settings()
     if want:
-        s.setValue(CHOICE_KEY, "on")
+        _set_choice("on")
         s.remove(REMOVE_KEY)
         if was_installed:
             return
@@ -266,13 +298,13 @@ def _apply(parent, want: bool, was_installed: bool, now: bool) -> None:
             log.info("PARDISO installed")
             return
         log.warning("Installing PARDISO failed: %s", error)
-        s.setValue(CHOICE_KEY, "off")    # don't ask again on every start
+        _set_choice("off")    # don't ask again on every start
         if error != "canceled":
             QMessageBox.warning(
                 parent, "KiPI", f"PARDISO could not be installed: {error}\n\nKiPI uses "
                 "SciPy's solver instead. Try again under About → Manage dependencies…")
         return
-    s.setValue(CHOICE_KEY, "off")
+    _set_choice("off")
     if not was_installed:
         return
     if now:
@@ -300,9 +332,9 @@ def manage(parent=None) -> None:
     want = dlg.wanted()
     if want and removing:
         _settings().remove(REMOVE_KEY)
-        _settings().setValue(CHOICE_KEY, "on")
+        _set_choice("on")
         return
     if want == is_installed and not removing:
-        _settings().setValue(CHOICE_KEY, "on" if want else "off")
+        _set_choice("on" if want else "off")
         return
     _apply(parent, want, was_installed=is_installed, now=False)

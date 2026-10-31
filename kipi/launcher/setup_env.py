@@ -45,6 +45,13 @@ class Summary:
     pardiso_offered: bool
     pardiso_why_not: str        # why PARDISO is not offered here
     pardiso_default: bool       # what was chosen last time
+    # The first line of the screen; empty for KiPI's own environment's. KiCad's plugin
+    # environment for KiPI says so instead (#7).
+    intro: str = ""
+
+    def intro_text(self) -> str:
+        return self.intro or (f"KiPI needs to set up its own Python environment: "
+                              f"{self.reason}.")
 
     def size_line(self, with_pardiso: bool) -> str:
         down = self.plan.download(with_pardiso)
@@ -91,11 +98,20 @@ class Progress:
 def perform(summary: Summary, pardiso: bool, data: Path, requirements: Path,
             on_line: Callable[[str], None], on_fraction: Callable[[Optional[float]], None],
             register: Callable[[Installer], None], fresh: bool = False,
-            uv: Union[None, str, Sequence[str]] = "auto") -> State:
+            uv: Union[None, str, Sequence[str]] = "auto", owned: bool = True) -> State:
     """Make (or update) the environment and install everything; record it when done.
-    ``fresh`` starts from an empty environment. Raises Canceled or InstallError."""
+    ``fresh`` starts from an empty environment. ``owned`` False is an environment KiPI
+    did not make (KiCad's plugin environment, #7): it is never made, deleted or started
+    again, only installed into, as KiCad runs its pip. Raises Canceled or InstallError."""
     env = summary.env
     uv = find_uv() if uv == "auto" else uv
+    environ = None
+    if not owned:
+        from kipi.launcher.kicad_env import pip_environ
+        environ = pip_environ(env)
+        if fresh or not env_python(env).is_file():
+            raise InstallError(f"KiCad's plugin environment for KiPI has no Python ({env}). "
+                               "In KiCad, recreate it under Preferences > Plugins.")
     previous = load(env)
     progress = Progress(len(summary.plan.chosen(pardiso)))
 
@@ -107,11 +123,11 @@ def perform(summary: Summary, pardiso: bool, data: Path, requirements: Path,
 
     tools: list = [uv, None] if uv else [None]
     for attempt, tool in enumerate(tools):
-        inst = Installer(summary.python, env, line, tool)
+        inst = Installer(summary.python, env, line, tool, environ=environ)
         register(inst)
         try:
             on_fraction(None)
-            if fresh or not env_python(env).is_file():
+            if owned and (fresh or not env_python(env).is_file()):
                 remove_env(env, data)
                 line(f"Making KiPI's environment in {env} (Python "
                      f"{summary.python.version_text}, {inst.tool})")
@@ -134,7 +150,8 @@ def perform(summary: Summary, pardiso: bool, data: Path, requirements: Path,
         except InstallError as e:
             if attempt + 1 < len(tools):
                 line(f"{inst.tool} failed ({e}); starting again with pip")
-                fresh = True            # uv's environment has no pip of its own
+                # uv's environment has no pip of its own; KiCad's (made by venv) does
+                fresh = owned
                 continue
             raise
     raise InstallError("no installer to run")       # not reached
