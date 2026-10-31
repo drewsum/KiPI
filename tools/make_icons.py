@@ -1,5 +1,7 @@
 """KiPI icons from resources/kipi_1080.png: the 24/48/256 px PNGs, the .ico, and the
-animated logo (the planes flashing through result maps, as the 0.7.0 gif did).
+animated logo (the planes flashing through result maps, as the 0.7.0 gif did): as a GIF
+for the README, and as a strip of full-colour, smoothly edged frames that the splash and
+About play (#231; a GIF has 256 colours and on/off transparency, so its outline is jagged).
 
 Run: python tools/make_icons.py [out_dir]  (default: resources). Needs Pillow, NumPy and
 matplotlib (all in KiPI's environment)."""
@@ -17,6 +19,7 @@ OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else RESOURCES
 PNG_SIZES = (24, 48, 256)
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 GIF_SIZE = 256
+STRIP_SIZE = 320                          # twice the splash's 160 px logo, for 2x displays
 CYCLE, FRAME_MS = 31, 50                  # frames per result map, ms per frame
 SWEEP_START, SWEEP_STAGGER, SWEEP_LEN = 1, 2, 8
 FADE_START, FADE_LEN = 18, 12
@@ -129,6 +132,27 @@ def to_gif_frame(im):
     return p
 
 
+def save_strip(big, path):
+    """The frames one under another, a run of identical frames kept once with its time
+    summed; the times (ms, comma separated) go in the PNG's "durations" text."""
+    from PIL import PngImagePlugin
+    kept, times = [], []
+    for f in big:
+        im = f.resize((STRIP_SIZE, STRIP_SIZE), Image.Resampling.LANCZOS)
+        if kept and im.tobytes() == kept[-1].tobytes():
+            times[-1] += FRAME_MS
+            continue
+        kept.append(im)
+        times.append(FRAME_MS)
+    strip = Image.new("RGBA", (STRIP_SIZE, STRIP_SIZE * len(kept)))
+    for i, im in enumerate(kept):
+        strip.paste(im, (0, STRIP_SIZE * i))
+    info = PngImagePlugin.PngInfo()
+    info.add_text("durations", ",".join(map(str, times)))
+    strip.save(path, pnginfo=info, optimize=True)
+    return len(kept)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     src = Image.open(SRC).convert("RGBA")
@@ -141,7 +165,8 @@ def main():
              for f in big]
     small[0].save(OUT / "kipi.gif", save_all=True, append_images=small[1:], duration=FRAME_MS,
                   loop=0, disposal=2, transparency=255, optimize=False)
-    print(f"{len(small)} frames")
+    n = save_strip(big, OUT / "kipi_frames.png")
+    print(f"{len(small)} GIF frames, {n} strip frames")
 
 
 if __name__ == "__main__":

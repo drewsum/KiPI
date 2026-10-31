@@ -14,12 +14,12 @@ import html
 import logging
 from typing import Optional
 
-from qtpy.QtCore import QSize, Qt, QTimer, Signal
-from qtpy.QtGui import QCursor, QGuiApplication, QMovie, QPalette, QPixmap
+from qtpy.QtCore import Qt, QTimer, Signal
+from qtpy.QtGui import QCursor, QGuiApplication, QPalette
 from qtpy.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from kipi import __version__
-from kipi.gui import about
+from kipi.gui import about, logo as logo_art
 from kipi.gui.identity import APP_ID
 from kipi.host import Host, current as current_host
 
@@ -48,11 +48,9 @@ class Splash(QWidget):
         logo = QLabel(frame)
         logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
         logo.setAlignment(Qt.AlignCenter)
-        self.movie = self._animate(logo)
-        path = about.icon_path()
-        if self.movie is None and path is not None:
-            logo.setPixmap(QPixmap(str(path)).scaled(
-                LOGO_SIZE, LOGO_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.movie = logo_art.animate(logo, LOGO_SIZE, self)
+        if self.movie is None:
+            logo_art.still(logo, LOGO_SIZE)
 
         host = current_host()
         rows = [("Author", f"{about.AUTHOR} ({about.EMAIL})"), ("Version", __version__),
@@ -126,21 +124,6 @@ class Splash(QWidget):
     def set_status(self, text: str) -> None:
         self.status.setText(text)
         self.status.repaint()
-
-    def _animate(self, label: QLabel) -> Optional[QMovie]:
-        """Play the animated logo, or None to fall back to the still one (the GIF can be
-        missing, or Qt built without its GIF plugin)."""
-        path = about.animated_icon_path()
-        if path is None:
-            return None
-        movie = QMovie(str(path), parent=self)
-        if not movie.isValid():
-            return None
-        movie.setScaledSize(QSize(LOGO_SIZE, LOGO_SIZE))
-        label.setMovie(movie)
-        movie.setSpeed(200)
-        movie.start()
-        return movie
 
     def show_centered(self) -> None:
         self.adjustSize()

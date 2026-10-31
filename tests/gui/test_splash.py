@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from qtpy.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from kipi import __version__  # noqa: E402
-from kipi.gui import splash  # noqa: E402
+from kipi.gui import logo, splash  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +49,15 @@ def test_standalone_says_so_and_is_no_plugin(app):
 
 def test_logo_is_animated(app):
     s = splash.Splash()
-    assert s.movie is not None and s.movie.frameCount() > 1
+    assert isinstance(s.movie, logo.LogoPlayer) and s.movie.frameCount() > 1
+    assert s.movie.label.pixmap().width() == splash.LOGO_SIZE * s.movie.dpr
+    s.close()
+
+
+def test_logo_falls_back_to_the_gif_without_the_frame_strip(app, monkeypatch):
+    monkeypatch.setattr(logo, "frames_path", lambda: None)
+    s = splash.Splash()
+    assert isinstance(s.movie, logo.QMovie) and s.movie.frameCount() > 1
     assert any(lb.movie() is s.movie for lb in s.findChildren(QLabel))
     s.close()
 
@@ -70,8 +78,13 @@ def test_closes_itself_after_one_loop_of_the_logo(app):
     assert not s.isVisible()
 
 
+def _no_animation(monkeypatch):
+    monkeypatch.setattr(logo, "frames_path", lambda: None)
+    monkeypatch.setattr(logo.QMovie, "isValid", lambda self: False)
+
+
 def test_still_logo_closes_after_a_timer(app, monkeypatch):
-    monkeypatch.setattr(splash.QMovie, "isValid", lambda self: False)
+    _no_animation(monkeypatch)
     s = splash.show_splash(app, show_ms=200)
     assert s is not None and s.movie is None and s.isVisible()
     _wait_closed(app, s)
@@ -79,7 +92,7 @@ def test_still_logo_closes_after_a_timer(app, monkeypatch):
 
 
 def test_falls_back_to_the_still_logo_without_gif_support(app, monkeypatch):
-    monkeypatch.setattr(splash.QMovie, "isValid", lambda self: False)
+    _no_animation(monkeypatch)
     s = splash.Splash()
     assert s.movie is None
     assert any(lb.pixmap() is not None and not lb.pixmap().isNull()

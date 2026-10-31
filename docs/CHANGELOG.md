@@ -6,6 +6,16 @@ milestones rather than versions that were ever set.
 
 ## 0.9.7 (in development)
 
+### Fixed
+- **A sharp logo on the splash and in About** (#231). The animated logo looked rough: a
+  GIF has only 256 colours and pixels that are either fully transparent or fully opaque,
+  so the outline was jagged, and Qt then scaled it down again, and up again on a display
+  scaled above 100 %. Both now play a strip of full-colour frames with smooth edges
+  (`resources/kipi_frames.png`, made by `tools/make_icons.py` at twice the splash's size),
+  scaled once for the display they are on. The GIF stays as the README logo, and is
+  played instead if the strip cannot be read; the still icon is now sharp on scaled
+  displays too.
+
 ## 0.9.6
 
 ### Added
