@@ -1,5 +1,6 @@
 """The dependency lists agree: requirements.txt (what KiCad installs into the plugin's venv)
-is pyproject.toml's dependencies (standalone) plus its "kicad" extra (kicad-python)."""
+is pyproject.toml's "kicad" extra (kicad-python) alone, and KiPI installs its dependencies
+(requirements-standalone.txt) on the first click (#7)."""
 
 from pathlib import Path
 
@@ -19,11 +20,9 @@ def _pyproject():
     return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
 
-def test_the_plugin_gets_standalone_plus_kicad():
-    project = _pyproject()
-    standalone = {d.replace(" ", "") for d in project["dependencies"]}
-    kicad = {d.replace(" ", "") for d in project["optional-dependencies"]["kicad"]}
-    assert _requirements(ROOT / "requirements.txt") == standalone | kicad
+def test_kicad_installs_only_what_kipi_needs_to_start():
+    kicad = {d.replace(" ", "") for d in _pyproject()["optional-dependencies"]["kicad"]}
+    assert _requirements(ROOT / "requirements.txt") == kicad
 
 
 def test_standalone_needs_no_kicad():

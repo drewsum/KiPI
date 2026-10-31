@@ -350,6 +350,13 @@ title bar, or drag it onto the main window, to dock it again.</p>
     part sits or how it is turned, so each part is placed in the middle of its pads (listed
     under <b>Placeholders</b>); KiCad's export also leaves out pads with no net. The setup
     is found by the file's name, as for an ODB++ job.</li>
+  <li><b>Plugin setup.</b> KiCad installs only what KiPI needs to start, so the KiPI button
+    appears within seconds. The first click shows the setup window: the packages KiPI
+    installs into KiCad's plugin environment for it, with their sizes, and PARDISO on
+    Windows and Linux x86-64. Nothing is installed until you click <b>Install</b>, and KiPI
+    opens when it is done; later clicks open it straight away. <i>Recreate Plugin
+    Environment</i> in KiCad's <i>Preferences → Plugins</i> removes the packages, and the
+    next click sets up again.</li>
   <li><b>Standalone setup.</b> Start standalone KiPI with its launcher:
     double-click <code>kipi_launcher.pyw</code> (Windows) or run <code>python
     kipi_launcher.py</code>. The first start installs KiPI's packages into an environment
@@ -357,7 +364,10 @@ title bar, or drag it onto the main window, to dock it again.</p>
     offers PARDISO on Windows and Linux x86-64; nothing is installed until you click
     <b>Install</b>. Later starts open KiPI straight away. To add or remove PARDISO later,
     use <b>About → Manage dependencies…</b>: KiPI closes, the setup opens, and KiPI starts
-    again afterwards.
+    again afterwards. A KiPI that KiCad installed (Plugin and Content Manager, or a copy
+    in KiCad's <code>plugins</code> folder) runs standalone in KiCad's plugin environment
+    for it, so the packages are installed once for both; <code>python kipi_launcher.py
+    --own-env</code> uses an environment of KiPI's own instead.
     <figure><img src="images/launcher_setup.png" alt="The launcher's setup window listing packages and the PARDISO option">
 <figcaption>The setup window on a first start.</figcaption></figure></li>
   <li><b>Pin to the taskbar</b> (Windows): right-click KiPI's taskbar button while it is
@@ -2541,6 +2551,13 @@ them a model or confirm they really do not belong on this rail.</p>
   <tr><td><code>&lt;board&gt;_&lt;rail&gt;_ac_report_&lt;date&gt;_&lt;time&gt;.html</code></td><td class="wrap">An AC rail's HTML report.</td></tr>
   <tr><td><code>*.csv</code></td><td class="wrap">DC tables, or an AC rail's impedance.</td></tr>
   <tr><td><code>*.vtm</code></td><td class="wrap">DC 3D results for ParaView.</td></tr>
+  <tr><td>KiCad's plugin environment for KiPI</td><td class="wrap">The plugin's packages,
+    which KiPI installs on the first click (standalone KiPI uses it too when KiCad installed
+    KiPI), in <code>%LOCALAPPDATA%\KiCad\&lt;version&gt;</code> (Windows),
+    <code>~/Library/Caches/kicad/&lt;version&gt;</code> (macOS) or
+    <code>~/.cache/kicad/&lt;version&gt;</code> (Linux), under
+    <code>python-environments/com.github.drewsum.kipi</code>. KiCad's <i>Recreate Plugin
+    Environment</i> empties it.</td></tr>
   <tr><td>KiPI's environment</td><td class="wrap">Standalone only: the packages the launcher
     installed, in <code>%LOCALAPPDATA%\KiPI\venv</code> (Windows),
     <code>~/Library/Application Support/KiPI/venv</code> (macOS) or
@@ -2566,10 +2583,18 @@ them a model or confirm they really do not belong on this rail.</p>
 <details>
 <summary>The KiPI button does not appear in KiCad</summary>
 <div class="body"><p>Enable <b>Preferences → Plugins → Enable KiCad API</b> and restart the PCB
-editor. The first start builds a Python environment and downloads a few hundred MB, which can
-take several minutes. If the button never appears, right-click the action in <i>Preferences →
-Plugins</i> and choose <i>Recreate Plugin Environment</i>. On macOS, select a Python 3.10–3.13
-interpreter there.</p></div>
+editor. KiCad makes the plugin's Python environment with only kicad-python, which takes
+seconds; KiPI installs the rest on the first click. If the button never appears, right-click
+the action in <i>Preferences → Plugins</i> and choose <i>Recreate Plugin Environment</i>. On
+macOS, select a Python 3.10–3.13 interpreter there.</p></div>
+</details>
+<details id="ts-plugin-setup">
+<summary>The plugin's setup fails, or KiPI does not open after it</summary>
+<div class="body"><p>The setup message says why, and the launcher's log (in <code>logs</code>
+next to KiPI's environment, see <a href="#files">Files</a>) has everything the installer
+printed. Check the network connection and free disk space, then click KiPI again: setup
+starts over where it stopped. A setup canceled or closed leaves KiPI closed; the next click
+asks again. To start from nothing, use <i>Recreate Plugin Environment</i>.</p></div>
 </details>
 <details id="ts-multiple-kicad">
 <summary>"KiPI works with one KiCad at a time"</summary>

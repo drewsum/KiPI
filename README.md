@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/drewsum/KiPI/actions/workflows/ci.yml/badge.svg)](https://github.com/drewsum/KiPI/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![KiCad 9.0+](https://img.shields.io/badge/KiCad-9.0%2B-314cb0.svg?logo=kicad&logoColor=white)](#requirements)
+[![KiCad 9.0.3+](https://img.shields.io/badge/KiCad-9.0.3%2B-314cb0.svg?logo=kicad&logoColor=white)](#requirements)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#requirements)
 [![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab.svg?logo=python&logoColor=white)](#requirements)
 
@@ -40,7 +40,7 @@ control in KiPI has a tooltip. This README is an overview; the user guide has th
 
 ![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
-**Status: 0.9.7 (alpha, in development)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
+**Status: 1.0.0 (stable)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
 
 ## Install
 
@@ -59,9 +59,10 @@ KiPI runs two ways, from the same folder:
 
 #### Requirements
 
-* **KiCad 9.0 or later.** Developed on KiCad 10 and confirmed on KiCad 9. Before 9.0.3,
-  KiCad cannot say which layers a plated pad has copper on, so pads are kept on every layer
-  (KiPI warns in its log), and 9.0.0 cannot report net classes.
+* **KiCad 9.0.3 or later.** Developed on KiCad 10 and confirmed on KiCad 9. The Plugin and
+  Content Manager offers KiPI from 9.0.3. A manual install still runs on 9.0.0 to 9.0.2,
+  with less: KiCad cannot say which layers a plated pad has copper on there, so pads are
+  kept on every layer (KiPI warns in its log), and 9.0.0 cannot report net classes.
 * **Python 3.10 to 3.13**, the one KiCad runs plugins with (some dependencies have no
   prebuilt packages for Python 3.14 yet).
   * **Windows:** KiCad's own Python 3.11. Nothing to do.
@@ -72,7 +73,24 @@ KiPI runs two ways, from the same folder:
     example from python.org or Homebrew) and select it as the **Python interpreter** in
     *Preferences → Plugins*.
 
-#### Steps
+#### From the Plugin and Content Manager
+
+1. In KiCad, enable **Preferences → Plugins → Enable KiCad API**.
+2. Open **Plugin and Content Manager** from the KiCad project window, find **KiPI** under
+   *Plugins*, and click **Install**. Until KiPI is listed in KiCad's repository, download
+   `KiPI-<version>-pcm.zip` from the
+   [latest release](https://github.com/drewsum/KiPI/releases/latest) and use
+   **Install from File…** instead.
+3. Restart the PCB editor and click **KiPI**, as in steps 3 and 4 below: the first click
+   sets up KiPI's packages. PCM offers each new release as an update.
+
+PCM keeps KiPI in its own folder (`3rdparty/plugins/com_github_drewsum_kipi` beside the
+plugins folder) and replaces it on update. If you also have a manual copy in
+`plugins/KiPI`, remove it first, or KiCad shows two KiPI buttons. Shortcuts made by the
+standalone launcher from a PCM install point into that folder, so they stop working if
+you uninstall KiPI in PCM.
+
+#### Manually
 
 1. In KiCad, enable **Preferences → Plugins → Enable KiCad API**.
 2. Clone, link (or copy) this repo into your KiCad plugins folder, or uncompress the release source zip. The examples use KiCad 10's
@@ -96,10 +114,19 @@ KiPI runs two ways, from the same folder:
    [latest release](https://github.com/drewsum/KiPI/releases/latest) and unzip it into the
    plugins folder, which gives `plugins/KiPI`.
 
-3. Restart the PCB editor. KiCad builds the plugin venv in the background; the first time this
-   downloads PySide6 and VTK, so give it a few minutes. The **KiPI** toolbar button appears
-   once the venv is ready. If it never appears, right-click the action in
-   *Preferences → Plugins* and choose *Recreate Plugin Environment*.
+3. Restart the PCB editor. KiCad makes the plugin's Python environment in the background
+   with only what KiPI needs to start (kicad-python), so the **KiPI** toolbar button appears
+   within seconds. If it never appears, right-click the action in *Preferences → Plugins*
+   and choose *Recreate Plugin Environment*.
+4. Click **KiPI**. The first time, KiPI shows its setup window: every package it will install
+   into KiCad's environment for it, with sizes (about 254 MB to download on Windows), and
+   the optional [PARDISO](#optional-faster-solves-on-large-boards-windows-and-linux-x86-64)
+   solver. Nothing is installed until you click **Install**, and KiPI opens once it is done.
+   Later clicks open KiPI straight away. The window uses wxPython, which KiCad's Python
+   has; where it has neither wx nor Tk, KiPI asks with the desktop's own dialogs (macOS,
+   or Linux with `zenity` or `kdialog`), and with none of those it installs without asking.
+   The packages stay through plugin reloads; *Recreate Plugin Environment* removes them, and
+   the next click sets up again.
 
 ### Standalone
 
@@ -130,6 +157,12 @@ into an environment of KiPI's own, outside the KiPI folder (`KIPI_HOME` puts it 
 | macOS | `~/Library/Application Support/KiPI` |
 | Linux | `~/.local/share/kipi` |
 
+A KiPI that KiCad installed (from the Plugin and Content Manager, or copied into KiCad's
+`plugins` folder) runs standalone in the environment KiCad made for its plugin instead,
+so the packages are installed once for both. The launcher adds what is missing there, and
+uses an environment of its own when KiCad has not made one yet, the Python it was made
+from is gone, or it is not Python 3.10 to 3.13. `--own-env` always uses KiPI's own.
+
 ![The launcher's setup window on a first start: every package with its size, and the optional PARDISO solver](docs/images/launcher_setup.png)
 
 Use **Open…** to open a board and **Reload** to read it again. KiCad boards keep the same
@@ -146,6 +179,7 @@ python kipi_launcher.py --setup              # the setup window again (add or re
 python kipi_launcher.py --add-pardiso        # or --remove-pardiso, without questions
 python kipi_launcher.py --repair             # reinstall everything from scratch
 python kipi_launcher.py --reset              # delete KiPI's environment
+python kipi_launcher.py --own-env            # KiPI's own environment, not KiCad's plugin one
 python kipi_launcher.py --create-shortcut    # add KiPI to the Start menu / app menu / ~/Applications
 ```
 
@@ -417,7 +451,7 @@ From a checkout, KiPI runs standalone, or as the plugin against the running PCB 
 
 ```powershell
 python -m venv --system-site-packages .venv   # use KiCad's bundled python.exe
-.venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
+.venv\Scripts\pip install -r requirements.txt -r requirements-standalone.txt -r requirements-dev.txt
 .venv\Scripts\python -m kipi tests\data\synthetic.kipi.json   # standalone, opening a board
 $env:KIPI_HOST = "plugin"; .venv\Scripts\python -m kipi        # the plugin: connect to KiCad
 .venv\Scripts\python -m kipi --dump board.kipi.json.gz   # extract from KiCad only, no window
@@ -425,8 +459,9 @@ $env:KIPI_HOST = "plugin"; .venv\Scripts\python -m kipi        # the plugin: con
 .venv\Scripts\ruff check .                    # lint, as CI does (ruff check . --fix fixes most)
 ```
 
-`requirements.txt` is what KiCad installs into the plugin's venv, and
-`requirements-standalone.txt` what the launcher installs; `tests/core/test_requirements.py`
+`requirements.txt` is what KiCad installs into the plugin's venv (kicad-python only), and
+`requirements-standalone.txt` what KiPI installs on top on the first click, and the
+launcher into its own environment; `tests/core/test_requirements.py`
 keeps them in step with `pyproject.toml`. After changing them, run
 `python .github/scripts/dep_sizes.py`.
 
@@ -454,6 +489,22 @@ CI runs ruff and the test suite for every push and pull request on Windows, Linu
 3.10 to 3.13) and macOS; the accuracy tests run for pull requests into `main`.
 `tests/helpers/kicad_fake.py` stands in for each KiCad version from 9.0.0 to 10.0.6.
 
+### Releases
+
+Publishing a GitHub release runs `.github/workflows/release.yml`, which attaches three
+files:
+- `KiPI-<tag>.zip`, for manual installs.
+- `KiPI-<tag>-pcm.zip`, the same files for KiCad's Plugin and Content Manager.
+- `metadata.json`, that version's entry with its sha256 and sizes.
+
+The PCM metadata that stays the same from release to release is in
+`.github/pcm/metadata.json`. To publish a version in PCM, add its entry (the job summary
+shows it too) to `packages/com.github.drewsum.kipi/metadata.json` in a merge request to
+[KiCad's metadata repository](https://gitlab.com/kicad/addons/metadata). The first time,
+add `resources/kipi_64.png` there as `icon.png` as well. Once a version is merged, its zip
+can't change, so never replace a release's PCM zip. Tag a release `vX.Y.Z`: a tag like
+`v1.0.0-rc1` gets the manual zip only, since PCM version numbers can't have suffixes.
+
 ### Codebase Layout
 
 | Path | Purpose |
@@ -461,7 +512,7 @@ CI runs ruff and the test suite for every push and pull request on Windows, Linu
 | `kipi_entry.py`, `plugin.json` | KiCad IPC plugin action (runs KiPI as the plugin) |
 | `kipi/__main__.py` | `python -m kipi` / `kipi`: standalone, or the plugin with `KIPI_HOST=plugin` |
 | `kipi_launcher.py`, `.pyw` | Standalone launcher: sets up KiPI's environment on the first start, then starts KiPI in it |
-| `kipi/launcher/` | The launcher itself, standard library only: environment, Python discovery, package list, installer and setup screens |
+| `kipi/launcher/` | The launcher itself, standard library only: environment, Python discovery, package list, installer and setup screens (Tk, wx, console, the desktop's dialogs); the plugin's first-click setup and KiCad's plugin environment |
 | `kipi/host.py` | Plugin or standalone: how KiPI was started |
 | `kipi/core/` | Shared by every analysis: board model, copper geometry, meshing, sparse solvers, 3D meshes, progress reporting |
 | `kipi/sources/` | Where boards come from: the running KiCad (IPC), `.kicad_pcb` files, ODB++, HyperLynx and snapshots |

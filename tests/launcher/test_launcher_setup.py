@@ -88,8 +88,8 @@ def test_progress_follows_pip():
 class FakeInstaller:
     made = []
 
-    def __init__(self, python, env, on_line, uv=None):
-        self.env, self.uv, self.calls = env, uv, []
+    def __init__(self, python, env, on_line, uv=None, environ=None):
+        self.env, self.uv, self.calls, self.environ = env, uv, [], environ
         self.fail = FakeInstaller.fail_with_uv and uv is not None
         FakeInstaller.made.append(self)
 

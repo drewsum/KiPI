@@ -32,12 +32,14 @@ class Canceled(Exception):
 
 class Installer:
     def __init__(self, python: Python, env: Path, on_line: Callable[[str], None],
-                 uv: Union[None, str, Sequence[str]] = None):
+                 uv: Union[None, str, Sequence[str]] = None, environ: Optional[dict] = None):
         """``uv`` is the uv program to use, or the command that runs it (``["pipx", "run",
-        "uv"]``), or None for venv and pip."""
+        "uv"]``), or None for venv and pip. ``environ`` is the environment the commands run
+        with (None: this process's)."""
         self.python = python
         self.env = env
         self.on_line = on_line
+        self.environ = environ
         self.uv: Optional[List[str]] = [uv] if isinstance(uv, str) else list(uv) if uv else None
         self._proc: Optional[subprocess.Popen] = None
         self._canceled = threading.Event()
@@ -85,7 +87,8 @@ class Installer:
         self.on_line("$ " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, errors="replace", bufsize=1, **child_kwargs())
+                                    text=True, errors="replace", bufsize=1, env=self.environ,
+                                    **child_kwargs())
         except OSError as e:
             raise InstallError(f"could not run {cmd[0]}: {e}") from e
         self._proc = proc

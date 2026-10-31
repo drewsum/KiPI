@@ -1,13 +1,4 @@
+# What KiCad installs into the plugin's environment, in the background: only what KiPI
+# needs to start. The first click on KiPI's button installs the rest
+# (requirements-standalone.txt) with a setup screen (#7, kipi/launcher/plugin_setup.py).
 kicad-python>=0.7.1
-PySide6-Essentials>=6.6
-qtpy>=2.4
-pyvista>=0.44
-pyvistaqt>=0.11
-numpy>=1.24
-shapely>=2.1
-scipy>=1.11
-triangle>=20230923
-pyamg>=5.0
-plotly>=5.20
-matplotlib>=3.8
-PyYAML>=6.0

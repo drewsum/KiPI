@@ -93,7 +93,7 @@ class RepoStats:
     clones: int          # every clone since `since`
     since: str           # ISO date the clone history starts
     uniques_14d: int     # unique cloners over GitHub's 14-day window
-    downloads: int       # release asset downloads, all releases
+    downloads: int       # release zip downloads, all releases
 
     def text(self) -> str:
         return (f"{self.clones:,} clones since {self.since} ({self.uniques_14d:,} unique in the "

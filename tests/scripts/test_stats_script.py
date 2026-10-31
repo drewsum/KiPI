@@ -38,8 +38,10 @@ def test_without_a_traffic_token_the_history_carries_over():
     assert out["updated"] == "2026-10-02T03:00:00Z"
 
 
-def test_release_downloads_count_uploaded_assets_only():
-    releases = [{"tag_name": "v0.7.0", "assets": [{"download_count": 3}, {"download_count": 4}]},
+def test_release_downloads_count_uploaded_zips_only():
+    releases = [{"tag_name": "v0.7.0", "assets": [{"name": "KiPI-v0.7.0.zip", "download_count": 3},
+                                                  {"name": "KiPI-v0.7.0-pcm.zip", "download_count": 4},
+                                                  {"name": "metadata.json", "download_count": 50}]},
                 {"tag_name": "v0.6.5", "assets": []}]
     assert stats.release_downloads(releases) == {"v0.7.0": 7, "v0.6.5": 0}
 

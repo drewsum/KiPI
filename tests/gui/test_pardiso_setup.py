@@ -24,6 +24,7 @@ def app():
 def settings(tmp_path, monkeypatch):
     s = QSettings(str(tmp_path / "kipi.ini"), QSettings.IniFormat)
     monkeypatch.setattr(ps, "_settings", lambda: s)
+    monkeypatch.setattr(ps, "_env", lambda: tmp_path)        # no setup record unless made
     return s
 
 
@@ -127,3 +128,30 @@ def test_installer_passes_pip_options_first(tmp_path):
     inst.install(packages=["pypardiso"], options=ps.PIP_OPTIONS)
     cmd = seen[0]
     assert cmd[-4:] == ["--no-input", "--only-binary", ":all:", "pypardiso"]
+
+
+def test_the_setup_screens_answer_decides_and_is_not_asked_again(app, settings, here,
+                                                               monkeypatch, tmp_path):
+    """KiPI's setup screen asked about PARDISO with everything else (#7)."""
+    from kipi.launcher import state
+    monkeypatch.setattr(ps.PardisoDialog, "exec", lambda self: pytest.fail("asked again"))
+    settings.setValue(ps.CHOICE_KEY, "on")          # an earlier environment's choice
+    state.save(tmp_path, state.State(pardiso=False, tool="pip"))
+    ps.startup()
+    assert settings.value(ps.CHOICE_KEY) == "off" and here == []
+
+
+def test_an_environment_kicad_filled_is_still_offered(app, settings, here, monkeypatch, tmp_path):
+    from kipi.launcher import kicad_env, state
+    state.save(tmp_path, state.State(pardiso=False, tool=kicad_env.ADOPTED))
+    _answer(monkeypatch, accept=True, tick=True)
+    ps.startup()
+    assert here == ["install"] and state.load(tmp_path).pardiso
+
+
+def test_a_choice_in_about_updates_the_setup_record(app, settings, here, monkeypatch, tmp_path):
+    from kipi.launcher import state
+    state.save(tmp_path, state.State(pardiso=False, tool="pip"))
+    _answer(monkeypatch, accept=True, tick=True)
+    ps.manage()
+    assert here == ["install"] and state.load(tmp_path).pardiso

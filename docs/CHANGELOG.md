@@ -4,7 +4,58 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 0.9.7 (in development)
+## 1.0.0 (in development)
+
+### Added
+- **KiCad Plugin and Content Manager package** (#7). Each release now has
+  `KiPI-<version>-pcm.zip` beside `KiPI-<version>.zip`. It holds the same files under
+  `plugins/`, plus the PCM metadata and a 64 px icon, so KiPI can be installed and updated
+  from KiCad's Plugin and Content Manager (or with **Install from File…** until it is
+  listed). The release workflow builds it from the manual zip, checks it against the rules
+  of KiCad's metadata repository, and attaches `metadata.json`, that version's entry with
+  its sha256 and sizes, ready for the metadata repository. Release download counts in
+  About now count the zips only.
+
+- **The plugin sets itself up on the first click** (#7). KiCad used to install all of
+  KiPI's packages (about 250 MB) in the background with nothing on screen, so the button
+  took minutes to appear. Now `requirements.txt` is only kicad-python: the button appears
+  within seconds, and the first click shows the setup window standalone KiPI has (every
+  package with its size, PARDISO, Install), then installs into KiCad's plugin environment
+  for KiPI with its own pip and opens KiPI. The window is wxPython, which KiCad's Python
+  has (it has no Tk on Windows); else Tk; else the desktop's dialogs (osascript, zenity or
+  kdialog); else it installs without asking. It runs in a process of its own, so wx never
+  meets KiPI's Qt. A second click while it is open does nothing, and canceling leaves KiPI
+  closed until the next click. An environment KiCad already filled is recorded as set up,
+  without asking, and a new KiPI asks only if a requirement is not met. PARDISO is chosen
+  in the setup window there, rather than in a dialog of its own.
+- **Standalone KiPI uses KiCad's plugin environment** (#7). A KiPI in KiCad's plugin
+  folders (installed by the Plugin and Content Manager, or copied into `plugins`) runs in
+  the environment KiCad made for its plugin, installing what is missing there, rather than
+  in a second one. It falls back to its own environment when KiCad has not made one, its
+  Python is gone or unsupported; `--own-env` always uses its own, and `--repair` and
+  `--reset` point at KiCad's *Recreate Plugin Environment* instead.
+
+### Changed
+- **KiPI is stable.** The README no longer calls it alpha, and the minimum KiCad is now
+  9.0.3, which the Plugin and Content Manager package requires. A manual install still
+  runs on 9.0.0 to 9.0.2, with the limits the README lists.
+
+### Fixed
+- **Hidden footprint fields are no longer printed on the silkscreen** when reading from the
+  running KiCad. KiCad 9.0.1 on marks a hidden field on the field and leaves its text's
+  flag set, and KiPI read either flag as shown, so it drew hidden fields too. On a board
+  whose footprints hid long data fields on F.SilkS (nine of about 5,000 characters each),
+  that was 400,000 extra strokes, and reading the silkscreen took minutes instead of about
+  a second. Reading the board file was not affected.
+- **Reading a lot of silkscreen text from the running KiCad is fast.** KiPI strokes each
+  glyph's joined strokes as one path, reads KiCad's text strokes straight from its reply,
+  and buffers them all at once: a board's text merges about three times faster. Past
+  100,000 strokes on a side (some 3,000 designators), it leaves out the largest texts
+  and says which, so even a board with megabytes of silkscreen text reads in seconds;
+  the board above, with its hidden fields shown, reads in 6.5 s rather than about three
+  minutes.
+
+## 0.9.7
 
 ### Added
 - **Tolerance stack-up** (#167). A **Tolerance** button beside **Power tree** (Ctrl+Shift+T)
