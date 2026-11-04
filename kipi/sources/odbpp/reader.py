@@ -527,6 +527,8 @@ def _pad(board: _Board, comp, pin, index: int, sn: Optional[edamod.Subnet],
     if sn is not None and sn.net:
         net = sn.net
     number = pin.name
+    if number.startswith(comp.ref + "-") and len(number) > len(comp.ref) + 1:
+        number = number[len(comp.ref) + 1:]
     if board.kicad and _KICAD_UNNUMBERED.match(number):
         number = ""
     return Pad(id=f"{comp.ref}#{index}", net=net, footprint=comp.ref, number=number,

@@ -538,3 +538,21 @@ def test_a_z_stream_that_grows_too_large_is_refused():
     assert lzw.decompress(TOBEORNOT, max_bytes=24) == b"TOBEORNOTTOBEORTOBEORNOT"
     with pytest.raises(lzw.LzwError, match="more than 10 bytes"):
         lzw.decompress(TOBEORNOT, max_bytes=10)
+
+
+def test_pins_named_with_their_refdes_read_as_numbers(tmp_path, snap):
+    files = _files()
+    for name, data in list(files.items()):
+        if not name.endswith("/components"):
+            continue
+        out, ref = [], None
+        for line in data.decode("latin-1").splitlines():
+            f = line.split()
+            if f and f[0] == "CMP" and len(f) >= 7:
+                ref = f[6]
+            elif f and f[0] == "TOP" and ref and len(f) >= 9:
+                f[8] = f"{ref}-{f[8]}"
+                line = " ".join(f)
+            out.append(line)
+        files[name] = "\n".join(out).encode("latin-1")
+    _same_board(read_board(_zip(tmp_path / "prefixed.zip", files)), snap)
