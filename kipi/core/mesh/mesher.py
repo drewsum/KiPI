@@ -802,6 +802,16 @@ def _join(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str],
                 if len(nodes):
                     per_layer[lid] = nodes
         if not per_layer:
+            # A pad smaller than the mesh's triangles (a 25 um exposed-pad anchor) holds
+            # no node: it takes the nearest node of its copper on each of its layers.
+            for lid in p.shapes:
+                if lid not in layer_ranges:
+                    continue
+                a, _ = layer_ranges[lid]
+                d, i = trees[lid].query(p.position)
+                if np.isfinite(d) and d <= opts.max_edge_mm:
+                    per_layer[lid] = np.array([a + int(i)], dtype=int)
+        if not per_layer:
             raise MeshError(f"Pad {p.label} on net {net} has no meshed copper")
         n_large += large
         mesh.pad_nodes[p.id] = per_layer
