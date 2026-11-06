@@ -10,6 +10,7 @@ Coordinates stay in KiCad board space (mm, y down).
 
 from __future__ import annotations
 
+import locale
 import math
 import time
 from dataclasses import dataclass, field
@@ -186,6 +187,10 @@ def _steiner_cap(area_sum: float, n_input: int) -> int:
 
 
 def _triangulate(data: dict, switches: str, cap: int) -> dict:
+    # Triangle reads the numbers in its switches with strtod, which follows the C locale:
+    # under a decimal comma "a0.01" is a maximum area of 0, and it fails (#236).
+    if locale.setlocale(locale.LC_NUMERIC) != "C":
+        locale.setlocale(locale.LC_NUMERIC, "C")
     n_in = len(data["vertices"])
     out = triangle.triangulate(data, f"{switches}S{cap}")
     if len(out.get("vertices", ())) - n_in >= cap:

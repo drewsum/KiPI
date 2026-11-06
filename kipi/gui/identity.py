@@ -24,6 +24,7 @@ Everything here is best effort: a failure is logged and never stops KiPI startin
 
 from __future__ import annotations
 
+import locale
 import logging
 import os
 import sys
@@ -53,6 +54,9 @@ def make_app(argv: Optional[List[str]] = None):
 
     _before_app()
     app = QApplication.instance() or QApplication(sys.argv if argv is None else argv)
+    # On Unix, Qt applies the system locale to the C library too, and native code such as
+    # Triangle then misreads "0.01" under a decimal comma (#236). QLocale is not affected.
+    locale.setlocale(locale.LC_NUMERIC, "C")
     app.setApplicationName(NAME)
     app.setDesktopFileName(DESKTOP_NAME)
     icon = app_icon()

@@ -4,6 +4,16 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## 1.0.1 (in development)
+
+### Fixed
+- **Meshing failed on systems with a decimal comma** (#236). On Linux and macOS, Qt applies
+  the system locale to the whole process, so Triangle read the "0.01" in its options as 0
+  and stopped, and read a minimum angle such as 28.5 as 28. KiPI now keeps C-level numbers
+  in the C locale. Value fields still show the user's decimal comma.
+- **Negative values in Swedish and similar locales** (#236). These locales write minus as
+  U+2212, which value fields rejected, so a negative value shown there could not be edited.
+
 ## 1.0.0 (in development)
 
 ### Added

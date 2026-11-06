@@ -119,11 +119,17 @@ class UnitSpinBox(QDoubleSpinBox):
         frac = frac.rstrip("0").ljust(self._shown_decimals, "0")
         return f"{whole}{point}{frac}" if frac else whole
 
+    def _plain(self, text: str) -> str:
+        """``text`` with the locale's decimal point and minus sign (U+2212 in Swedish, #236)
+        as ``parse_value`` reads them."""
+        for mark, plain in ((self.locale().decimalPoint(), "."),
+                            (self.locale().negativeSign(), "-")):
+            if str(mark) != plain:
+                text = text.replace(str(mark), plain)
+        return text
+
     def _parse(self, text: str) -> Optional[float]:
-        point = str(self.locale().decimalPoint())
-        if point != ".":
-            text = text.replace(point, ".")
-        value = parse_value(text, self.suffix())
+        value = parse_value(self._plain(text), self.suffix())
         return value if value is not None and math.isfinite(value) else None
 
     def valueFromText(self, text: str) -> float:
@@ -141,6 +147,6 @@ class UnitSpinBox(QDoubleSpinBox):
             return (QValidator.Acceptable if ok else QValidator.Intermediate), text, pos
         unit = self.suffix().strip()
         typed = text[:-len(unit)] if unit and text.endswith(unit) else text
-        if _PARTIAL.fullmatch(typed):
+        if _PARTIAL.fullmatch(self._plain(typed)):
             return QValidator.Intermediate, text, pos
         return QValidator.Invalid, text, pos
