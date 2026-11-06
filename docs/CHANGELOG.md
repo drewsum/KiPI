@@ -14,7 +14,7 @@ milestones rather than versions that were ever set.
 - **Negative values in Swedish and similar locales** (#236). These locales write minus as
   U+2212, which value fields rejected, so a negative value shown there could not be edited.
 
-## 1.0.0 (in development)
+## 1.0.0
 
 ### Added
 - **KiCad Plugin and Content Manager package** (#7). Each release now has
