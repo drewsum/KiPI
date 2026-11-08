@@ -2586,7 +2586,9 @@ them a model or confirm they really do not belong on this rail.</p>
 editor. KiCad makes the plugin's Python environment with only kicad-python, which takes
 seconds; KiPI installs the rest on the first click. If the button never appears, right-click
 the action in <i>Preferences → Plugins</i> and choose <i>Recreate Plugin Environment</i>. On
-macOS, select a Python 3.10–3.13 interpreter there.</p></div>
+macOS, keep KiCad's own Python interpreter there: KiCad passes that Python's settings to
+any other interpreter, which then cannot start, so KiPI runs in an environment of its own
+made from a Python 3.10–3.13 it finds.</p></div>
 </details>
 <details id="ts-plugin-setup">
 <summary>The plugin's setup fails, or KiPI does not open after it</summary>

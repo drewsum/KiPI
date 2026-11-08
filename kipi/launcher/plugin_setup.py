@@ -134,6 +134,62 @@ def ensure(log: Optional[Callable[[str], None]] = None) -> bool:
         _drop_lock(env)
 
 
+class _LazyUI:
+    """The setup screen, opened only if there is something to set up: an environment that
+    is ready starts KiPI with nothing on screen."""
+
+    def __init__(self, make: Callable[[], object]):
+        self._make, self._ui = make, None
+
+    def __getattr__(self, name):
+        if self._ui is None:
+            if name == "close":
+                return lambda: None
+            self._ui = self._make()
+        return getattr(self._ui, name)
+
+
+def handoff(argv: List[str], log: Optional[Callable[[str], None]] = None,
+            run_launcher: Optional[Callable[..., int]] = None,
+            version: Optional[tuple] = None) -> Optional[int]:
+    """Run the plugin in KiPI's own environment when KiCad's cannot run KiPI, and return
+    its exit code; None when this Python can (nearly always).
+
+    On macOS KiCad's plugin environment is made from KiCad's own Python 3.9, for which
+    KiPI's packages are not built, and choosing a newer Python in KiCad does not help:
+    KiCad starts it with the PYTHONHOME of its own, so it stops before KiPI runs (#237).
+    So KiPI sets up its own environment, as the standalone launcher does (from a Python
+    3.10 to 3.13 it finds), and starts this plugin again in it, without KiCad's Python
+    home and path. KiCad's API socket and token go along, so it connects all the same.
+
+    Only for a Python older than KiPI supports: on a newer one (Linux with 3.14) pip can
+    still compile what has no prebuilt package, as before."""
+    version = tuple(version or sys.version_info[:3])
+    if version[:2] >= system.SUPPORTED[0]:
+        return None
+    log = log or _lazy_log()
+    log(f"KiCad's plugin Python is {'.'.join(map(str, version))} ({sys.executable}); KiPI needs "
+        f"{system.supported_text()}, so it runs in its own environment")
+    system.drop_kicad_python_vars()
+    if run_launcher is None:
+        from kipi.launcher.main import main as run_launcher
+    try:
+        code = run_launcher(["--own-env", "--no-launch"], ui=_LazyUI(lambda: make_ui(log)))
+    except Exception as e:  # noqa: BLE001 - say so in the log rather than vanish
+        log(f"Could not set up KiPI's own environment: {e}")
+        return 2
+    if code != 0:
+        return code
+    env = paths.env_dir()
+    environ = dict(os.environ, PYTHONPATH=str(paths.KIPI_ROOT), VIRTUAL_ENV=str(env))
+    try:
+        return subprocess.call([str(paths.env_python(env)), *argv], cwd=str(paths.KIPI_ROOT),
+                               env=environ, **system.child_kwargs())
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"Could not start KiPI in {env}: {e}")
+        return 2
+
+
 # --- The setup screen's process -------------------------------------------------------------
 
 def make_ui(log: Callable[[str], None]):

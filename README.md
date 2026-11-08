@@ -69,9 +69,15 @@ KiPI runs two ways, from the same folder:
   * **Linux:** KiCad uses the system Python. On a distribution with Python 3.14 (Ubuntu
     26.04, Fedora 43), pip has to compile some packages, which needs
     `sudo apt install build-essential python3-dev` or similar.
-  * **macOS:** KiCad bundles Python 3.9, which is too old. Install Python 3.12 (for
-    example from python.org or Homebrew) and select it as the **Python interpreter** in
-    *Preferences → Plugins*.
+  * **macOS:** KiCad bundles Python 3.9, which is too old. Install Python 3.10 to 3.13
+    (for example 3.12 from python.org or Homebrew), but leave KiCad's **Python
+    interpreter** in *Preferences → Plugins* as it is. On the first click, KiPI finds
+    the newer Python and sets up an environment of its own from it, in
+    `~/Library/Application Support/KiPI`. Do not select the newer Python in KiCad:
+    KiCad passes its own Python's `PYTHONHOME` and `PYTHONPATH` to it, and it stops
+    before KiPI starts (KiCad reports `exited with code 1` and
+    `No module named 'encodings'`, #237). If you selected one already, set it back and
+    use *Recreate Plugin Environment* on KiPI.
 
 #### From the Plugin and Content Manager
 
@@ -441,8 +447,10 @@ current's return. **Report** and **Save results…** work as in the other modes.
 * **"KiPI works with one KiCad at a time"** although only one is open: a KiCad that did not
   exit cleanly may still be running; end it in the task manager.
 * **Logs:** each session writes to `kipi/kipi-<date>-<time>-<pid>.log` in the temporary
-  folder, with a matching `.crash.log`. Attach both, and **About → Copy version info**, to
-  bug reports. The [user guide](docs/help.html) has more troubleshooting.
+  folder (`%TEMP%` on Windows, `$TMPDIR` on macOS, `/tmp` on Linux), with a matching
+  `.crash.log`. Setup and the plugin's first start write `launcher-*.log` to the `logs`
+  folder beside KiPI's environment (see the table above). Attach them, and
+  **About → Copy version info**, to bug reports. The [user guide](docs/help.html) has more troubleshooting.
 * **Have Fun:** The author asks that you share what projects this package has simulated, and what power integrity issues you have found with it. Conductor simulation gives incredible insight into how PCBs actually function in practice. See what happens when you pump 10 amps into a 5 mil trace with the temperature results view.
 
 ## Development

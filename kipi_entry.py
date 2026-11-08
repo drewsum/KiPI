@@ -14,6 +14,10 @@ def main() -> int:
     # KiCad installed only kicad-python; the first click installs the rest, with a setup
     # screen, before anything imports it (#7).
     from kipi.launcher import plugin_setup
+    # macOS: KiCad's Python 3.9 cannot run KiPI; on to KiPI's own environment (#237).
+    code = plugin_setup.handoff([os.path.abspath(__file__), *sys.argv[1:]])
+    if code is not None:
+        return code
     if not plugin_setup.ensure():
         return 1
     # Windows: on to KiPI.exe, so Task Manager shows KiPI rather than Python (#124).

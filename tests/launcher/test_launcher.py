@@ -62,6 +62,18 @@ def test_windows_asks_the_py_launcher_newest_first(monkeypatch):
     assert cmds[1:] == [[r"C:\Windows\py.exe", f"-3.{m}"] for m in (13, 12, 11, 10)]
 
 
+def test_macos_looks_where_python_installers_put_it():
+    """KiCad started from the Dock has launchd's PATH, with no Homebrew or python.org in it
+    (#237)."""
+    dirs = system.extra_dirs("darwin", home="/Users/a")
+    assert dirs[:3] == ["/opt/homebrew/bin", "/usr/local/bin", "/Users/a/.local/bin"]
+    assert "/Library/Frameworks/Python.framework/Versions/3.12/bin" in dirs
+    assert "/Library/Frameworks/Python.framework/Versions/3.9/bin" not in dirs
+    assert system.extra_dirs("win32") == []
+    brew = {"python3.11": "/opt/homebrew/bin/python3.11"}
+    assert system.candidates("darwin", brew.get)[1:] == [["/opt/homebrew/bin/python3.11"]]
+
+
 def test_a_real_python_is_probed():
     p = system.probe([sys.executable])
     assert p is not None and p.version[:2] == tuple(sys.version_info[:2])
