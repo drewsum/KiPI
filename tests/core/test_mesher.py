@@ -64,6 +64,41 @@ def test_pslg_check_catches_unnoded_crossing():
     assert M.pslg_problems(verts, segs) > 0
 
 
+def test_zero_area_hole_ring_does_not_void_the_polygon():
+    """A fill ring with no area cannot seed a hole. Used to lose the whole polygon:
+    Triangle found no region at the seed, carved away everything and returned no
+    triangles, so every pad on that plane read as DISCONNECTED (D-Wing AIO, B.Cu GND)."""
+    outer = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+    real_hole = [(4, 4), (6, 4), (6, 6), (4, 6), (4, 4)]
+    # collinear ring: four coordinates, two of them duplicates -> zero area
+    flat_hole = [(8.0, 8.0), (8.5, 8.5), (8.5, 8.5), (8.0, 8.0)]
+    poly = M.Polygon(outer, [real_hole, flat_hole])
+
+    pts, tris = M.mesh_polygon(poly, [], MAX_AREA, 28.0)
+    assert len(tris) > 0, "degenerate hole ring voided the polygon"
+    # The real hole is still cut out; the degenerate one encloses nothing to cut.
+    p = pts[tris]
+    meshed_area = float(np.abs(
+        (p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
+        - (p[:, 2, 0] - p[:, 0, 0]) * (p[:, 1, 1] - p[:, 0, 1])).sum() / 2)
+    expected = 10 * 10 - 2 * 2
+    assert meshed_area == pytest.approx(expected, abs=0.2)
+
+
+def test_degenerate_hole_seed_does_not_void_the_polygon():
+    """Even a hole ring with valid area can seed a point Triangle reads as outside the
+    domain. If the first seeding yields nothing, the mesher must re-seed rather than
+    return an empty mesh."""
+    outer = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+    holes = [[(4, 4), (6, 4), (6, 6), (4, 6), (4, 4)],
+             [(1, 1), (2, 1), (2, 2), (1, 2), (1, 1)]]
+    poly = M.Polygon(outer, holes)
+    assert len(M._hole_seeds(poly)) == 2
+    assert len(M._nudged_seeds(poly)) == 2
+    pts, tris = M.mesh_polygon(poly, [], MAX_AREA, 28.0)
+    assert len(tris) > 0
+
+
 def test_steiner_cap_stops_runaway_refinement():
     data = {"vertices": np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float),
             "segments": np.array([[0, 1], [1, 2], [2, 3], [3, 0]])}

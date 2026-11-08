@@ -193,6 +193,68 @@ def _triangulate(data: dict, switches: str, cap: int) -> dict:
     return out
 
 
+def _place(poly: Polygon) -> str:
+    """Where a polygon is, for a warning."""
+    c = poly.centroid
+    return f"near ({c.x:.2f}, {c.y:.2f}) mm"
+
+
+def _degenerate(ring) -> bool:
+    """Whether an interior ring encloses no area, so it cannot seed a hole.
+
+    Zone fills leave rings of a few coordinates where a hole is collinear or pinched
+    out (#234); ``representative_point`` of such a ring lands on it rather than inside
+    it, and Triangle, told to cut a hole there, finds no region and returns no triangles
+    at all -- losing the whole polygon.
+    """
+    return len(ring.coords) < 4 or Polygon(ring).area <= 1e-9
+
+
+def _hole_seeds(poly: Polygon, warn=None) -> List[Point]:
+    """A seed point inside each interior ring worth cutting, skipping degenerate ones."""
+    seeds = []
+    dropped = 0
+    for r in poly.interiors:
+        if _degenerate(r):
+            dropped += 1
+            continue
+        seeds.append(Polygon(r).representative_point())
+    if dropped and warn is not None:
+        warn(f"Copper {_place(poly)}: ignored {dropped} zero-area hole ring(s) in the fill")
+    return seeds
+
+
+def _nudged_seeds(poly: Polygon) -> List[Point]:
+    """Hole seeds nudged off each ring: the ring's centroid when it lies inside the ring,
+    else a point a little inside the ring's longest edge inward normal."""
+    seeds = []
+    for r in poly.interiors:
+        if _degenerate(r):
+            continue
+        ring = Polygon(r)
+        c = ring.centroid
+        if ring.contains(c):
+            seeds.append(c)
+            continue
+        # A sliver's centroid is outside it: step inward from the longest edge's midpoint.
+        coords = np.asarray(r.coords, dtype=float)
+        if len(coords) < 3:
+            continue
+        edges = np.roll(coords, -1, axis=0) - coords
+        lengths = np.hypot(edges[:, 0], edges[:, 1])
+        k = int(lengths.argmax())
+        mid = coords[k] + edges[k] / 2
+        normal = np.array([-edges[k][1], edges[k][0]]) / max(lengths[k], 1e-12)
+        for sign in (1.0, -1.0):
+            probe = mid + sign * normal * max(lengths[k] * 0.25, 1e-6)
+            if ring.contains(Point(probe)):
+                seeds.append(Point(probe))
+                break
+        else:
+            seeds.append(mid)
+    return seeds
+
+
 def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: float,
                  min_angle: float, size_fn=None, warn=None,
                  points: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
@@ -206,7 +268,7 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
     warn = warn or (lambda _t: None)
     clipped_constraints = [g for g in (_clip_constraint(c, poly) for c in constraints)
                            if g is not None]
-    holes = [Polygon(r).representative_point() for r in poly.interiors if len(r.coords) >= 4]
+    holes = _hole_seeds(poly, warn)
 
     def first_pass(with_constraints: bool):
         lines: List[BaseGeometry] = [poly.exterior, *poly.interiors]
@@ -223,7 +285,24 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
         if holes:
             data["holes"] = np.array([[h.x, h.y] for h in holes])
         cap = _steiner_cap(poly.area / max_area, len(verts))
-        return _triangulate(data, f"pq{min_angle:g}a{max_area:.6g}Q", cap)
+        out = _triangulate(data, f"pq{min_angle:g}a{max_area:.6g}Q", cap)
+        if holes and not len(out.get("triangles", ())):
+            # Triangle carved away the whole domain: a seed point found no region to
+            # remove and took its complement with it. Retry seeding each hole from a point
+            # nudged off its ring, and finally without hole seeds at all (the holes stay
+            # carved by their own segments, only left unfilled).
+            for candidate in (_nudged_seeds(poly), None):
+                trial = dict(data)
+                if candidate:
+                    trial["holes"] = np.array([[h.x, h.y] for h in candidate])
+                else:
+                    trial.pop("holes", None)
+                out = _triangulate(trial, f"pq{min_angle:g}a{max_area:.6g}Q", cap)
+                if len(out.get("triangles", ())):
+                    warn(f"Copper {_place(poly)}: a hole seed left Triangle with no "
+                         "domain; re-seeded the holes")
+                    break
+        return out
 
     where = f"near ({poly.centroid.x:.2f}, {poly.centroid.y:.2f}) mm"
     try:
