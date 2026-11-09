@@ -212,14 +212,35 @@ def test_per_pin_group_currents():
 
     # The same total split equally gives a different (and wrong for this part) answer.
     s2 = setup("ldo")
+    s2.settings.tie_load_pads = False
     s2.loads[0] = Load("U2", PinRef("U2", "+3V3", []), 1.0)
     eq = by_name(solve_tree(board_two_pin(), s2).loads, "U2")
     assert eq.v_worst == pytest.approx(v_mid - 0.5 * R(4), rel=1e-9)
 
 
-def _sensed_at_end(*loads):
+def test_tied_pins_draw_what_their_copper_delivers():
+    # U2's two pins are one node (its package joins them): the mid pin, nearer the VRM,
+    # takes the whole 1 A; the strip on to the end pin carries none, and both pins sit
+    # at the mid pin's voltage.
+    s = setup("ldo")
+    s.loads[0] = Load("U2", PinRef("U2", "+3V3", []), 1.0)
+    res = solve_tree(board_two_pin(), s)
+    ld = by_name(res.loads, "U2")
+    v_mid = 3.3 - 1.0 * R(3)
+    assert ld.v_low == pytest.approx(v_mid, rel=1e-9)
+    assert ld.v_high == pytest.approx(v_mid, rel=1e-9)
+    term = next(t for g in res.groups.values() for t in g.result.fields.terminals
+                if t.name == "U2" and t.kind == "load")
+    assert term.i_solved
+    amps = dict(zip(term.pad_ids, term.i_pads))
+    assert amps["u2_3"] == pytest.approx(1.0, rel=1e-6)
+    assert amps["u2_1"] == pytest.approx(0.0, abs=1e-6)
+
+
+def _sensed_at_end(*loads, tied=True):
     """board_two_pin() with U1 sensing at U2's end pin (x 21) and the given loads."""
     s = setup("ldo", sense=True)
+    s.settings.tie_load_pads = tied
     s.loads[:] = loads
     return solve_tree(board_two_pin(), s)
 
@@ -243,7 +264,8 @@ def test_pins_before_the_sense_point_are_boosted():
 
 def test_worst_pin_is_furthest_from_nominal_either_way():
     # One load on both pins, sensed at the end pin: the end sits at 3.3 V, the mid pin above.
-    res = _sensed_at_end(Load("U2", PinRef("U2", "+3V3", ["1", "3"]), 1.0, tol_min=-1.0, tol_max=1.0))
+    res = _sensed_at_end(Load("U2", PinRef("U2", "+3V3", ["1", "3"]), 1.0, tol_min=-1.0, tol_max=1.0),
+                         tied=False)
     ld = by_name(res.loads, "U2")
     assert ld.v_low == pytest.approx(3.3, abs=1e-9)
     assert ld.v_high == pytest.approx(3.3 + 0.5 * R(4), rel=1e-9)

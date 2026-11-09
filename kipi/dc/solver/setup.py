@@ -2,9 +2,11 @@
 
 A problem covers one *extended net*: one or more nets joined by series parts (sense
 resistors, ferrites, fuses). Terminals refer to pads by id. A terminal with several
-pads ties them to one condition: a source holds all of its pads at its voltage; a load
-draws its current split equally across its pads; each side of a series part is one
-node (its pads tied together).
+pads ties them to one condition: a source holds all of its pads at its voltage; a load's
+pads are one node, as the part's own package planes join them, and its current is
+drawn from that node - each pad carries what its copper and vias deliver to it (a load
+with ``tied`` off splits its current equally across its pads instead); each side of a
+series part is one node (its pads tied together).
 """
 
 from __future__ import annotations
@@ -35,6 +37,11 @@ class CurrentLoad:
     # the current is shared over the others; with none left, the load draws nothing.
     # Otherwise an unconnected pad stops the solve.
     optional: bool = False
+    # Its pads are one node, as the part's package planes join its balls: each pad then
+    # carries what its own copper and via deliver, not an equal share. The package
+    # plane is taken as a short (its resistance is not in the board data). Off: the
+    # current is split equally across the pads.
+    tied: bool = True
 
 
 @dataclass
@@ -87,6 +94,16 @@ class SolveSettings:
     large_pads_as_copper: bool = False
     large_pad_mm2: float = 10.0
     pad_contact_share: float = 0.25
+    # A load's pads are one node, as its package planes join its balls (CurrentLoad.tied):
+    # each pad then carries what its own copper and via deliver. Off: every load's
+    # current is split equally across its pads.
+    tie_load_pads: bool = True
+    # A VRM with no ground sense pins regulates its output above its own ground pins, as
+    # a converter does: its output moves with them when their copper lifts them. Its
+    # ground is then iterated with the rails like a ground sense. A VRM whose ground pins
+    # are the 0 V reference (a source, an isolated output side) is not moved. Off: the
+    # output is held above 0 V.
+    regulate_above_own_ground: bool = True
 
     def __post_init__(self):
         # A setup file stores the rules as plain objects.

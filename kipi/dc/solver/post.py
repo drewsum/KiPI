@@ -24,7 +24,8 @@ class TerminalResult:
     v_min: float
     v_max: float
     # Per pad (#71): its id, and the A it draws from the copper (negative: delivered).
-    # A source's pad currents are solved; a load's current is shared equally by its pads.
+    # A source's pad currents are solved; so are a tied load's (CurrentLoad.tied): what
+    # each pad's copper and vias deliver. An untied load's current is shared equally.
     pad_ids: List[str] = field(default_factory=list)
     i_pads: List[float] = field(default_factory=list)
     i_solved: bool = False
@@ -149,10 +150,12 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
         # Unconnected pads (#88) draw nothing; the others share the current.
         dead = set(dead_pads.get(load.name, ()))
         n_live = len(load.pad_ids) - len(dead)
-        per_pad = [0.0 if p in dead else i / n_live for p in load.pad_ids]
+        tied = (getattr(sol, "load_pad_current", None) or {}).get(load.name)
+        per_pad = (list(tied) if tied is not None
+                   else [0.0 if p in dead else i / n_live for p in load.pad_ids])
         live_v = [v for v in vs if not np.isnan(v)] or [float("nan")]
         terminals.append(TerminalResult(load.name, "load", i, vs, min(live_v), max(live_v),
-                                        list(load.pad_ids), per_pad))
+                                        list(load.pad_ids), per_pad, tied is not None))
 
     v_src = max(volts.get(s.name, s.voltage) for s in prob.sources)
     if v_ref is None:
