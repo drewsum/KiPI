@@ -72,6 +72,45 @@ def test_pslg_check_catches_unnoded_crossing():
     assert M.pslg_problems(verts, segs) > 0
 
 
+def test_zero_area_hole_ring_does_not_void_the_polygon():
+    """A fill ring with no area cannot seed a hole. Used to lose the whole polygon:
+    Triangle found no region at the seed, carved away everything and returned no
+    triangles, so every pad on that plane read as DISCONNECTED (D-Wing AIO, B.Cu GND)."""
+    outer = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+    real_hole = [(4, 4), (6, 4), (6, 6), (4, 6), (4, 4)]
+    # collinear ring: four coordinates, two of them duplicates -> zero area
+    flat_hole = [(8.0, 8.0), (8.5, 8.5), (8.5, 8.5), (8.0, 8.0)]
+    poly = M.Polygon(outer, [real_hole, flat_hole])
+
+    pts, tris = M.mesh_polygon(poly, [], MAX_AREA, 28.0)
+    assert len(tris) > 0, "degenerate hole ring voided the polygon"
+    # The real hole is still cut out; the degenerate one encloses nothing to cut.
+    p = pts[tris]
+    meshed_area = float(np.abs(
+        (p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
+        - (p[:, 2, 0] - p[:, 0, 0]) * (p[:, 1, 1] - p[:, 0, 1])).sum() / 2)
+    expected = 10 * 10 - 2 * 2
+    assert meshed_area == pytest.approx(expected, abs=0.2)
+
+
+def test_hole_seed_that_voids_the_domain_falls_back_to_carving(monkeypatch):
+    """If a seed still leaves Triangle nothing (one in the copper eats it all), the
+    mesher meshes without seeds and cuts the holes out, rather than return an empty
+    mesh or one with its holes filled."""
+    outer = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
+    poly = M.Polygon(outer, [[(4, 4), (6, 4), (6, 6), (4, 6), (4, 4)]])
+    monkeypatch.setattr(M, "_hole_seeds", lambda _p, _w=None: [M.Point(1, 1), M.Point(5, 5)])
+    notes = []
+    pts, tris = M.mesh_polygon(poly, [], MAX_AREA, 28.0, warn=notes.append)
+    assert len(tris) > 0 and notes
+    assert len(np.unique(tris)) == len(pts)     # no vertices left in the hole
+    p = pts[tris]
+    meshed_area = float(np.abs(
+        (p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
+        - (p[:, 2, 0] - p[:, 0, 0]) * (p[:, 1, 1] - p[:, 0, 1])).sum() / 2)
+    assert meshed_area == pytest.approx(10 * 10 - 2 * 2, abs=0.2)
+
+
 def test_steiner_cap_stops_runaway_refinement():
     data = {"vertices": np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float),
             "segments": np.array([[0, 1], [1, 2], [2, 3], [3, 0]])}
