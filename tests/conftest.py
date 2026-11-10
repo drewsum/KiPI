@@ -1,6 +1,8 @@
 # Portions Copyright (c) 2026 Tomachie LLC.
 """Shared test fixtures."""
 
+import os
+
 import pytest
 
 
@@ -44,6 +46,8 @@ def comma_locale():
         except locale.Error:
             pass
     else:
+        if os.environ.get("KIPI_REQUIRE_COMMA_LOCALE"):     # CI's comma locale job (#236)
+            pytest.fail("no decimal comma locale on this machine")
         pytest.skip("no decimal comma locale on this machine")
     yield
     locale.setlocale(locale.LC_NUMERIC, before)

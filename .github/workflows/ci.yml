@@ -33,7 +33,7 @@ jobs:
         run: ruff check --output-format=github .
 
   test:
-    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.kipy && format(', kicad-python {0}', matrix.kipy) || '' }}${{ matrix.pardiso && ', PARDISO' || '' }})
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.kipy && format(', kicad-python {0}', matrix.kipy) || '' }}${{ matrix.pardiso && ', PARDISO' || '' }}${{ matrix.locale && format(', {0}', matrix.locale) || '' }})
     runs-on: ${{ matrix.os }}
     # A whole job takes 2-5 minutes; pytest-timeout ends a hung test well before this.
     timeout-minutes: 20
@@ -57,6 +57,9 @@ jobs:
           - { os: ubuntu-latest,  python: "3.11", kipy: "0.7.1" }
           # With the optional multithreaded direct solver (README: faster solves).
           - { os: windows-latest, python: "3.11", pardiso: true }
+          # A decimal comma and a U+2212 minus sign, as a Swedish user has them (#236): on
+          # Unix Qt applies the system locale to the C library as well as to QLocale.
+          - { os: ubuntu-latest,  python: "3.12", locale: sv_SE.UTF-8 }
     env:
       QT_QPA_PLATFORM: offscreen
       PYVISTA_OFF_SCREEN: "true"
@@ -76,6 +79,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libgl1 libegl1 libxrender1 libxkbcommon0 libfontconfig1 libdbus-1-3
 
+      # The whole run, Qt included, then starts in that locale. The locale tests fail
+      # rather than skip if it is missing.
+      - name: Use a decimal comma locale
+        if: matrix.locale
+        run: |
+          sudo apt-get install -y --no-install-recommends locales
+          sudo locale-gen ${{ matrix.locale }}
+          echo "LANG=${{ matrix.locale }}" >> "$GITHUB_ENV"
+          echo "LC_ALL=${{ matrix.locale }}" >> "$GITHUB_ENV"
+          echo "KIPI_REQUIRE_COMMA_LOCALE=1" >> "$GITHUB_ENV"
+
       # What the plugin's venv ends up with (KiCad's requirements.txt, then KiPI's first
       # click adds requirements-standalone.txt, #7), plus test tools.
       - name: Install dependencies
@@ -92,6 +106,12 @@ jobs:
         run: |
           pip install pypardiso
           python -c "from kipi.core.solver import direct; assert direct.backend() == 'pardiso', direct.backend_note()"
+
+      - name: Check the locale took
+        if: matrix.locale
+        run: |
+          python -c "import locale; locale.setlocale(locale.LC_ALL, ''); assert locale.localeconv()['decimal_point'] == ',', locale.localeconv()"
+          python -c "from qtpy.QtWidgets import QApplication; from qtpy.QtCore import QLocale; a = QApplication([]); assert QLocale().decimalPoint() == ',', QLocale().name()"
 
       - name: Validate plugin manifest
         run: python -m kipy.packaging validate .
