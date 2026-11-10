@@ -32,6 +32,8 @@ milestones rather than versions that were ever set.
   Thanks to @FractalEngineer.
 - **Negative values in Swedish and similar locales** (#236). These locales write minus as
   U+2212, which value fields rejected, so a negative value shown there could not be edited.
+- **The README's user guide links opened the raw file on GitHub** (#239). They now open
+  the hosted guide on GitHub Pages, as the Solver Guide link already did.
 
 ## 1.0.0
 

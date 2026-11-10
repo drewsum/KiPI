@@ -34,7 +34,7 @@ analysis modes:
   checked against its logic family's noise margin, with the line held high and held low, and
   the 3D view shows where along its traces the noise couples in.
 
-New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
+New to KiPI? The **[user guide](https://drewsum.github.io/KiPI/help.html)** ([source](docs/help.html); also the **Help** button in KiPI, or
 **F1**) walks through every button, the workflows and what the results mean. Every
 control in KiPI has a tooltip. This README is an overview; the user guide has the details.
 
@@ -175,7 +175,7 @@ Use **Open…** to open a board and **Reload** to read it again. KiCad boards ke
 setup file standalone and in the plugin. KiPI uses the zone fills saved in the file, so
 **fill the zones in KiCad (B) and save** before opening a `.kicad_pcb`. ODB++ jobs and
 HyperLynx files share a board's setup when exported next to it with the same name
-(`Board.zip`, `Board.hyp`). The [user guide](docs/help.html) lists what each format does
+(`Board.zip`, `Board.hyp`). The [user guide](https://drewsum.github.io/KiPI/help.html) lists what each format does
 and does not carry.
 
 To change the setup later, use **About → Manage dependencies…** in KiPI, or the launcher:
@@ -222,7 +222,7 @@ stage as it runs.
   picks the analysis mode. Readme sections 2 to 5 are DC, the default;
   [section 6](#6-ac-pdn-impedance) covers AC and [section 7](#7-coupled-noise) Coupled Noise.
   The VRMs, series links and capacitor models are shared by all three.
-* **Help** (or **F1**) opens the [user guide](docs/help.html) in your browser.
+* **Help** (or **F1**) opens the [user guide](https://drewsum.github.io/KiPI/help.html) in your browser.
 
 ### 2. Pick Power Nets from Netlist
 
@@ -252,7 +252,7 @@ uses the edited stackup.
 ![The Stackup window: copper and dielectric layers with thickness, material, εr, thermal conductivity and resistivity](docs/images/stackup.png)
 
 Drag to rotate, scroll to zoom and shift-drag (or middle-drag) to pan; the
-[user guide](docs/help.html#keys) lists every keyboard shortcut.
+[user guide](https://drewsum.github.io/KiPI/help.html#keys) lists every keyboard shortcut.
 
 ### 3. Model the Power Distribution System
 
@@ -450,7 +450,7 @@ current's return. **Report** and **Save results…** work as in the other modes.
   folder (`%TEMP%` on Windows, `$TMPDIR` on macOS, `/tmp` on Linux), with a matching
   `.crash.log`. Setup and the plugin's first start write `launcher-*.log` to the `logs`
   folder beside KiPI's environment (see the table above). Attach them, and
-  **About → Copy version info**, to bug reports. The [user guide](docs/help.html) has more troubleshooting.
+  **About → Copy version info**, to bug reports. The [user guide](https://drewsum.github.io/KiPI/help.html) has more troubleshooting.
 * **Have Fun:** The author asks that you share what projects this package has simulated, and what power integrity issues you have found with it. Conductor simulation gives incredible insight into how PCBs actually function in practice. See what happens when you pump 10 amps into a 5 mil trace with the temperature results view.
 
 ## Development
