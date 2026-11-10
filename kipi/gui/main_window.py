@@ -32,6 +32,7 @@ from kipi.dc.gui.pi_panel import PIPanel
 from kipi.dc.pi.tree import fmt_drop
 from kipi.gui.docks import make_detachable
 from kipi.gui.heartbeat import Heartbeat, busy_cursor
+from kipi.gui.setup_history import LIMIT as SETUP_UNDO_LIMIT, SetupHistory
 from kipi.gui.stackup_window import StackupWindow
 from kipi.gui.tooltip_art import art_tip
 from kipi.gui.viewer3d import Viewer3D
@@ -57,7 +58,7 @@ MODES = (("dc", "DC", "PI setup"), ("ac", "AC", "AC setup"),
 VIEW_KEYS = {"iso": "Home", "top": "Z", "bottom": "Shift+Z"}
 KEYS = {"open": "Ctrl+O", "reload": "F5", "save": "Ctrl+S", "screenshot": "F12",
         "results": "Ctrl+Shift+O", "stackup": "Ctrl+L", "power_tree": "Ctrl+T",
-        "tolerance": "Ctrl+Shift+T",
+        "tolerance": "Ctrl+Shift+T", "undo": "Ctrl+Z", "redo": "Ctrl+Y",
         "help": "F1", "solve": "Ctrl+Return", "cancel": "Esc", "dc": "Ctrl+1", "ac": "Ctrl+2",
         "noise": "Ctrl+3"}
 
@@ -173,6 +174,14 @@ class MainWindow(QMainWindow):
         self._model_timer.setInterval(300)
         self._model_timer.timeout.connect(self._sync_models)
         self._model_timer.timeout.connect(self._sync_pi_markers)
+        # Undo and redo of setup edits (#240). Edits close together (typing a value, a
+        # spin box held down) settle into one step.
+        self._history = SetupHistory()
+        self._history_timer = QTimer(self)
+        self._history_timer.setSingleShot(True)
+        self._history_timer.setInterval(400)
+        self._history_timer.timeout.connect(self._record_setup)
+        self._restoring = False             # putting an undone or redone setup back
         self._last_fraction_t = 0.0
         self._picked = None   # ("pad"|"via", id)
         self._imported_stackup = None     # as read from KiCad, before any edits
@@ -220,6 +229,7 @@ class MainWindow(QMainWindow):
         self._build_shortcuts()
         self.stackup_window = StackupWindow(self)
         self.stackup_window.stackup_changed.connect(self._stackup_changed)
+        self.stackup_window.stackup_changed.connect(self._setup_edited)
         self.stackup_window.settings_changed.connect(self.solve_panel.setup_changed.emit)
         self._source_changed()
         self.statusBar().showMessage("Ready")
@@ -273,6 +283,14 @@ class MainWindow(QMainWindow):
                 KEYS["open"])
         self.act_save = act("Save snapshot…", self.save_snapshot,
                             "Save the extracted board for offline use", KEYS["save"])
+        tb.addSeparator()
+        self.act_undo = act("Undo", self.undo_setup,
+                            f"Undo the last setup change (the last {SETUP_UNDO_LIMIT} "
+                            "can be undone)", KEYS["undo"])
+        self.act_redo = act("Redo", self.redo_setup, "Redo the setup change last undone",
+                            KEYS["redo"])
+        self.act_undo.setEnabled(False)
+        self.act_redo.setEnabled(False)
         tb.addSeparator()
         act("Top", lambda: self._show_3d(self.viewer.view_top),
             "Look down on the top of the board", VIEW_KEYS["top"], view=True)
@@ -330,6 +348,7 @@ class MainWindow(QMainWindow):
         for rb in self.mode_buttons.buttons():
             rb.setEnabled(on)
         self.setup_bar.setEnabled(on and self.snapshot is not None)
+        self._show_history()
 
     def _build_shortcuts(self):
         """Keys with no toolbar button: Solve and Cancel."""
@@ -746,6 +765,7 @@ class MainWindow(QMainWindow):
             panel.setup_changed.connect(self._model_timer.start)
             panel.setup_changed.connect(self._refresh_power_tree)
             panel.setup_changed.connect(self._show_unsaved)
+            panel.setup_changed.connect(self._setup_edited)
         # One setup dock: the setup file's bar, then the panel of the current analysis mode.
         # The bar stays outside the scrolling, so Import and Save are always in view.
         from kipi.gui.setup_file_bar import SetupFileBar
@@ -1123,6 +1143,9 @@ class MainWindow(QMainWindow):
         # would write now, so only later edits count as not saved.
         setup.nets = self._checked_nets()
         self._saved = copy.deepcopy(setup)
+        self._history_timer.stop()
+        self._history.reset(setup)          # a board read is not undone
+        self._show_history()
         self._show_unsaved()
         self.setup_bar.setEnabled(not self._busy())
         self._show_board_summary()
@@ -1234,6 +1257,7 @@ class MainWindow(QMainWindow):
         self._checked_cache = None
         self._apply_net_filter()
         self._sync_timer.start()
+        self._setup_edited()
 
     def _check_power_nets(self):
         self._set_checked(lambda it: it.checkState() == Qt.Checked
@@ -1244,6 +1268,7 @@ class MainWindow(QMainWindow):
         self.viewer.set_included_nets(self._checked_set())
         self._sync_timer.start()
         self._show_unsaved()
+        self._setup_edited()
 
     def _on_layer_item_changed(self, item):
         self.viewer.set_layer_visible(item.data(Qt.UserRole), item.checkState() == Qt.Checked)
@@ -1629,6 +1654,7 @@ class MainWindow(QMainWindow):
         self._refresh_power_tree()
         self._sync_tolerance()
         self.setup_bar.set_label(f"{label} - not saved")
+        self._setup_edited()                   # an import can be undone
         # Last in the Log, under the notes, so it is the line in view.
         self.log(f"== Read {name}: {counts(setup)} - {setup_changes(current, setup)}"
                  + (f"; {extra}" if extra else "")
@@ -1637,6 +1663,75 @@ class MainWindow(QMainWindow):
         self.log_dock.show()
         self.log_dock.raise_()
         self._show_unsaved()
+
+    # ------------------------------------------------------------ undo and redo
+    def _setup_state(self):
+        """The setup as Save would write it now, nets ticked included."""
+        now = copy.copy(self.solve_panel.setup)
+        now.nets = self._checked_nets()
+        return now
+
+    def _setup_edited(self):
+        if not self._restoring and self.snapshot is not None:
+            self._history_timer.start()
+
+    def _record_setup(self):
+        if self.snapshot is not None:
+            self._history.record(self._setup_state())
+        self._show_history()
+
+    def _show_history(self):
+        on = self.snapshot is not None and not self._busy()
+        self.act_undo.setEnabled(on and (self._history.can_undo()
+                                         or self._history_timer.isActive()))
+        self.act_redo.setEnabled(on and self._history.can_redo())
+
+    def undo_setup(self):
+        self._step(self._history.undo, "Undid")
+
+    def redo_setup(self):
+        self._step(self._history.redo, "Redid")
+
+    def _step(self, take, verb: str):
+        """Put back the setup ``take`` gives: the one before the last edit, or after."""
+        if self.snapshot is None or self._busy():
+            return
+        if self._history_timer.isActive():    # an edit still settling is the last one
+            self._history_timer.stop()
+            self._history.record(self._setup_state())
+        setup = take()
+        if setup is None:
+            self._show_history()
+            return
+        self._restoring = True
+        try:
+            stackup_moved = setup.stackup != self.solve_panel.setup.stackup
+            for panel in self._panels().values():
+                panel.set_board(self.snapshot, setup)
+            nets = set(setup.nets)
+            self._set_checked(lambda it: it.data(Qt.UserRole) in nets)
+            if stackup_moved:
+                self._restore_stackup(setup)
+            self._refresh_power_tree()
+            self._sync_tolerance()
+            self._model_timer.start()
+            self._show_unsaved()
+        finally:
+            self._restoring = False
+        self._history.amend(self._setup_state())
+        self._show_history()
+        self.log(f"{verb} a setup change")
+
+    def _restore_stackup(self, setup):
+        """Show the stackup an undone or redone setup has: its edits, or KiCad's."""
+        from kipi.core.model.stackup import from_setup
+        snap = self.snapshot
+        edited, _ = from_setup(self._imported_stackup, setup.stackup)
+        st = edited or self._imported_stackup
+        self.stackup_window.set_board(self._imported_stackup, st, setup, self._layer_colors())
+        if st is not snap.stackup:
+            with busy_cursor():
+                self._apply_stackup(snap, st)
 
     def _save_setup(self):
         if self._setup_path is None:

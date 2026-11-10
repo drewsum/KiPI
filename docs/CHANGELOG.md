@@ -12,6 +12,11 @@ milestones rather than versions that were ever set.
   then flows into the copper, the VRM supplies that much less, and its ground pins take
   the current out. Results show its current as negative, and the power tree diagram
   draws its arrow into the rail. Setup files without it read as before.
+- **Undo and Redo for the setup** (#240). Two buttons on the main toolbar (Ctrl+Z and
+  Ctrl+Y), in the plugin and standalone, step back and forward through the last 25 setup
+  changes in any mode, including imports, stackup edits and the nets ticked. Edits made
+  close together count as one step. Reading the board again starts a new history, and
+  only Save writes the setup file.
 
 ### Fixed
 - **The plugin did not start on macOS** (#237). KiCad starts plugins with the
