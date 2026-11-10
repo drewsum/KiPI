@@ -33,6 +33,23 @@ def step_timings(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture
+def comma_locale():
+    """Run the test with the C library in a decimal comma locale, as Qt leaves it on Unix."""
+    import locale
+    before = locale.setlocale(locale.LC_NUMERIC)
+    for name in ("sv_SE.UTF-8", "de_DE.UTF-8", "Swedish_Sweden", "German_Germany"):
+        try:
+            locale.setlocale(locale.LC_NUMERIC, name)
+            break
+        except locale.Error:
+            pass
+    else:
+        pytest.skip("no decimal comma locale on this machine")
+    yield
+    locale.setlocale(locale.LC_NUMERIC, before)
+
+
+@pytest.fixture
 def plugin_host(monkeypatch):
     """Run the test as the KiCad plugin."""
     from kipi import host

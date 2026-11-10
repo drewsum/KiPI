@@ -44,8 +44,8 @@ jobs:
         # - Windows: KiCad's own Python 3.11.
         # - Linux: the system Python (3.10 on Ubuntu 22.04, 3.12 on 24.04, 3.13 on
         #   Debian 13 and Fedora 42). 3.10 is also plugin.json's min_version.
-        # - macOS: KiCad bundles Python 3.9, which is too old for KiPI, so users point
-        #   KiCad at a newer Python (README).
+        # - macOS: KiCad bundles Python 3.9, which is too old for KiPI, so the plugin runs
+        #   in KiPI's own environment from a newer Python it finds (README, #237).
         include:
           - { os: windows-latest, python: "3.11" }
           - { os: ubuntu-latest,  python: "3.10" }
@@ -98,6 +98,18 @@ jobs:
 
       - name: Import GUI modules
         run: python -c "import kipi.gui.main_window, kipi.gui.viewer3d, kipi.dc.gui.pi_panel, kipi_entry"
+
+      # KiCad on macOS starts its plugin with its own Python 3.9, PYTHONHOME and PYTHONPATH
+      # (#237). macOS's /usr/bin/python3 is a 3.9 framework build like KiCad's: the plugin's
+      # handoff must run on it and start KiPI in KiPI's own environment. Fails, not skips,
+      # if there is no 3.9.
+      - name: Plugin start from KiCad's Python 3.9 (macOS)
+        if: runner.os == 'macOS'
+        env:
+          KIPI_REQUIRE_PY39: "1"
+        run: |
+          /usr/bin/python3 -V
+          python -m pytest -v -rs tests/launcher/test_plugin_setup.py -k "kicads or handed or too_old or own_setup or own_environment"
 
       # One collapsible log group per test folder (core, dc, ac, gui, ...), found rather
       # than listed so a new folder is never skipped. Every folder runs even after one

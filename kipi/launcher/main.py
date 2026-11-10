@@ -189,10 +189,12 @@ def kicad_reason(env: Path, req: Path, log: "Log") -> Optional[str]:
     return plugin_setup.FIRST if previous is None else plugin_setup.CHANGED
 
 
-def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
+def main(argv: Optional[List[str]] = None, windowed: bool = False, ui=None) -> int:
     args = parse(argv)
-    if os.environ.get("KICAD_API_SOCKET"):
+    if os.environ.get("KICAD_API_SOCKET") and not args.own_env:
         # KiCad started this as its plugin: KiCad made the plugin's environment itself.
+        # (--own-env here is the plugin, whose environment cannot run KiPI, asking for
+        # KiPI's own: plugin_setup.handoff.)
         sys.path.insert(0, str(paths.KIPI_ROOT))
         import kipi_entry
         return kipi_entry.main()
@@ -202,7 +204,7 @@ def main(argv: Optional[List[str]] = None, windowed: bool = False) -> int:
     log = Log(paths.log_dir(data))
     kicad = kicad_env_for(args.own_env, log)
     env = kicad or paths.env_dir(data)
-    ui = make_ui(args.console, windowed)
+    ui = ui or make_ui(args.console, windowed)
     if args.create_shortcut:
         from kipi.launcher.shortcut import ShortcutError, create
         try:

@@ -2,6 +2,7 @@
 KiPI uses KiCad's environment when it lives in KiCad's plugin folders (#7)."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -232,6 +233,147 @@ def test_a_system_python_is_left_alone(monkeypatch):
     monkeypatch.setattr(sys, "base_prefix", sys.prefix)
     monkeypatch.setattr(plugin_setup, "reason", lambda *a, **k: pytest.fail("checked"))
     assert plugin_setup.ensure(lambda text: None)
+
+
+# --- KiCad's Python cannot run KiPI (macOS, #237) ------------------------------------------
+
+def test_a_supported_python_is_not_handed_off():
+    fail = lambda *a, **k: pytest.fail("handed off")  # noqa: E731
+    assert plugin_setup.handoff(["kipi_entry.py"], fail, fail, version=(3, 10, 0)) is None
+    assert plugin_setup.handoff(["kipi_entry.py"], fail, fail, version=(3, 14, 0)) is None
+
+
+def _probe_script(tmp_path):
+    """A stand-in kipi_entry.py that writes what it was started with."""
+    out = tmp_path / "started.json"
+    script = tmp_path / "entry.py"
+    script.write_text(
+        "import json, os, sys\n"
+        f"open({str(out)!r}, 'w').write(json.dumps({{\n"
+        "    'version': list(sys.version_info[:2]), 'prefix': sys.prefix, 'path': sys.path,\n"
+        "    'env': {k: os.environ.get(k) for k in ('PYTHONHOME', 'KICAD_API_SOCKET',\n"
+        "                                           'KICAD_API_TOKEN', 'VIRTUAL_ENV')}}))\n")
+    return script, out
+
+
+def _kicads_environment(monkeypatch, home):
+    """What KiCad on macOS gives its plugin: its own Python home and path, and the API."""
+    monkeypatch.setenv("PYTHONHOME", str(home))
+    monkeypatch.setenv("PYTHONPATH", str(home / "lib" / "python3.9" / "site-packages"))
+    monkeypatch.setenv("KICAD_API_SOCKET", "ipc:///tmp/kicad/api.sock")
+    monkeypatch.setenv("KICAD_API_TOKEN", "token")
+
+
+def test_kicads_python_home_stops_any_other_python(tmp_path, monkeypatch):
+    """The failure in #237: a Python given another Python's home cannot start."""
+    _kicads_environment(monkeypatch, tmp_path / "Python.framework" / "Versions" / "Current")
+    out = subprocess.run([sys.executable, "-c", "print('ran')"], capture_output=True, text=True)
+    assert out.returncode != 0 and "ran" not in out.stdout
+    assert "encodings" in out.stderr
+
+
+def test_a_too_old_python_sets_up_kipis_own_environment_and_runs_there(tmp_path, monkeypatch):
+    _kicads_environment(monkeypatch, tmp_path / "Python.framework" / "Versions" / "Current")
+    monkeypatch.setenv("KIPI_HOME", str(tmp_path / "KiPI"))
+    monkeypatch.setattr(plugin_setup.paths, "env_python", lambda env: Path(sys.executable))
+    script, out = _probe_script(tmp_path)
+    asked, lines = [], []
+
+    def run_launcher(argv, ui):
+        asked.append(argv)
+        return 0
+    code = plugin_setup.handoff([str(script)], lines.append, run_launcher, version=(3, 9, 6))
+    assert code == 0 and asked == [["--own-env", "--no-launch"]]
+    assert "3.9.6" in lines[0]
+    started = json.loads(out.read_text())
+    assert started["env"]["PYTHONHOME"] is None
+    assert started["env"]["KICAD_API_SOCKET"] == "ipc:///tmp/kicad/api.sock"
+    assert started["env"]["VIRTUAL_ENV"] == str(paths.env_dir())
+    assert str(paths.KIPI_ROOT) in started["path"]
+
+
+def test_a_failed_own_setup_does_not_start_kipi(tmp_path, monkeypatch):
+    monkeypatch.setenv("KIPI_HOME", str(tmp_path / "KiPI"))
+    monkeypatch.setattr(plugin_setup.subprocess, "call", lambda *a, **k: pytest.fail("started"))
+    assert plugin_setup.handoff(["e.py"], lambda t: None, lambda argv, ui: 1,
+                                version=(3, 9, 6)) == 1
+
+    def broken(argv, ui):
+        raise RuntimeError("no")
+    assert plugin_setup.handoff(["e.py"], lambda t: None, broken, version=(3, 9, 6)) == 2
+
+
+def test_the_setup_screen_opens_only_when_needed():
+    made = []
+    ui = plugin_setup._LazyUI(lambda: made.append(1) or FakeUI(True))
+    ui.close()
+    assert made == []
+    ui.status("x")
+    assert made == [1]
+
+
+def test_the_launcher_sets_up_its_own_environment_for_the_plugin(tmp_path, monkeypatch):
+    """KiCad's API socket would otherwise send the launcher straight back into the plugin."""
+    from kipi.launcher import shortcut
+    monkeypatch.setenv("KICAD_API_SOCKET", "ipc:///tmp/kicad/api.sock")
+    monkeypatch.setenv("KIPI_HOME", str(tmp_path / "KiPI"))
+    monkeypatch.setattr(shortcut, "keep_folder_icon", lambda root=None, stamp=None: None)
+    monkeypatch.setattr(launcher, "kicad_env_for",
+                        lambda own, log: None if own else pytest.fail("KiCad's"))
+    monkeypatch.setattr(launcher, "needs_setup", lambda env, h: None)
+    assert launcher.main(["--own-env", "--no-launch"], ui=FakeUI(True)) == 0
+
+
+def _python39():
+    """A Python 3.9 to stand in for KiCad's: macOS's own /usr/bin/python3 is 3.9, a framework
+    build like KiCad's. KIPI_TEST_PY39 names another."""
+    import shutil
+    for cmd in (os.environ.get("KIPI_TEST_PY39"), "/usr/bin/python3", shutil.which("python3.9")):
+        if not cmd or not Path(cmd).is_file():
+            continue
+        out = subprocess.run([cmd, "-c", "import sys; print(sys.version_info[:2] == (3, 9), sys.prefix)"],
+                             capture_output=True, text=True)
+        ok, _, prefix = out.stdout.strip().partition(" ")
+        if ok == "True":
+            return cmd, Path(prefix)
+    return None, None
+
+
+def test_the_plugin_starts_from_kicads_python_39_with_its_python_home(tmp_path, monkeypatch):
+    """#237 end to end, as KiCad on macOS starts KiPI: a Python 3.9 with its own PYTHONHOME
+    and PYTHONPATH runs KiPI's handoff, which finds KiPI's own environment (made from this
+    Python, already set up) and starts the plugin there, where it runs on this Python."""
+    py39, home = _python39()
+    if py39 is None:
+        if sys.platform == "darwin" and os.environ.get("KIPI_REQUIRE_PY39"):
+            pytest.fail("no Python 3.9 to stand in for KiCad's")
+        pytest.skip("no Python 3.9 to stand in for KiCad's")
+    data = tmp_path / "KiPI"
+    env = paths.env_dir(data)
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(env)], check=True)
+    state.save(env, state.State(requirements_hash=deps.requirements_hash(REQ)))
+    # The failure itself: KiPI's own environment's Python, given KiCad's Python home. Only
+    # where the standard library's folder is named for its version (lib/python3.9): on
+    # Windows it is Lib, so another version gets by with it.
+    _kicads_environment(monkeypatch, home)
+    if sys.platform != "win32":
+        out = subprocess.run([str(paths.env_python(env)), "-c", "print('ran')"],
+                             capture_output=True, text=True)
+        assert out.returncode != 0 and "encodings" in out.stderr
+    monkeypatch.setenv("KIPI_HOME", str(data))
+    script, started_file = _probe_script(tmp_path)
+    run = subprocess.run(
+        [py39, "-c", "import sys\n"
+                     f"sys.path.insert(0, {str(paths.KIPI_ROOT)!r})\n"
+                     "from kipi.launcher import plugin_setup\n"
+                     f"sys.exit(plugin_setup.handoff([{str(script)!r}]))\n"],
+        capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr
+    started = json.loads(started_file.read_text())
+    assert tuple(started["version"]) == tuple(sys.version_info[:2])
+    assert Path(started["prefix"]).resolve() == env.resolve()
+    assert started["env"]["PYTHONHOME"] is None
+    assert started["env"]["KICAD_API_SOCKET"] == "ipc:///tmp/kicad/api.sock"
 
 
 class FakeUI:

@@ -4,7 +4,28 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 1.0.0 (in development)
+## 1.0.1 (in development)
+
+### Fixed
+- **The plugin did not start on macOS** (#237). KiCad starts plugins with the
+  `PYTHONHOME` and `PYTHONPATH` of its bundled Python 3.9, and clears them only on
+  Windows. A newer Python selected in *Preferences → Plugins*, as the README said to do,
+  stopped before running any KiPI code (`No module named 'encodings'`). With KiCad's own
+  Python, KiPI's packages could not be installed. Now the README says to keep KiCad's
+  Python. On the first click, KiPI sees that it is too old, sets up its own environment
+  from a Python 3.10 to 3.13 it finds (with the same setup window), and runs the plugin
+  there without KiCad's Python settings. It still connects to the PCB editor. Looking
+  for that Python now also searches Homebrew, python.org and `~/.local/bin`, which are
+  not on the PATH of an app started from the Dock. CI runs this start on macOS's own
+  Python 3.9.
+- **Meshing failed on systems with a decimal comma** (#236). On Linux and macOS, Qt applies
+  the system locale to the whole process, so Triangle read the "0.01" in its options as 0
+  and stopped, and read a minimum angle such as 28.5 as 28. KiPI now keeps C-level numbers
+  in the C locale. Value fields still show the user's decimal comma.
+- **Negative values in Swedish and similar locales** (#236). These locales write minus as
+  U+2212, which value fields rejected, so a negative value shown there could not be edited.
+
+## 1.0.0
 
 ### Added
 - **KiCad Plugin and Content Manager package** (#7). Each release now has

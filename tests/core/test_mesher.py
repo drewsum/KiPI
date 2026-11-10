@@ -1,5 +1,6 @@
 """Mesher robustness: inputs that used to hang or crash Triangle."""
 
+import locale
 import math
 
 import numpy as np
@@ -19,6 +20,13 @@ def min_angle(pts, tris):
         cosang = (u * v).sum(1) / np.linalg.norm(u, axis=1) / np.linalg.norm(v, axis=1)
         out.append(np.degrees(np.arccos(np.clip(cosang, -1, 1))))
     return float(np.min(out))
+
+
+def test_decimal_comma_locale_does_not_break_triangle(comma_locale):
+    """Under a decimal comma Triangle read the maximum area as 0 and failed (#236)."""
+    pts, tris = M.mesh_polygon(box(0, 0, 10, 4), [], 0.01, 28.5)
+    assert locale.localeconv()["decimal_point"] == "."
+    assert len(tris) > 4000 and min_angle(pts, tris) > 28
 
 
 @pytest.mark.parametrize("gap", [1e-3, 2e-4, 5e-5, 0.0])
