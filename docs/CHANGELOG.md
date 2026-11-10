@@ -54,7 +54,9 @@ milestones rather than versions that were ever set.
   and stopped, and read a minimum angle such as 28.5 as 28. KiPI now keeps C-level numbers
   in the C locale. Value fields still show the user's decimal comma. CI now also runs
   the tests on Linux in a Swedish locale (`sv_SE.UTF-8`), so a decimal comma or U+2212
-  minus that breaks anything shows up before release.
+  minus that breaks anything shows up before release. That run found a second Triangle
+  call, in Coupled Noise's trace cross-sections, without the fallback check; every
+  Triangle call now has it.
 - **A copper pour with a zero-area hole was left out of the solve** (#238). Zone fills
   can carry a hole outline that encloses nothing (collinear or pinched-out points). The
   point KiPI gave Triangle to mark that hole fell on the outline, in the copper, so

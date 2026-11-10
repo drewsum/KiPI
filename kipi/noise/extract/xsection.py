@@ -107,7 +107,7 @@ def mesh(rects: Sequence[Rect], bands: Sequence[Band], box: Tuple[float, float, 
     uniform mesh converges slowly there."""
     import triangle
     from shapely.geometry import LineString
-    from kipi.core.mesh.mesher import _linework
+    from kipi.core.mesh.mesher import _linework, c_numbers
     bx0, bx1, bz0, bz1 = box
     active = [r for r in rects if r.group != GROUND]
     lines = [_ring(bx0, bz0, bx1, bz1, coarse_mm)]
@@ -123,6 +123,7 @@ def mesh(rects: Sequence[Rect], bands: Sequence[Band], box: Tuple[float, float, 
     data = {"vertices": verts, "segments": segs}
     if holes:
         data["holes"] = np.asarray(holes)
+    c_numbers()
     out = triangle.triangulate(data, f"pq28a{coarse_mm ** 2 * 0.5:.6g}")
     for _ in range(REFINE_PASSES):
         cent = out["vertices"][out["triangles"]].mean(axis=1)

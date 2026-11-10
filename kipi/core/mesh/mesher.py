@@ -186,11 +186,16 @@ def _steiner_cap(area_sum: float, n_input: int) -> int:
     return int(8 * area_sum + 50 * n_input + 20_000)
 
 
-def _triangulate(data: dict, switches: str, cap: int) -> dict:
-    # Triangle reads the numbers in its switches with strtod, which follows the C locale:
-    # under a decimal comma "a0.01" is a maximum area of 0, and it fails (#236).
+def c_numbers():
+    """Put the C library's numbers back in the C locale before a Triangle call. Triangle
+    reads the numbers in its switches with strtod, which follows that locale: under a
+    decimal comma "a0.01" is a maximum area of 0, and it fails (#236)."""
     if locale.setlocale(locale.LC_NUMERIC) != "C":
         locale.setlocale(locale.LC_NUMERIC, "C")
+
+
+def _triangulate(data: dict, switches: str, cap: int) -> dict:
+    c_numbers()
     n_in = len(data["vertices"])
     out = triangle.triangulate(data, f"{switches}S{cap}")
     if len(out.get("vertices", ())) - n_in >= cap:
