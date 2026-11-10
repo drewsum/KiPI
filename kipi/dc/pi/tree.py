@@ -264,8 +264,9 @@ class _TreeSolver:
         return -1.0 if self.driver[g].voltage < 0 else 1.0
 
     def drawn(self, l: Load, amps: float) -> float:
-        """``amps`` of load ``l`` as the current its supply pins take from the copper."""
-        return self.sign(self.groups[l.supply.net]) * amps
+        """``amps`` of load ``l`` as the current its supply pins take from the copper; a
+        load that sources current (#241) puts it in."""
+        return self.sign(self.groups[l.supply.net]) * (-amps if l.sources else amps)
 
     def label_of(self, g: Group) -> str:
         """Short display name: the group's busiest net, plus how many nets it joins."""
@@ -746,7 +747,8 @@ class _TreeSolver:
         # The worst pin is the one furthest from nominal, below (drop) or above (boost).
         worst = low if nominal - low >= high - nominal else high
         eff = float(sv.mean()) - g_mean
-        rep = LoadReport(l.name, self.label_of(g), self.load_amps[l.name], nominal,
+        amps = self.load_amps[l.name]
+        rep = LoadReport(l.name, self.label_of(g), -amps if l.sources else amps, nominal,
                          float(sv.mean()), float(sv.min()),
                          None if gv is None else g_mean, eff, nominal - eff,
                          l.tolerance_label(), None, worst, self._pin_group_rows(l, sol), low,
@@ -771,7 +773,8 @@ class _TreeSolver:
             if not len(v):                 # no pin of the group connected (#88)
                 rows.append((name, 0.0, math.nan, math.nan, math.nan))
                 continue
-            rows.append((name, grp.current, float(v.mean()), float(v.min()), float(v.max())))
+            rows.append((name, -grp.current if l.sources else grp.current, float(v.mean()),
+                         float(v.min()), float(v.max())))
         return rows
 
     def _vrm_report(self, v: Vrm, regulation: str) -> VrmReport:

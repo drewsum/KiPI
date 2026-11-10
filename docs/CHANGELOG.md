@@ -6,6 +6,13 @@ milestones rather than versions that were ever set.
 
 ## 1.0.1 (in development)
 
+### Added
+- **A load can source current onto its rail** (#241). The load editor has a new
+  **Direction** row, off by default, for a part that back-feeds its rail. Its current
+  then flows into the copper, the VRM supplies that much less, and its ground pins take
+  the current out. Results show its current as negative, and the power tree diagram
+  draws its arrow into the rail. Setup files without it read as before.
+
 ### Fixed
 - **The plugin did not start on macOS** (#237). KiCad starts plugins with the
   `PYTHONHOME` and `PYTHONPATH` of its bundled Python 3.9, and clears them only on

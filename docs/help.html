@@ -1006,8 +1006,9 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     adds a row; <b>One group per pin</b> replaces the table with one row per supply pin,
     sharing the total. ✕ removes a row. Use groups when a part draws different currents on
     different pins.</td></tr>
-  <tr><td>Current</td><td class="wrap">The load's total current (equal split). Negative
-    values are allowed for parts that source current.</td></tr>
+  <tr><td>Current</td><td class="wrap">The load's total current (equal split). Give it as a
+    positive value; for a part that puts current onto the rail, tick <b>Direction</b>
+    below.</td></tr>
   <tr><td>Ground pins</td><td class="wrap">Optional: include the load's ground return. Filled in
     with the supply part's ground pins.</td></tr>
   <tr><td>Tolerance</td><td class="wrap">Optional min and max on one row, in <b>%</b> from the
@@ -1022,6 +1023,11 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     there, in <b>±V</b> or <b>%</b>. They are saved with the setup for a later analysis, and
     the AC target calculator can copy the AC one; no solve reads them, and PASS still follows
     the tolerance above.</td></tr>
+  <tr><td>Direction</td><td class="wrap">Off for nearly every load: the load draws its current
+    from its rail. <b>Sources current onto the rail</b> is for a part that back-feeds the rail
+    instead. Its current flows into the copper, so its pins sit above the VRM target voltage
+    (below it on a negative rail), the VRM supplies that much less, and the ground pins
+    take the current out. Results show its current as negative.</td></tr>
 </table>
 <figure><img src="images/setup_loads.png" alt="The load editor"><figcaption>The load editor.</figcaption></figure>
 <p><b>Split across nets…</b> under the list shares one part's total current over several of
