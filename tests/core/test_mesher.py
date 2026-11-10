@@ -93,18 +93,22 @@ def test_zero_area_hole_ring_does_not_void_the_polygon():
     assert meshed_area == pytest.approx(expected, abs=0.2)
 
 
-def test_degenerate_hole_seed_does_not_void_the_polygon():
-    """Even a hole ring with valid area can seed a point Triangle reads as outside the
-    domain. If the first seeding yields nothing, the mesher must re-seed rather than
-    return an empty mesh."""
+def test_hole_seed_that_voids_the_domain_falls_back_to_carving(monkeypatch):
+    """If a seed still leaves Triangle nothing (one in the copper eats it all), the
+    mesher meshes without seeds and cuts the holes out, rather than return an empty
+    mesh or one with its holes filled."""
     outer = [(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]
-    holes = [[(4, 4), (6, 4), (6, 6), (4, 6), (4, 4)],
-             [(1, 1), (2, 1), (2, 2), (1, 2), (1, 1)]]
-    poly = M.Polygon(outer, holes)
-    assert len(M._hole_seeds(poly)) == 2
-    assert len(M._nudged_seeds(poly)) == 2
-    pts, tris = M.mesh_polygon(poly, [], MAX_AREA, 28.0)
-    assert len(tris) > 0
+    poly = M.Polygon(outer, [[(4, 4), (6, 4), (6, 6), (4, 6), (4, 4)]])
+    monkeypatch.setattr(M, "_hole_seeds", lambda _p, _w=None: [M.Point(1, 1), M.Point(5, 5)])
+    notes = []
+    pts, tris = M.mesh_polygon(poly, [], MAX_AREA, 28.0, warn=notes.append)
+    assert len(tris) > 0 and notes
+    assert len(np.unique(tris)) == len(pts)     # no vertices left in the hole
+    p = pts[tris]
+    meshed_area = float(np.abs(
+        (p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
+        - (p[:, 2, 0] - p[:, 0, 0]) * (p[:, 1, 1] - p[:, 0, 1])).sum() / 2)
+    assert meshed_area == pytest.approx(10 * 10 - 2 * 2, abs=0.2)
 
 
 def test_steiner_cap_stops_runaway_refinement():

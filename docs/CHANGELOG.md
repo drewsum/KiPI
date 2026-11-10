@@ -22,6 +22,14 @@ milestones rather than versions that were ever set.
   the system locale to the whole process, so Triangle read the "0.01" in its options as 0
   and stopped, and read a minimum angle such as 28.5 as 28. KiPI now keeps C-level numbers
   in the C locale. Value fields still show the user's decimal comma.
+- **A copper pour with a zero-area hole was left out of the solve** (#238). Zone fills
+  can carry a hole outline that encloses nothing (collinear or pinched-out points). The
+  point KiPI gave Triangle to mark that hole fell on the outline, in the copper, so
+  Triangle removed the whole polygon. Pads on it read as DISCONNECTED, the net showed
+  thousands of single-node islands, and their current went missing from the source.
+  KiPI now skips such outlines. If marking the holes still leaves no mesh, KiPI meshes
+  the polygon without the hole points and then removes the triangles inside the holes.
+  Thanks to @FractalEngineer.
 - **Negative values in Swedish and similar locales** (#236). These locales write minus as
   U+2212, which value fields rejected, so a negative value shown there could not be edited.
 
