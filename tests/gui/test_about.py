@@ -205,4 +205,5 @@ def test_dialog_links_the_solver_guide(app):
     d = about.AboutDialog()
     text = " ".join(lb.text() for lb in d.findChildren(QLabel))
     assert "Solver Guide" in text and "solver-guide.html" in text
+    assert "Tutorial" in text and "tutorial.html" in text
     d.close()

@@ -23,7 +23,7 @@ from qtpy.QtWidgets import (
 )
 
 from kipi import __version__
-from kipi.gui.help import solver_guide_url
+from kipi.gui.help import solver_guide_url, tutorial_url
 from kipi.host import Host, current as current_host
 
 NAME = "KiPI"
@@ -254,7 +254,9 @@ class AboutDialog(QDialog):
             f"<p style='margin-top:2px'>Version {__version__}</p>"
             f"<p style='margin-top:4px; margin-bottom:4px;'>{html.escape(DESCRIPTION)}<br><br>"
             f"<a href='{html.escape(solver_guide_url())}'>Solver Guide</a>: what power "
-            f"integrity analysis is and how the solvers work</p>"
+            f"integrity analysis is and how the solvers work<br>"
+            f"<a href='{html.escape(tutorial_url())}'>Tutorial</a>: one board set up and "
+            f"solved in every mode, step by step</p>"
             f"<p>Author: {AUTHOR} (<a href='mailto:{EMAIL}'>{EMAIL}</a>)<br>"
             f"Source: <a href='{REPO}'>{REPO}</a><br>"
             f"Report a bug: <a href='{ISSUES}'>{ISSUES}</a><br>"

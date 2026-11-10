@@ -17,8 +17,27 @@ milestones rather than versions that were ever set.
   changes in any mode, including imports, stackup edits and the nets ticked. Edits made
   close together count as one step. Reading the board again starts a new history, and
   only Save writes the setup file.
+- **Tutorial** (#242). A new page, `docs/tutorial.html`, hosted beside the user guide
+  at <https://drewsum.github.io/KiPI/tutorial.html>. It takes the Audio Visualiser DSP
+  board through a DC, an AC and a Coupled Noise solve, each from a new setup, with a
+  screenshot of every step: nets, VRMs, series links (a diode from its SPICE model),
+  loads, capacitor models read off a TDK datasheet, probes and targets, aggressors and
+  victims, and reading each result. The README, the user guide and the About dialog link
+  to it.
 
 ### Fixed
+- **Coupled Noise failed with a diode on the rails** (#242). With the board model on, an
+  aggressor whose input or output rail had a diode series link (a Schottky feeding a
+  sub-rail, say) stopped with `ValueError: invalid literal for int()`: noting the diode's
+  bias overwrote the list of the switcher's source ports with the note's text. It solves
+  now, with the diode's note as before.
+- **Hot loops in 3D could use up the computer's memory** (#242). A streamline of a
+  capacitor's traced loop that met a sliver triangle in the copper's mesh could cross
+  into the next triangle at a point far off the board (10¹¹ mm away on the DSP board),
+  and *All capacitors* then drew a cone every 2 mm along it until memory ran out. Each
+  crossing now stays on the edge it crosses, and a loop's cones are capped at 2000
+  (spaced wider on a longer path), so results saved before this open safely too. The
+  coupling and the loops' inductance never used the streamlines and are unchanged.
 - **The plugin did not start on macOS** (#237). KiCad starts plugins with the
   `PYTHONHOME` and `PYTHONPATH` of its bundled Python 3.9, and clears them only on
   Windows. A newer Python selected in *Preferences → Plugins*, as the README said to do,

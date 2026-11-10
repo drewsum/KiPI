@@ -34,6 +34,11 @@ analysis modes:
   checked against its logic family's noise margin, with the line held high and held low, and
   the 3D view shows where along its traces the noise couples in.
 
+**Learning KiPI? Follow the [Tutorial](https://drewsum.github.io/KiPI/tutorial.html)**: one
+real board set up and solved in DC, AC and Coupled Noise from scratch, every step
+screenshotted. It covers VRMs, loads, series links, capacitor models from a datasheet,
+probes and targets, aggressors and victims.
+
 New to KiPI? The **[user guide](https://drewsum.github.io/KiPI/help.html)** ([source](docs/help.html); also the **Help** button in KiPI, or
 **F1**) walks through every button, the workflows and what the results mean. Every
 control in KiPI has a tooltip. This README is an overview; the user guide has the details.

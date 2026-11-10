@@ -63,3 +63,8 @@ def test_a_diode_link_is_biased_by_the_dc_solve(monkeypatch):
     got = board_ports(snap, setup, agg, op, {}, dc_result=tree)
     d = next(p for p in got.ports if p.name == "D1").element
     assert d.bias_a == pytest.approx(4.2) and any("from the DC solve" in n for n in got.notes)
+    # The diode's note left the source ports as they were (#242: they became its note's
+    # text, and the solve failed on a board with a diode link on the rails).
+    for bp in (est, got):
+        assert bp.src and all(isinstance(i, int) for i in bp.src)
+        assert all(bp.ports[i].kind == "probe" for i in bp.src)

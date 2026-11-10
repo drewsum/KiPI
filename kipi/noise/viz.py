@@ -36,6 +36,7 @@ LOOP_COLORS = ("#ff9a1f", "#2ad4ff", "#8cff3a", "#ff5ec8", "#ffe14d", "#b48bff",
                "#5effc3")
 # How far apart along a loop its direction arrows sit, mm.
 ARROW_SPACING_MM = 2.0
+MAX_ARROWS = 2000                   # a loop's cones at most: spaced wider beyond that
 # The field view: kinds, the slice's default height over the top copper, the animation.
 FIELD_KINDS = (("off", "Off"), ("H", "H field (magnetic)"), ("E", "E field (electric)"))
 FIELD_HEIGHT_MM = 1.0
@@ -255,11 +256,13 @@ def loop_choices(result) -> List[tuple]:
 
 def _arrows(segments: np.ndarray):
     """Points every ARROW_SPACING_MM along the segments (at least one, in the middle of
-    the longest run), and the unit direction of the segment each sits on."""
+    the longest run; at most MAX_ARROWS, spaced wider on a longer path), and the unit
+    direction of the segment each sits on."""
     d = segments[:, 1] - segments[:, 0]
     length = np.linalg.norm(d, axis=1)
     pts, dirs = [], []
-    walked = ARROW_SPACING_MM / 2
+    spacing = max(ARROW_SPACING_MM, float(length.sum()) / MAX_ARROWS)
+    walked = spacing / 2
     for (a, b), ln in zip(segments, length):
         if ln <= 0:
             continue
@@ -267,7 +270,7 @@ def _arrows(segments: np.ndarray):
         while walked <= ln:
             pts.append(a + u * walked)
             dirs.append(u)
-            walked += ARROW_SPACING_MM
+            walked += spacing
         walked -= ln
     if not pts and length.max() > 0:
         i = int(np.argmax(length))

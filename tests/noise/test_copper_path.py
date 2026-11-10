@@ -196,6 +196,26 @@ def test_the_solve_traces_the_loops_and_says_so():
     assert 0.3 < ratio < 3.0
 
 
+def test_a_streamline_crosses_an_edge_where_the_edge_is():
+    """#242: past the first edge a triangle's other edges meet the line outside it, as far
+    off as a sliver's near-parallel edge puts them (3e11 mm on the DSP board), and the
+    hot loops view drew cones every 2 mm along that until memory ran out."""
+    from kipi.noise.extract.copper import _on_edge
+    a, b = np.array([0.0, 0.0]), np.array([1.0, 0.0])
+    assert np.allclose(_on_edge(np.array([0.4, 1e-12]), a, b), (0.4, 0.0))
+    assert np.allclose(_on_edge(np.array([-3e11, 2e11]), a, b), a)
+    assert np.allclose(_on_edge(np.array([3e11, 2e11]), a, b), b)
+
+
+def test_the_streamlines_stay_on_the_board(traced):
+    snap, setup, mesh, copper, lay = traced
+    pts = copper.mesh.points
+    lo, hi = pts.min(axis=0), pts.max(axis=0)
+    for loop in lay.loops.values():
+        for p in loop.paths:
+            assert (p[:, :2] >= lo - 1e-6).all() and (p[:, :2] <= hi + 1e-6).all()
+
+
 def test_loop_sources_carry_the_weights(traced):
     snap, setup, mesh, copper, lay = traced
     from kipi.noise.waveforms import Spectrum
