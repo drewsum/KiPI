@@ -67,6 +67,14 @@ milestones rather than versions that were ever set.
   Thanks to @FractalEngineer.
 - **Negative values in Swedish and similar locales** (#236). These locales write minus as
   U+2212, which value fields rejected, so a negative value shown there could not be edited.
+- **No board outline when a footprint drew part of the board edge**. A connector's
+  footprint often draws the edge's cutout for it on Edge.Cuts (a USB receptacle's notch,
+  as on KiCad's Tiny Tapeout demo), and KiCad joins those edges to the board's own. KiPI
+  read only the board's, so the outline did not close and the 3D view and the thermal
+  model had no board edge ("No closed board outline found on Edge.Cuts"). Both KiCad
+  readers now take in the footprints' edges too. The outline also joins ends that lie
+  within 0.02 mm, as KiCad does: a placed footprint's edges can miss the board's by a
+  few nm. That helps ODB++ and HyperLynx boards too.
 - **The README's user guide links opened the raw file on GitHub** (#239). They now open
   the hosted guide on GitHub Pages, as the Solver Guide link already did.
 

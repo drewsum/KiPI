@@ -160,6 +160,34 @@ def test_outline_matches_kicad(boards):
     assert len(snap.outline[0].holes) == 1                    # the round cutout
 
 
+def _edge(a, b, head="fp_line"):
+    return (f'({head} (start {a[0]} {a[1]}) (end {b[0]} {b[1]}) '
+            '(stroke (width 0.1) (type default)) (layer "Edge.Cuts"))\n')
+
+
+def test_outline_takes_in_footprint_edges(tmp_path):
+    """A connector's footprint can draw part of the board edge, as a USB connector's notch
+    does on the tinytapeout demo: KiCad joins it to the board's own edges."""
+    text = _board_text()
+    top_uuid = text.index("86ecd6d6-31aa-5b18-90a2-53990b9be151")     # the top edge
+    start, end = text.rindex("(gr_line", 0, top_uuid), text.index("\n\t)", top_uuid) + 3
+    # The top edge with a gap from x = 40 to 60, and a footprint turned 180° drawing a
+    # 20 x 5 mm notch into the board across it. One end stops 2 nm short of the board's, as a
+    # placed footprint's can; KiCad joins ends within 0.02 mm.
+    notch = "".join(_edge(a, b) for a, b in [((10, -0.000002), (10, -5)), ((10, -5), (-10, -5)),
+                                             ((-10, -5), (-10, 0))])
+    fp = ('(footprint "Notch" (layer "F.Cu") (at 50 0 180)\n'
+          '(property "Reference" "J99" (at 0 0 0) (layer "F.Fab"))\n' + notch + ")\n")
+    text = (text[:start] + _edge((0, 0), (40, 0), "gr_line")
+            + _edge((60, 0), (100, 0), "gr_line") + fp + text[end:])
+    board = tmp_path / "notched.kicad_pcb"
+    board.write_text(text, encoding="utf-8")
+    snap = read_board(board)
+    whole = read_board(DATA / "features.kicad_pcb")
+    assert len(snap.outline) == 1
+    assert _area(snap.outline) == pytest.approx(_area(whole.outline) - 100.0, rel=1e-6)
+
+
 def test_numbered_nets_read_like_named_ones():
     """KiCad 9 numbers its nets; the board is the same once they are resolved."""
     v10 = read_board(DATA / "features.kicad_pcb")
