@@ -37,7 +37,7 @@ the rest.
 * **One change per pull request.** A bug fix, a feature and a refactor are three pull
   requests. Do not stack pull requests on each other, and do not bundle fixes into a
   feature.
-* **Keep it reviewable.** As a guide, a pull request over about 500 changed lines
+* **Keep it reviewable.** As a guide, a pull request over about 1000 changed lines
   (tests aside) should have been split or discussed first.
 * **Target the open release branch** (for example `v1.0.1`), or `main` if there is none.
 * **Say what changes for the user**, including for users who never touch the new feature:
