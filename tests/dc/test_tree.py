@@ -11,7 +11,9 @@ from kipi.dc.pi.model import (
     DcLink, Load, PinRef, PISetup, Vrm, net_groups, validate, vin_range,
 )
 from kipi.core.model.spice import constant_drop_ref
-from kipi.dc.pi.tree import NOT_CONVERGED, OUT_OF_REGULATION, _mean_v, solve_tree
+from kipi.dc.pi.tree import (
+    ACCURACY_NOT_GUARANTEED, NOT_CONVERGED, OUT_OF_REGULATION, _mean_v, solve_tree,
+)
 from kipi.dc.solver.fem import SolveError
 
 from tree_boards import R, board, by_name, isolated_board, isolated_setup, pad, setup
@@ -345,6 +347,37 @@ def test_ldo_in_dropout_fails_the_loads_it_feeds():
     assert ld.passed is False and ld.verdict == OUT_OF_REGULATION
 
 
+def test_ldo_above_its_dropout_below_its_input_minimum_still_regulates():
+    """Its input minimum is where its datasheet states its accuracy from: below it, and
+    above its dropout, the loads it feeds fail as accuracy not guaranteed."""
+    s = setup("ldo")
+    s.vrms[1].dropout_v, s.vrms[1].vin_min = 1.0, 13.0   # 12 V in: 8.7 V across it
+    res = solve_tree(board(), s)
+    assert by_name(res.vrms, "U1").regulation == ""
+    ld = by_name(res.loads, "U2")
+    assert ld.passed is False and ld.verdict == ACCURACY_NOT_GUARANTEED
+    assert any("where its datasheet states its output accuracy" in w for w in res.warnings)
+    s.vrms[1].dropout_v = 0.0                  # no dropout stated: the minimum is the floor
+    assert by_name(solve_tree(board(), s).loads, "U2").verdict == OUT_OF_REGULATION
+
+
+def test_worst_case_judges_ldo_dropout_at_the_high_end_of_its_accuracy():
+    """Its loads are solved at its lowest output; its dropout at its highest, where it
+    needs the most input."""
+    s = setup("ldo")
+    s.corner = "max"
+    u1 = s.vrms[1]
+    u1.acc_min, u1.acc_max, u1.acc_pct, u1.acc_dv = 3.2, 3.4, False, False
+    v_in = by_name(solve_tree(board(), s).vrms, "U1").v_in
+    u1.dropout_v = v_in - 3.3          # met at its lowest output, not at its highest
+    res = solve_tree(board(), s)
+    assert "at its highest output, 3.4 V" in by_name(res.vrms, "U1").regulation
+    assert by_name(res.loads, "U2").verdict == OUT_OF_REGULATION
+    s.corner = "typ"                   # at its set voltage: 3.3 V
+    u1.dropout_v = v_in - 3.35
+    assert by_name(solve_tree(board(), s).vrms, "U1").regulation == ""
+
+
 def test_switcher_below_its_input_minimum_fails_the_loads_it_feeds():
     s = setup("smps", eff=0.9)
     s.vrms[1].vin_min = 13.0
@@ -561,3 +594,13 @@ def test_isolated_converter_with_an_excluded_input_becomes_a_source():
     assert (u1.kind, u1.input, u1.input_ground) == ("source", None, None)
     assert u1.ground == PinRef("U1", "ISOGND", ["4"])
     assert validate(out) == []
+
+
+def test_return_drop_is_measured_from_the_feeding_vrms_ground():
+    """J1's ground (x 0..1) is the 0 V reference; U1's (x 10..11) and U2's (x 21..22) sit
+    further along the GND strip. v_ground is U2's ground above 0 V; return_drop only the
+    copper from U1's ground to U2's, as a tool measuring from the source's return has it."""
+    res = solve_tree(board(), setup("ldo", ground=True))
+    u2 = by_name(res.loads, "U2")
+    assert u2.v_ground is not None and u2.return_drop is not None
+    assert 0.0 < u2.return_drop < u2.v_ground

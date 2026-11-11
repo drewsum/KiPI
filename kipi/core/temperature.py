@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Copper temperature as the solvers read it.
 
 A temperature is a callable mapping KiCad xy (an (N, 2) array, mm) to °C. One from an
@@ -12,6 +13,12 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
+
+
+def uniform(t_c: float):
+    def flat(xy):
+        return np.full(len(np.atleast_2d(xy)), float(t_c))
+    return flat
 
 
 def at(temperature, xy, layers=None) -> np.ndarray:

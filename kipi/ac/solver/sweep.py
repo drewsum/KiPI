@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """AC impedance sweep of one rail: field solves, then the parts, at every frequency.
 
 1. At the field-solve frequencies (``field_points_per_decade``), the copper model is
@@ -50,6 +51,13 @@ class ProbeCurve:
     # The probe's load step and its slew rate, for the estimated transient (#166).
     step_a: Optional[float] = None
     slew_a_per_us: Optional[float] = None
+    from_hz: Optional[float] = None
+
+    @property
+    def starts_hz(self) -> Optional[float]:
+        """The lowest frequency the target applies at, if it has a lower end."""
+        ends = [f for f in (self.above_hz, self.from_hz) if f]
+        return max(ends) if ends else None
 
     @property
     def mag(self) -> np.ndarray:
@@ -62,7 +70,7 @@ class ProbeCurve:
     def target_at(self, freqs) -> Optional[np.ndarray]:
         """The target at each of ``freqs`` (NaN where none applies); None without one."""
         return target_at(freqs, self.target_ohm, self.target_hz, self.target_points,
-                         self.above_hz)
+                         self.above_hz, self.from_hz)
 
     def worst(self, freqs: np.ndarray):
         """(|Z|, f) where the impedance comes closest to (or furthest over) the target,
@@ -470,13 +478,15 @@ def solve_ac(snap: BoardSnapshot, setup: PISetup, vrm_name: str, gnd: str,
     curves = []
     for i, p in enumerate(probe_ports):
         pr = p.element
+        from_hz = getattr(pr, "target_from_hz", None)
         above, why = judged_from(bandwidth, freqs, pr.target_ohm, pr.target_hz,
-                                 pr.target_mask())
+                                 pr.target_mask(), from_hz)
         if why:
             notes.append(f"Probe {p.name}: {why}")
             progress.warn(notes[-1])
         curves.append(ProbeCurve(p.name, z[:, i], pr.target_ohm, pr.target_hz,
-                                 pr.target_mask(), above, pr.step_a, pr.slew_a_per_us))
+                                 pr.target_mask(), above, pr.step_a, pr.slew_a_per_us,
+                                 from_hz))
     if bandwidth:
         progress.info(f"Targets apply above the {vrm_name} control loop bandwidth, "
                       f"{fmt_hz(bandwidth)} (open-loop PDN impedance)")

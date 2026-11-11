@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """Unix ``compress`` (``.Z``, LZW) decoding, for ODB++ jobs saved with file compression.
 
 Valor / Mentor tools write each ODB++ file as ``features.Z``, ``data.Z`` ... when their

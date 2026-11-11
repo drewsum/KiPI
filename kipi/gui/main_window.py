@@ -127,7 +127,8 @@ def write_report_file(write, path, progress):
 
 class MainWindow(QMainWindow):
     def __init__(self, source: Optional[BoardSource] = None, tool: Optional[InstalledTool] = None,
-                 snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None):
+                 snapshot: Optional[BoardSnapshot] = None, host: Optional[Host] = None,
+                 pdn_json: Optional[str] = None, background: bool = False):
         """``source`` is where Load reads the board from (None: no board yet, or only
         snapshots); ``tool`` the design tool on this computer that gives layer colors and
         part models (None: KiPI's own colors, no models); ``host`` how KiPI was started
@@ -234,6 +235,11 @@ class MainWindow(QMainWindow):
         self._source_changed()
         self.statusBar().showMessage("Ready")
 
+        # A Tomachie power tree to import once the board is loaded (--pdn-json).
+        self._pending_pdn = pdn_json
+        # Started in the background (--background): while still minimized, a failure is
+        # said in the Log, not in a dialog that would pop the window up.
+        self._background = background
         if snapshot is not None:
             QTimer.singleShot(0, lambda: self._set_snapshot(snapshot))
         elif source is not None:
@@ -836,10 +842,16 @@ class MainWindow(QMainWindow):
             self._fitted = True
             fit_to_screen(self)
 
+    # Log colours (warning, error, stage line), for a dark and for a light background.
+    _LOG_COLORS = {True: ("#e0b050", "#ff6060", "#80c0ff"),
+                   False: ("#a85000", "#c00000", "#1a4f9c")}
+
     def log(self, text: str, level: int = logging.INFO):
-        color = {logging.WARNING: "#e0b050", logging.ERROR: "#ff6060"}.get(level)
+        dark = self.log_view.palette().base().color().lightness() < 128
+        warn, error, stage = self._LOG_COLORS[dark]
+        color = {logging.WARNING: warn, logging.ERROR: error}.get(level)
         if text.startswith("== "):
-            color = "#80c0ff"
+            color = stage
         esc = html.escape(text)
         self.log_view.appendHtml(f'<span style="color:{color}">{esc}</span>' if color else esc)
         self.log_view.moveCursor(QTextCursor.End)
@@ -951,6 +963,8 @@ class MainWindow(QMainWindow):
     def _on_task_failed(self, name: str, tb: str):
         log.error(tb)
         self.log(tb, logging.ERROR)
+        if self._quiet():
+            return
         QMessageBox.critical(self, "KiPI", f"{name} failed:\n\n{tb.strip().splitlines()[-1]}")
 
     def _cancel_task(self):
@@ -1153,6 +1167,20 @@ class MainWindow(QMainWindow):
         self.viewer.set_board(*board_body(snap))
         self._coatings_wanted = True        # built with the nets, off the UI thread (#209)
         self.sync_nets()
+        if self._pending_pdn:
+            path, self._pending_pdn = self._pending_pdn, None
+            self._import_when_idle(path)
+
+    def _import_when_idle(self, path: str):
+        """Import ``path`` once the task loading the board has finished."""
+        if self._busy():
+            QTimer.singleShot(200, lambda: self._import_when_idle(path))
+        else:
+            self.import_pdn_file(path, quiet=self._quiet())
+
+    def _quiet(self) -> bool:
+        """Started in the background and not opened yet: no dialogs."""
+        return self._background and self.isMinimized()
 
     def _load_layer_colors(self, snap: BoardSnapshot):
         """Color the copper layers like the PCB editor's color theme, read again on every
@@ -1605,8 +1633,14 @@ class MainWindow(QMainWindow):
         if is_bud(path):
             self._import_bud(path)
             return
+        self.import_pdn_file(path)
+
+    def import_pdn_file(self, path: str, quiet: bool = False):
+        """Replace the power tree with the one in the Tomachie file ``path``. ``quiet``
+        (a background start): nothing is asked, and a file that cannot be read is said in
+        the Log, not in a dialog that would take the focus."""
         current = self.solve_panel.setup
-        if (current.vrms or current.loads or current.links) and QMessageBox.question(
+        if not quiet and (current.vrms or current.loads or current.links) and QMessageBox.question(
                 self, "KiPI", f"This board already has a power tree: {len(current.vrms)} "
                               f"VRM(s), {len(current.loads)} load(s) and {len(current.links)} "
                               "DC connection(s). Replace it with the one in the file?\n\n"
@@ -1614,13 +1648,17 @@ class MainWindow(QMainWindow):
         ) != QMessageBox.Yes:
             return
         from kipi.dc.pi.importers.tomachie_pdn import PdnImportError, import_tomachie_pdn
+        current = self.solve_panel.setup
         name = Path(path).name
         try:
             setup, notes = import_tomachie_pdn(path, self.snapshot, current)
         except (PdnImportError, ValueError, KeyError, TypeError, OSError) as e:
-            QMessageBox.critical(self, "KiPI", f"Could not import {name}:\n\n{e}")
+            if quiet:
+                self.log(f"Could not import Tomachie {name}: {e}", logging.ERROR)
+            else:
+                QMessageBox.critical(self, "KiPI", f"Could not import {name}:\n\n{e}")
             return
-        self._show_import(name, current, setup, notes)
+        self._show_import(name, current, setup, notes, quiet=quiet)
 
     def _import_bud(self, path: str):
         """Merge a HyperLynx session file into the setup (#132)."""
@@ -1638,13 +1676,17 @@ class MainWindow(QMainWindow):
                           + (f", {caps} capacitor model(s) added" if caps else ""))
 
     def _show_import(self, name: str, current, setup, notes: List[str],
-                     power_nets=frozenset(), extra: str = ""):
+                     power_nets=frozenset(), extra: str = "", quiet: bool = False):
         from kipi.dc.pi.importers.import_summary import counts, group_notes, setup_changes
         notes = group_notes(notes)
         if notes:
             self.log(f"Notes on {name}:")
         for note in notes:
-            self.log(f"  {note}", logging.WARNING)
+            # A note's later lines (a long list of parts) go under its first.
+            first, *more = note.split("\n")
+            self.log(f"  {first}", logging.WARNING)
+            for line in more:      # no-break spaces: the log is HTML, which drops spaces
+                self.log("\u00a0" * 6 + line, logging.WARNING)
         used = setup.pin_nets() | power_nets
         self._set_checked(lambda it: it.checkState() == Qt.Checked
                           or it.data(Qt.UserRole) in used)
@@ -1661,7 +1703,8 @@ class MainWindow(QMainWindow):
                  + (f"; {len(notes)} note(s) above" if notes else "")
                  + ". Not saved: Save keeps it, the setup file is as it was")
         self.log_dock.show()
-        self.log_dock.raise_()
+        if not quiet:
+            self.log_dock.raise_()
         self._show_unsaved()
 
     # ------------------------------------------------------------ undo and redo
@@ -1800,7 +1843,10 @@ class MainWindow(QMainWindow):
             self._show_group(first)
             for l in tree.loads:
                 self.log(f"  {l.name}: {fmt_drop(l.drop)} ({abs(l.drop_pct):.3f} %), worst pin "
-                         f"{fmt_drop(l.drop_worst)} at {l.current:g} A {l.verdict}".rstrip())
+                         f"{fmt_drop(l.drop_worst)} at {l.current:g} A "
+                         f"{getattr(l, 'answer', l.verdict)}".rstrip())
+            if hasattr(tree, "summary"):
+                self.log(tree.summary())
 
         if self._run(work, done, "Solving power tree") is not None:
             self.solve_panel.set_busy(True)

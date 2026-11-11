@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """An ODB++ job (folder, ``.zip`` or ``.tgz``) as a
 :class:`~kipi.sources.base.BoardSource`."""
 

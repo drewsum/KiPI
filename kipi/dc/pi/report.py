@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Tables, exports and saved results for a solved power tree (no Qt).
 
 * :func:`via_rows`   every via / PTH barrel across all groups, highest current first
@@ -270,13 +271,25 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
                        "v_supply_min_V", "v_ground_mean_V", "v_effective_V", "v_lowest_pin_V",
                        "v_highest_pin_V", "mean_mV", "mean_pct", "mean_is", "worst_pin_V",
                        "worst_pin_mV", "worst_pin_pct", "worst_pin_is", "tolerance",
-                       "tolerance_min_V", "tolerance_max_V", "margin_V", "result"],
+                       "tolerance_min_V", "tolerance_max_V", "margin_V", "unknowns_may_add_A",
+                       "result", "voltage_at_pins"],
                       [[l.name, l.group, l.current, l.nominal, l.v_supply, l.v_supply_min,
                         l.v_ground, l.v_effective, l.v_low, l.v_high,
                         *dev(l.drop, l.drop_pct), l.v_worst,
                         *dev(l.drop_worst, l.drop_worst_pct), l.tolerance, l.limit_low,
-                        l.limit_high, margin(l), l.verdict]
+                        l.limit_high, margin(l), getattr(l, "unknown_room_a", None), l.verdict,
+                        getattr(l, "answer", "")]
                        for l in tree.loads]))
+    headroom = getattr(tree, "headroom", [])
+    if headroom:
+        out.append(_write(folder / f"{stem}_headroom.csv",
+                          ["rail", "vrm", "known_A", "tightest_load", "margin_V",
+                           "not_known", "they_may_add_A", "limited_by", "copper_room_A",
+                           "vrm_rating_A", "costliest", "costliest_V_per_A"],
+                          [[h.group, h.vrm, h.known_a, h.tightest, h.margin_v,
+                            "; ".join(h.unknown), h.binding_a, h.limited_by, h.room_a,
+                            h.vrm_limit_a, h.costliest, h.per_amp_v]
+                           for h in headroom]))
     out.append(_write(folder / f"{stem}_load_pin_groups.csv",
                       ["load", "pin_group", "current_A", "v_mean_V", "v_min_V", "v_max_V"],
                       [[l.name, n, a, vm, vmin, vmax] for l in tree.loads
@@ -297,10 +310,13 @@ def export_csv(tree, snap: BoardSnapshot, folder, stem: str = "kipi",
                            "p_in_W", "p_loss_W"],
                           [[v.name, p.index, p.v_out, p.i_out, p.v_in, p.i_in, p.p_out, p.p_in,
                             p.p_loss] for v in tree.vrms for p in v.phases]))
+    ratings = {k.name: k for k in getattr(tree, "link_ratings", [])}
     out.append(_write(folder / f"{stem}_dc_connections.csv",
                       ["part", "group", "resistance_ohm", "current_A", "v_a_V", "v_b_V",
-                       "power_W"],
-                      [[s.name, g.name, s.resistance, s.current, s.v_a, s.v_b, s.power]
+                       "power_W", "rated_A", "current_against_rating"],
+                      [[s.name, g.name, s.resistance, s.current, s.v_a, s.v_b, s.power,
+                        ratings[s.name].rated_a if s.name in ratings else None,
+                        ratings[s.name].answer if s.name in ratings else ""]
                        for g in tree.groups.values() for s in g.result.fields.series]))
     out.append(_write(folder / f"{stem}_pins.csv",
                       ["group", "group_kind", "terminal", "role", "part", "pin", "x_mm", "y_mm",

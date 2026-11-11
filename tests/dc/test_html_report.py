@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """HTML report generation."""
 
 import pytest
@@ -125,3 +126,18 @@ def test_each_group_has_layer_tickboxes(tmp_path):
         for lid in scene.layers:      # its voltage and current-density maps
             assert text.count(f"<figure data-plot='plot{gi}' data-layer='{names[lid]}'>") == 2
     assert "Plotly.restyle" in text              # the tickboxes' script is in the page
+
+
+def test_import_notes_lead_the_report(tmp_path):
+    """What the power-tree import could not place is in the report, ahead of the results,
+    and kept with the saved setup: a rail missing from the tables is explained there."""
+    from kipi.dc.pi.model import PISetup
+    snap = board()
+    s = setup("ldo", iq=0.01, ground=True)
+    s.import_notes = ["Rail V_BAT: no source traced; its loads are not imported"]
+    tree = solve_tree(snap, s)
+    scenes = {n: build_result_scene(snap, g.result) for n, g in tree.groups.items()}
+    text = write_report(tmp_path / "r.html", tree, scenes, snap, s).read_text(encoding="utf-8")
+    assert "id='import'" in text and "Rail V_BAT: no source traced" in text
+    assert text.index("id='import'") < text.index("id='loads'")
+    assert PISetup.from_dict(s.to_dict()).import_notes == s.import_notes

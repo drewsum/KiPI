@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """Turning a pin into the pads that carry its current."""
 
 import dataclasses

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """A DC result's voltages in volts, or in mV or % from the target voltage (#177)."""
 
 import os
@@ -71,5 +72,6 @@ def test_the_loads_table_switches_units(app):
         panel.cmb_vunit.setCurrentIndex(panel.cmb_vunit.findData(unit))
         assert [t.item(0, c).text() for c in range(3, 8)] == vunits.load_cells(load, unit)
         assert headers()[0] == f"Mean ({unit})"
-    assert t.item(0, 8).text() == load.verdict == "PASS"
+    assert load.verdict == "PASS"
+    assert t.item(0, 8).text() == load.answer       # the result in words (fork)
     panel.close()

@@ -174,8 +174,9 @@ def test_editor_vrm_dc_accuracy_is_min_and_max_in_percent_or_volts():
     v = s.vrms[1]
     assert ed.form.labelForField(ed.acc_row).text() == "DC accuracy"
     assert ed.form.isRowVisible(ed.acc_row) and ed.acc_row.pct()
-    assert ed.acc_row.min.isEnabled() and ed.bandwidth.isEnabled()  # AC only, still editable
-    assert "Used by the AC analysis only" in ed.acc_row.min.toolTip()
+    assert ed.acc_row.min.isEnabled() and ed.bandwidth.isEnabled()
+    # Used by both: the worst-case DC solve runs the VRM at its low end (this fork).
+    assert "Used by the AC analysis only" not in ed.acc_row.min.toolTip()
     ed.acc_row.min.setValue(-1.0)
     ed.acc_row.max.setValue(2.0)
     assert (v.acc_min, v.acc_max, v.acc_pct) == (-1.0, 2.0, True)
@@ -185,8 +186,9 @@ def test_editor_vrm_dc_accuracy_is_min_and_max_in_percent_or_volts():
     assert v.acc_pct is False and v.accuracy_v() == pytest.approx(0.066)
     v2 = PISetup.from_dict(s.to_dict()).vrms[1]
     assert (v2.acc_min, v2.acc_max, v2.acc_pct) == (v.acc_min, v.acc_max, False)
-    panel.vrm_list.lst.setCurrentRow(0)                            # a source has none
-    assert not ed.form.isRowVisible(ed.acc_row)
+    # A source's is its stated range (a board input's 4.75 to 5.5 V), with its cable.
+    panel.vrm_list.lst.setCurrentRow(0)
+    assert ed.form.isRowVisible(ed.acc_row) and ed.form.isRowVisible(ed.cable)
     v.acc_min, v.acc_max = 3.4, 3.3
     assert any("DC accuracy minimum is above its maximum" in e for e in validate(s))
     panel.close()

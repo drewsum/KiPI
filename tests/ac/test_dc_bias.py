@@ -156,3 +156,30 @@ def test_the_editor_and_the_sweep_switch(panel):
     panel.chk_bias.setChecked(False)
     assert panel.setup.ac.dc_bias is False
     assert np.isclose(m.capacitance_at(16.0), m.capacitance_f * 0.3)
+
+
+def test_the_cap_list_shows_where_values_came_from(panel):
+    """Model | values from | values, and a value the user changes becomes "entered"."""
+    panel.cap_list._add()
+    ed, m = panel.cap_list.editor, panel.setup.caps[-1]
+    assert m.values_from == {}                      # selecting it changes nothing
+    m.values_from.update(C="schematic", ESL="estimated", ESR="estimated")
+    ed.load(m)
+    ed.cap.setValue(10.0)
+    ed.esl.setValue(0.4)
+    assert m.values_from["C"] == "entered" and m.values_from["ESL"] == "entered"
+    ed.esr.setValue(5.0)
+    assert m.values_from["ESR"] == "entered" and m.values_from_text().startswith("entered")
+    lst = panel.cap_list.lst
+    row = lst.currentRow()
+    assert [lst.horizontalHeaderItem(c).text() for c in range(3)] == [
+        "Model", "Values from", "Values"]
+    assert lst.item(row, 1).text() == m.values_from_text()
+    assert ed.values_from.text() == m.values_from_detail()
+    m.doubt = "the maker's figure is 2.6 times the equivalent's"   # said on hover
+    panel.cap_list.reload()
+    assert lst.item(row, 1).text().endswith("questionable")
+    assert lst.item(row, 1).toolTip().startswith("These are simulation values provided by "
+                                                 "the manufacturer")
+    assert lst.item(row, 1).toolTip().endswith(m.doubt)
+    assert "10 µF, 0.4 nH, 5 mΩ" in lst.item(row, 2).text()

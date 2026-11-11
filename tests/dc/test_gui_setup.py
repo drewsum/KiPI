@@ -147,6 +147,26 @@ def test_mesh_sense_points_edit_one_at_a_time(app):
     panel.close()
 
 
+def test_a_regulator_with_levels_offers_them_in_the_editor(app):
+    """A pin- or firmware-selected regulator: its levels one pick away; picking one sets
+    the target voltage. A regulator with one voltage shows no Level row."""
+    setup = two_phase()
+    setup.vrms[1].levels = [1.8, 3.3]
+    setup.vrms[1].voltage = 1.8
+    panel = PIPanel()
+    panel.set_board(board(), setup)
+    panel.vrm_list.lst.setCurrentRow(1)
+    ed = panel.vrm_list.editor
+    assert ed.form.isRowVisible(ed.level)
+    assert [ed.level.itemText(i) for i in range(ed.level.count())] == ["1.8 V", "3.3 V"]
+    assert ed.level.currentText() == "1.8 V"
+    ed.level.setCurrentIndex(1)
+    ed.level.activated.emit(1)                    # the user picks 3.3 V
+    assert setup.vrms[1].voltage == 3.3
+    panel.vrm_list.lst.setCurrentRow(0)
+    assert not ed.form.isRowVisible(ed.level)
+
+
 def test_an_isolated_converter_edits_its_input_ground(app):
     from tree_boards import isolated_board, isolated_setup
 

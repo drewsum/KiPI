@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The user's power-integrity setup: VRMs, loads and series links, plus the AC setup.
 
 Everything here is entered by the user. The editors pre-fill some fields with guesses
@@ -41,7 +42,8 @@ import numpy as np
 from kipi.ac.model import (
     DEFAULT_KEPT_AT_RATED_PCT, ACSettings, CapModel, PackageModel, Probe, report_format,
 )
-from kipi.core.model.spice import SpiceRef, constant_drop_ref
+from kipi.core.model.spice import SpiceRef, constant_drop_ref  # noqa: F401 - re-exported
+from kipi.dc.pi import series_z
 from kipi.dc.solver.setup import SHORT_OHMS, SolveSettings
 from kipi.dc.thermal.model import ThermalSettings
 from kipi.noise.model import (
@@ -123,8 +125,15 @@ class Vrm:
     # Load line (#94): the regulated voltage droops by this many milliohms times the
     # output current actually drawn (0 = none).
     load_line_mohm: float = 0.0
+    # A board input's cable allowance in milliohms (a USB Type-C cable's 250 mOhm): in the
+    # worst case it droops the input like a load line, at the current the board draws;
+    # the typical solve leaves it out. 0 = none.
+    cable_mohm: float = 0.0
     # AC only: control loop bandwidth, kHz (None = not given); 50 kHz for a new VRM (#190).
     bandwidth_khz: Optional[float] = DEFAULT_BANDWIDTH_KHZ
+    # The output voltages it can be set to, when a pin or firmware selects one (an SD
+    # card's 1.8 / 3.3 V I/O supply); the VRM editor offers them. Empty = one voltage.
+    levels: List[float] = field(default_factory=list)
     # Mesh remote sense (#93, DC only, off by default): every sense point's pins are held
     # at the target voltage (less the load line, above that point's ground sense pins), the
     # VRM's current entering there; its output pins only measure. Point 1 is sense and
@@ -183,6 +192,7 @@ class PinGroup:
     pins: List[str]
     current: float
     name: str = ""
+    current_max: Optional[float] = None   # worst-case solve; None = the typical
 
 
 @dataclass
@@ -215,6 +225,19 @@ class Load:
     # The load puts its current onto its rail instead of drawing it (#241), e.g. a part
     # that back-feeds the rail. Off: it draws its current from the VRM.
     sources: bool = False
+    # The maximum current, for a worst-case solve (kipi.dc.pi.corner); None = the typical.
+    current_max: Optional[float] = None
+    # False: the current is not known and is solved as entered (0 A from an import). Every
+    # load on its rail gets the room such loads may add together (kipi.dc.pi.tree headroom).
+    current_known: bool = True
+    # Volts the copper may take before the load is out of its tolerance, worked out before
+    # layout from the datasheets (an import's figure, supply copper and ground return
+    # together); shown beside the solved margin. None = not given.
+    copper_margin_v: Optional[float] = None
+    # Each pin's resistance through the package to the die, ohms, by pin number, supply
+    # and ground pins alike (an IBIS [Pin] R_pin). A terminal all of whose pins have one
+    # is solved with a die node (CurrentLoad.pad_ohms); otherwise its pins are tied ideally.
+    package_ohms: Dict[str, float] = field(default_factory=dict)
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
@@ -247,7 +270,8 @@ class Load:
     def __setstate__(self, state):
         # Setups pickled in results files before asymmetric tolerances: +/- one %.
         t = state.pop("tolerance_pct", None)
-        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True, **state}
+        state = {"tol_min": None if t is None else -t, "tol_max": t, "tol_pct": True,
+                 "package_ohms": {}, **state}
         self.__dict__.update(state)
 
 
@@ -321,6 +345,21 @@ class DcLink:
     side_b: PinRef
     resistance: float                       # ohms; 0 = short (DC and AC)
     esl_h: Optional[float] = None           # series inductance, henries (AC only)
+    resistance_max: Optional[float] = None  # worst-case solve; None = the typical
+    # A diode's datasheet forward drop, side A (anode) -> side B, typical and worst case,
+    # and its forward-voltage curve, [[amps, volts], ...] (typical, 25 C): the diode model
+    # (``spice``) is fitted to them (kipi.dc.pi.diode_curve), and the worst-case solve
+    # moves it by the difference (kipi.dc.pi.corner). 0 / None: not stated.
+    diode_vf: float = 0.0
+    diode_vf_max: Optional[float] = None
+    vf_curve: Optional[List[List[float]]] = None
+    # The part's continuous rated current, amps (a ferrite's, a fuse's hold current, a
+    # jumper's): its solved current is judged against it. None = not given.
+    rated_current_a: Optional[float] = None
+    # A power mux's input (``mux`` the part, ``mux_input`` which input): one closed at a
+    # time, the first in ``PISetup.links``, the others in ``PISetup.mux_links``.
+    mux: str = ""
+    mux_input: int = 0
     # The part's SPICE model (#51): with it in use, AC takes the impedance from it, and
     # the resistance and ESL are fitted to it. A diode's model (#191) also gives DC its
     # current at each voltage; side A is its anode.
@@ -335,6 +374,11 @@ class DcLink:
     # The part's temperature, °C, its SPICE model is worked out at (#196): the copper's
     # under its pads, set by a solve that knows it; None: the model's nominal. Never saved.
     temp_c: Optional[float] = None
+    z_points: List[List[float]] = field(default_factory=list)
+    z_by_current: List[Dict] = field(default_factory=list)
+    circuit: Optional[Dict[str, float]] = None
+    z_basis: str = ""
+    l_by_current: List[List[float]] = field(default_factory=list)
 
     @property
     def uses_spice(self) -> bool:
@@ -384,11 +428,23 @@ class DcLink:
                 return float(r)
         return self.resistance
 
+    @property
+    def has_maker_z(self) -> bool:
+        return bool(self.circuit or self.z_points or self.z_by_current)
+
     def impedance(self, omega):
         """Small-signal impedance at angular frequency ``omega`` (an array)."""
         if self.uses_spice:
             return self.spice.impedance(omega, bias_a=self.bias_a or 0.0, temp_c=self.temp_c)
-        return self.resistance + 1j * omega * (self.esl_h or 0.0) + 0 * omega
+        if self.circuit:
+            return series_z.circuit_impedance(self.circuit, omega)
+        if self.z_by_current:
+            return series_z.by_current_impedance(self.z_by_current, self.bias_a or 0.0, omega)
+        if self.z_points:
+            return series_z.table_impedance(self.z_points, omega)
+        henries = (series_z.inductance_at(self.l_by_current, self.bias_a or 0.0)
+                   if self.l_by_current else (self.esl_h or 0.0))
+        return self.resistance + 1j * omega * henries + 0 * omega
 
     def admittance(self, omega) -> np.ndarray:
         """A multi-pin part's admittance between its sides, (F, N, N)."""
@@ -396,7 +452,8 @@ class DcLink:
 
     def is_short(self) -> bool:
         """Whether the part is a short in AC as in DC (merged away)."""
-        return self.resistance <= SHORT_OHMS and not self.esl_h and not self.uses_spice
+        return (self.resistance <= SHORT_OHMS and not self.esl_h and not self.uses_spice
+                and not self.has_maker_z and not self.l_by_current)
 
 
 DEFAULT_VIA_CURRENT_LIMIT_A = 1.0
@@ -430,10 +487,20 @@ class PISetup:
     probes: List[Probe] = field(default_factory=list)
     packages: List[PackageModel] = field(default_factory=list)     # #53
     ac: ACSettings = field(default_factory=ACSettings)
+    corner: str = "typ"                     # DC solve at "typ" or "max": kipi.dc.pi.corner
     # Coupled Noise analysis (#69)
     aggressors: List[Aggressor] = field(default_factory=list)
     victims: List[Victim] = field(default_factory=list)
     noise: NoiseSettings = field(default_factory=NoiseSettings)
+    # What the power-tree import could not place or had to assume (a rail with no
+    # source, a regulator whose input nothing powers): kept with the setup so the
+    # report says why a rail is missing, not only the import's Log.
+    import_notes: List[str] = field(default_factory=list)
+    mux_links: List[DcLink] = field(default_factory=list)
+    # The power-tree file the setup was imported from (its name, the tool and version that
+    # wrote it, its date and a short hash), printed on the reports: a report says which
+    # power tree its currents and tolerances came from.
+    import_source: str = ""
 
     def pin_nets(self) -> set:
         """Nets the VRMs, loads, series links and probes have pins on."""
@@ -461,11 +528,35 @@ class PISetup:
                  for r in (ph.high_side, ph.low_side) if r]
                 + [r for v in self.victims for r in (v.driver, v.receiver) if r])
 
+    def mux_paths(self) -> List[Tuple[str, int, List[DcLink]]]:
+        """The mux inputs other than the ones in ``links``, each a path of its own:
+        ``(mux, input, its links)``."""
+        out: Dict[Tuple[str, int], List[DcLink]] = {}
+        for k in self.mux_links:
+            out.setdefault((k.mux, k.mux_input), []).append(k)
+        return [(m, i, ks) for (m, i), ks in out.items()]
+
+    def with_mux_input(self, mux: str, k: int) -> "PISetup":
+        """This setup with input ``k`` of ``mux`` closed and its other inputs open."""
+        closed = [x for x in self.mux_links if x.mux == mux and x.mux_input == k]
+        links = [x for x in self.links if x.mux != mux] + closed
+        others = ([x for x in self.links if x.mux == mux]
+                  + [x for x in self.mux_links if not any(x is c for c in closed)])
+        s = dataclasses.replace(self, links=links, mux_links=others)
+        if closed:
+            # Two sources joined by the closed input: the path keeps the one feeding it.
+            net = closed[0].side_a.net
+            feed = net_groups(self, [net]).get(net, frozenset([net]))
+            joined = net_groups(s, [net]).get(net, frozenset([net]))
+            drives = lambda v, g: any(ph.output.net in g for ph in v.all_phases())  # noqa: E731
+            s.vrms = [v for v in s.vrms if not drives(v, joined) or drives(v, feed)]
+        return s
+
     # ------------------------------------------------------------------ file
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)
         d.pop("legacy_laminate_k")
-        for k in d["links"]:
+        for k in d["links"] + d["mux_links"]:
             k.pop("bias_a")
             k.pop("temp_c")
         for m in d["caps"]:
@@ -498,7 +589,9 @@ class PISetup:
                       acc_min=v.get("acc_min"), acc_max=v.get("acc_max"),
                       acc_pct=v.get("acc_pct", True), acc_dv=v.get("acc_dv", False),
                       load_line_mohm=v.get("load_line_mohm", 0.0),
+                      cable_mohm=v.get("cable_mohm", 0.0),
                       bandwidth_khz=v.get("bandwidth_khz", DEFAULT_BANDWIDTH_KHZ),
+                      levels=[float(x) for x in v.get("levels") or []],
                       mesh_sense=v.get("mesh_sense", False),
                       sense_points=[SensePoint(pin(sp.get("sense")),
                                                pin(sp.get("ground_sense")))
@@ -506,11 +599,18 @@ class PISetup:
                   for v in d.get("vrms", [])],
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), **_load_tolerance(l),
-                        groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
+                        groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""),
+                                         g.get("current_max"))
                                 for g in l.get("groups", [])],
-                        sources=bool(l.get("sources", False)))
+                        sources=bool(l.get("sources", False)),
+                        current_max=l.get("current_max"),
+                        current_known=bool(l.get("current_known", True)),
+                        copper_margin_v=l.get("copper_margin_v"),
+                        package_ohms={str(k): float(v) for k, v in
+                                      (l.get("package_ohms") or {}).items()})
                    for l in d.get("loads", [])],
             links=[_link(k, pin) for k in d.get("links", [])],
+            corner=d.get("corner", "typ"),
             via_current_limit_a=d.get("via_current_limit_a", DEFAULT_VIA_CURRENT_LIMIT_A),
             thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
                                        if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
@@ -525,8 +625,11 @@ class PISetup:
             probes=[Probe(p["name"], pin(p["rail"]), pin(p["ground"]), p.get("target_ohm"),
                           p.get("target_hz"), bool(p.get("target_custom", False)),
                           [(float(f), float(z)) for f, z in p.get("target_points", [])],
-                          p.get("step_a"), p.get("slew_a_per_us"),
-                          str(p.get("package", "")), int(p.get("die_port", 0)))
+                          target_from_hz=p.get("target_from_hz"),
+                          step_a=p.get("step_a"), slew_a_per_us=p.get("slew_a_per_us"),
+                          package=str(p.get("package", "")),
+                          die_port=int(p.get("die_port", 0)),
+                          target_from=p.get("target_from", ""))
                     for p in d.get("probes", [])],
             packages=[PackageModel.from_dict(k) for k in d.get("packages", [])],
             ac=ACSettings(**{k: v for k, v in d.get("ac", {}).items()
@@ -535,6 +638,9 @@ class PISetup:
                         for a in d.get("aggressors", [])],
             victims=[victim_from_dict(v, pin) for v in d.get("victims", [])],
             noise=noise_settings(d.get("noise", {})),
+            import_notes=[str(n) for n in d.get("import_notes", [])],
+            import_source=str(d.get("import_source", "")),
+            mux_links=[_link(k, pin) for k in d.get("mux_links", [])],
         )
 
     def save(self, path) -> Path:
@@ -627,12 +733,22 @@ def _link(k: dict, pin) -> DcLink:
     link = DcLink(name=k["name"], side_a=pin(k["side_a"]), side_b=pin(k["side_b"]),
                   resistance=k["resistance"], esl_h=k.get("esl_h"),
                   spice=SpiceRef.from_dict(k.get("spice")),
-                  more_sides=[pin(x) for x in k.get("more_sides") or []])
-    # 0.9.2's constant forward drop (#161) becomes a diode model with that drop (#191).
-    vf = float(k.get("diode_vf") or 0.0)
-    if vf > 0 and link.spice is None and link.resistance > 0:
-        link.spice = constant_drop_ref(vf, link.resistance)
-        link.resistance = link.spice.values["resistance"]
+                  more_sides=[pin(x) for x in k.get("more_sides") or []],
+                  resistance_max=k.get("resistance_max"),
+                  diode_vf=float(k.get("diode_vf", k.get("forward_v")) or 0.0),
+                  diode_vf_max=k.get("diode_vf_max", k.get("forward_v_max")),
+                  vf_curve=k.get("vf_curve"),
+                  rated_current_a=k.get("rated_current_a"),
+                  mux=str(k.get("mux", "")), mux_input=int(k.get("mux_input", 0)),
+                  z_points=[list(p) for p in k.get("z_points") or []],
+                  z_by_current=[dict(c) for c in k.get("z_by_current") or []],
+                  circuit=k.get("circuit"), z_basis=str(k.get("z_basis", "")),
+                  l_by_current=[list(p) for p in k.get("l_by_current") or []])
+    # 0.9.2's constant forward drop (#161) becomes a diode model with that drop (#191);
+    # a datasheet forward curve, a model fitted to the curve.
+    if link.spice is None and (link.diode_vf > 0 or link.vf_curve):
+        from kipi.dc.pi.diode_curve import diode_ref
+        diode_ref(link)
     return link
 
 
@@ -666,7 +782,11 @@ def cap_from_dict(c: dict) -> CapModel:
                     c.get("esr_ohm", 0.0), list(c.get("refs", [])), c.get("rated_v"),
                     c.get("kept_at_rated_pct", DEFAULT_KEPT_AT_RATED_PCT),
                     c.get("dielectric", ""), c.get("aging_pct_per_decade", 0.0),
-                    c.get("mfg_tolerance_pct"), SpiceRef.from_dict(c.get("spice")))
+                    c.get("mfg_tolerance_pct"), spice=SpiceRef.from_dict(c.get("spice")),
+                    values_from=dict(c.get("values_from") or {}),
+                    defaults_because=c.get("defaults_because", ""),
+                    equivalent=c.get("equivalent", ""), doubt=c.get("doubt", ""),
+                    dc_bias_points=[list(p) for p in c.get("dc_bias_points") or []])
 
 
 def biased_link(setup: PISetup, link: DcLink,
@@ -674,10 +794,11 @@ def biased_link(setup: PISetup, link: DcLink,
     """``link`` for an AC or Coupled Noise solve: a diode biased by the current the last
     DC solve found through it (``solved``, by link name, from
     :func:`kipi.ac.bias.dc_link_currents`), else by :func:`link_bias`'s estimate."""
-    if not link.is_diode:
+    if not (link.is_diode or ((link.z_by_current or link.l_by_current) and not link.uses_spice)):
         return link
     if solved and link.name in solved:
-        return dataclasses.replace(link, bias_a=max(float(solved[link.name]), 0.0))
+        amps = float(solved[link.name])
+        return dataclasses.replace(link, bias_a=max(amps, 0.0) if link.is_diode else abs(amps))
     return dataclasses.replace(link, bias_a=link_bias(setup, link))
 
 
@@ -803,6 +924,8 @@ def _isolated_errors(v: Vrm, groups) -> List[str]:
 def validate(setup: PISetup) -> List[str]:
     """Problems that make the setup unsolvable (empty list = OK)."""
     errors: List[str] = []
+    from kipi.dc.pi.corner import corner_errors
+    errors.extend(corner_errors(setup))
     names = [x.name for x in [*setup.vrms, *setup.loads, *setup.links]]
     from kipi.dc.solver.via_barrel import rule_errors
     errors.extend(rule_errors(setup.settings.via_rules))
@@ -829,6 +952,8 @@ def validate(setup: PISetup) -> List[str]:
             errors.append(f"VRM {v.name}: quiescent current and dropout cannot be negative")
         if v.load_line_mohm < 0:
             errors.append(f"VRM {v.name}: the load line cannot be negative")
+        if v.cable_mohm < 0:
+            errors.append(f"VRM {v.name}: the cable allowance cannot be negative")
         if v.vin_min is not None and v.vin_max is not None and v.vin_min > v.vin_max:
             errors.append(f"VRM {v.name}: input range minimum is above its maximum")
         if v.acc_min is not None and v.acc_max is not None and v.acc_min > v.acc_max:

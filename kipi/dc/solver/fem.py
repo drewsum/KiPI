@@ -91,6 +91,8 @@ class Solution:
     # A tied load's current at each of its pads, in its pad order: what the copper and
     # vias at that pad deliver into it (CurrentLoad.tied).
     load_pad_current: Dict[str, List[float]] = field(default_factory=dict)
+    # A packaged load's die voltage (CurrentLoad.pad_ohms): what the part itself sees.
+    load_die_v: Dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -208,11 +210,18 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
             groups.extend([a, b])
     # A load's pads are one node (its package planes join them, CurrentLoad.tied) - only
     # the pads with a copper path to a source: a pad on an island stays unconnected (#88).
+    # A load with package resistances (CurrentLoad.pad_ohms) is not merged: its pads join
+    # a die node of their own through those resistances (see _die_links).
+    packaged: Dict[str, List[Tuple[str, float]]] = {}
     if s.tie_load_pads and any(l.tied and len(l.pad_ids) > 1 for l in problem.loads):
         live_pad = _pads_reaching_a_source(mesh, problem, groups, pad_groups)
         for load in problem.loads:
             pads = [p for p in load.pad_ids if p in pad_groups and live_pad.get(p)]
-            if load.tied and len(pads) > 1:
+            if not (load.tied and len(pads) > 1):
+                continue
+            if load.pad_ohms is not None:
+                packaged[load.name] = _package_paths(load, pads)
+            else:
                 groups.append(np.concatenate([pad_groups[p] for p in pads]))
     merged_of, nm = _merge_groups(mesh.n_nodes, groups)
 
@@ -284,10 +293,58 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
         cols = np.concatenate([cols, [na, nb, nb, na]])
         data = np.concatenate([data, [g, g, -g, -g]])
 
+    pad_unknown = {pid: int(merged_of[nodes[0]]) for pid, nodes in pad_groups.items()}
+    dies, nm, (dr, dc, dd) = _die_links(packaged, pad_unknown, nm)
+    rows, cols, data = (np.concatenate([rows, dr]), np.concatenate([cols, dc]),
+                        np.concatenate([data, dd]))
     K = sp.coo_matrix((data, (rows, cols)), shape=(nm, nm)).tocsr()
     K.sum_duplicates()
-    pad_unknown = {pid: int(merged_of[nodes[0]]) for pid, nodes in pad_groups.items()}
-    return K, merged_of, nm, sheet_g, elements, pad_unknown, series, rho_factor
+    return K, merged_of, nm, sheet_g, elements, pad_unknown, series, rho_factor, dies
+
+
+@dataclass
+class DieNode:
+    """A packaged load's die (CurrentLoad.pad_ohms): its unknown, and each live pad's
+    unknown and conductance to it."""
+    unknown: int
+    pads: List[Tuple[str, int, float]]       # (pad id, pad unknown, siemens)
+
+
+def _package_paths(load, live_pads: List[str]) -> List[Tuple[str, float]]:
+    """(pad id, ohms to the die) for the load's live pads."""
+    if len(load.pad_ohms) != len(load.pad_ids):
+        raise SolveError(f"Load {load.name}: {len(load.pad_ohms)} package resistances for "
+                         f"{len(load.pad_ids)} pads")
+    ohms = dict(zip(load.pad_ids, load.pad_ohms))
+    for pid in live_pads:
+        if not ohms[pid] > 0:
+            raise SolveError(f"Load {load.name}: pad {pid} has a package resistance of "
+                             f"{ohms[pid]} ohm; a package path must be above 0 ohm")
+    return [(pid, float(ohms[pid])) for pid in live_pads]
+
+
+def _die_links(packaged: Dict[str, List[Tuple[str, float]]], pad_unknown: Dict[str, int],
+               nm: int):
+    """One die unknown per packaged load, after the copper's, and the stiffness entries of
+    its pads' package resistances. Pads already one unknown (one pin's several pads, a
+    pad sharing a drill ring) are one path, their conductances in parallel."""
+    dies: Dict[str, DieNode] = {}
+    rows, cols, data = [], [], []
+    for name, paths in packaged.items():
+        die = nm
+        nm += 1
+        by_unknown: Dict[int, float] = {}
+        for pid, ohm in paths:
+            u = pad_unknown[pid]
+            by_unknown[u] = by_unknown.get(u, 0.0) + 1.0 / ohm
+        pads = [(pid, pad_unknown[pid], 1.0 / ohm) for pid, ohm in paths]
+        for u, g in by_unknown.items():
+            rows += [u, die, u, die]
+            cols += [u, die, die, u]
+            data += [g, g, -g, -g]
+        dies[name] = DieNode(die, pads)
+    return dies, nm, (np.asarray(rows, dtype=np.int64), np.asarray(cols, dtype=np.int64),
+                      np.asarray(data, dtype=float))
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +374,7 @@ class LinearSystem:
         self.warnings: List[str] = []
         with progress.timed("Assembling"):
             (self.K, self.merged_of, nm, self.sheet_g, self.elements, self.pad_unknown,
-             self.series, self.rho_factor) = assemble(snap, mesh, problem)
+             self.series, self.rho_factor, self.dies) = assemble(snap, mesh, problem)
             progress.info(f"{nm} unknowns after merging pads and drill rings, "
                           f"{self.K.nnz} non-zeros, {len(self.elements)} barrel segments, "
                           f"{len(self.series)} series part(s)")
@@ -388,6 +445,7 @@ class LinearSystem:
         self.diode_unit = [self.factor.solve(self._drop_rhs({e.link: 1.0}), progress)
                            for e in self.diodes]
         self.diode_v = np.zeros(len(self.diodes))       # the last solve's, to start from
+        self.diode_started = False
         self.setup_s = time.perf_counter() - t0
         for w in self.warnings:
             progress.warn(w)
@@ -414,6 +472,10 @@ class LinearSystem:
             pads = [pid for pid in load.pad_ids if pid not in dead]
             if not pads:                       # not connected at all: draws nothing
                 amps[load.name] = 0.0
+                continue
+            die = self.dies.get(load.name)
+            if die is not None:                # drawn at its die (CurrentLoad.pad_ohms)
+                f[die.unknown] -= amps[load.name]
                 continue
             share = amps[load.name] / len(pads)
             for pid in pads:
@@ -485,6 +547,7 @@ class LinearSystem:
                 series_current[e.name] = float(e.g * (u_all[e.node_a] - u_all[e.node_b]
                                                       - drops[e.link]))
         load_pad_current = self._tied_pad_currents(v, amps)
+        load_pad_current.update(self._packaged_pad_currents(v))
         stats = dict(self.stats)
         stats["solve_s"] = self.setup_s + time.perf_counter() - t0
         return Solution(problem=prob, mesh=self.mesh, node_v=v[self.merged_of],
@@ -496,6 +559,7 @@ class LinearSystem:
                         source_voltage=volts, load_current=amps,
                         source_pad_current=source_pad_current,
                         load_pad_current=load_pad_current,
+                        load_die_v={n: float(v[d.unknown]) for n, d in self.dies.items()},
                         dead_pads={k: list(v) for k, v in self.dead_pads.items()},
                         series_drop={e.name: drops[e.link] for e in self.series
                                      if e.g is not None})
@@ -506,7 +570,8 @@ class LinearSystem:
         plane, carries little; nothing is shared out by count."""
         if not self.problem.settings.tie_load_pads:
             return {}
-        tied = [l for l in self.problem.loads if l.tied and len(l.pad_ids) > 1]
+        tied = [l for l in self.problem.loads if l.tied and len(l.pad_ids) > 1
+                and l.name not in self.dies]
         if not tied:
             return {}
         mesh = self.mesh
@@ -547,6 +612,46 @@ class LinearSystem:
                 self.warnings.append(f"{load.name}: its pads' currents sum to {total:.4g} A, "
                                      f"not its {want:.4g} A (a series part on one of its pads?)")
             out[load.name] = per_pad
+        return out
+
+    def _packaged_pad_currents(self, v_merged: np.ndarray) -> Dict[str, List[float]]:
+        """A packaged load's current at each of its pads, in its pad order: what its own
+        package path carries to the die, g * (V_pad - V_die). A pad with no copper path to
+        a source carries none."""
+        out: Dict[str, List[float]] = {}
+        for load in self.problem.loads:
+            die = self.dies.get(load.name)
+            if die is None:
+                continue
+            amps = {pid: g * float(v_merged[u] - v_merged[die.unknown]) for pid, u, g in die.pads}
+            out[load.name] = [amps.get(pid, 0.0) for pid in load.pad_ids]
+        return out
+
+    def pad_resistance(self, pad_ids: List[str],
+                       progress: ProgressReporter = NULL) -> Dict[str, float]:
+        """Each pad's driving-point resistance to the sources, ohms: the volts it falls
+        when one ampere leaves the copper there and nowhere else, the sources held and
+        every other terminal open. One back-substitution per pad on the factorization.
+
+        Solved with ``tie_load_pads`` off, it is each ball's own path through the board -
+        its pad, its via, the copper to the plane and the plane to the regulator - which
+        judges a ball's connection whatever the package does; with the pads tied it is
+        their common node's. A pad with no copper path to a source: infinity; a source
+        pad: 0."""
+        out: Dict[str, float] = {}
+        cache: Dict[int, float] = {}
+        for pid in pad_ids:
+            u = self.pad_unknown[pid]
+            if u not in cache:
+                if not self.live[u]:
+                    cache[u] = float("inf")
+                elif self.is_fixed[u]:
+                    cache[u] = 0.0
+                else:
+                    rhs = np.zeros(len(self.free))
+                    rhs[self.free_index[u]] = 1.0
+                    cache[u] = float(self.factor.solve(rhs, progress)[self.free_index[u]])
+            out[pid] = cache[u]
         return out
 
     def _drop_rhs(self, drops: Dict[int, float]) -> np.ndarray:
@@ -597,6 +702,13 @@ class LinearSystem:
             return f, jac, i
 
         v = self.diode_v.copy()
+        if not self.diode_started:
+            # The first solve starts each diode where it carries what the copper sends
+            # through it as a plain resistor, not at 0 V: a steep junction has no slope
+            # there, and with fixed-current loads Newton's step then has no direction.
+            v = np.array([_volts_at(c, max(ub * gk, 0.0)) for c, ub, gk in
+                          zip(curves, u_base, g)])
+            self.diode_started = True
         f, jac, i = residual(v)
         for _ in range(300):
             if np.max(np.abs(f)) < 1e-10:
@@ -629,3 +741,18 @@ def solve(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem,
           progress: ProgressReporter = NULL) -> Solution:
     """One-shot solve with the problem's own source voltages and load currents."""
     return LinearSystem(snap, mesh, problem, progress).solve(progress=progress)
+
+
+def _volts_at(curve, amps: float) -> float:
+    """The voltage at which the diode ``curve`` (volts -> (amps, slope)) carries ``amps``
+    from anode to cathode, by bisection between 0 V and 10 V; 0 V for no current."""
+    if amps <= 0:
+        return 0.0
+    lo, hi = 0.0, 10.0
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        if curve(mid)[0] < amps:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)

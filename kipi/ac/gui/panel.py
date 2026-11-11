@@ -26,7 +26,9 @@ from qtpy.QtWidgets import (
 )
 
 from kipi.ac.checks import capacitor_candidates, default_ground, validate_ac
-from kipi.ac.gui.caps import add_file_buttons, describe_cap, models_from_values, new_cap
+from kipi.ac.gui.caps import (
+    CAP_COLUMNS, add_file_buttons, cap_columns, describe_cap, models_from_values, new_cap,
+)
 from kipi.ac.gui.packages import PackageEditor, describe as describe_package, new_package
 from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel, Probe
 from kipi.ac.package import open_removed_dies, sync_die_probes
@@ -64,6 +66,12 @@ HOURS_PER_YEAR = 8760.0
 # Capacitor models
 # ---------------------------------------------------------------------------
 
+def _spin_changed(spin, held: float) -> bool:
+    """Whether ``spin`` shows a value other than ``held`` as it would display it."""
+    step = 10.0 ** -spin.decimals()
+    return abs(spin.value() - round(held, spin.decimals())) > step / 2
+
+
 class CapEditor(_Editor):
     """A capacitor model's values, and which capacitors use it.
 
@@ -85,6 +93,10 @@ class CapEditor(_Editor):
         self.esr = _spin(0, 1e6, 0, 3, " mΩ", 0.5)
         self.esr.setSpecialValueText("required")
         f.addRow("Name", self.name)
+        # Where each value came from: the file's basis, or the user's own entry.
+        self.values_from = QLabel()
+        self.values_from.setWordWrap(True)
+        f.addRow("Values from", self.values_from)
         f.addRow("Capacitance", self.cap)
         f.addRow("ESL", self.esl)
         f.addRow("ESR", self.esr)
@@ -280,6 +292,7 @@ class CapEditor(_Editor):
     def _load(self, m: CapModel):
         self._spice_fields(m)
         self.name.setText(m.name)
+        self.values_from.setText(m.values_from_detail())
         self.cap.setValue(m.capacitance_f * 1e6)
         self.esl.setValue(m.esl_h * 1e9)
         self.esr.setValue(m.esr_ohm * 1e3)
@@ -297,6 +310,17 @@ class CapEditor(_Editor):
         self.fill_table()
 
     def _save(self, m: CapModel):
+        # A value the user changes is theirs from now on: the list says "entered".
+        for key, spin, held, scale in (
+                ("C", self.cap, m.capacitance_f, 1e6), ("ESL", self.esl, m.esl_h, 1e9),
+                ("ESR", self.esr, m.esr_ohm, 1e3), ("rating", self.rated, m.rated_v or 0.0, 1),
+                ("kept", self.kept, m.kept_at_rated_pct, 1),
+                ("aging", self.aging, m.aging_pct_per_decade, 1),
+                ("tolerance", self.mfg_tol, m.mfg_tolerance_pct or 0.0, 1)):
+            if _spin_changed(spin, held * scale):
+                m.values_from[key] = "entered"
+        if (self.dielectric.currentData() or "") != m.dielectric:
+            m.values_from["dielectric"] = "entered"
         m.name = self.name.text().strip() or m.name
         m.capacitance_f = self.cap.value() * 1e-6
         m.esl_h = self.esl.value() * 1e-9
@@ -306,6 +330,7 @@ class CapEditor(_Editor):
         m.dielectric = self.dielectric.currentData() or ""
         m.aging_pct_per_decade = self.aging.value()
         m.mfg_tolerance_pct = self.mfg_tol.value() or None
+        self.values_from.setText(m.values_from_detail())
 
     # ------------------------------------------------------------ parts
     def fill_table(self):
@@ -413,7 +438,7 @@ def _target_text(c) -> str:
         text = f"{c.target_ohm * 1e3:g}"
     else:
         return ""
-    above = getattr(c, "above_hz", None)
+    above = getattr(c, "starts_hz", None) or getattr(c, "above_hz", None)
     return f"{text} above {_fmt_hz(above)}" if above else text
 
 
@@ -488,6 +513,10 @@ class ProbeEditor(_Editor):
         f.addRow("Die port", self.lbl_die)
         f.addRow("Supply pins", self.rail)
         f.addRow("Ground pins", self.ground)
+        # Where the target came from: the file's step and rise time, or the user's entry.
+        self.target_from = QLabel()
+        self.target_from.setWordWrap(True)
+        f.addRow("Target from", self.target_from)
         f.addRow("Target", self.target_kind)
         f.addRow("Target |Z|", self.target)
         f.addRow("Target frequency", self.target_f)
@@ -630,6 +659,7 @@ class ProbeEditor(_Editor):
             self._add_point_row(f_hz, z_ohm)
         self.target_kind.setCurrentIndex(1 if p.target_custom else 0)
         self._target_rows()
+        self.target_from.setText(p.target_from or "not recorded")
 
     def _save(self, p: Probe):
         if p.on_die:                          # its pins follow its package's port
@@ -656,6 +686,11 @@ class ProbeEditor(_Editor):
         self._save_target(p)
 
     def _save_target(self, p: Probe):
+        # A target the user changes is theirs from now on: "Target from" says "entered".
+        if (_spin_changed(self.target, (p.target_ohm or 0.0) * 1e3)
+                or _spin_changed(self.target_f, (p.target_hz or 0.0) / 1e3)):
+            p.target_from = "entered"
+            self.target_from.setText(p.target_from)
         p.target_ohm = self.target.value() / 1e3 or None
         p.target_hz = self.target_f.value() * 1e3 or None
         p.step_a = self.step.value() or None
@@ -700,7 +735,7 @@ class ACPanel(QWidget, PartSelection):
         self.link_list = ItemList(lambda: self.setup.links, LinkEditor(self, mode="ac"),
                                   self._new_link, self._describe_link, noun="series link")
         self.cap_list = ItemList(lambda: self.setup.caps, CapEditor(self), self._new_cap,
-                                 self._describe_cap, noun="capacitor model")
+                                 cap_columns, noun="capacitor model", columns=CAP_COLUMNS)
         b_values = QPushButton("Models from values")
         b_values.setToolTip("Make one model per distinct value of the capacitors that have "
                             "none yet (capacitance read from the value; enter ESL and ESR)")

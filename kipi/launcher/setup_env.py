@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """One setup of KiPI's environment: what to tell the user, and the install itself.
 
 The console and the window (:mod:`kipi.launcher.ui_console`, :mod:`kipi.launcher.ui_tk`)
@@ -25,7 +26,7 @@ PARDISO_TITLE = "PARDISO, a faster solver for large boards (optional)"
 PARDISO_PROS = [
     "Solves large rails several times faster: one 645k-unknown solve drops from about 8 s "
     "to 1.2 s, and a four-iteration electro-thermal run from about 90 s to 34 s.",
-    "Uses every processor core, and solves rails of up to 1M unknowns directly (200k "
+    "Uses every processor core, and solves rails of up to 3M unknowns directly (200k "
     "without it, beyond which KiPI switches to a slower iterative solver).",
 ]
 PARDISO_CONS = [

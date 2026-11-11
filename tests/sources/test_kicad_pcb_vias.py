@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Via fill and per-layer via pads, read from a ``.kicad_pcb`` file (#89)."""
 
 import pytest

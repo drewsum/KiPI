@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Target impedance and frequency from a device's transient spec.
 
 The PDN must hold the rail within its AC tolerance while the load steps by ``i_step``, so
@@ -60,6 +61,33 @@ def target_from_transient(v_ac_v: float, i_step_a: float,
     return Target(v_ac_v / i_step_a, t_rise, 1.0 / (math.pi * t_rise))
 
 
+STABILITY_MARGIN = 2.0
+
+
+def input_stability_ohm(v_in: float, p_in: float) -> Optional[float]:
+    """The highest supply impedance a switching converter drawing ``p_in`` watts at
+    ``v_in`` volts may see at its input: its input resistance V^2 / P over the margin."""
+    if not (v_in > 0 and p_in > 0):
+        return None
+    return v_in * v_in / p_in / STABILITY_MARGIN
+
+
+def buck_input_current(i_out: float, duties: Sequence[float]) -> Optional[float]:
+    """The fundamental of a buck's pulsed input current, amps peak, at the worst of
+    ``duties``: (2 / pi) I_out sin(pi D)."""
+    ds = [min(max(d, 0.0), 1.0) for d in duties if d is not None]
+    if not (i_out > 0 and ds):
+        return None
+    s = 1.0 if min(ds) <= 0.5 <= max(ds) else max(math.sin(math.pi * d) for d in ds)
+    return 2.0 / math.pi * i_out * s
+
+
+def ripple_mask(v_ac: float, i1: float, f_sw: float) -> List[Tuple[float, float]]:
+    """V_ac / I_1 at the switching frequency, rising 20 dB a decade with the harmonics."""
+    z = v_ac / i1
+    return [(f_sw, z), (100.0 * f_sw, 100.0 * z)]
+
+
 def mask_at(points: Sequence[Tuple[float, float]], freqs) -> np.ndarray:
     """A custom target mask at ``freqs``: the ``(f_hz, z_ohm)`` corner points joined by
     straight lines on the log-log plot, held flat below the first point and above the
@@ -75,12 +103,13 @@ def mask_at(points: Sequence[Tuple[float, float]], freqs) -> np.ndarray:
 
 def target_at(freqs, target_ohm: Optional[float] = None, target_hz: Optional[float] = None,
               points: Optional[Sequence[Tuple[float, float]]] = None,
-              above_hz: Optional[float] = None) -> Optional[np.ndarray]:
+              above_hz: Optional[float] = None,
+              from_hz: Optional[float] = None) -> Optional[np.ndarray]:
     """The target impedance at each of ``freqs`` (NaN where none applies), or None without
     a target. A custom mask (``points``) takes the place of the flat target, which holds
     ``target_ohm`` up to ``target_hz`` (the whole sweep if none, or if the sweep starts
     above it). With ``above_hz`` (the VRM's control loop bandwidth), either applies only
-    at and above that frequency."""
+    at and above that frequency; with ``from_hz``, only at and above that one too."""
     f = np.asarray(freqs, dtype=float)
     if points:
         t = mask_at(points, f)
@@ -92,12 +121,15 @@ def target_at(freqs, target_ohm: Optional[float] = None, target_hz: Optional[flo
         return None
     if above_hz:
         t[f < above_hz] = np.nan
+    if from_hz:
+        t[f < from_hz] = np.nan
     return t
 
 
 def judged_from(bandwidth_hz: Optional[float], freqs, target_ohm: Optional[float] = None,
                 target_hz: Optional[float] = None,
-                points: Optional[Sequence[Tuple[float, float]]] = None
+                points: Optional[Sequence[Tuple[float, float]]] = None,
+                from_hz: Optional[float] = None
                 ) -> Tuple[Optional[float], Optional[str]]:
     """Where a probe's target starts to apply, given the VRM's control loop bandwidth:
     ``(above_hz, note)`` for :func:`target_at`.
@@ -109,7 +141,7 @@ def judged_from(bandwidth_hz: Optional[float], freqs, target_ohm: Optional[float
     """
     if not bandwidth_hz or bandwidth_hz <= 0:
         return None, None
-    t = target_at(freqs, target_ohm, target_hz, points)
+    t = target_at(freqs, target_ohm, target_hz, points, from_hz=from_hz)
     if t is None:
         return bandwidth_hz, None
     f = np.asarray(freqs, dtype=float)

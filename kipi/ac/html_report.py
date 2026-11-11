@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Self-contained HTML (or PDF) report for an AC impedance solve of one rail.
 
 One ``.html`` file with:
@@ -33,7 +34,9 @@ from kipi.ac.solver.fem import dielectric_summary
 from kipi.ac.transient import transients
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.naming import timestamp
-from kipi.dc.report.html import CSS, _e, _png, _table, _verdict, finish, maps_html, notes_section
+from kipi.dc.report.html import (
+    CSS, _e, _png, _table, _verdict, finish, maps_html, notes_section, source_meta,
+)
 
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#17becf", "#bcbd22",
           "#8c564b", "#e377c2", "#7f7f7f")
@@ -104,11 +107,12 @@ def _si(x: float, unit: str) -> str:
 
 
 def _target_text(c) -> str:
-    above = f" above {_hz(c.above_hz)}" if c.above_hz else ""
+    start = c.starts_hz
+    above = f" above {_hz(start)}" if start else ""
     if c.target_points:
         return f"custom ({len(c.target_points)} points){above}"
     if c.target_ohm:
-        span = (f" from {_hz(c.above_hz)} to {_hz(c.target_hz)}" if c.above_hz and c.target_hz
+        span = (f" from {_hz(start)} to {_hz(c.target_hz)}" if start and c.target_hz
                 else above or (f" to {_hz(c.target_hz)}" if c.target_hz else ""))
         return f"{_ohms(c.target_ohm)}{span}"
     return ""
@@ -487,7 +491,7 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     # ---------------- summary
     parts.append(f"<h1>KiPI AC impedance report: {_e(result.rail)}</h1>"
                  f"<div class='meta'>{_e(snap.board_name)} · {now} · KiPI {__version__} · "
-                 f"solved in {result.solve_s:.1f} s</div>")
+                 f"solved in {result.solve_s:.1f} s</div>" + source_meta(setup))
     if not pdf:
         parts.append("<nav><a href='#impedance'>Impedance</a> <a href='#map'>Board map</a>"
                      + (" <a href='#transient'>Transient</a>" if trs else "")
@@ -613,17 +617,19 @@ def write_ac_report(path, result, snap: BoardSnapshot, setup, progress=None) -> 
     for m, n in models:
         refs = sorted((r for r in result.caps if model_of.get(r) is m), key=_natural)
         srf = m.srf_hz()
-        row = [_e(m.name) + _spice_tag(m), _si(m.capacitance_f, "F"), _si(m.esl_h, "H"),
-               _si(m.esr_ohm, "Ω"), _hz(srf) if srf else "", str(n), _e(", ".join(refs))]
+        row = [_e(m.name) + _spice_tag(m), _e(m.values_from_text()),
+               _si(m.capacitance_f, "F"), _si(m.esl_h, "H"), _si(m.esr_ohm, "Ω"),
+               _hz(srf) if srf else "", str(n), _e(", ".join(refs))]
         if bias:
             at = [bias[r] for r in refs if r in bias]
-            row.insert(5, _srf_text(m, at))
-            row.insert(2, _bias_text(m, at))
+            row.insert(6, _srf_text(m, at))
+            row.insert(3, _bias_text(m, at))
         rows.append(row)
-    head = ["Model", "C", "ESL", "ESR", "Self-resonance", "Parts on rail", "References"]
+    head = ["Model", "Values from", "C", "ESL", "ESR", "Self-resonance", "Parts on rail",
+            "References"]
     if bias:
-        head.insert(5, "SRF derated")
-        head.insert(2, "C derated")
+        head.insert(6, "SRF derated")
+        head.insert(3, "C derated")
     parts.append(_table(head, rows, "caps"))
     if any(m.uses_spice for m, _n in models):
         parts.append("<p class='note'>A model marked SPICE takes each part's impedance from "

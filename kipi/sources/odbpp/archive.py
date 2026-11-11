@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """An ODB++ job as a set of text files, from a folder, a ``.zip`` or a ``.tgz``.
 
 Files are read in place, never unpacked to disk. Names are matched without regard to

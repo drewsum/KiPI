@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """DC solver entry points: mesh -> solve -> post-process for one net."""
 
 from __future__ import annotations

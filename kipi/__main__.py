@@ -1,8 +1,14 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Command-line entry point.
 
     python -m kipi                      # standalone: open board files from the window
     python -m kipi board.kipi.json.gz   # standalone, opening this board file
+    python -m kipi board.kicad_pcb --background --pdn-json board.pdn.json
+                                        # no splash, minimized without taking the focus,
+                                        # the board loaded and the power tree imported
     python -m kipi --dump out.json.gz   # extract from the running KiCad and save, no GUI
+    python -m kipi board.tgz --pdn-json board.pdn.json --solve out_dir [--ac all] [--coarse]
+                                        # no GUI: solve, write out_dir/pdn_results.json
 
 Started from a terminal, KiPI runs standalone and needs no KiCad. To run the plugin
 workflow from a terminal instead (connect to the running KiCad PCB editor), set
@@ -25,8 +31,42 @@ def main(argv=None) -> int:
     ap.add_argument("--dump", metavar="PATH", help="extract from KiCad, save snapshot, exit")
     ap.add_argument("--refill", action="store_true", help="refill zones before extracting")
     ap.add_argument("--debug", action="store_true")
+    ap.add_argument("--background", action="store_true",
+                    help="no splash screen; the window opens minimized without taking the "
+                         "focus from what you are typing in")
+    ap.add_argument("--pdn-json", metavar="PATH",
+                    help="import this Tomachie power tree once the board is loaded")
+    ap.add_argument("--solve", metavar="OUT_DIR",
+                    help="no window: solve the power tree of BOARD from --pdn-json, write "
+                         "OUT_DIR/pdn_results.json and an AC report per swept rail, exit")
+    ap.add_argument("--ac", default="all", metavar="RAILS",
+                    help="with --solve: the regulators whose rails to sweep, comma "
+                         "separated, or all (default) or none")
+    ap.add_argument("--coarse", action="store_true",
+                    help="with --solve: a coarser mesh, for boards with thousands of vias")
+    ap.add_argument("--threads", type=int, metavar="N",
+                    help="with --solve: at most N solver threads")
+    ap.add_argument("--memory-gb", type=float, metavar="GB",
+                    help="with --solve: at most GB of memory; a rail that needs more is "
+                         "listed not solved instead of starving the machine")
+    ap.add_argument("--overrides", metavar="PATH",
+                    help="with --solve: a JSON file of figures the engineer states (regulator "
+                         "f_sw_hz / bandwidth_hz by refdes, load i_step_a / t_rise_s by rail:refdes), "
+                         "merged into the pdn.json before import as basis user")
+    ap.add_argument("--normal-priority", action="store_true",
+                    help="with --solve: run at normal priority (default: below normal)")
     args = ap.parse_args(argv)
     path = args.board or args.snapshot
+    if args.solve:
+        if not (path and args.pdn_json):
+            ap.error("--solve needs a BOARD and --pdn-json")
+        # Before NumPy and PARDISO load: their thread pools read the counts once.
+        from kipi.core import limits
+        capped = limits.apply(args.threads, args.memory_gb, not args.normal_priority)
+        from kipi.headless import run
+        run(args.solve, path, args.pdn_json, ac=args.ac, coarse=args.coarse,
+            memory_gb=capped, overrides=args.overrides)
+        return 0
     missing = missing_packages()
     if missing:
         print(f"This Python ({sys.executable}) does not have KiPI's packages "
@@ -69,7 +109,8 @@ def main(argv=None) -> int:
         if host is Host.STANDALONE:
             from kipi.gui.app import run
             from kipi.sources.kicad_ipc.source import KiCadPartModels
-            return run(source=source, tool=KiCadPartModels(), instance=instance)
+            return run(source=source, tool=KiCadPartModels(), instance=instance,
+                       background=args.background, pdn_json=args.pdn_json)
         if path:
             from kipi.gui.app import run
             from kipi.core.model.snapshot_io import load
@@ -77,7 +118,8 @@ def main(argv=None) -> int:
             # Load from KiCad still works: it connects on first use.
             source = KiCadLiveSource()
             return run(source=source, tool=InstalledKiCad(source),
-                       snapshot=load(path), instance=instance)
+                       snapshot=load(path), instance=instance,
+                       background=args.background, pdn_json=args.pdn_json)
         return _run_live(instance)
     finally:
         instance.release()
@@ -122,9 +164,19 @@ def _run_live(instance) -> int:
     return run(source=source, tool=InstalledKiCad(source), instance=instance)
 
 
+def runs_headless(argv) -> bool:
+    """Whether the command line asks for no window (--solve, --dump). Such a run stays in
+    this process: relaunched on KiPI.exe it would exit 0 at once while the work went on
+    in a process its caller does not know, its output discarded."""
+    return any(a in ("--solve", "--dump") or a.startswith(("--solve=", "--dump="))
+               for a in argv)
+
+
 if __name__ == "__main__":
     # Windows, started windowed (the launcher): on to KiPI.exe, so Task Manager shows KiPI
-    # rather than Python (#124).
-    from kipi.launcher.named_exe import relaunch
-    code = relaunch(["-m", "kipi", *sys.argv[1:]])
+    # rather than Python (#124). Not for a run with no window.
+    code = None
+    if not runs_headless(sys.argv[1:]):
+        from kipi.launcher.named_exe import relaunch
+        code = relaunch(["-m", "kipi", *sys.argv[1:]])
     sys.exit(main() if code is None else code)

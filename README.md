@@ -199,11 +199,14 @@ folder next to the environment.
 
 ### Optional: faster solves on large boards (Windows and Linux, x86-64)
 
-If the optional [`pypardiso`](https://pypi.org/project/pypardiso/) package is installed,
-KiPI solves with Intel MKL's multithreaded PARDISO solver in place of SciPy's
-single-threaded one. On a 645k-unknown rail one solve drops from about 8 s to 1.2 s. Small
-boards gain little. It costs about 210 MB of download on Windows (320 MB on Linux) and
-there are no MKL packages for macOS or ARM.
+KiPI solves each rail with SciPy's single-threaded sparse solver, or with AMG when a rail
+has more than 200k unknowns. If the optional [`pypardiso`](https://pypi.org/project/pypardiso/)
+package is installed, KiPI uses Intel MKL's multithreaded PARDISO solver instead, and for
+rails of up to 3M unknowns. On a 645k-unknown rail one solve drops from about 8 s to 1.2 s,
+and a four-iteration electro-thermal run from about 90 s to 34 s; a 10-layer board's
+1.9M-unknown ground plane takes about 70 s, where AMG took about 30 minutes. Small boards
+gain little. It costs about 210 MB of download on Windows (320 MB on Linux) and there are no MKL
+packages for macOS or ARM.
 
 KiPI installs it by default where it can, with an opt-out: in the launcher's first setup
 standalone, or in a prompt the first time the plugin opens. *About → Manage dependencies…*
@@ -320,9 +323,12 @@ can make quick work of power tree modelling by editing this file directly.
 
 ### 4. Solve
 
-Click **Solve all**. Every rail is meshed and solved, downstream loads first, so each VRM's
-input current includes everything it feeds. Progress streams into the log; **Cancel** stops
-the run.
+Choose **Typical** or **Worst case (max)** beside Solve all. Worst case solves each load at its **Max current** and each DC connection at its **Max resistance**; where no maximum is given the typical value is solved and the Notes tab names those items. The Loads table's **Current** column says which value each load was solved at. A Tomachie pdn.json import fills in both.
+
+Click **Solve all** (If rails are unticked in the Solve
+tab, Solve x of n will be displayed). Every rail is meshed and solved, the downstream loads first and then
+back towards the source, so each VRM's input current includes everything it feeds. Progress
+and solver residuals stream into the log; **Cancel** stops the run.
 
 Click **Report** to write an HTML report next to the board, or choose **PDF**. The HTML
 report is a single portable file with the summary and every results table, an interactive 3D

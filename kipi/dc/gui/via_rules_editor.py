@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Table editor for the via rules: plating (and the fill of a filled hole) by hole type
 and drill size. First matching row wins."""
 
@@ -22,7 +23,8 @@ COLUMNS = ["Hole", "Drill from", "Drill to", "Plating", "If filled", "Fill resis
 TIPS = ["The hole type this rule covers; Any covers every type",
         "Smallest drill this rule covers",
         "Largest drill this rule covers (inclusive)",
-        "Copper plated onto the hole wall, growing inward from the drill",
+        "Copper plated onto the hole wall, growing inward from the drill. The defaults are "
+        "IPC-6012 Class 2 minimums; a pdn.json gives the board's actual plating.",
         "What a hole the board marks as filled is filled with. Copper makes the whole hole "
         "copper; conductive epoxy adds its core at the resistivity given; non-conductive "
         "epoxy adds nothing",

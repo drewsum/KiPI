@@ -79,6 +79,32 @@ def test_a_solve_does_not_write_the_setup_file(app, no_3d, tmp_path, monkeypatch
         w.close()
 
 
+def test_a_background_start_imports_its_file_and_asks_nothing(app, no_3d, tmp_path,
+                                                              monkeypatch):
+    """--background --pdn-json: the file is imported once the board is in, with no
+    dialog; a file that cannot be read is said in the Log, not in a dialog."""
+    from kipi.gui.main_window import MainWindow
+    sys.path.insert(0, str(Path(__file__).parents[1] / "dc"))
+    from test_tomachie_pdn import PDN
+    from tree_boards import board
+    path = tmp_path / "board.pdn.json"
+    path.write_text(json.dumps(PDN), encoding="utf-8")
+    dialogs = []
+    for kind in ("critical", "warning", "information", "question"):
+        monkeypatch.setattr(QMessageBox, kind, lambda *a, **k: dialogs.append(a[2]))
+    w = MainWindow(pdn_json=str(path), background=True)
+    try:
+        w.showMinimized()
+        w._set_snapshot(board())
+        app.processEvents()
+        assert "== Read board.pdn.json: " in w.log_view.toPlainText()
+        w.import_pdn_file(str(tmp_path / "missing.pdn.json"), quiet=w._quiet())
+        assert "Could not import Tomachie missing.pdn.json" in w.log_view.toPlainText()
+        assert dialogs == []
+    finally:
+        w.close()
+
+
 def test_a_hyperlynx_session_file_ticks_its_power_nets_and_adds_its_links(
         app, no_3d, tmp_path, monkeypatch):
     from kipi.gui.main_window import MainWindow

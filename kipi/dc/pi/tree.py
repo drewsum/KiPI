@@ -40,7 +40,9 @@ list every unconnected pin. A rail with loads but none of them connected stops t
 
 After the solve each VRM's input is checked against its dropout and input range. A VRM
 that cannot hold its target voltage fails every load it feeds, directly or downstream; a
-group whose iteration did not converge leaves its loads unjudged.
+group whose iteration did not converge leaves its loads unjudged. An LDO with a stated
+dropout is judged on its dropout: below its input minimum but above its dropout it still
+regulates, and the loads it feeds fail as "accuracy not guaranteed", not out of regulation.
 
 Excluded nets: only the net groups kept by :func:`~kipi.dc.pi.model.active_setup` are
 solved; its notes on what was left out become warnings.
@@ -57,23 +59,29 @@ import numpy as np
 
 from kipi.core.mesh.mesher import mesh_nets
 from kipi.core.model.board import BoardSnapshot
+from kipi.dc.pi.corner import corner_errors, resolve
+from kipi.dc.pi.diode_curve import built_here, curve_current
 from kipi.dc.pi.model import (
     GROUND_REF_KINDS, SWITCHING_KINDS, Load, PISetup, PinRef, Vrm, active_setup, net_groups,
     validate, vin_range, warmed_link,
 )
 from kipi.dc.pi.results import (  # also importable from here, where they were defined
+    ACCURACY_NOT_GUARANTEED,
     DISCONNECTED,
     NOT_CONVERGED,
     OUT_OF_REGULATION,
     GroupResult,
     LoadReport,
+    LinkRating,
     PhaseReport,
+    RailHeadroom,
     TreeResult,
     VrmReport,
     drop_or_boost,  # noqa: F401 - re-exported for kipi.dc.pi.report and the GUI
     fmt_drop,  # noqa: F401
 )
 from kipi.core.progress import NULL, ProgressReporter
+from kipi.core.temperature import uniform as uniform_temperature
 from kipi.dc.solver import NetResult, pads_for
 from kipi.dc.solver.fem import LinearSystem, SolveError
 from kipi.dc.solver.post import compute_fields
@@ -81,6 +89,7 @@ from kipi.dc.solver.setup import CurrentLoad, NetProblem, SeriesLink, VoltageSou
 
 MAX_TREE_ITERATIONS = 50
 V_TOL = 1e-9
+PROBE_A = 1.0              # the current put in at a not-known load to measure its cost
 
 Group = frozenset
 
@@ -91,6 +100,16 @@ class _Pads:
 
     def __call__(self, ref: PinRef) -> List[str]:
         return [p.id for p in pads_for(self.snap, ref.net, ref.ref, ref.pins or None)]
+
+    def ohms(self, ref: PinRef, by_pin: Dict[str, float]) -> Optional[List[float]]:
+        """Each of ``ref``'s pads' package resistance from ``by_pin`` (Load.package_ohms),
+        in the pad order of ``self(ref)``; None unless every pad's pin has one."""
+        if not by_pin:
+            return None
+        nums = [p.number for p in pads_for(self.snap, ref.net, ref.ref, ref.pins or None)]
+        if not all(n in by_pin for n in nums):
+            return None
+        return [by_pin[n] for n in nums]
 
 
 def _two_point(gmat: np.ndarray) -> float:
@@ -209,13 +228,22 @@ class _TreeSolver:
     def __init__(self, snap: BoardSnapshot, setup: PISetup, progress: ProgressReporter,
                  temperature, mesh_cache: Optional[dict],
                  factor_cache: Optional[dict] = None):
+        # Validate what was entered (a maximum below its typical is an error), then solve
+        # the corner's numbers: an excluded rail's estimated input is taken at them too.
+        errors = corner_errors(setup)
+        if errors:
+            raise SolveError("Setup problems:\n- " + "\n- ".join(errors))
+        setup, self.corner = resolve(setup)
         setup, self.notes = active_setup(setup)
+        self.notes += self.corner.warnings()
         if not setup.vrms:
             raise SolveError("Nothing to solve: no VRM drives a selected net group")
         errors = validate(setup)
         if errors:
             raise SolveError("Setup problems:\n- " + "\n- ".join(errors))
         self.snap, self.setup, self.progress = snap, setup, progress
+        if temperature is None and setup.thermal.copper_at_ambient:
+            temperature = uniform_temperature(setup.thermal.ambient_c)
         self.temperature, self.mesh_cache = temperature, mesh_cache
         self.factor_cache = factor_cache
         self.pads = _Pads(snap)
@@ -256,6 +284,9 @@ class _TreeSolver:
             v.name: [0.0] * len(v.all_sense_points()) for v in setup.vrms if v.mesh_sense}
         self.rail_solutions: Dict[Group, object] = {}
         self.ground_solutions: Dict[Group, object] = {}
+        # Per rail, what its final solve applied: source voltages, terminal currents and
+        # the diodes' forward voltages, so the headroom probes re-solve the same system.
+        self.applied: Dict[Group, tuple] = {}
         self.not_converged: set = set()              # groups whose own iteration failed
         self.tree_converged = True                   # the rails/grounds outer iteration
 
@@ -300,6 +331,116 @@ class _TreeSolver:
                 out.append(self.groups[ref.net])
         return out
 
+    def _feeding(self, g: Group) -> Iterator[Group]:
+        """``g`` and every group its power comes through."""
+        yield g
+        vrm = self.driver.get(g)
+        if vrm is not None and vrm.input and vrm.input.net in self.groups:
+            yield from self._feeding(self.groups[vrm.input.net])
+
+    def _lowest_pin(self, sol, l: Load) -> float:
+        v = _connected(_pad_voltages(sol, self._supply_pads(l)))
+        return float(v.min()) if len(v) else math.nan
+
+    def _link_current(self, name: str, current: float) -> float:
+        """A short's current is not solved (its sides merge into one). A switcher's output
+        inductor, a short inside its regulation loop, carries what its phase's switch pins
+        supply, when nothing else is on the switch node: no load, no other series part."""
+        if current == current:
+            return current
+        link = next((k for k in self.setup.links if k.name == name), None)
+        if link is None:
+            return current
+        for v in self.setup.vrms:
+            for i, o in enumerate([v.output, *(p.output for p in v.phases)]):
+                if o.net not in (link.side_a.net, link.side_b.net) or v.name not in self.i_out:
+                    continue
+                alone = (not any(l.supply.net == o.net for l in self.setup.loads) and
+                         [k.name for k in self.setup.links
+                          if o.net in (k.side_a.net, k.side_b.net)] == [name])
+                if alone and i < len(self.i_out[v.name]):
+                    return abs(self.i_out[v.name][i])
+        return current
+
+    def _headroom(self, reports: Dict[str, LoadReport]) -> List[RailHeadroom]:
+        """Per rail with loads whose current is not known: what those loads may draw,
+        together, before a load on the rail leaves its tolerance.
+
+        The copper is linear, so one re-solve of the rail's factorized system with
+        PROBE_A more at one not-known load gives the volts every load's lowest pin loses
+        per amp drawn there. A load's room is its margin over that cost, taken at the
+        not-known load that costs it the most: a bound that holds however the unknown
+        current is shared out. The rail's room is the least over its loads. The VRM holds
+        what it held (a load line's droop is not added). A not-known load's ground return
+        is counted where it has ground pins: by superposition, the ground solved with
+        only that return gives the rise under every load's ground pins per amp. Each
+        report gets its own room (``unknown_room_a``)."""
+        out: List[RailHeadroom] = []
+        for g in self.order:
+            on_rail = [l for l in self.setup.loads
+                       if self.groups[l.supply.net] == g and l.name not in self.disconnected]
+            unknown = [l for l in on_rail if not l.current_known]
+            if not unknown or g not in self.applied or g in self.not_converged:
+                continue
+            rail, _, _, system = self._rail_system(g)
+            volts, currents = self.applied[g]
+            base_amps = {cl.name: cl.current for cl in system.problem.loads}
+            base = self.rail_solutions[g]
+            low = {l.name: self._lowest_pin(base, l) for l in on_rail}
+            cost: Dict[str, Dict[str, float]] = {l.name: {} for l in on_rail}
+            for u in unknown:
+                names = _load_names(u)
+                probe = dict(currents)
+                for n in names:
+                    probe[n] = probe.get(n, base_amps.get(n, 0.0)) + PROBE_A / len(names)
+                sol = system.solve(volts, probe, progress=NULL)
+                for l in on_rail:
+                    cost[l.name][u.name] = max(
+                        0.0, (low[l.name] - self._lowest_pin(sol, l)) / PROBE_A)
+                if not (u.ground and u.ground.net in self.groups):
+                    continue
+                gg = self.groups[u.ground.net]
+                _, (_, gsystem) = self._ground_system(gg)
+                back = {cl.name: 0.0 for cl in gsystem.problem.loads}
+                if f"{u.name} (return)" not in back:
+                    continue
+                back[f"{u.name} (return)"] = -PROBE_A
+                gsol = gsystem.solve(currents=back, progress=NULL)
+                for l in on_rail:
+                    if l.ground and self.groups[l.ground.net] == gg:
+                        v = _connected(_pad_voltages(gsol, self.pads(l.ground)))
+                        if len(v):
+                            cost[l.name][u.name] += max(0.0, float(v.max()) / PROBE_A)
+            rooms = []
+            for l in on_rail:
+                rep = reports[l.name]
+                worst = max(cost[l.name], key=cost[l.name].get)
+                per_amp = cost[l.name][worst]
+                margin = rep.margin_low
+                if margin is None or math.isnan(margin):
+                    continue
+                room = 0.0 if margin <= 0 else (margin / per_amp if per_amp > 0 else math.inf)
+                rep.unknown_room_a = None if math.isinf(room) else room
+                rooms.append((room, l.name, worst, per_amp, margin))
+            hr = RailHeadroom(self.label_of(g), rail.vrm.name, sum(self.i_out[rail.vrm.name]),
+                              [u.name for u in unknown],
+                              upstream=[self.label_of(h) for h in self._feeding(g) if h != g])
+            if rooms:
+                room, hr.tightest, hr.costliest, hr.per_amp_v, hr.margin_v = min(rooms)
+                hr.room_a = None if math.isinf(room) else room
+            if rail.vrm.current_limit_a is not None:
+                hr.vrm_limit_a = rail.vrm.current_limit_a
+                hr.vrm_room_a = rail.vrm.current_limit_a - hr.known_a
+                # A load's own room cannot be more than the VRM can still deliver.
+                for l in on_rail:
+                    rep = reports[l.name]
+                    if rep.margin_low is not None and not math.isnan(rep.margin_low):
+                        mine = max(0.0, hr.vrm_room_a)
+                        rep.unknown_room_a = (mine if rep.unknown_room_a is None
+                                              else min(rep.unknown_room_a, mine))
+            out.append(hr)
+        return out
+
     def _isolated(self) -> List[Vrm]:
         return [v for v in self.setup.vrms if v.kind == "isolated"]
 
@@ -319,6 +460,8 @@ class _TreeSolver:
             if not k.is_multi:
                 curve = (functools.partial(k.spice.dc_current, temp_c=k.temp_c)
                          if k.is_diode else None)
+                if k.is_diode and k.vf_curve and built_here(k):
+                    curve = curve_current(k.vf_curve)      # the datasheet's own curve
                 out.append(SeriesLink(k.name, self.pads(k.side_a), self.pads(k.side_b),
                                       k.dc_resistance(), curve=curve))
                 continue
@@ -379,7 +522,7 @@ class _TreeSolver:
         sources = [VoltageSource(f"{v.name} (gnd)", self.pads(v.ground), 0.0) for v in refs]
         loads = [CurrentLoad(f"{l.name} (return)", self.pads(l.ground),
                              -self.drawn(l, l.total_current()),
-                             optional=True)
+                             optional=True, pad_ohms=self.pads.ohms(l.ground, l.package_ohms))
                  for l in self.setup.loads if l.ground and l.ground.net in g]
         loads += self._vrm_ground_loads(g)
         return refs, self._system_for(g, sources, loads, self.label_of(g))
@@ -451,12 +594,14 @@ class _TreeSolver:
                 continue
             if not l.groups:
                 loads.append(CurrentLoad(l.name, self.pads(l.supply),
-                                         self.drawn(l, l.current), optional=True))
+                                         self.drawn(l, l.current), optional=True,
+                                         pad_ohms=self.pads.ohms(l.supply, l.package_ohms)))
                 continue
             for i, grp in enumerate(l.groups):
                 ref = PinRef(l.supply.ref, l.supply.net, list(grp.pins))
                 loads.append(CurrentLoad(_group_load_name(l, i), self.pads(ref),
-                                         self.drawn(l, grp.current), optional=True))
+                                         self.drawn(l, grp.current), optional=True,
+                                         pad_ohms=self.pads.ohms(ref, l.package_ohms)))
         return loads
 
     def _child_currents(self, rail: _Rail, vin_est: Dict[str, List[float]]) -> Dict[str, float]:
@@ -516,6 +661,7 @@ class _TreeSolver:
             self.not_converged.add(self.groups[vrm.output.net])
         if step:
             sol = system.solve({vrm.name: v_src}, currents, progress=NULL)
+        self.applied[self.groups[vrm.output.net]] = ({vrm.name: v_src}, dict(currents))
         return sol, v_src, vin_est, currents, it
 
     def _iterate_mesh(self, rail: _Rail, system, demand: float, label: str,
@@ -551,6 +697,7 @@ class _TreeSolver:
                             f"(last change {change:.2e} V)")
             self.not_converged.add(self.groups[vrm.output.net])
         self.droop[vrm.name] = droop
+        self.applied[self.groups[vrm.output.net]] = (dict(volts), dict(currents))
         return sol, float(np.mean(list(volts.values()))), vin_est, currents, it
 
     def _solve_rail(self, index: int, g: Group, suffix: str, warnings: List[str]):
@@ -676,7 +823,7 @@ class _TreeSolver:
         t0 = time.perf_counter()
         with self.progress.timed("Checking load connections"):
             audit = self._audit()
-        out = TreeResult(warnings=list(self.notes) + audit)
+        out = TreeResult(warnings=list(self.notes) + audit, corner=self.corner.corner)
         for tree_pass in range(1, MAX_TREE_ITERATIONS + 1):
             warnings: List[str] = []
             self.not_converged = set()
@@ -705,7 +852,19 @@ class _TreeSolver:
         out.warnings.extend(warnings)
         regulation = {v.name: self._regulation(v) for v in self.setup.vrms}
         out_of_reg = self._groups_out_of_regulation(regulation, out.warnings)
-        out.loads = [self._load_report(l, out_of_reg) for l in self.setup.loads]
+        low_accuracy = self._groups_below_accuracy(out_of_reg, out.warnings)
+        out.loads = [self._load_report(l, out_of_reg, low_accuracy) for l in self.setup.loads]
+        # Loads whose current is not known are solved as entered; the headroom says what
+        # they may add together before a load on their rail leaves its tolerance.
+        out.headroom = self._headroom({r.name: r for r in out.loads})
+        rated = {k.name: k.rated_current_a for k in self.setup.links}
+        out.link_ratings = [LinkRating(s.name, g.name, self._link_current(s.name, s.current),
+                                       rated.get(s.name))
+                            for g in out.groups.values() for s in g.result.fields.series]
+        with_unknowns = {h.group for h in out.headroom}
+        for r in out.loads:
+            r.unknowns_on_rail = r.group in with_unknowns
+        out.warnings.extend(h.sentence() for h in out.headroom)
         out.vrms = [self._vrm_report(v, regulation[v.name]) for v in self.setup.vrms]
         out.solve_s = time.perf_counter() - t0
         self.progress.info(f"Power tree solved: {len(self.order)} rail(s), "
@@ -721,17 +880,59 @@ class _TreeSolver:
         vis = self.v_in[v.name]
         lo, hi = min(vis), max(vis)
         vin_min, vin_max = vin_range(self.setup, v)
-        if vin_min is not None and lo < vin_min:
+        if vin_min is not None and lo < vin_min and not self._dropout_judges(v):
             return f"input {lo:.4f} V is below its {vin_min:.4g} V minimum"
         if vin_max is not None and hi > vin_max:
             return f"input {hi:.4f} V is above its {vin_max:.4g} V maximum"
         if v.kind == "ldo":
-            sign = 1.0 if v.voltage >= 0 else -1.0
-            headroom = min(sign * (vi - vo) for vi, vo in zip(vis, self.v_out[v.name]))
+            headroom = self._ldo_headroom(v)
             if headroom < v.dropout_v:
-                return (f"input leaves {headroom:.4f} V across it, less than its "
+                return (f"input leaves {self._across(v, headroom)}, less than its "
                         f"{v.dropout_v:g} V dropout")
         return ""
+
+    @staticmethod
+    def _dropout_judges(v: Vrm) -> bool:
+        """An LDO with a stated dropout regulates down to it: its input minimum is where
+        its datasheet states its accuracy from, not where it stops regulating."""
+        return v.kind == "ldo" and v.dropout_v > 0
+
+    def _ldo_headroom(self, v: Vrm) -> float:
+        """The least input-to-output difference across the LDO. The worst case solves its
+        output at the low end of its accuracy (worst for its loads) but judges its dropout
+        at the high end: the part whose output is highest needs the most input."""
+        sign = 1.0 if v.voltage >= 0 else -1.0
+        lift = abs(self.corner.high_points.get(v.name, v.voltage) - v.voltage)
+        return min(sign * (vi - vo) for vi, vo in
+                   zip(self.v_in[v.name], self.v_out[v.name])) - lift
+
+    def _across(self, v: Vrm, headroom: float) -> str:
+        high = self.corner.high_points.get(v.name)
+        at = "" if high is None else f" at its highest output, {high:.4g} V"
+        return f"{headroom:.4f} V across it{at}"
+
+    def _accuracy(self, v: Vrm) -> str:
+        """Why an LDO that still regulates is not guaranteed its accuracy ("" if it is):
+        its input is above its dropout but below its stated input minimum."""
+        if not v.input or not self._dropout_judges(v):
+            return ""
+        vin_min, _ = vin_range(self.setup, v)
+        lo = min(self.v_in[v.name])
+        if vin_min is None or lo >= vin_min:
+            return ""
+        return (f"input {lo:.4f} V is below {vin_min:.4g} V, where its datasheet states "
+                f"its output accuracy; it still regulates "
+                f"({self._across(v, self._ldo_headroom(v))}, {v.dropout_v:g} V dropout)")
+
+    def _groups_below_accuracy(self, out_of_reg: set, warnings: List[str]) -> set:
+        out = set()
+        for v in self.setup.vrms:
+            reason = self._accuracy(v)
+            if reason:
+                warnings.append(f"VRM {v.name}: {reason}; the loads it feeds are marked "
+                                f"{ACCURACY_NOT_GUARANTEED}")
+                out.update(self._fed_from(self.groups[v.output.net]))
+        return out - out_of_reg
 
     def _groups_out_of_regulation(self, regulation: Dict[str, str],
                                   warnings: List[str]) -> set:
@@ -749,7 +950,7 @@ class _TreeSolver:
         return [pid for grp in l.groups
                 for pid in self.pads(PinRef(l.supply.ref, l.supply.net, list(grp.pins)))]
 
-    def _load_report(self, l: Load, out_of_reg: set) -> LoadReport:
+    def _load_report(self, l: Load, out_of_reg: set, low_accuracy: set) -> LoadReport:
         g = self.groups[l.supply.net]
         sol = self.rail_solutions[g]
         nominal = self.driver[g].voltage
@@ -777,15 +978,34 @@ class _TreeSolver:
                          l.tolerance_label(), None, worst, self._pin_group_rows(l, sol), low,
                          high)
         rep.limit_low, rep.limit_high = l.limits(nominal)
+        rep.return_drop = self._return_drop(g, gv)
+        rep.basis = self.corner.basis.get(l.name, "")
+        rep.copper_margin = l.copper_margin_v
         if not self.tree_converged or g in self.not_converged:
             rep.status = NOT_CONVERGED
         elif g in out_of_reg:
             rep.status, rep.passed = OUT_OF_REGULATION, False
+        elif g in low_accuracy:
+            rep.status, rep.passed = ACCURACY_NOT_GUARANTEED, False
         elif rep.limit_low is not None or rep.limit_high is not None:
             # Every pin within the tolerance: the lowest and the highest one.
             rep.passed = ((rep.limit_low is None or low >= rep.limit_low)
                           and (rep.limit_high is None or high <= rep.limit_high))
         return rep
+
+    def _return_drop(self, g: Group, load_ground) -> Optional[float]:
+        """The load's ground pins (mean) above the ground pins of the VRM driving its rail
+        (mean): the return copper between them. None without ground pins on either."""
+        vrm = self.driver[g]
+        if load_ground is None or not vrm.ground or vrm.ground.net not in self.groups:
+            return None
+        sol = self.ground_solutions.get(self.groups[vrm.ground.net])
+        if sol is None:
+            return None
+        src = _connected(_pad_voltages(sol, self.pads(vrm.ground)))
+        if not len(src) or not len(load_ground):
+            return None
+        return float(load_ground.mean()) - float(src.mean())
 
     def _pin_group_rows(self, l: Load, sol) -> List[tuple]:
         rows = []

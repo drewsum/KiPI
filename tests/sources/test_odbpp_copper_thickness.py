@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Tomachie LLC.
 """A copper layer's thickness from its ODB++ attributes, as KiCad and Altium write them."""
 
 import pytest

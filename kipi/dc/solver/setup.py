@@ -43,6 +43,11 @@ class CurrentLoad:
     # plane is taken as a short (its resistance is not in the board data). Off: the
     # current is split equally across the pads.
     tied: bool = True
+    # Each pad's resistance through the package to the die, ohms, in pad order (an IBIS
+    # [Pin] R_pin, a package model's). Given, a tied load's pads are not one node: each
+    # joins a die node through its own resistance and the current is drawn at the die, so
+    # a pad's share follows its copper and its package path together. None: the ideal tie.
+    pad_ohms: Optional[List[float]] = None
 
 
 @dataclass

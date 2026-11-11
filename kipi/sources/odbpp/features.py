@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """ODB++ layer features: pads, lines, arcs and surfaces, and the symbols pads are drawn
 with.
 

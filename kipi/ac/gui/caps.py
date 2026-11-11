@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The capacitor-model list's helpers, shared by the AC and Coupled Noise panels (#69).
 
 Both panels edit the same models (``PISetup.caps``) with :class:`kipi.ac.gui.panel.CapEditor`;
@@ -12,7 +13,7 @@ from typing import List, Optional
 from qtpy.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QPushButton, QWidget
 
 from kipi.ac.checks import capacitor_candidates
-from kipi.ac.model import AGING_PCT_PER_DECADE, CapModel
+from kipi.ac.model import AGING_PCT_PER_DECADE, QUESTIONABLE, CapModel
 from kipi.core.model.board import BoardSnapshot
 from kipi.core.model.parts import (
     is_class2, parse_capacitance, parse_dielectric, parse_voltage_rating,
@@ -32,15 +33,34 @@ def new_cap(setup: PISetup) -> CapModel:
     return CapModel(_unique("Model1", [m.name for m in setup.caps]))
 
 
-def describe_cap(m: CapModel) -> str:
-    vals = (f"{fmt_farads(m.capacitance_f)}, {m.esl_h * 1e9:g} nH, {m.esr_ohm * 1e3:g} mΩ"
+#: The capacitor model list's columns: the model, where its values came from, the values.
+CAP_COLUMNS = ("Model", "Values from", "Values")
+
+
+def _values(m: CapModel) -> str:
+    vals = (f"{fmt_farads(m.capacitance_f)}, {m.esl_h * 1e9:.4g} nH, {m.esr_ohm * 1e3:.4g} mΩ"
             if m.capacitance_f and m.esl_h and m.esr_ohm else "values needed")
     bias = f", DC bias {m.rated_v:g} V rated" if m.dc_bias else ""
     bias += f", {m.dielectric}" if m.dielectric else ""
     bias += f", ±{m.mfg_tolerance_pct:g} %" if m.mfg_tolerance_pct else ""
     bias += f", SPICE {m.spice.subckt}" if m.uses_spice else ""
-    return (f"{m.name}: {vals}{bias} "
-            f"({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})")
+    return vals + bias
+
+
+def _model(m: CapModel) -> str:
+    return f"{m.name} ({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})"
+
+
+def describe_cap(m: CapModel) -> str:
+    return f"{m.name}: {_values(m)} ({len(m.refs)} part{'s' if len(m.refs) != 1 else ''})"
+
+
+def cap_columns(m: CapModel) -> tuple:
+    """The model's row in the list: :data:`CAP_COLUMNS`. A cell may be ``(text, tip)``:
+    a questionable maker's figure says what that means, and why, on hover."""
+    said = m.values_from_text()
+    return (_model(m), (said, f"{QUESTIONABLE}.\n\n{m.doubt}") if m.doubt else said,
+            _values(m))
 
 
 def models_from_values(parent: QWidget, snapshot: BoardSnapshot, setup: PISetup,

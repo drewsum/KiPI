@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Read a KiCad board file (``.kicad_pcb``, KiCad 7 to 10) into a
 :class:`~kipi.core.model.board.BoardSnapshot`, without KiCad.
 
@@ -230,7 +231,7 @@ def _via_filled(node: Node, file_format: int) -> Optional[bool]:
     """``(filling yes|no)``. With no filling, a KiCad 9 file means unfilled; a KiCad 10
     file writes ``(filling no)`` for an unfilled via, so there no filling means the design
     rules decide (None). This is what the KiCad API reports for the same vias (checked on
-    KiCad 9 and 10 boards: yoshi, CM4S, PSU-EXT, MiniLabs)."""
+    four KiCad 9 and 10 boards)."""
     v = value(node, "filling", None)
     if v is None:
         return False if file_format <= KICAD9_FORMAT else None

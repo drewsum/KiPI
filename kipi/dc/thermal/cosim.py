@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Electro-thermal co-simulation: alternate the power-tree solve and the board heat map.
 
 Each iteration solves every rail and ground group with copper resistivity at the

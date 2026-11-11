@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC part of the user's setup: capacitor models, probe points and sweep settings.
 
 These live in the same setup file as the DC power tree (:class:`kipi.dc.pi.model.PISetup`),
@@ -16,6 +17,28 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 # a typical curve's shape; the datasheet's curve is better where there is one.
 BIAS_EXP = 1.5
 DEFAULT_KEPT_AT_RATED_PCT = 40.0
+# Where a capacitor model's value came from, as the model list says it: an imported
+# file's basis, or "entered" once the user changes it.
+SOURCE_WORDS = {"maker_model": "maker's measured file", "datasheet": "datasheet",
+                "graph": "graph", "derived": "derived", "estimated": "estimate",
+                "entered": "entered", "schematic": "schematic"}
+
+
+def source_word(basis: str, equivalent: str = "") -> str:
+    """How the model list says a basis; one it does not know, as the file names it. An
+    equivalent part's measured file names that part: it is never the part's own."""
+    if basis == "equivalent_maker_model":
+        return "measured file of an equivalent part" + (f" ({equivalent})" if equivalent else "")
+    return SOURCE_WORDS.get(basis, basis.replace("_", " "))
+# What a questionable maker's figure means, said wherever the mark is explained.
+QUESTIONABLE = ("These are simulation values provided by the manufacturer and we question "
+                "their accuracy when compared to like capacitors")
+# Why an imported capacitor's values are defaults (estimates).
+DEFAULTS_WHY = {"no_part_number": "no part number", "no_datasheet": "no datasheet",
+                "not_in_datasheet": "not in its datasheet",
+                "not_published_by_maker": "not published by its maker"}
+_VALUE_NAMES = {"C": "capacitance", "rating": "voltage rating", "kept": "kept at rating",
+                "tolerance": "tolerance"}
 REPORT_FORMATS = ("html", "pdf")          # what a report can be written as (#119)
 
 # Aging (#109): a class II ceramic loses a fixed share of its capacitance per decade of
@@ -69,6 +92,55 @@ class CapModel:
     # not set). Worst case for a PDN is the low end, so the sweep settings apply it
     # subtractively: the model keeps 1 - tolerance of its capacitance.
     mfg_tolerance_pct: Optional[float] = None
+    # Where each value came from ("C", "ESL", "ESR", "kept", "rating", "dielectric",
+    # "aging", "tolerance" -> "datasheet" / "graph" / "estimated" / "entered" ...), and
+    # why an imported file's values are defaults ("no_part_number" ...).
+    values_from: Dict[str, str] = field(default_factory=dict)
+    defaults_because: str = ""
+    # The equivalent part whose measured file gave a value ("TDK C1608X7R1E104K080AA"),
+    # and why the maker's own figure, used, is questionable ("" when it is not).
+    equivalent: str = ""
+    doubt: str = ""
+    dc_bias_points: List[List[float]] = field(default_factory=list)
+
+    def values_from_detail(self) -> str:
+        """Where each value came from, one by one: "capacitance schematic, ESL graph, ESR
+        estimate, estimates because: no part number"; "not recorded" when nothing is."""
+        order = ("C", "ESL", "ESR", "rating", "kept", "dielectric", "aging", "tolerance")
+        keys = sorted(self.values_from, key=lambda k: order.index(k) if k in order else 99)
+        said = [f"{_VALUE_NAMES.get(k, k)} {source_word(self.values_from[k], self.equivalent)}"
+                for k in keys]
+        if not said:
+            return "not recorded"
+        why = DEFAULTS_WHY.get(self.defaults_because, self.defaults_because)
+        if why and "estimated" in self.values_from.values():
+            said.append(f"estimates because: {why}")
+        if self.doubt:
+            said.append(f"questionable: {self.doubt}")
+        return ", ".join(said)
+
+    def values_from_text(self) -> str:
+        """Where the model's values came from, in a few words: "datasheet", "ESR
+        estimate, ESL graph", "estimate - no part number", "values needed"."""
+        if not (self.capacitance_f > 0 and self.esl_h > 0 and self.esr_ohm > 0):
+            return "values needed"
+        words = {k: source_word(self.values_from.get(k, ""), self.equivalent)
+                 for k in ("ESR", "ESL")}
+        if not any(words.values()):
+            said = "not recorded"
+        elif words["ESR"] == words["ESL"]:
+            said = words["ESR"]
+        else:
+            said = ", ".join(f"{k} {w or 'not recorded'}" for k, w in words.items())
+        if self.defaults_because and "estimate" in words.values():
+            said += f" - {DEFAULTS_WHY.get(self.defaults_because, self.defaults_because)}"
+        entered = [k for k, v in self.values_from.items()
+                   if v == "entered" and k not in ("ESR", "ESL")]
+        if entered:
+            said += "; " + ", ".join(_VALUE_NAMES.get(k, k) for k in entered) + " entered"
+        if self.doubt:
+            said += " - questionable"
+        return said
     # The part's SPICE model (#51): with it in use, the impedance is the model's, and the
     # three values above are fitted to it.
     spice: Optional["SpiceRef"] = None
@@ -97,9 +169,22 @@ class CapModel:
              * self.at_temperature(temp_c))
         if not (self.dc_bias and volts):
             return c
+        measured = self.kept_measured(abs(volts))
+        if measured is not None:
+            return c * measured
         kept = min(max(self.kept_at_rated_pct, 1.0), 100.0) / 100.0
         k = 1.0 / kept - 1.0
         return c / (1.0 + k * (abs(volts) / self.rated_v) ** BIAS_EXP)
+
+    def kept_measured(self, volts: float) -> Optional[float]:
+        pts = sorted((float(v), float(p)) for v, p in self.dc_bias_points)
+        if len(pts) < 2 or volts > pts[-1][0]:
+            return None
+        for (v0, p0), (v1, p1) in zip(pts, pts[1:]):
+            if v0 <= volts <= v1:
+                t = 0.0 if v1 == v0 else (volts - v0) / (v1 - v0)
+                return (p0 + t * (p1 - p0)) / 100.0
+        return None
 
     def within_tolerance(self, on: bool = True) -> float:
         """The share of its nominal capacitance a part at the low end of its manufacturing
@@ -155,6 +240,11 @@ class Probe:
     # by straight lines on the log-log plot. The flat values are kept while it is in use.
     target_custom: bool = False
     target_points: List[Tuple[float, float]] = field(default_factory=list)
+    # The target applies only at and above this frequency (None: no lower end).
+    target_from_hz: Optional[float] = None
+    # Where the target came from ("" when not recorded): an imported file's step and rise
+    # time, the maker's own target, or "entered" once the user changes it.
+    target_from: str = ""
     # The device's load step and its slew rate, for the estimated transient response
     # (#166); None when not set.
     step_a: Optional[float] = None

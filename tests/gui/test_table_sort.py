@@ -222,3 +222,8 @@ def test_report_voltages_sort_in_the_unit_shown():
     assert names(_sorted_in_node(node, rows, ["Load", "Mean"], [1])) == ["A", "B"]   # mV
     assert names(_sorted_in_node(node, rows, ["Load", "Mean"], [1], "pct")) == ["B", "A"]
     assert names(_sorted_in_node(node, rows, ["Load", "Mean"], [1], "v")) == ["B", "A"]
+
+
+def _flat(points):
+    """(frequency, |Z|) pairs as one list: pytest.approx compares no nested tuples."""
+    return [x for p in points for x in p]

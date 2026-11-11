@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The setup editors show which fields a solve needs (#136): bold if required, gray if
 optional, gray italic if only the other analysis uses them."""
 
@@ -29,7 +30,8 @@ def test_a_dc_vrm_needs_its_pins_voltage_and_for_a_converter_its_input(app):
     ed.load(Vrm("U1", PinRef("U1", "3V3", ["1"]), 3.3, kind="source"))
     assert _needs(ed, ed.name, ed.kind, ed.voltage, ed.output) == ["required"] * 4
     assert _needs(ed, ed.input, ed.ground, ed.sense, ed.iq, ed.vin_row) == ["optional"] * 5
-    assert _needs(ed, ed.bandwidth, ed.acc_row) == ["unused"] * 2
+    # The DC accuracy is optional in DC too: the worst case runs the VRM at its low end.
+    assert _needs(ed, ed.bandwidth, ed.acc_row) == ["unused", "optional"]
     assert "font-weight: bold" in ed.form.labelForField(ed.voltage).styleSheet()
     ed.load(Vrm("U2", PinRef("U2", "1V8", ["1"]), 1.8, kind="ldo"))
     assert _needs(ed, ed.input) == ["required"]

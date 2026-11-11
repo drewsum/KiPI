@@ -30,10 +30,13 @@ class TerminalResult:
     pad_ids: List[str] = field(default_factory=list)
     i_pads: List[float] = field(default_factory=list)
     i_solved: bool = False
+    # A packaged load's die voltage (CurrentLoad.pad_ohms), past its package; None: none.
+    v_die: Optional[float] = None
 
     def __setstate__(self, state):
-        # Results saved before pin currents were kept (#71).
-        self.__dict__.update({"pad_ids": [], "i_pads": [], "i_solved": False, **state})
+        # Results saved before pin currents were kept (#71), or die voltages.
+        self.__dict__.update({"pad_ids": [], "i_pads": [], "i_solved": False,
+                              "v_die": None, **state})
 
     @property
     def v_mean(self) -> float:
@@ -155,8 +158,9 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
         per_pad = (list(tied) if tied is not None
                    else [0.0 if p in dead else i / n_live for p in load.pad_ids])
         live_v = [v for v in vs if not np.isnan(v)] or [float("nan")]
+        die_v = (getattr(sol, "load_die_v", None) or {}).get(load.name)
         terminals.append(TerminalResult(load.name, "load", i, vs, min(live_v), max(live_v),
-                                        list(load.pad_ids), per_pad, tied is not None))
+                                        list(load.pad_ids), per_pad, tied is not None, die_v))
 
     v_src = max(volts.get(s.name, s.voltage) for s in prob.sources)
     if v_ref is None:
@@ -164,8 +168,13 @@ def compute_fields(sol: Solution, v_ref: Optional[float] = None) -> Fields:
     copper_power = float(tri_power.sum())
     # Power delivered into the copper, measured relative to v_src so it is not the small
     # difference of two large products (sum(I_src) == sum(I_load) is checked separately).
-    delivered = sum(t.current * (v_src - t.v_mean) for t in terminals
-                    if t.kind == "load" and t.current) - \
+    # A load whose pad currents are solved takes each at its own pad's voltage: a
+    # packaged load's pads differ, and its package's loss is not the copper's.
+    def taken(t):
+        if t.i_solved:
+            return sum(a * (v_src - v) for a, v in zip(t.i_pads, t.v_pads) if a)
+        return t.current * (v_src - t.v_mean)
+    delivered = sum(taken(t) for t in terminals if t.kind == "load" and t.current) - \
         sum(t.current * (v_src - t.v_mean) for t in terminals if t.kind == "source")
     i_src = sum(t.current for t in terminals if t.kind == "source")
     i_load = sum(t.current for t in terminals if t.kind == "load")

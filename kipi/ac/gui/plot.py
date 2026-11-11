@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """|Z| versus frequency, log-log, for every probe of an AC solve, with a cursor that tracks
 one probe's curve: plot-wide crosshair lines, its values in the Info pane."""
 
@@ -250,6 +251,8 @@ class ImpedancePlot(QWidget):
             if not math.isfinite(tk):
                 if c.above_hz and fk < c.above_hz:
                     why = f"only above the VRM bandwidth, {_eng_hz(c.above_hz)}"
+                elif getattr(c, "from_hz", None) and fk < c.from_hz:
+                    why = f"only from {_eng_hz(c.from_hz)}"
                 else:
                     why = f"not above {_eng_hz(c.target_hz)}"
                 rows.append(("Target", f"none here ({why})"))

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Self-contained HTML (or PDF) report for a solved power tree.
 
 One ``.html`` file with:
@@ -60,6 +61,16 @@ def _num(x, fmt=".4g") -> str:
     return format(x, fmt)
 
 
+def _mv(volts: Optional[float]) -> str:
+    """Volts as millivolts for a table cell, empty when not known."""
+    return _num(None if volts is None else volts * 1e3, ".4g")
+
+
+def _ma(amps: Optional[float]) -> str:
+    """Amps as milliamps for a table cell, empty when not known."""
+    if amps is None:
+        return ""
+    return _num(amps * 1e3, ".4g" if abs(amps) < 1 else ".0f")
 class _Html(str):
     """A table header already written as HTML."""
 
@@ -831,6 +842,13 @@ def maps_html(images: List[str], pdf: bool, tags: Optional[List[tuple]] = None,
         for r in rows) + "</table>"
 
 
+def source_meta(setup) -> str:
+    """The line under a report's title naming the power-tree file its setup was imported
+    from; nothing for a setup entered by hand."""
+    src = getattr(setup, "import_source", "")
+    return f"<div class='meta'>Power tree: {_e(src)}</div>" if src else ""
+
+
 def page(title: str, body: str, css: str, script: str = "") -> str:
     """A web page that works offline: Plotly's JavaScript in it."""
     import plotly.offline
@@ -903,10 +921,15 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     th = getattr(tree, "thermal", None)
 
     # ---------------- summary
+    from kipi.dc.pi.corner import LABELS
+    corner = LABELS.get(getattr(tree, "corner", "typ"), "Typical")
     meta = (f"{_e(snap.board_name)} · {now} · KiPI {__version__} · solved in "
-            f"{tree.solve_s:.1f} s")
+            f"{tree.solve_s:.1f} s · {_e(corner)} currents and resistances")
     parts.append(f"<h1>KiPI power-integrity report</h1><div class='meta'>{meta}</div>")
-    nav = ["<a href='#thermal'>Thermal</a>"] if th is not None else []
+    parts.append(source_meta(setup))
+    nav = ["<a href='#import'>Import</a>"] if getattr(setup, "import_notes", None) else []
+    if th is not None:
+        nav.append("<a href='#thermal'>Thermal</a>")
     nav += [f"<a href='#g{i}'>{_e(n)}</a>" for i, n in enumerate(tree.groups)]
     nav += ["<a href='#loads'>Loads</a>", "<a href='#vrms'>VRMs</a>",
             "<a href='#pins'>Pins</a>", "<a href='#losses'>Losses</a>",
@@ -928,23 +951,36 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                      f"(TCR {s.tcr_for(n):g}/°C)".replace("  ", " ")
                      for n, r in sorted(s.rho_by_layer.items()))
                     if s.rho_by_layer else "")
+                 + (f"; copper solved at {setup.thermal.ambient_c:g} °C, the board's ambient"
+                    if th is None and setup.thermal.copper_at_ambient else "")
                  + ". Via plating, first matching rule (drill = hole in the laminate, plated "
                  f"inward): {_e('; '.join(r.label() for r in s.via_rules))}.</p>")
     parts.append(f"<p class='note'>Stackup, top to bottom: {_e(stackup_summary(snap.stackup))}.</p>")
     if pdf and tree.groups:
         parts.append(f"<p><b>3D Results View:</b> {_views_link(path)}</p>")
 
+    # ---------------- what the power-tree file left out, before any result: a rail
+    # missing from the tables is explained here, not only in the import's Log.
+    if getattr(setup, "import_notes", None):
+        parts.append("<h2 id='import'>Power-tree import</h2><p class='note'>What the "
+                     "imported power-tree file could not place, or what was assumed:</p><ul>"
+                     + "".join(f"<li>{_e(n)}</li>" for n in setup.import_notes) + "</ul>")
+
     # ---------------- tables
     tables.append("<h2 id='loads'>Loads</h2>")
+    if hasattr(tree, "summary"):
+        tables.append(f"<p><b>{_e(tree.summary())}</b></p>")
 
     def load_row(l):
         cells = {u: vunits.load_cells(l, u) for u, _ in vunits.UNITS}
         return [_e(l.name), _e(l.group), _num(l.current), _num(l.nominal, ".5g"),
                 *[_units({u: cells[u][k] for u in cells}, pdf) for k in range(5)],
-                _verdict(l.passed, l.status)]
+                _mv(getattr(l, "copper_margin", None)), _ma(getattr(l, "unknown_room_a", None)),
+                _verdict(l.passed, getattr(l, "answer", l.status))]
 
     tables.append(_table(["Load", "Group", "I (A)", "Target (V)",
-                         *[_vhead(n, pdf) for n in vunits.LOAD_COLUMNS], "Result"],
+                         *[_vhead(n, pdf) for n in vunits.LOAD_COLUMNS],
+                         "Pre-layout margin (mV)", "Unknowns may add (mA)", "Voltage at pins"],
                         [load_row(l) for l in tree.loads]))
     tables.append("<p class='note'>Each load's mean voltage and its lowest and highest supply "
                  "pins (less the ground pins), "
@@ -952,7 +988,27 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
                  + "From the target, negative is a drop below it and positive a boost above "
                  "it, e.g. near a remote-sensed VRM's output pins. The margin is how far the "
                  "pins are inside the tolerance, negative when outside. A load passes when "
-                 "every pin is within its tolerance.</p>")
+                 "every pin is within its tolerance; in range at known currents when a load "
+                 "on the same rail has a current not known. Pre-layout margin: what the "
+                 "copper could take, worked out from the datasheets before layout "
+                 "(imported). Unknowns may add: what the rail's loads whose current is not "
+                 "known may draw together before this load leaves its tolerance.</p>")
+    headroom = getattr(tree, "headroom", [])
+    if headroom:
+        parts.append("<h3>Headroom: what the currents not known may add</h3>" + _table(
+            ["Rail", "Known (A)", "Tightest load", "Margin (mV)", "Not known",
+             "They may add (mA)", "Limited by", "Costliest (mV per A)"],
+            [[_e(h.group), _num(h.known_a), _e(h.tightest), _mv(h.margin_v),
+              _e(", ".join(h.unknown)), _ma(h.binding_a), _e(h.limited_by),
+              _e(f"{h.costliest} ({h.per_amp_v * 1e3:.4g})") if h.costliest else ""]
+             for h in headroom]))
+        parts.append("<p class='note'>A rail with a load whose current is not known (a header, "
+                     "what a translator drives) is solved at the known currents; the room is "
+                     "how much those loads may draw together before the tightest load leaves "
+                     "its tolerance, a bound however the current is shared (worst case, all of "
+                     "it at the costliest unknown), its ground return counted where it has "
+                     "ground pins. The VRM holds what it held.</p><ul>"
+                     + "".join(f"<li>{_e(h.sentence())}</li>" for h in headroom) + "</ul>")
     pg = [[_e(l.name), _e(n), _num(a), _vcell(vm, l.nominal, pdf), _vcell(vmin, l.nominal, pdf),
            _vcell(vmax, l.nominal, pdf)]
           for l in tree.loads for n, a, vm, vmin, vmax in l.pin_groups]
@@ -984,12 +1040,17 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
         tables.append("<h3>VRM phases</h3>" +
                      _table(["VRM", "Phase", "V out", "I out (A)", "V in", "I in (A)",
                              "Loss (W)"], phases))
+    ratings = {k.name: k for k in getattr(tree, "link_ratings", [])}
     links = [[_e(sr.name), _e(g.name), _num(sr.resistance * 1e3, "g"), _num(sr.current),
-              _num(sr.power * 1e3, ".3f")]
+              _num(sr.power * 1e3, ".3f"),
+              _num(ratings[sr.name].rated_a) if sr.name in ratings else "",
+              _verdict(ratings[sr.name].within, ratings[sr.name].answer)
+              if sr.name in ratings else ""]
              for g in tree.groups.values() for sr in g.result.fields.series]
     if links:
         tables.append("<h3>DC connections</h3>" +
-                     _table(["Part", "Group", "R (mΩ)", "I (A)", "P (mW)"], links))
+                     _table(["Part", "Group", "R (mΩ)", "I (A)", "P (mW)", "Rated (A)",
+                             "Current against rating"], links))
     pins = pin_rows(tree, snap)
     tables.append("<h2 id='pins'>Pins</h2>")
     if pins:

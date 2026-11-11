@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The ODB++ reader against what the KiCad API reads from the same board.
 
 ``tests/data/odbpp`` holds KiCad 10's ODB++ exports of the ``.kicad_pcb`` reader's fixture
@@ -258,3 +259,32 @@ def test_copper_drawings_without_a_net_are_said(snap):
     # The +5V polygon on F.Cu and the SIG ring on In1.Cu touch nothing of their nets.
     assert not any(F_CU in z.filled for z in snap.zones if z.net == "+5V")
     assert not any(inner_cu(1) in z.filled for z in snap.zones if z.net == "SIG")
+
+
+def test_a_pad_drawn_with_the_jobs_own_symbol_has_its_shape():
+    """A user symbol (symbols/<name>/features, as Allegro writes its custom pads) is placed,
+    turned and mirrored like a standard one, not dropped."""
+    own = "UNITS=MM\n$0 rect1000x500\nP 0 0 0 P 0 0\n"     # 1.0 x 0.5 mm, centered
+    lib = feat.UserSymbols(lambda n: own if n == "pad_40x20_npm" else None, feat.Units("MM"))
+    pad = feat.Feature("P", symbol="pad_40x20_npm", at=(10.0, 5.0), angle_deg=90.0)
+    g = feat.geometry(pad, feat.Units("MM"), library=lib)
+    x0, y0, x1, y1 = g.bounds
+    assert (round(x1 - x0, 6), round(y1 - y0, 6)) == (0.5, 1.0)       # turned a quarter
+    assert (round((x0 + x1) / 2, 6), round((y0 + y1) / 2, 6)) == (10.0, 5.0)
+    assert feat.geometry(pad, feat.Units("MM")) is None                 # as before, unknown
+
+
+def test_the_jobs_own_symbols_are_read_from_its_symbols_folder():
+    from kipi.core.progress import NULL
+    from kipi.sources.odbpp.reader import _Board
+
+    class _Job:
+        def read(self, rel):
+            if rel == "symbols/pad_18x12_l_npm/features":
+                return ("UNITS=MM\n$0 rect460x310\nP 0 0 0 P 0 0\n")
+            return None
+    b = _Board(_Job(), "pcb", feat.Units("MM"), NULL)
+    g = b.symbols.shape("pad_18x12_l_npm")
+    x0, y0, x1, y1 = g.bounds
+    assert (round(x1 - x0, 6), round(y1 - y0, 6)) == (0.46, 0.31)
+    assert b.symbols.shape("not_in_the_job") is None
