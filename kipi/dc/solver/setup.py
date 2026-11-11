@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """What to solve: sources, loads, series parts and numerical settings.
 
 A problem covers one *extended net*: one or more nets joined by series parts (sense
@@ -96,14 +97,16 @@ class SolveSettings:
     pad_contact_share: float = 0.25
     # A load's pads are one node, as its package planes join its balls (CurrentLoad.tied):
     # each pad then carries what its own copper and via deliver. Off: every load's
-    # current is split equally across its pads.
-    tie_load_pads: bool = True
+    # current is split equally across its pads (the default, as before). An import that
+    # describes the parts (Tomachie pdn.json) turns it on.
+    tie_load_pads: bool = False
     # A VRM with no ground sense pins regulates its output above its own ground pins, as
     # a converter does: its output moves with them when their copper lifts them. Its
     # ground is then iterated with the rails like a ground sense. A VRM whose ground pins
     # are the 0 V reference (a source, an isolated output side) is not moved. Off: the
-    # output is held above 0 V.
-    regulate_above_own_ground: bool = True
+    # output is held above 0 V (the default, as before). An import that describes the
+    # parts (Tomachie pdn.json) turns it on.
+    regulate_above_own_ground: bool = False
 
     def __post_init__(self):
         # A setup file stores the rules as plain objects.

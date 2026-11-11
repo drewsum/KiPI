@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Derived quantities from a :class:`~kipi.dc.solver.fem.Solution`.
 
 Units: volts, amps, watts, millimeters. Current density is reported per unit

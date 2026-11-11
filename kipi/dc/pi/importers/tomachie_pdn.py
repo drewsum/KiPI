@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Read a Tomachie power-tree file (``<design>.pdn.json``, schema ``tomachie-pdn`` v1) into
 a :class:`~kipi.dc.pi.model.PISetup`.
 
@@ -412,6 +413,14 @@ class TomachiePdnImporter:
 
     # ------------------------------------------------------------ run
     def run(self) -> Tuple[PISetup, List[str]]:
+        # The file describes each regulator and load, so each regulator holds its output
+        # above its own ground pins and each load's pads are one node, as its package joins
+        # them. Without the file KiPI keeps its defaults.
+        self.setup.settings.regulate_above_own_ground = True
+        self.setup.settings.tie_load_pads = True
+        self.notes.append("Each regulator without ground sense regulates above its own "
+                          "ground pins, and each load's pads are one node (KiPI's defaults "
+                          "without the file: above 0 V, current shared equally)")
         self._learn_nets()
         self._board_sources()
         self._regulated_rails()

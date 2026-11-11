@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Negative rails (#220): a load's current is what it draws from its rail, so on a negative
 rail it flows into the copper and the pins rise toward 0 V, and the VRMs upstream draw
 power from the rails feeding them whatever their polarity."""
@@ -47,7 +48,7 @@ def test_ground_return_of_a_negative_rail():
     # load's (past U1's, 1 mm of pad): the load's ground sits below 0 V, which shrinks what
     # it sees further.
     s = _negative(ground=True)
-    s.settings.regulate_above_own_ground = False        # U1 held at -3.3 V from 0 V
+    s.settings.regulate_above_own_ground = False        # U1 held at -3.3 V from 0 V (the default)
     res = solve_tree(board(), s)
     ld = by_name(res.loads, "U2")
     assert ld.v_ground == pytest.approx(-1.0 * R(19), rel=1e-6)
@@ -55,9 +56,11 @@ def test_ground_return_of_a_negative_rail():
     for g in res.groups.values():
         assert g.result.fields.summary["kcl_error"] < 1e-9, g.name
 
-    # U1 regulates above its own ground pins (the default): its output moves with them,
-    # so the load sees that much more of the -3.3 V; its ground return is unchanged.
-    res2 = solve_tree(board(), _negative(ground=True))
+    # U1 regulates above its own ground pins (regulate_above_own_ground): its output moves
+    # with them, so the load sees that much more of the -3.3 V; its ground return is unchanged.
+    s2 = _negative(ground=True)
+    s2.settings.regulate_above_own_ground = True
+    res2 = solve_tree(board(), s2)
     ld2, u1 = by_name(res2.loads, "U2"), by_name(res2.vrms, "U1")
     assert ld2.v_ground == pytest.approx(ld.v_ground, rel=1e-6)
     assert ld2.v_effective == pytest.approx(ld.v_effective + u1.v_ground_sense, rel=1e-6)

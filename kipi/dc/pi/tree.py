@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Solve a whole power tree defined in a :class:`~kipi.dc.pi.model.PISetup`.
 
 Each net group (nets joined by DC connections) is one FEM problem driven by its single
@@ -463,9 +464,14 @@ class _TreeSolver:
         currents, sign = {}, self.sign(self.groups[rail.vrm.output.net])
         for c in rail.children:
             share = sum(self.i_out[c.name]) / (len(c.phases) + 1)
+            # With regulate_above_own_ground its power in and out are measured from the ground
+            # it regulates above: it delivers (V_out - V_gnd) x I_out and draws
+            # (V_in - V_gnd) x I_in. Off: from 0 V, as before.
+            v_gnd = (self.v_gsense.get(c.name, 0.0)
+                     if self.setup.settings.regulate_above_own_ground else 0.0)
             for k, name in enumerate(rail.child_load[c.name]):
-                currents[name] = _input_current(c, self.v_out[c.name][k], share,
-                                                vin_est[c.name][k], sign)
+                currents[name] = _input_current(c, self.v_out[c.name][k] - v_gnd, share,
+                                                vin_est[c.name][k] - v_gnd, sign)
         return currents
 
     def _iterate_rail(self, rail: _Rail, system, demand: float, label: str,

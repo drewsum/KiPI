@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Power-tree solves against closed-form results."""
 
 import math
@@ -223,6 +224,7 @@ def test_tied_pins_draw_what_their_copper_delivers():
     # takes the whole 1 A; the strip on to the end pin carries none, and both pins sit
     # at the mid pin's voltage.
     s = setup("ldo")
+    s.settings.tie_load_pads = True
     s.loads[0] = Load("U2", PinRef("U2", "+3V3", []), 1.0)
     res = solve_tree(board_two_pin(), s)
     ld = by_name(res.loads, "U2")

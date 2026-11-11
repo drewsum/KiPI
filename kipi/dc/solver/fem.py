@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """2.5D DC conduction: P1 finite elements on each copper sheet, plated barrels between
 layers, voltage sources and current loads on pads.
 
