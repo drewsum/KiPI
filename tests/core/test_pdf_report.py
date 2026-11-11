@@ -517,3 +517,18 @@ def test_the_field_joins_any_page(tmp_path, annots):
     page = data[data.rindex(b"3 0 obj"):]
     assert b"/Annots [4 0 R" in page and (b"7 0 R" in page) == bool(annots)
     assert b"/AcroForm << /Fields [4 0 R]" in data and f"/Prev {xref}".encode() in data
+
+
+def test_images_are_their_size_on_the_page_where_qt_counts_96_to_the_inch(tmp_path):
+    writer = pdf._writer(tmp_path / "w.pdf")
+    assert pdf._image_scale(writer) == pytest.approx(1.0, abs=0.01)
+
+
+def test_images_are_their_size_on_the_page_where_qt_counts_72_to_the_inch():
+    """On macOS Qt lays an image out a third wider than its width in 96 dpi pixels: the
+    widths are written smaller by as much, so a page-wide map stays on the page."""
+    html = "<p><img src='a' width='690'></p><td><img height=\"40\" src='b' width='300'></td>"
+    out = pdf._images_at(html, 4 / 3)
+    assert "width='518'" in out and "width='225'" in out and "height='30'" in out
+    assert pdf._images_at(html, 1.0) == html
+    assert pdf._images_at("<table width='100%'>", 4 / 3) == "<table width='100%'>"
