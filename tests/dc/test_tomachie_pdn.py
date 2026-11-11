@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Importing a Tomachie power-tree file onto a board."""
 
 import copy
@@ -281,3 +282,14 @@ def test_a_malformed_file_is_refused_not_a_crash(tmp_path, text):
     path.write_text(text, encoding="utf-8")
     with pytest.raises(PdnImportError):
         import_tomachie_pdn(path, board())
+
+
+def test_the_file_turns_on_own_ground_regulation_and_tied_load_pads():
+    """Without the file KiPI holds each VRM above 0 V and shares a load's current equally
+    over its pads; a pdn.json describes the parts, so its import regulates above each VRM's
+    own ground pins and ties each load's pads into one node."""
+    assert not PISetup().settings.regulate_above_own_ground
+    assert not PISetup().settings.tie_load_pads
+    setup, notes = run(copy.deepcopy(PDN))
+    assert setup.settings.regulate_above_own_ground and setup.settings.tie_load_pads
+    assert any("regulates above its own ground pins" in n for n in notes)

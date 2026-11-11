@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """DC solves of the validation boards against hand calculations (#70).
 
 Each board is solved from its checked-in snapshot and setup, the way the plugin opens
@@ -243,3 +244,28 @@ def test_power_chain_voltages(chain):
     assert u3.v_supply == pytest.approx(hand["U3.v"], **tol)
     assert u3.v_effective == pytest.approx(g.V_LDO, abs=1e-8)      # sensed at the load
     assert u3.passed and u4.passed
+
+
+def test_power_chain_switcher_above_its_own_ground():
+    """With regulate_above_own_ground the switcher U1 holds +3V3 V_SMPS above its own ground
+    pin and draws its power across its input and ground pins: V = V_in - V_gnd =
+    V_src - R·(P/(η·V) + I_q), R the loop through VIN and back through GND to J1."""
+    snap, setup = open_board("power_chain")
+    setup.settings.regulate_above_own_ground = True
+    tree = solve_tree(snap, setup)
+    g, hand = boards.PowerChain, _hand(snap)
+    r_vin = _r(snap, _gap(g.VIN, "J1.1", "U1.1"))
+    r_gnd = _r(snap, _gap(g.GND, "J1.2", "U1.3"))
+    i_out1 = g.I_U4 + hand["U2.i_in"]
+    p = g.V_SMPS * i_out1 / g.ETA
+    a = g.V_SRC - (r_vin + r_gnd) * g.IQ_SMPS
+    v_across = (a + math.sqrt(a * a - 4 * (r_vin + r_gnd) * p)) / 2
+    i_in = p / v_across + g.IQ_SMPS
+    u1_gnd = i_in * r_gnd
+    u4_v = g.V_SMPS + u1_gnd - i_out1 * _r(snap, _gap(g.V3V3, "U1.2", "U4.1"))
+    assert _vrm(tree, "U1").i_in == pytest.approx(i_in, rel=1e-6)
+    assert _vrm(tree, "J1").i_out == pytest.approx(i_in, rel=1e-6)
+    tol = dict(abs=2e-5)                                # 20 µV
+    assert _vrm(tree, "U1").v_in == pytest.approx(v_across + u1_gnd, **tol)
+    assert _load(tree, "U4").v_supply == pytest.approx(u4_v, **tol)
+    assert i_in > hand["U1.i_in"]                       # the ground's rise costs input power

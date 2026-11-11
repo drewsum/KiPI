@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Solve a whole power tree defined in a :class:`~kipi.dc.pi.model.PISetup`.
 
 Each net group (nets joined by DC connections) is one FEM problem driven by its single
@@ -248,7 +249,8 @@ class _TreeSolver:
         # Ground-sensing VRMs regulate against their ground sense pins, whose voltage comes
         # from the ground solve, which depends on the rails' currents: iterate both to a
         # fixed point (passes after the first only re-solve the factorized systems).
-        self.v_gsense: Dict[str, float] = {v.name: 0.0 for v in setup.vrms if v.ground_sense}
+        self.v_gsense: Dict[str, float] = {v.name: 0.0 for v in setup.vrms
+                                           if self._ground_reference(v) is not None}
         # Mesh sense: each point's ground sense voltage (0 V where it has none).
         self.v_gpoints: Dict[str, List[float]] = {
             v.name: [0.0] * len(v.all_sense_points()) for v in setup.vrms if v.mesh_sense}
@@ -462,9 +464,14 @@ class _TreeSolver:
         currents, sign = {}, self.sign(self.groups[rail.vrm.output.net])
         for c in rail.children:
             share = sum(self.i_out[c.name]) / (len(c.phases) + 1)
+            # With regulate_above_own_ground its power in and out are measured from the ground
+            # it regulates above: it delivers (V_out - V_gnd) x I_out and draws
+            # (V_in - V_gnd) x I_in. Off: from 0 V, as before.
+            v_gnd = (self.v_gsense.get(c.name, 0.0)
+                     if self.setup.settings.regulate_above_own_ground else 0.0)
             for k, name in enumerate(rail.child_load[c.name]):
-                currents[name] = _input_current(c, self.v_out[c.name][k], share,
-                                                vin_est[c.name][k], sign)
+                currents[name] = _input_current(c, self.v_out[c.name][k] - v_gnd, share,
+                                                vin_est[c.name][k] - v_gnd, sign)
         return currents
 
     def _iterate_rail(self, rail: _Rail, system, demand: float, label: str,
@@ -627,13 +634,29 @@ class _TreeSolver:
         self.ground_solutions[g] = sol
         return (label, sorted(g), "ground", ", ".join(v.name for v in refs), mesh, sol, 1)
 
+    def _ground_reference(self, v: Vrm) -> Optional[PinRef]:
+        """The pins a VRM regulates its output above: its ground sense pins, else its own
+        ground pins (SolveSettings.regulate_above_own_ground) unless they are the 0 V
+        reference of their ground; None when it is held above 0 V."""
+        if v.ground_sense:
+            return v.ground_sense
+        if (self.setup.settings.regulate_above_own_ground and v.ground and
+                v.kind not in GROUND_REF_KINDS and not v.mesh_sense):
+            return v.ground
+        return None
+
     def _ground_sense_change(self) -> float:
-        """Move each ground-sensing VRM's reference to its ground sense pins' new voltage."""
+        """Move each ground-sensing VRM's reference to its ground sense pins' new voltage,
+        and each other VRM's to its own ground pins' (regulate_above_own_ground)."""
         change = 0.0
         for v in self.setup.vrms:
-            if v.ground_sense:
-                gsol = self.ground_solutions[self.groups[v.ground.net]]
-                new = _mean_v(gsol, self.pads(v.ground_sense))
+            ref = self._ground_reference(v)
+            if ref is not None and v.ground:
+                g = self.groups.get(v.ground.net)
+                gsol = self.ground_solutions.get(g) if g is not None else None
+                if gsol is None:
+                    continue                # its ground is not modeled
+                new = _mean_v(gsol, self.pads(ref))
                 change = max(change, abs(new - self.v_gsense[v.name]))
                 self.v_gsense[v.name] = new
             if v.mesh_sense and v.ground:

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """2.5D DC conduction: P1 finite elements on each copper sheet, plated barrels between
 layers, voltage sources and current loads on pads.
 
@@ -87,6 +88,9 @@ class Solution:
     # The voltage source in series with each part's resistance, side A to B: its fixed
     # drop, or what a diode's operating point needs (#191).
     series_drop: Dict[str, float] = field(default_factory=dict)
+    # A tied load's current at each of its pads, in its pad order: what the copper and
+    # vias at that pad deliver into it (CurrentLoad.tied).
+    load_pad_current: Dict[str, List[float]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +121,29 @@ def _merge_groups(n: int, groups: List[np.ndarray]) -> Tuple[np.ndarray, int]:
     graph = sp.coo_matrix((np.ones(len(r)), (r, c)), shape=(n, n))
     count, labels = connected_components(graph, directed=False)
     return labels, count
+
+
+def _pads_reaching_a_source(mesh: NetMesh, problem: NetProblem, groups: List[np.ndarray],
+                            pad_groups: Dict[str, np.ndarray]) -> Dict[str, bool]:
+    """Which pads have a path through copper, vias or series parts to a source's pad."""
+    merged, nm = _merge_groups(mesh.n_nodes, groups)
+    a = [merged[mesh.tris[:, 0]], merged[mesh.tris[:, 1]], merged[mesh.tris[:, 0]]]
+    b = [merged[mesh.tris[:, 1]], merged[mesh.tris[:, 2]], merged[mesh.tris[:, 2]]]
+    for bar in mesh.barrels:
+        rings = [merged[n[0]] for n in bar.ring_nodes.values()]
+        a += [np.asarray(rings[:-1], dtype=np.int64)]
+        b += [np.asarray(rings[1:], dtype=np.int64)]
+    for link in problem.series:
+        sides = link.groups if link.conductance is not None else [link.pads_a, link.pads_b]
+        ends = [merged[pad_groups[p[0]][0]] for p in sides if p and p[0] in pad_groups]
+        a += [np.asarray(ends[:-1], dtype=np.int64)]
+        b += [np.asarray(ends[1:], dtype=np.int64)]
+    ra, rb = np.concatenate(a), np.concatenate(b)
+    graph = sp.coo_matrix((np.ones(len(ra)), (ra, rb)), shape=(nm, nm))
+    _, comp = connected_components(graph, directed=False)
+    fed = {comp[merged[pad_groups[p][0]]] for src in problem.sources
+           for p in src.pad_ids if p in pad_groups}
+    return {pid: bool(comp[merged[nodes[0]]] in fed) for pid, nodes in pad_groups.items()}
 
 
 def _rho_factor(problem: NetProblem, xy: np.ndarray, tcr=None,
@@ -179,6 +206,14 @@ def assemble(snap: BoardSnapshot, mesh: NetMesh, problem: NetProblem):
             groups.append(np.concatenate([a, b]))
         else:
             groups.extend([a, b])
+    # A load's pads are one node (its package planes join them, CurrentLoad.tied) - only
+    # the pads with a copper path to a source: a pad on an island stays unconnected (#88).
+    if s.tie_load_pads and any(l.tied and len(l.pad_ids) > 1 for l in problem.loads):
+        live_pad = _pads_reaching_a_source(mesh, problem, groups, pad_groups)
+        for load in problem.loads:
+            pads = [p for p in load.pad_ids if p in pad_groups and live_pad.get(p)]
+            if load.tied and len(pads) > 1:
+                groups.append(np.concatenate([pad_groups[p] for p in pads]))
     merged_of, nm = _merge_groups(mesh.n_nodes, groups)
 
     b, c, two_a = triangle_geometry(mesh.points, mesh.tris)
@@ -449,6 +484,7 @@ class LinearSystem:
             else:
                 series_current[e.name] = float(e.g * (u_all[e.node_a] - u_all[e.node_b]
                                                       - drops[e.link]))
+        load_pad_current = self._tied_pad_currents(v, amps)
         stats = dict(self.stats)
         stats["solve_s"] = self.setup_s + time.perf_counter() - t0
         return Solution(problem=prob, mesh=self.mesh, node_v=v[self.merged_of],
@@ -459,9 +495,59 @@ class LinearSystem:
                         tri_rho_factor=self.rho_factor, layer_rho=self.layer_rho,
                         source_voltage=volts, load_current=amps,
                         source_pad_current=source_pad_current,
+                        load_pad_current=load_pad_current,
                         dead_pads={k: list(v) for k, v in self.dead_pads.items()},
                         series_drop={e.name: drops[e.link] for e in self.series
                                      if e.g is not None})
+
+    def _tied_pad_currents(self, v_merged: np.ndarray, amps: Dict[str, float]) -> Dict[str, List[float]]:
+        """Each tied load pad's current: the current its copper triangles and the via
+        barrels on its rings carry into it. A pad on poor copper, or with no via to the
+        plane, carries little; nothing is shared out by count."""
+        if not self.problem.settings.tie_load_pads:
+            return {}
+        tied = [l for l in self.problem.loads if l.tied and len(l.pad_ids) > 1]
+        if not tied:
+            return {}
+        mesh = self.mesh
+        node_v = np.nan_to_num(v_merged[self.merged_of])
+        # Current from each mesh node into the copper, element by element.
+        b, c, two_a = triangle_geometry(mesh.points, mesh.tris)
+        area = np.abs(two_a) / 2
+        gs = np.array([self.sheet_g[l] for l in mesh.tri_layer])
+        if self.rho_factor is not None:
+            gs = gs / self.rho_factor
+        coef = gs / (4 * area)
+        vt = node_v[mesh.tris]
+        q = coef[:, None] * (b * (b * vt).sum(axis=1)[:, None] + c * (c * vt).sum(axis=1)[:, None])
+        node_flow = np.bincount(mesh.tris.ravel(), weights=q.ravel(), minlength=mesh.n_nodes)
+        out: Dict[str, List[float]] = {}
+        for load in tied:
+            per_pad = []
+            for pid in load.pad_ids:
+                per_layer = mesh.pad_nodes.get(pid)
+                if not per_layer:
+                    per_pad.append(0.0)
+                    continue
+                nodes = np.concatenate(list(per_layer.values()))
+                flow = float(node_flow[nodes].sum())
+                # Via barrels whose ring on a layer is part of this pad.
+                for e in self.elements:
+                    bar = mesh.barrels[e.barrel]
+                    ra, rb = bar.ring_nodes[e.layer_a], bar.ring_nodes[e.layer_b]
+                    i = e.g * (v_merged[e.node_a] - v_merged[e.node_b])
+                    if np.isin(ra, nodes).any() and not np.isin(rb, nodes).any():
+                        flow += float(i)
+                    elif np.isin(rb, nodes).any() and not np.isin(ra, nodes).any():
+                        flow -= float(i)
+                per_pad.append(-flow)
+            total = sum(per_pad)
+            want = amps.get(load.name, load.current)
+            if want and abs(total - want) > 0.01 * abs(want):
+                self.warnings.append(f"{load.name}: its pads' currents sum to {total:.4g} A, "
+                                     f"not its {want:.4g} A (a series part on one of its pads?)")
+            out[load.name] = per_pad
+        return out
 
     def _drop_rhs(self, drops: Dict[int, float]) -> np.ndarray:
         """The right-hand side of series parts' voltage sources, ``drops`` volts by link."""
