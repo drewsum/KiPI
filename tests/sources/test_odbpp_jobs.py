@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """ODB++ jobs as other tools write them, made from KiCad's export of the fixture board.
 
 There are no Altium, OrCAD or Valor jobs in the tests, so each case is the KiCad export

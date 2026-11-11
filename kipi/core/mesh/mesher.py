@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Conforming triangle mesh of one net's copper on every layer.
 
 Each connected copper polygon is meshed with Shewchuk's Triangle (quality + max
@@ -141,21 +142,30 @@ def pslg_problems(verts: np.ndarray, segs: np.ndarray, tol: float = NODING_GRID_
 CONSTRAINT_CLEARANCE_MM = 0.01
 
 
-def _clip_constraint(line: BaseGeometry, poly: Polygon) -> Optional[BaseGeometry]:
+def _clip_constraint(line: BaseGeometry, poly: Polygon, edge: Optional[BaseGeometry] = None,
+                     near_edge: Optional[BaseGeometry] = None) -> Optional[BaseGeometry]:
     """The part of ``line`` inside ``poly``, kept clear of the polygon's edges.
 
     Pieces within CONSTRAINT_CLEARANCE_MM of an edge are removed (they would run almost
     on top of it), and each remaining end that stops near an edge is extended straight
     to that edge, so a pad outline still meets the copper boundary exactly but always
-    crosses it rather than running alongside it.
+    crosses it rather than running alongside it. ``edge`` and ``near_edge`` (the
+    polygon's boundary and the band within the clearance of it) are built once per
+    polygon by the caller when it clips many lines: on a plane with thousands of holes
+    the band takes far longer to build than any one line takes to clip.
     """
     from shapely.geometry import LineString as _LS
     from shapely.ops import nearest_points
 
     tol = CONSTRAINT_CLEARANCE_MM
-    edge = poly.boundary
+    if edge is None:
+        edge = poly.boundary
+    if near_edge is None:
+        near_edge = edge.buffer(tol, quad_segs=2)
     inner = shapely.intersection(line, poly)
-    inner = shapely.difference(inner, edge.buffer(tol, quad_segs=2))
+    if inner.is_empty:
+        return None
+    inner = shapely.difference(inner, near_edge)
     parts = []
     for part in shapely.get_parts(inner):
         if part.geom_type not in ("LineString", "LinearRing") or part.length < tol:
@@ -221,7 +231,9 @@ def _degenerate(ring) -> bool:
 
 
 def _hole_seeds(poly: Polygon, warn=None) -> List[Point]:
-    """A seed point inside each interior ring worth cutting, skipping degenerate ones."""
+    """A seed point inside each interior ring worth cutting, skipping degenerate ones and
+    any that lands in the copper (a slit the fill or the simplification leaves puts its
+    representative point on its edge, and Triangle would remove the copper around it)."""
     seeds = []
     dropped = 0
     for r in poly.interiors:
@@ -229,8 +241,13 @@ def _hole_seeds(poly: Polygon, warn=None) -> List[Point]:
             dropped += 1
             continue
         seeds.append(Polygon(r).representative_point())
+    if seeds:
+        shapely.prepare(poly)
+        in_copper = shapely.contains_xy(poly, [s.x for s in seeds], [s.y for s in seeds])
+        dropped += int(in_copper.sum())
+        seeds = [s for s, inside in zip(seeds, in_copper) if not inside]
     if dropped and warn is not None:
-        warn(f"Copper {_place(poly)}: ignored {dropped} zero-area hole ring(s) in the fill")
+        warn(f"Copper {_place(poly)}: ignored {dropped} hole ring(s) in the fill that enclose no area")
     return seeds
 
 
@@ -252,6 +269,25 @@ def _carve_holes(out: dict, poly: Polygon) -> dict:
             "segments": segs[(segs >= 0).all(axis=1)]}
 
 
+def _pad_nodes(poly: Polygon, outlines: Sequence[BaseGeometry]) -> np.ndarray:
+    """One point inside the copper of each pad outline that lies on ``poly``, clear of
+    the copper's edges where the overlap allows: the nodes that find a pad by position
+    when the mesh is built without the pad outlines. (0, 2) when none lies on it."""
+    tol = CONSTRAINT_CLEARANCE_MM
+    out = []
+    for line in outlines:
+        area = shapely.build_area(line)
+        if area.is_empty:
+            continue
+        overlap = shapely.intersection(area, poly)
+        if overlap.is_empty or overlap.area <= 0:
+            continue
+        clear = overlap.buffer(-tol)
+        p = (clear if not clear.is_empty else overlap).representative_point()
+        out.append((p.x, p.y))
+    return np.array(out, dtype=float).reshape(-1, 2)
+
+
 def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: float,
                  min_angle: float, size_fn=None, warn=None,
                  points: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
@@ -263,8 +299,16 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
     to fall back.
     """
     warn = warn or (lambda _t: None)
-    clipped_constraints = [g for g in (_clip_constraint(c, poly) for c in constraints)
-                           if g is not None]
+    # Only the pad outlines whose box meets the polygon's; its edge band built once.
+    x0, y0, x1, y1 = poly.bounds
+    near = [c for c in constraints
+            if not (c.bounds[0] > x1 or c.bounds[2] < x0 or c.bounds[1] > y1 or c.bounds[3] < y0)]
+    clipped_constraints = []
+    if near:
+        edge = poly.boundary
+        near_edge = edge.buffer(CONSTRAINT_CLEARANCE_MM, quad_segs=2)
+        clipped_constraints = [g for g in (_clip_constraint(c, poly, edge, near_edge)
+                                           for c in near) if g is not None]
     holes = _hole_seeds(poly, warn)
 
     def first_pass(with_constraints: bool):
@@ -278,6 +322,13 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
             raise MeshCapHit()      # treat malformed input like a non-converging mesh
         if points is not None and len(points):
             verts = np.vstack([verts, points])
+        if not with_constraints:
+            # Without the outlines a pad smaller than the mesh holds no node, and its
+            # terminal is then not found ("no meshed copper": a 10-layer board with
+            # the coarse mesh, 2026-11-03); one node inside each pad keeps it.
+            inside = _pad_nodes(poly, near)
+            if len(inside):
+                verts = np.vstack([verts, inside])
         data = {"vertices": verts, "segments": segs}
         if holes:
             data["holes"] = np.array([[h.x, h.y] for h in holes])
