@@ -39,7 +39,8 @@ the rest.
   feature.
 * **Keep it reviewable.** As a guide, a pull request over about 1000 changed lines
   (tests aside) should have been split or discussed first.
-* **Target the open release branch** (for example `v1.0.1`), or `main` if there is none.
+* **Target an open release branch if it exists** (for example `v1.0.1`), or `main` if it
+  does not.
 * **Say what changes for the user**, including for users who never touch the new feature:
   results, defaults, wording, columns, file formats. If nothing changes for them, say so,
   and make sure it is true.
