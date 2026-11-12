@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from kipi.core.geometry import silkscreen as silk
 from kipi.core.geometry.copper import shapely_to_polys
@@ -432,20 +432,23 @@ def _copper_shape_zones(items: List[Tuple[Node, Frame]], cu: Dict[int, str], net
     return zones
 
 
-def read_outline(root: Node, progress: ProgressReporter) -> List[Poly]:
-    """The board outline from the board's own Edge.Cuts drawings."""
+def read_outline(root: Node, progress: ProgressReporter,
+                 fp_drawn: Sequence[Tuple[Node, Frame]] = ()) -> List[Poly]:
+    """The board outline from the Edge.Cuts drawings: the board's own, and the footprints'
+    in ``fp_drawn`` (a connector's cutout in the board edge, as KiCad joins them)."""
     from shapely.geometry import LineString
     lines, closed = [], []
-    for node in drawn_items(root, "gr_"):
+    items = [(node, BOARD) for node in drawn_items(root, "gr_")] + list(fp_drawn)
+    for node, frame in items:
         if value(node, "layer") != "Edge.Cuts":
             continue
         if kind(node) in ("curve", "bezier"):
             continue                       # as the KiCad source: beziers do not close
-        pts = path_points(node)
+        pts = path_points(node, frame)
         if pts is not None:
             lines.append(LineString(pts))
             continue
-        shape = closed_shape(node, quad_segs=32)
+        shape = closed_shape(node, frame, quad_segs=32)
         if shape is not None and not shape.is_empty:
             closed.append(shape)
     return board_outline(lines, closed, progress)
@@ -714,7 +717,7 @@ def read_board(path, progress: ProgressReporter = NULL) -> BoardSnapshot:
                           "remove unused layers)")
 
     with progress.timed("Reading board outline"):
-        outline = read_outline(root, progress)
+        outline = read_outline(root, progress, fp_drawn)
 
     with progress.timed("Reading silkscreen"):
         silkscreen = read_silkscreen(root, progress, version)

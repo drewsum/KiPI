@@ -131,6 +131,21 @@ def test_the_hot_loops_overlay_draws_each_loop_in_its_colour(solved):
     assert not hasattr(coupling_overlay(r, "SIG", "inductive"), "loops")
 
 
+def test_a_runaway_loop_path_gets_a_bounded_number_of_arrows(solved):
+    """#242: a path saved with a segment 3e11 mm long (a streamline that left the mesh)
+    drew a cone every 2 mm along it; the cones are spaced wider instead."""
+    import copy
+    from kipi.noise.viz import LOOPS_ALL, MAX_ARROWS, hot_loops_overlay
+    _, _, r = solved
+    bad = copy.copy(r)
+    key = next(iter(r.loop_paths))
+    segs = np.array(r.loop_paths[key], float)
+    segs[0, 1] = (-6.7e10, 4.5e10, segs[0, 1, 2])
+    bad.loop_paths = {**r.loop_paths, key: segs}
+    ov = hot_loops_overlay(bad, LOOPS_ALL)
+    assert 1 <= len(ov.loops[0].arrow_xyz) <= MAX_ARROWS + 1
+
+
 @pytest.fixture(scope="module")
 def app():
     pytest.importorskip("qtpy")

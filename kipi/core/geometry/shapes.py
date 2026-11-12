@@ -14,6 +14,7 @@ from kipi.core.progress import NULL, ProgressReporter
 
 BEZIER_SEGMENTS = 32
 SHAPE_QUAD_SEGS = 8          # stroke end caps and circles: 32 segments per circle
+CHAIN_EPSILON_MM = 0.02      # edge drawings' ends this close join, as KiCad's outline
 
 
 def bezier_points(p0, p1, p2, p3) -> List[tuple]:
@@ -64,13 +65,37 @@ def area(shape, width_mm: float, filled: bool):
     return unary_union(parts)
 
 
+def _join_ends(lines: Sequence) -> List:
+    """``lines`` with ends closer than :data:`CHAIN_EPSILON_MM` moved onto one point, as
+    KiCad chains its edge drawings: a footprint's edges, placed and rotated, can miss the
+    board's by a few nm."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+    from shapely.geometry import LineString
+    coords = [list(line.coords) for line in lines]
+    ends = np.array([c[i] for c in coords for i in (0, -1)])
+    parent = list(range(len(ends)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, j in cKDTree(ends).query_pairs(CHAIN_EPSILON_MM):
+        parent[root(j)] = root(i)
+    for k, c in enumerate(coords):
+        c[0], c[-1] = tuple(ends[root(2 * k)]), tuple(ends[root(2 * k + 1)])
+    return [LineString(c) for c in coords]
+
+
 def board_outline(lines: Sequence, closed: Sequence,
                   progress: ProgressReporter = NULL) -> List[Poly]:
     """The board from its edge drawings: ``lines`` (shapely LineStrings that join into
     loops) and ``closed`` (shapely Polygons: circles, rectangles, polygons). The largest
     loop is the board and the others inside it are cutouts (even-odd)."""
     from shapely.ops import polygonize, unary_union
-    polys = list(polygonize(unary_union(list(lines)))) if lines else []
+    polys = list(polygonize(unary_union(_join_ends(lines)))) if lines else []
     polys += list(closed)
     if not polys:
         progress.warn("No closed board outline found on Edge.Cuts")

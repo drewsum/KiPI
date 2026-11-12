@@ -973,6 +973,8 @@ class LoadEditor(_Editor):
         # the DC voltage, so only from nominal.
         self.dc_tol = RangeRow(self._rail_nominal)
         self.ac_tol = RangeRow(self._rail_nominal, units=(DELTA_VOLTS, PERCENT))
+        # Off for nearly every load: a load draws its current from its rail (#241).
+        self.sources = QCheckBox("Sources current onto the rail")
         f.addRow("Name", self.name)
         f.addRow("Supply pins", self.supply)
         f.addRow("Current split", self.mode)
@@ -984,11 +986,13 @@ class LoadEditor(_Editor):
         f.addRow("Tolerance", self.tol)
         f.addRow("DC tolerance", self.dc_tol)
         f.addRow("AC tolerance", self.ac_tol)
+        f.addRow("Direction", self.sources)
         # Drawings under the tooltips (#116), the field's part picked out.
         art = {self.mode: ("current_split",), self.current: ("current_split", "equal"),
                self.tol: ("tolerance", "min", "max"), self.tol.min: ("tolerance", "min"),
                self.tol.max: ("tolerance", "max"),
-               self.tol.unit: ("tolerance", "volts", "dv", "pct")}
+               self.tol.unit: ("tolerance", "volts", "dv", "pct"),
+               self.sources: ("load_direction", "sources")}
         for row, part in ((self.dc_tol, "dc"), (self.ac_tol, "ac")):
             for w in (row, *row.fields()):
                 art[w] = ("tol_split", part)
@@ -1016,7 +1020,11 @@ class LoadEditor(_Editor):
                 (self.tol.unit, "V: the lowest and highest voltage, in volts.\n±V: in volts "
                                 "below and above the target voltage of the VRM driving "
                                 "the rail.\n%: in % from that target voltage."
-                                "\nSwitching converts the values when that VRM is known.")):
+                                "\nSwitching converts the values when that VRM is known."),
+                (self.sources, "Off for nearly every load. On: the load puts its current "
+                               "onto the rail instead of drawing it, for a part that "
+                               "back-feeds the rail. The VRM then supplies that much less, "
+                               "and the ground pins take the current out")):
             tip(f, w, text, art.get(w))
         dc_text = ("Optional, for a part that gives its tolerance in two shares: the DC "
                    "share, where the pin's steady voltage may sit, from the VRM's accuracy "
@@ -1034,6 +1042,7 @@ class LoadEditor(_Editor):
             "those pins. Click a column header to sort by it.", "current_split", "groups"))
         make_sortable(self.groups, self._sort_groups, columns=(0, 1, 2))
         self._watch(self.name, self.current, self.mode)
+        self.sources.toggled.connect(self._store)
         for row in (self.tol, self.dc_tol, self.ac_tol):
             row.changed.connect(self._store)
         self.mode.currentIndexChanged.connect(self._mode_rows)
@@ -1045,7 +1054,7 @@ class LoadEditor(_Editor):
         grouped = self.mode.currentData() == "groups"
         self._mark({self.name: REQUIRED, self.supply: REQUIRED, self.mode: REQUIRED,
                     self.current: REQUIRED, self.ground: OPTIONAL, self.tol: OPTIONAL,
-                    self.dc_tol: OPTIONAL, self.ac_tol: OPTIONAL})
+                    self.dc_tol: OPTIONAL, self.ac_tol: OPTIONAL, self.sources: OPTIONAL})
         self.form.setRowVisible(self.current, not grouped)
         self.form.setRowVisible(self.groups, grouped)
         self.form.setRowVisible(self.lbl_total, grouped)
@@ -1128,6 +1137,7 @@ class LoadEditor(_Editor):
         self.tol.set_values(l.tol_min, l.tol_max, l.tol_pct, l.tol_dv)
         self.dc_tol.set_values(l.dc_tol_min, l.dc_tol_max, l.dc_tol_pct, l.dc_tol_dv)
         self.ac_tol.set_values(l.ac_tol_min, l.ac_tol_max, l.ac_tol_pct, l.ac_tol_dv)
+        self.sources.setChecked(l.sources)
         self.lbl_total.setText(f"{l.total_current():.4g} A")
         self._mode_rows()
 
@@ -1169,6 +1179,7 @@ class LoadEditor(_Editor):
         l.dc_tol_pct, l.dc_tol_dv = self.dc_tol.pct(), self.dc_tol.dv()
         l.ac_tol_min, l.ac_tol_max = self.ac_tol.values()
         l.ac_tol_pct, l.ac_tol_dv = self.ac_tol.pct(), self.ac_tol.dv()
+        l.sources = self.sources.isChecked()
         self.lbl_total.setText(f"{l.total_current():.4g} A")
 
 
@@ -1243,6 +1254,8 @@ class LinkEditor(_Editor):
                  "|Z| = √(DCR² + (2πf·L)²); at and above the peak it is a resistor, so a "
                  "point well below the peak gives the inductance best."),
                 (self.btn_spice,
+                 "The best way to model a diode, or a FET with several drain and source "
+                 "pins (see below).\n\n"
                  "Use the part's SPICE model, a .SUBCKT of resistors, inductors and "
                  "capacitors from its maker: a ferrite bead's, say, with its resistive peak. "
                  "It is saved with the setup, and the AC and Coupled Noise solves take the "
@@ -1261,6 +1274,12 @@ class LinkEditor(_Editor):
                  "dialog: each becomes a side of the link. DC takes its conductance "
                  "between the sides, AC and Coupled Noise its admittance at every "
                  "frequency.\n\n"
+                 "A FET with several drain and source pins (a load switch, an ideal-diode "
+                 "FET) is best such a .SUBCKT of resistors, a pin for each drain and source "
+                 "pin, joined through its RDS(on); leave the gate out. Without one, each "
+                 "side's pins are tied into one node, which shares the current over them "
+                 "perfectly and can hide a pin the copper starves. Transistors are not "
+                 "read, so a maker's MOSFET model will not import.\n\n"
                  "The model is worked out at the copper's temperature under the part when "
                  "the solve knows it (TEMP, TC1 and TC2, and a diode's temperature "
                  "parameters), else at 27 °C."),
@@ -1270,8 +1289,10 @@ class LinkEditor(_Editor):
                  "fitted values back.")):
             tip(f, w, text, art.get(w))
         hint = QLabel("A part in series between two nets (sense resistor, ferrite, fuse, "
-                      "load switch or diode). For a diode, import its SPICE model, with "
-                      "side A its anode.")
+                      "load switch or diode). Each side's pins are tied into one node. "
+                      "For a diode, or a FET with several drain and source pins, import a "
+                      "SPICE model: a diode's with side A its anode, a FET's as a .SUBCKT "
+                      "of resistors with a pin for each drain and source pin.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #999;")
         f.addRow(hint)

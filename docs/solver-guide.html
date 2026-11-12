@@ -141,6 +141,7 @@ figure svg { display: block; max-width: 760px; background: var(--panel);
     <li><a href="#dc">DC: voltage drop</a>
       <ol>
         <li><a href="#dc-tree">The power tree</a></li>
+        <li><a href="#dc-ground">Ground and the 0 V reference</a></li>
         <li><a href="#dc-tolerance">Tolerance analysis</a></li>
       </ol></li>
     <li><a href="#thermal">Electro-thermal co-simulation</a>
@@ -320,12 +321,41 @@ gradient, the via currents from the barrels, and the power lost in the copper fr
 <ul>
   <li>An <b>LDO</b> draws from its input what it delivers plus its quiescent current.</li>
   <li>A <b>switching regulator</b> draws <i>V<sub>out</sub>·I<sub>out</sub> /
-    (η·V<sub>in</sub>)</i>. Its input voltage depends on the drop on the input rail, which
-    depends on the current it draws, so KiPI iterates the two until they agree.</li>
+    (η·V<sub>in</sub>)</i>, with both voltages across it, from its ground pins. Its input
+    voltage depends on the drop on the input rail, which depends on the current it draws,
+    so KiPI iterates the two until they agree.</li>
   <li><b>Remote sense</b> moves a VRM's output until its sense pins sit at the set voltage, as
     the real control loop does. This creates voltage boost in some places, and drop in other places.</li>
   <li><b>Ground</b> is a net like any other: loads return their current through their ground
     pins, so ground drops count too.</li>
+</ul>
+
+<h3 id="dc-ground">Ground and the 0 V reference</h3>
+<p>Voltages are only defined up to a constant: what a part sees is the difference between
+its pins. KiPI fixes the constant at the <b>source</b>: a source VRM's ground pins are held
+at 0 V, and the rest of the ground is solved from the current returning through it. An
+isolated converter's output ground pins are the 0 V of the ground on its output side, which
+is a separate ground.</p>
+<ul>
+  <li><b>Regulators.</b> An LDO or switcher is not a reference. Its ground pins return the
+    difference between its output and input currents, and their voltage is whatever the
+    copper gives them. It holds its output at <i>V<sub>set</sub></i> above its ground
+    sense pins or, without them, above its own ground pins, as its control loop does. The
+    ground voltages come from the ground solve, which depends on the rails' currents, so
+    the rails and grounds are iterated together until both settle.</li>
+  <li><b>Across the part.</b> A switcher's power balance is
+    (V<sub>out</sub> − V<sub>gnd</sub>)·I<sub>out</sub> =
+    η·(V<sub>in</sub> − V<sub>gnd</sub>)·I<sub>in</sub>, and its input range is checked on
+    V<sub>in</sub> − V<sub>gnd</sub>. A rail's drop is measured from
+    V<sub>set</sub> + V<sub>gnd</sub>. Moving the 0 V reference therefore moves every
+    voltage by the same amount and changes no result.</li>
+  <li><b>Several sources on one ground.</b> Every source on a ground holds its ground pins at
+    the same 0 V. That is an ideal tie between them off the board: the return splits
+    between them as the copper's resistance sets, and sources on the same ground pins split
+    it by what each delivers. This fits
+    supplies that share a ground off the board, such as two connectors from one bench supply.</li>
+  <li><b>No ground pins.</b> A VRM without ground pins, or on a ground that is not solved, is
+    held above 0 V, and its loads' ground drop is not modeled.</li>
 </ul>
 
 <h3 id="dc-tolerance">Tolerance analysis</h3>
@@ -626,7 +656,11 @@ pieces' partial inductances (Ruehli's PEEC): Neumann's double integral
 M = μ₀/4π·∬ dl·dl′/R, with the inner integral in closed form and each bar's cross-section
 entering as its geometric mean radius 0.2235·(w + t). A solid plane under the loop is a
 perfect conductor by images: the mirrored loop, carrying the opposite current, takes away
-most of the inductance of a flat loop close over it. Against closed forms this gives a
+most of the inductance of a flat loop close over it. The image plane is the nearest one,
+inward of the device's layer, that covers at least half of the loop's pads' footprint (the
+device's high-side and low-side pads and the hot-loop capacitors' pads, their convex hull
+grown by 0.5 mm), so a via's antipad between the device's pins does not lose it. Without
+one the loop is in free air and the notes say so. Against closed forms this gives a
 bar's self inductance within 0.5 % and a square loop's within 2 %.</p>
 <p>The loop's inductance L with the switch node's capacitance C (the device's Coss plus its
 copper over the neighbouring planes) rings at f = 1/(2π√(L·C)) on every edge, damped by

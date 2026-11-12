@@ -71,8 +71,28 @@ def probe(command: Sequence[str], timeout: float = 20.0) -> Optional[Python]:
         return None
 
 
+def extra_dirs(platform: Optional[str] = None, home: Optional[str] = None) -> List[str]:
+    """Where Python installers put their commands, beyond PATH. An app started from the
+    Dock or Finder (KiCad, so its plugins) gets launchd's PATH, /usr/bin:/bin:/usr/sbin:
+    /sbin, which has none of them (#237)."""
+    platform = platform or sys.platform
+    if platform == "win32":
+        return []
+    home = home or os.path.expanduser("~")
+    dirs = ["/opt/homebrew/bin", "/usr/local/bin", f"{home}/.local/bin"]
+    if platform == "darwin":            # python.org's installer
+        dirs += [f"/Library/Frameworks/Python.framework/Versions/3.{m}/bin"
+                 for m in range(SUPPORTED[1][1], SUPPORTED[0][1] - 1, -1)]
+    return dirs
+
+
+def _which(name: str) -> Optional[str]:
+    path = os.pathsep.join([os.environ.get("PATH", os.defpath)] + extra_dirs())
+    return shutil.which(name, path=path)
+
+
 def candidates(platform: Optional[str] = None,
-               which: Callable[[str], Optional[str]] = shutil.which) -> List[List[str]]:
+               which: Callable[[str], Optional[str]] = _which) -> List[List[str]]:
     """Commands that may run a supported Python, best first: the one running the launcher,
     then the newest supported version the system can find."""
     platform = platform or sys.platform
@@ -121,6 +141,20 @@ def find_python(commands: Optional[List[List[str]]] = None,
         else:
             return p, problems
     return None, problems
+
+
+#: What KiCad sets for its own Python on macOS and passes on to every process it starts,
+#: plugins included. Any other Python started with them looks for its standard library in
+#: KiCad's Python 3.9 and stops before it runs a line ("No module named 'encodings'", #237).
+KICAD_PYTHON_VARS = ("PYTHONHOME", "PYTHONPATH")
+
+
+def drop_kicad_python_vars(environ=None) -> None:
+    """Remove KiCad's Python home and path from ``environ`` (this process's environment,
+    so every child gets a clean one)."""
+    environ = os.environ if environ is None else environ
+    for name in KICAD_PYTHON_VARS:
+        environ.pop(name, None)
 
 
 def child_kwargs() -> dict:

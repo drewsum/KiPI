@@ -34,13 +34,18 @@ analysis modes:
   checked against its logic family's noise margin, with the line held high and held low, and
   the 3D view shows where along its traces the noise couples in.
 
-New to KiPI? The **[user guide](docs/help.html)** (also the **Help** button in KiPI, or
+**Learning KiPI? Follow the [Tutorial](https://drewsum.github.io/KiPI/tutorial.html)**: one
+real board set up and solved in DC, AC and Coupled Noise from scratch, every step
+screenshotted. It covers VRMs, loads, series links, capacitor models from a datasheet,
+probes and targets, aggressors and victims.
+
+New to KiPI? The **[user guide](https://drewsum.github.io/KiPI/help.html)** ([source](docs/help.html); also the **Help** button in KiPI, or
 **F1**) walks through every button, the workflows and what the results mean. Every
 control in KiPI has a tooltip. This README is an overview; the user guide has the details.
 
 ![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
-**Status: 1.0.0 (stable)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
+**Status: 1.0.1 (stable)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
 
 ## Install
 
@@ -69,9 +74,15 @@ KiPI runs two ways, from the same folder:
   * **Linux:** KiCad uses the system Python. On a distribution with Python 3.14 (Ubuntu
     26.04, Fedora 43), pip has to compile some packages, which needs
     `sudo apt install build-essential python3-dev` or similar.
-  * **macOS:** KiCad bundles Python 3.9, which is too old. Install Python 3.12 (for
-    example from python.org or Homebrew) and select it as the **Python interpreter** in
-    *Preferences → Plugins*.
+  * **macOS:** KiCad bundles Python 3.9, which is too old. Install Python 3.10 to 3.13
+    (for example 3.12 from python.org or Homebrew), but leave KiCad's **Python
+    interpreter** in *Preferences → Plugins* as it is. On the first click, KiPI finds
+    the newer Python and sets up an environment of its own from it, in
+    `~/Library/Application Support/KiPI`. Do not select the newer Python in KiCad:
+    KiCad passes its own Python's `PYTHONHOME` and `PYTHONPATH` to it, and it stops
+    before KiPI starts (KiCad reports `exited with code 1` and
+    `No module named 'encodings'`, #237). If you selected one already, set it back and
+    use *Recreate Plugin Environment* on KiPI.
 
 #### From the Plugin and Content Manager
 
@@ -169,7 +180,7 @@ Use **Open…** to open a board and **Reload** to read it again. KiCad boards ke
 setup file standalone and in the plugin. KiPI uses the zone fills saved in the file, so
 **fill the zones in KiCad (B) and save** before opening a `.kicad_pcb`. ODB++ jobs and
 HyperLynx files share a board's setup when exported next to it with the same name
-(`Board.zip`, `Board.hyp`). The [user guide](docs/help.html) lists what each format does
+(`Board.zip`, `Board.hyp`). The [user guide](https://drewsum.github.io/KiPI/help.html) lists what each format does
 and does not carry.
 
 To change the setup later, use **About → Manage dependencies…** in KiPI, or the launcher:
@@ -216,7 +227,7 @@ stage as it runs.
   picks the analysis mode. Readme sections 2 to 5 are DC, the default;
   [section 6](#6-ac-pdn-impedance) covers AC and [section 7](#7-coupled-noise) Coupled Noise.
   The VRMs, series links and capacitor models are shared by all three.
-* **Help** (or **F1**) opens the [user guide](docs/help.html) in your browser.
+* **Help** (or **F1**) opens the [user guide](https://drewsum.github.io/KiPI/help.html) in your browser.
 
 ### 2. Pick Power Nets from Netlist
 
@@ -246,7 +257,7 @@ uses the edited stackup.
 ![The Stackup window: copper and dielectric layers with thickness, material, εr, thermal conductivity and resistivity](docs/images/stackup.png)
 
 Drag to rotate, scroll to zoom and shift-drag (or middle-drag) to pan; the
-[user guide](docs/help.html#keys) lists every keyboard shortcut.
+[user guide](https://drewsum.github.io/KiPI/help.html#keys) lists every keyboard shortcut.
 
 ### 3. Model the Power Distribution System
 
@@ -441,8 +452,10 @@ current's return. **Report** and **Save results…** work as in the other modes.
 * **"KiPI works with one KiCad at a time"** although only one is open: a KiCad that did not
   exit cleanly may still be running; end it in the task manager.
 * **Logs:** each session writes to `kipi/kipi-<date>-<time>-<pid>.log` in the temporary
-  folder, with a matching `.crash.log`. Attach both, and **About → Copy version info**, to
-  bug reports. The [user guide](docs/help.html) has more troubleshooting.
+  folder (`%TEMP%` on Windows, `$TMPDIR` on macOS, `/tmp` on Linux), with a matching
+  `.crash.log`. Setup and the plugin's first start write `launcher-*.log` to the `logs`
+  folder beside KiPI's environment (see the table above). Attach them, and
+  **About → Copy version info**, to bug reports. The [user guide](https://drewsum.github.io/KiPI/help.html) has more troubleshooting.
 * **Have Fun:** The author asks that you share what projects this package has simulated, and what power integrity issues you have found with it. Conductor simulation gives incredible insight into how PCBs actually function in practice. See what happens when you pump 10 amps into a 5 mil trace with the temperature results view.
 
 ## Development

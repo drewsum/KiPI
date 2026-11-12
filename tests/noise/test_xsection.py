@@ -36,6 +36,14 @@ def test_microstrip(w, h, er):
     assert r.cm == {}
 
 
+def test_microstrip_under_a_decimal_comma_locale(comma_locale):
+    """The cross-section's Triangle switches carry a maximum area such as "a0.125" (#236)."""
+    w, h, er = 0.3, 0.2, 4.5
+    rects = [Rect(-8.0, 8.0, -0.035, 0.0, GROUND), Rect(-w / 2, w / 2, h, h + 0.001, VICTIM)]
+    r = solve(rects, [Band(0.0, h, er)], (-8.0, 8.0, -0.5, 8.0))
+    assert r.z0_ohm == pytest.approx(hammerstad_jensen(w, h, er)[0], rel=0.03)
+
+
 @pytest.mark.parametrize("w, b", [(0.2, 0.4), (0.1, 0.3)])
 def test_stripline(w, b):
     er, W = 4.2, 6.0

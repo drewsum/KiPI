@@ -212,9 +212,16 @@ class Load:
     # Empty: ``current`` is split equally across the supply pins. Otherwise each group
     # of supply pins draws its own current and the load's total is their sum.
     groups: List[PinGroup] = field(default_factory=list)
+    # The load puts its current onto its rail instead of drawing it (#241), e.g. a part
+    # that back-feeds the rail. Off: it draws its current from the VRM.
+    sources: bool = False
 
     def total_current(self) -> float:
         return sum(g.current for g in self.groups) if self.groups else self.current
+
+    def drawn_current(self) -> float:
+        """The current the load takes from its rail: its total, negative if it sources."""
+        return -self.total_current() if self.sources else self.total_current()
 
     def has_tolerance(self) -> bool:
         return self.tol_min is not None or self.tol_max is not None
@@ -500,7 +507,8 @@ class PISetup:
             loads=[Load(name=l["name"], supply=pin(l["supply"]), current=l["current"],
                         ground=pin(l.get("ground")), **_load_tolerance(l),
                         groups=[PinGroup(list(g["pins"]), g["current"], g.get("name", ""))
-                                for g in l.get("groups", [])])
+                                for g in l.get("groups", [])],
+                        sources=bool(l.get("sources", False)))
                    for l in d.get("loads", [])],
             links=[_link(k, pin) for k in d.get("links", [])],
             via_current_limit_a=d.get("via_current_limit_a", DEFAULT_VIA_CURRENT_LIMIT_A),
@@ -646,7 +654,7 @@ def link_bias(setup: PISetup, link: DcLink) -> float:
     if any(v.output.net in side for v in setup.vrms):
         return 0.0
     groups = net_groups(setup)
-    amps = sum(l.total_current() for l in setup.loads if l.supply.net in side)
+    amps = sum(l.drawn_current() for l in setup.loads if l.supply.net in side)
     amps += sum(_estimated_input(setup, groups, v) for v in setup.vrms
                 if v.input and v.input.net in side)
     return float(amps)
@@ -938,7 +946,7 @@ def validate(setup: PISetup) -> List[str]:
 def _supplied_current(setup: PISetup, groups, g, seen) -> float:
     """Current drawn from rail group ``g`` at nominal voltages, ignoring copper losses:
     its loads plus the input current of every VRM it feeds."""
-    amps = sum(l.total_current() for l in setup.loads if groups[l.supply.net] == g)
+    amps = sum(l.drawn_current() for l in setup.loads if groups[l.supply.net] == g)
     for v in setup.vrms:
         if v.input and groups[v.input.net] == g:
             amps += _estimated_input(setup, groups, v, seen)

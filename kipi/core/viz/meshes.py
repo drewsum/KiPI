@@ -42,6 +42,7 @@ def layer_color(layer: CopperLayer, n_layers: int) -> Tuple[float, float, float]
 
 try:
     import triangle as _triangle
+    from kipi.core.mesh.mesher import c_numbers
 except ImportError:                     # GEOS triangulates alone, only more slowly
     _triangle = None
 
@@ -88,6 +89,7 @@ def _triangle_fast(poly) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         verts, segs = _outline(poly)
         if len(segs) < 3 or not _safe_for_triangle(poly, verts, segs):
             return None
+        c_numbers()
         out = _triangle.triangulate({"vertices": verts, "segments": segs}, "pQ")
         pts = np.asarray(out["vertices"], dtype=float)
         tris = np.asarray(out.get("triangles", np.zeros((0, 3))), dtype=np.int64)

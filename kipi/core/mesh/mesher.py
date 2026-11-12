@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Conforming triangle mesh of one net's copper on every layer.
 
 Each connected copper polygon is meshed with Shewchuk's Triangle (quality + max
@@ -10,6 +11,7 @@ Coordinates stay in KiCad board space (mm, y down).
 
 from __future__ import annotations
 
+import locale
 import math
 import time
 from dataclasses import dataclass, field
@@ -140,21 +142,30 @@ def pslg_problems(verts: np.ndarray, segs: np.ndarray, tol: float = NODING_GRID_
 CONSTRAINT_CLEARANCE_MM = 0.01
 
 
-def _clip_constraint(line: BaseGeometry, poly: Polygon) -> Optional[BaseGeometry]:
+def _clip_constraint(line: BaseGeometry, poly: Polygon, edge: Optional[BaseGeometry] = None,
+                     near_edge: Optional[BaseGeometry] = None) -> Optional[BaseGeometry]:
     """The part of ``line`` inside ``poly``, kept clear of the polygon's edges.
 
     Pieces within CONSTRAINT_CLEARANCE_MM of an edge are removed (they would run almost
     on top of it), and each remaining end that stops near an edge is extended straight
     to that edge, so a pad outline still meets the copper boundary exactly but always
-    crosses it rather than running alongside it.
+    crosses it rather than running alongside it. ``edge`` and ``near_edge`` (the
+    polygon's boundary and the band within the clearance of it) are built once per
+    polygon by the caller when it clips many lines: on a plane with thousands of holes
+    the band takes far longer to build than any one line takes to clip.
     """
     from shapely.geometry import LineString as _LS
     from shapely.ops import nearest_points
 
     tol = CONSTRAINT_CLEARANCE_MM
-    edge = poly.boundary
+    if edge is None:
+        edge = poly.boundary
+    if near_edge is None:
+        near_edge = edge.buffer(tol, quad_segs=2)
     inner = shapely.intersection(line, poly)
-    inner = shapely.difference(inner, edge.buffer(tol, quad_segs=2))
+    if inner.is_empty:
+        return None
+    inner = shapely.difference(inner, near_edge)
     parts = []
     for part in shapely.get_parts(inner):
         if part.geom_type not in ("LineString", "LinearRing") or part.length < tol:
@@ -185,12 +196,96 @@ def _steiner_cap(area_sum: float, n_input: int) -> int:
     return int(8 * area_sum + 50 * n_input + 20_000)
 
 
+def c_numbers():
+    """Put the C library's numbers back in the C locale before a Triangle call. Triangle
+    reads the numbers in its switches with strtod, which follows that locale: under a
+    decimal comma "a0.01" is a maximum area of 0, and it fails (#236)."""
+    if locale.setlocale(locale.LC_NUMERIC) != "C":
+        locale.setlocale(locale.LC_NUMERIC, "C")
+
+
 def _triangulate(data: dict, switches: str, cap: int) -> dict:
+    c_numbers()
     n_in = len(data["vertices"])
     out = triangle.triangulate(data, f"{switches}S{cap}")
     if len(out.get("vertices", ())) - n_in >= cap:
         raise MeshCapHit()
     return out
+
+
+def _place(poly: Polygon) -> str:
+    """Where a polygon is, for a warning."""
+    c = poly.centroid
+    return f"near ({c.x:.2f}, {c.y:.2f}) mm"
+
+
+def _degenerate(ring) -> bool:
+    """Whether an interior ring encloses no area, so it cannot seed a hole.
+
+    Zone fills leave rings of a few coordinates where a hole is collinear or pinched
+    out (#238); ``representative_point`` of such a ring lands on it rather than inside
+    it, and Triangle, told to cut a hole there, finds no region and returns no triangles
+    at all -- losing the whole polygon.
+    """
+    return len(ring.coords) < 4 or Polygon(ring).area <= 1e-9
+
+
+def _hole_seeds(poly: Polygon, warn=None) -> List[Point]:
+    """A seed point inside each interior ring worth cutting, skipping degenerate ones and
+    any that lands in the copper (a slit the fill or the simplification leaves puts its
+    representative point on its edge, and Triangle would remove the copper around it)."""
+    seeds = []
+    dropped = 0
+    for r in poly.interiors:
+        if _degenerate(r):
+            dropped += 1
+            continue
+        seeds.append(Polygon(r).representative_point())
+    if seeds:
+        shapely.prepare(poly)
+        in_copper = shapely.contains_xy(poly, [s.x for s in seeds], [s.y for s in seeds])
+        dropped += int(in_copper.sum())
+        seeds = [s for s, inside in zip(seeds, in_copper) if not inside]
+    if dropped and warn is not None:
+        warn(f"Copper {_place(poly)}: ignored {dropped} hole ring(s) in the fill that enclose no area")
+    return seeds
+
+
+def _carve_holes(out: dict, poly: Polygon) -> dict:
+    """``out``, meshed without hole seeds, less the triangles in ``poly``'s holes.
+
+    The hole rings are segments of the mesh, so every triangle lies wholly inside or
+    outside each hole and its centroid tells which: this carves what seeds would have.
+    """
+    pts = np.asarray(out["vertices"], dtype=float)
+    tris = np.asarray(out["triangles"], dtype=np.int64)
+    c = pts[tris].mean(axis=1)
+    tris = tris[shapely.contains_xy(poly, c[:, 0], c[:, 1])]
+    used = np.unique(tris)
+    index = np.full(len(pts), -1, dtype=np.int64)
+    index[used] = np.arange(len(used))
+    segs = index[np.asarray(out["segments"], dtype=np.int64)]
+    return {"vertices": pts[used], "triangles": index[tris],
+            "segments": segs[(segs >= 0).all(axis=1)]}
+
+
+def _pad_nodes(poly: Polygon, outlines: Sequence[BaseGeometry]) -> np.ndarray:
+    """One point inside the copper of each pad outline that lies on ``poly``, clear of
+    the copper's edges where the overlap allows: the nodes that find a pad by position
+    when the mesh is built without the pad outlines. (0, 2) when none lies on it."""
+    tol = CONSTRAINT_CLEARANCE_MM
+    out = []
+    for line in outlines:
+        area = shapely.build_area(line)
+        if area.is_empty:
+            continue
+        overlap = shapely.intersection(area, poly)
+        if overlap.is_empty or overlap.area <= 0:
+            continue
+        clear = overlap.buffer(-tol)
+        p = (clear if not clear.is_empty else overlap).representative_point()
+        out.append((p.x, p.y))
+    return np.array(out, dtype=float).reshape(-1, 2)
 
 
 def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: float,
@@ -204,9 +299,17 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
     to fall back.
     """
     warn = warn or (lambda _t: None)
-    clipped_constraints = [g for g in (_clip_constraint(c, poly) for c in constraints)
-                           if g is not None]
-    holes = [Polygon(r).representative_point() for r in poly.interiors if len(r.coords) >= 4]
+    # Only the pad outlines whose box meets the polygon's; its edge band built once.
+    x0, y0, x1, y1 = poly.bounds
+    near = [c for c in constraints
+            if not (c.bounds[0] > x1 or c.bounds[2] < x0 or c.bounds[1] > y1 or c.bounds[3] < y0)]
+    clipped_constraints = []
+    if near:
+        edge = poly.boundary
+        near_edge = edge.buffer(CONSTRAINT_CLEARANCE_MM, quad_segs=2)
+        clipped_constraints = [g for g in (_clip_constraint(c, poly, edge, near_edge)
+                                           for c in near) if g is not None]
+    holes = _hole_seeds(poly, warn)
 
     def first_pass(with_constraints: bool):
         lines: List[BaseGeometry] = [poly.exterior, *poly.interiors]
@@ -219,11 +322,28 @@ def mesh_polygon(poly: Polygon, constraints: Sequence[BaseGeometry], max_area: f
             raise MeshCapHit()      # treat malformed input like a non-converging mesh
         if points is not None and len(points):
             verts = np.vstack([verts, points])
+        if not with_constraints:
+            # Without the outlines a pad smaller than the mesh holds no node, and its
+            # terminal is then not found ("no meshed copper": a 10-layer board with
+            # the coarse mesh, 2026-11-03); one node inside each pad keeps it.
+            inside = _pad_nodes(poly, near)
+            if len(inside):
+                verts = np.vstack([verts, inside])
         data = {"vertices": verts, "segments": segs}
         if holes:
             data["holes"] = np.array([[h.x, h.y] for h in holes])
         cap = _steiner_cap(poly.area / max_area, len(verts))
-        return _triangulate(data, f"pq{min_angle:g}a{max_area:.6g}Q", cap)
+        out = _triangulate(data, f"pq{min_angle:g}a{max_area:.6g}Q", cap)
+        if holes and not len(out.get("triangles", ())):
+            # A seed found no region to remove and Triangle carved away the whole
+            # domain: mesh without seeds and remove the holes' triangles instead.
+            trial = {k: v for k, v in data.items() if k != "holes"}
+            out = _triangulate(trial, f"pq{min_angle:g}a{max_area:.6g}Q", cap)
+            if len(out.get("triangles", ())):
+                warn(f"Copper {_place(poly)}: a hole seed left Triangle with no "
+                     "domain; cut the holes out after meshing")
+                out = _carve_holes(out, poly)
+        return out
 
     where = f"near ({poly.centroid.x:.2f}, {poly.centroid.y:.2f}) mm"
     try:
@@ -732,6 +852,16 @@ def _join(snap: BoardSnapshot, net: str, terminal_pad_ids: Sequence[str],
                 nodes = ring(lid, g)
                 if len(nodes):
                     per_layer[lid] = nodes
+        if not per_layer:
+            # A pad smaller than the mesh's triangles (a 25 um exposed-pad anchor) holds
+            # no node: it takes the nearest node of its copper on each of its layers.
+            for lid in p.shapes:
+                if lid not in layer_ranges:
+                    continue
+                a, _ = layer_ranges[lid]
+                d, i = trees[lid].query(p.position)
+                if np.isfinite(d) and d <= opts.max_edge_mm:
+                    per_layer[lid] = np.array([a + int(i)], dtype=int)
         if not per_layer:
             raise MeshError(f"Pad {p.label} on net {net} has no meshed copper")
         n_large += large

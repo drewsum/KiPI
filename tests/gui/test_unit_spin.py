@@ -115,3 +115,17 @@ def test_decimal_comma_locale():
     s.lineEdit().setText("2.2u")            # a point still reads as a decimal point
     s.interpretText()
     assert s.value() == pytest.approx(2.2)
+
+
+def test_locale_minus_sign():
+    s = _spin(-1000, 1000, -1.5, 3, " V", 0.1)
+    s.setLocale(QLocale(QLocale.Swedish, QLocale.Sweden))
+    assert s.text() == "−1,500 V"
+    assert s.validate(s.text(), 0)[0] == QValidator.Acceptable
+    assert s.validate("−", 0)[0] == QValidator.Intermediate    # still typing
+    s.lineEdit().setText("−2,5")
+    s.interpretText()
+    assert s.value() == pytest.approx(-2.5)
+    s.lineEdit().setText("-3,5")            # a plain hyphen still reads as minus
+    s.interpretText()
+    assert s.value() == pytest.approx(-3.5)

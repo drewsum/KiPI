@@ -1,6 +1,8 @@
 # Portions Copyright (c) 2026 Tomachie LLC.
 """Shared test fixtures."""
 
+import os
+
 import pytest
 
 
@@ -30,6 +32,25 @@ def step_timings(monkeypatch, tmp_path_factory):
     history = eta.History(tmp_path_factory.getbasetemp() / f"timings-{uuid.uuid4().hex}.json")
     monkeypatch.setattr(eta, "HISTORY", history)
     return history
+
+
+@pytest.fixture
+def comma_locale():
+    """Run the test with the C library in a decimal comma locale, as Qt leaves it on Unix."""
+    import locale
+    before = locale.setlocale(locale.LC_NUMERIC)
+    for name in ("sv_SE.UTF-8", "de_DE.UTF-8", "Swedish_Sweden", "German_Germany"):
+        try:
+            locale.setlocale(locale.LC_NUMERIC, name)
+            break
+        except locale.Error:
+            pass
+    else:
+        if os.environ.get("KIPI_REQUIRE_COMMA_LOCALE"):     # CI's comma locale job (#236)
+            pytest.fail("no decimal comma locale on this machine")
+        pytest.skip("no decimal comma locale on this machine")
+    yield
+    locale.setlocale(locale.LC_NUMERIC, before)
 
 
 @pytest.fixture

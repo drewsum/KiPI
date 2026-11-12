@@ -963,13 +963,14 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
     tables.append("<h2 id='vrms'>VRMs</h2>")
     tables.append(_table(
         ["VRM", "Type", "Group", "V set", "Load line (mΩ)", "V target", _vhead("V out", pdf),
-         "V sense", "V gnd sense", "I out (A)",
+         "V sense", "V gnd sense", "V gnd", "I out (A)",
          "V in", "I in (A)", "P out (W)", "P in (W)", "Loss (W)", _vhead("Rail lowest", pdf),
          "I limit (A)", "Result"],
         [[_e(v.name), _e(v.kind), _e(v.group), _num(v.v_set, ".5g"),
           _num(v.load_line_mohm or None, "g"), _num(v.v_target, ".5f"),
           _vcell(v.v_out, ref, pdf),
-          _num(v.v_sense, ".5f"), _num(v.v_ground_sense, ".5f"), _num(v.i_out),
+          _num(v.v_sense, ".5f"), _num(v.v_ground_sense, ".5f"),
+          _num(v.v_ground, ".5f"), _num(v.i_out),
           _num(v.v_in, ".5f"), _num(v.i_in), _num(v.p_out), _num(v.p_in), _num(v.p_loss),
           _vcell(None if d is None else ref - d, ref, pdf),
           _num(v.current_limit_a, "g"), _verdict(v.passed)]
@@ -977,7 +978,10 @@ def write_report(path, tree, scenes: Dict[str, object], snap: BoardSnapshot, set
          for ref in [v.v_set if tree.rail_target(v) is None else tree.rail_target(v)]]))
     tables.append("<p class='note'>Rail lowest: the lowest voltage anywhere on the copper of "
                  "the rail the VRM drives. V out and it are from the rail's target voltage, "
-                 "the target V set less the load line's droop.</p>")
+                 "the target V set less the load line's droop, above the ground the VRM "
+                 "regulates against: its ground sense pins (V gnd sense), else its own "
+                 "ground pins (V gnd). P out and P in are across the VRM, from its ground "
+                 "pins.</p>")
     phases = [[_e(v.name), str(p.index), _num(p.v_out, ".5f"), _num(p.i_out), _num(p.v_in, ".5f"),
                _num(p.i_in), _num(p.p_loss)] for v in tree.vrms for p in v.phases]
     if phases:

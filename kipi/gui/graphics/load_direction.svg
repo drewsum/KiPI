@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160" viewBox="0 0 300 160">
+  <rect x="0" y="0" width="300" height="160" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <!-- the rail and ground under both loads -->
+    <g stroke="{muted}" stroke-width="1.6">
+      <path d="M20,26 H280 M20,122 H280"/>
+    </g>
+    <text x="150" y="18" fill="{muted}">rail</text>
+    <text x="150" y="138" fill="{muted}">ground</text>
+    <!-- sinks (default): current from the rail into the load, out to ground -->
+    <g stroke="{sinks}" stroke-width="1.8" fill="none">
+      <path d="M78,28 V56 M74,50 l4,6 l4,-6"/>
+      <path d="M78,96 V120 M74,114 l4,6 l4,-6"/>
+    </g>
+    <rect x="38" y="58" width="80" height="36" rx="4" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="78" y="80" fill="{fg}">load</text>
+    <text x="78" y="154" fill="{sinks}">Draws (default)</text>
+    <!-- sources: current from ground through the load onto the rail -->
+    <g stroke="{sources}" stroke-width="1.8" fill="none">
+      <path d="M222,56 V28 M218,34 l4,-6 l4,6"/>
+      <path d="M222,120 V96 M218,102 l4,-6 l4,6"/>
+    </g>
+    <rect x="182" y="58" width="80" height="36" rx="4" stroke="{fg}" stroke-width="1.6" fill="none"/>
+    <text x="222" y="80" fill="{fg}">load</text>
+    <text x="222" y="154" fill="{sources}">Sources onto the rail</text>
+  </g>
+</svg>

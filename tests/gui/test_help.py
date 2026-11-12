@@ -149,3 +149,30 @@ def test_solver_guide_opens_the_installed_copy_or_else_online(monkeypatch):
     assert kipi_help.solver_guide_url().endswith("solver-guide.html")
     monkeypatch.setattr(kipi_help, "_DOCS", Path("no/such/folder"))
     assert kipi_help.solver_guide_url() == kipi_help.SOLVER_GUIDE_ONLINE
+
+
+def test_tutorial_ships_with_its_images_and_its_links_resolve():
+    """#242: one board set up and solved in every mode, linked from the guide."""
+    import re
+    docs = kipi_help.help_path().parent
+    text = (docs / "tutorial.html").read_text(encoding="utf-8")
+    ids = set(re.findall(r'\sid="([^"]+)"', text))
+    targets = set(re.findall(r'href="#([^"]+)"', text))
+    assert targets and targets <= ids, sorted(targets - ids)
+    images = re.findall(r'<img[^>]+src="([^"]+)"', text)
+    assert len(images) > 40
+    for src in images + re.findall(r'<a href="(images/[^"]+)"', text):
+        assert (docs / src).is_file(), src
+    # Every part of the tutorial, and its pages linked both ways.
+    for topic in ("VRM", "Series links", "Loads", "Capacitors", "Probes", "Aggressor",
+                  "Victim", "datasheet"):
+        assert topic in text, topic
+    assert 'href="help.html"' in text and 'href="solver-guide.html"' in text
+    assert 'href="tutorial.html"' in kipi_help.help_path().read_text(encoding="utf-8")
+
+
+def test_tutorial_opens_the_installed_copy_or_else_online(monkeypatch):
+    assert kipi_help.tutorial_url().startswith("file:")
+    assert kipi_help.tutorial_url().endswith("tutorial.html")
+    monkeypatch.setattr(kipi_help, "_DOCS", Path("no/such/folder"))
+    assert kipi_help.tutorial_url() == kipi_help.TUTORIAL_ONLINE

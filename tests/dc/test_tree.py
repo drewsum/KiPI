@@ -84,6 +84,47 @@ def test_ground_sense_with_switcher_converges():
     assert by_name(res.loads, "U2").v_effective == pytest.approx(3.3, abs=1e-8)
 
 
+def test_vrm_without_ground_sense_regulates_above_its_own_ground():
+    # U1's ground pin sits 1.01 A x R(9) above J1's 0 V; its output is 3.3 V above that,
+    # and the rail's drop is measured from there.
+    res = solve_tree(board(), setup("ldo", iq=0.01, ground=True))
+    u1, ld = by_name(res.vrms, "U1"), by_name(res.loads, "U2")
+    v_gnd = 1.01 * R(9)
+    assert u1.v_ground == pytest.approx(v_gnd, rel=1e-9)
+    assert u1.v_ground_sense is None
+    assert u1.v_out == pytest.approx(3.3 + v_gnd, rel=1e-9)
+    assert ld.v_effective == pytest.approx(3.3 - 1.0 * R(8) - 1.0 * R(10), rel=1e-9)
+    assert res.rail_target(u1) == pytest.approx(3.3 + v_gnd, rel=1e-9)
+    assert res.rail_drop(u1)[0] == pytest.approx(1.0 * R(8), rel=1e-6)
+    # J1's ground pin is the 0 V reference: it is not moved.
+    assert by_name(res.vrms, "J1").v_out == pytest.approx(12.0, abs=1e-12)
+
+
+def test_switcher_power_and_input_range_are_across_it():
+    s = setup("smps", eff=0.9, ground=True)
+    u1 = by_name(solve_tree(board(), s).vrms, "U1")
+    across = u1.v_in - u1.v_ground
+    assert u1.v_ground > 0
+    assert u1.p_out == pytest.approx(3.3 * 1.0, rel=1e-9)
+    assert u1.p_in == pytest.approx(across * u1.i_in, rel=1e-9)
+    assert u1.p_in == pytest.approx(u1.p_out / 0.9, rel=1e-9)
+    # A minimum between the voltage across its input and its input pins' voltage from
+    # 0 V: across it, the input is too low.
+    s.vrms[1].vin_min = (u1.v_in + across) / 2
+    u1 = by_name(solve_tree(board(), s).vrms, "U1")
+    assert f"input {u1.v_in - u1.v_ground:.4f} V is below" in u1.regulation
+
+
+def test_sources_sharing_a_ground_are_noted():
+    s = setup("ldo", ground=True)
+    u1 = s.vrms[1]
+    u1.kind, u1.input = "source", None          # a second off-board supply, on GND too
+    res = solve_tree(board(), s)
+    assert any("J1, U1 all hold their ground pins at 0 V" in w for w in res.warnings)
+    assert not any("all hold their ground pins" in w
+                   for w in solve_tree(board(), setup("ldo", ground=True)).warnings)
+
+
 def test_validation_rules():
     s = setup()
     assert validate(s) == []

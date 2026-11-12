@@ -166,9 +166,13 @@ def build_diagram(setup: PISetup, snapshot=None) -> Diagram:
             lines.append(l.tolerance_label())
         if l.groups:
             lines.append(f"{len(l.groups)} pin groups")
+        if l.sources:
+            lines.append("sources current")
         d.blocks[bid] = Block(bid, "load", l.name, lines, amps=l.current,
                               tip=f"Load {l.name} on {l.supply.ref} ({l.supply.net})")
-        d.arrows.append(Arrow(rail(l.supply.net), bid))
+        # A load that sources current (#241) feeds its rail.
+        d.arrows.append(Arrow(bid, rail(l.supply.net)) if l.sources
+                        else Arrow(rail(l.supply.net), bid))
 
     _add_caps(d, setup, snapshot, grounds, rail)
     for bid, a, b in _orient_links(d, links):

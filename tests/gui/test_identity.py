@@ -1,5 +1,6 @@
 """KiPI names itself and uses its own icon in the taskbar, Dock or panel."""
 
+import locale
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,11 @@ def test_app_is_named_kipi_with_its_icon():
     app = identity.make_app([])
     assert app.applicationName() == "KiPI" and app.desktopFileName() == "kipi"
     assert 256 in [s.width() for s in app.windowIcon().availableSizes()]
+
+
+def test_app_keeps_c_library_numbers_in_the_c_locale(comma_locale):
+    identity.make_app([])
+    assert locale.localeconv()["decimal_point"] == "."
 
 
 def test_icon_files_ship_with_the_plugin():

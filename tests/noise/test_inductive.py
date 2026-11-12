@@ -18,7 +18,8 @@ from kipi.noise.network import Termination, VictimNetwork
 from kipi.noise.parasitics import phase_layout
 from kipi.noise.solver import solve_noise
 from noise_boards import buck_board, buck_setup
-from synthetic import F, IN1, IN2
+from kipi.core.model.board import Poly
+from synthetic import F, IN1, IN2, rect, square
 
 MU0 = 4e-7 * math.pi
 
@@ -114,6 +115,39 @@ def test_ground_returns_without_copper_go_through_the_plane():
     assert not any("(plane)" in x for x in (s.label for s in lay.loops["C1"].elements))
     assert lay.image_z == pytest.approx(snap.stackup.layer(4).z_top_mm)
     assert not lay.loops["C1"].traced and not lay.report.traced
+
+
+def _hot_loop(snap):
+    setup = _setup(snap, [])
+    return phase_layout(snap, setup, setup.aggressors[0].phases[0], 1, "buck", 12.0, 1.8,
+                        "VIN", "VOUT", "GND")
+
+
+def test_an_antipad_under_the_device_keeps_the_plane():
+    """#247: a via between the high-side and low-side pins, where the switch node often
+    escapes, leaves a hole in the plane right under the device; the plane round it still
+    takes the loop's image currents."""
+    whole = _hot_loop(buck_board())
+    snap = buck_board()
+    zone = snap.zones[0]
+    zone.filled[IN1] = [Poly(rect(0, 0, 32, 20), [square(10.0, 12.0, 0.8)])]
+    snap.invalidate_index()
+    holed = _hot_loop(snap)
+    assert holed.image_layer == whole.image_layer == IN1
+    assert holed.report.image_plane == whole.report.image_plane
+    assert holed.report.loop_l_h == pytest.approx(whole.report.loop_l_h, rel=1e-6)
+    assert not any("No solid plane" in n for n in holed.report.notes)
+
+
+def test_a_hot_loop_with_no_plane_says_so():
+    whole = _hot_loop(buck_board())
+    snap = buck_board()
+    snap.zones = [z for z in snap.zones if z.net != "GND"]
+    snap.invalidate_index()
+    bare = _hot_loop(snap)
+    assert bare.image_layer is None and bare.report.image_plane == ""
+    assert any("No solid plane under the hot loop" in n for n in bare.report.notes)
+    assert bare.report.loop_l_h > whole.report.loop_l_h
 
 
 def test_a_victim_beside_the_hot_loop_is_coupled_inductively():

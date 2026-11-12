@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Solve a whole power tree defined in a :class:`~kipi.dc.pi.model.PISetup`.
 
 Each net group (nets joined by DC connections) is one FEM problem driven by its single
@@ -5,17 +6,24 @@ VRM. Groups are solved downstream first: a VRM's input current depends on what i
 output delivers, and its input pins are a load on the group feeding it.
 
 * LDO:       I_in = I_out + I_q
-* Switcher:  I_in = V_out * I_out / (efficiency * V_in) + I_q, where V_in is the voltage
-             at the VRM's input pins, which depends on I_in, so the feeding group is
-             iterated to a fixed point (the factorized system is reused).
+* Switcher:  I_in = V_out * I_out / (efficiency * V_in) + I_q, where V_out and V_in are
+             the voltages across its output and input, from its own ground pins (an
+             isolated converter's input: from its input ground pins). V_in depends on
+             I_in, so the feeding group is iterated to a fixed point (the factorized
+             system is reused).
 * Isolated:  as a switcher, but its output side has its own ground (#170).
+* Regulation reference: a VRM holds its target voltage above its ground sense pins, or
+  without them above its own ground pins, as a converter does. Their voltage comes from
+  the ground solve, so rails and grounds are iterated together. A source's or isolated
+  converter's ground pins are its ground's 0 V; a VRM with no ground pins (or whose
+  ground is not solved) is held above 0 V.
 * Remote sense: the VRM's output is corrected until the sense pins sit at the target voltage.
-  With ground sense, the target voltage is held above the ground sense pins instead of 0 V;
-  their voltage comes from the ground solve, so rails and grounds are iterated together.
 * Mesh remote sense (#93): every sense point's pins are a voltage boundary at the target
   voltage (less the load line, above that point's ground sense pins); the VRM's current
   enters there, split evenly over its phases, and its output pins only measure.
 * Ground: groups used as ground are referenced to 0 V at the source VRM's ground pins.
+  Several sources on one ground all hold their ground pins at that 0 V, as if their
+  grounds were tied off the board; the copper sets how the return splits between them.
   Loads return their current at their ground pins; every other VRM returns
   I_in - I_out at its ground pins. An isolated converter's output ground pins are the
   0 V reference of the ground on its output side, and its input current returns at its
@@ -229,6 +237,13 @@ class _TreeSolver:
             self.pad_count[p.net] = self.pad_count.get(p.net, 0) + 1
         self.order = self._downstream_first()
         self.ground_groups = self._ground_groups()
+        for g in self.ground_groups:              # several 0 V references on one ground
+            refs = [v.name for v in setup.vrms
+                    if v.kind in GROUND_REF_KINDS and v.ground and v.ground.net in g]
+            if len(refs) > 1:
+                self.notes.append(f"{self.label_of(g)}: {', '.join(refs)} all hold their "
+                                  "ground pins at 0 V, as if their grounds were tied off "
+                                  "the board")
         self.built: Dict[Group, Tuple[object, LinearSystem]] = {}
         self.rail_terms: Dict[Group, Tuple[_Rail, List[CurrentLoad]]] = {}
         self.pad_number = {p.id: p.number for p in snap.pads}
@@ -245,11 +260,19 @@ class _TreeSolver:
         self.i_in: Dict[str, List[float]] = {}
         self.v_sense: Dict[str, float] = {}
         self.droop: Dict[str, float] = {}           # load line x output current (#94)
-        # Ground-sensing VRMs regulate against their ground sense pins, whose voltage comes
-        # from the ground solve, which depends on the rails' currents: iterate both to a
-        # fixed point (passes after the first only re-solve the factorized systems).
-        self.v_gsense: Dict[str, float] = {v.name: 0.0 for v in setup.vrms if v.ground_sense}
-        # Mesh sense: each point's ground sense voltage (0 V where it has none).
+        # Every VRM regulates above its ground sense pins, or its own ground pins, whose
+        # voltage comes from the ground solve, which depends on the rails' currents:
+        # iterate both to a fixed point (passes after the first only re-solve the
+        # factorized systems). 0 V until the grounds are solved.
+        self.v_gref: Dict[str, float] = {v.name: 0.0 for v in setup.vrms}
+        # Each phase's own ground pins and the pins its input returns through: its power
+        # out and in are measured across them.
+        self.v_gnd: Dict[str, List[float]] = {v.name: [0.0] * (len(v.phases) + 1)
+                                              for v in setup.vrms}
+        self.v_in_gnd: Dict[str, List[float]] = {v.name: [0.0] * (len(v.phases) + 1)
+                                                 for v in setup.vrms}
+        # Mesh sense: each point's reference (its ground sense pins, else the VRM's own
+        # ground pins).
         self.v_gpoints: Dict[str, List[float]] = {
             v.name: [0.0] * len(v.all_sense_points()) for v in setup.vrms if v.mesh_sense}
         self.rail_solutions: Dict[Group, object] = {}
@@ -264,8 +287,9 @@ class _TreeSolver:
         return -1.0 if self.driver[g].voltage < 0 else 1.0
 
     def drawn(self, l: Load, amps: float) -> float:
-        """``amps`` of load ``l`` as the current its supply pins take from the copper."""
-        return self.sign(self.groups[l.supply.net]) * amps
+        """``amps`` of load ``l`` as the current its supply pins take from the copper; a
+        load that sources current (#241) puts it in."""
+        return self.sign(self.groups[l.supply.net]) * (-amps if l.sources else amps)
 
     def label_of(self, g: Group) -> str:
         """Short display name: the group's busiest net, plus how many nets it joins."""
@@ -461,9 +485,12 @@ class _TreeSolver:
         currents, sign = {}, self.sign(self.groups[rail.vrm.output.net])
         for c in rail.children:
             share = sum(self.i_out[c.name]) / (len(c.phases) + 1)
+            # Its power out and in are across it: (V_out - V_gnd) x I_out out and
+            # (V_in - V_in,gnd) x I_in in.
             for k, name in enumerate(rail.child_load[c.name]):
-                currents[name] = _input_current(c, self.v_out[c.name][k], share,
-                                                vin_est[c.name][k], sign)
+                currents[name] = _input_current(
+                    c, self.v_out[c.name][k] - self.v_gnd[c.name][k], share,
+                    vin_est[c.name][k] - self.v_in_gnd[c.name][k], sign)
         return currents
 
     def _iterate_rail(self, rail: _Rail, system, demand: float, label: str,
@@ -474,7 +501,7 @@ class _TreeSolver:
         voltage, input voltages, currents, iterations). A load line moves the target voltage
         down by R_LL times the output current."""
         vrm = rail.vrm
-        set_point = vrm.voltage + self.v_gsense.get(vrm.name, 0.0)
+        set_point = vrm.voltage + self.v_gref[vrm.name]
         r_ll = vrm.load_line_mohm * 1e-3
         v_src = set_point
         vin_est = {c.name: list(self.v_in.get(c.name, [vrm.voltage] * (len(c.phases) + 1)))
@@ -626,25 +653,41 @@ class _TreeSolver:
         self.ground_solutions[g] = sol
         return (label, sorted(g), "ground", ", ".join(v.name for v in refs), mesh, sol, 1)
 
+    def _ground_v(self, ref: Optional[PinRef], old: float) -> float:
+        """The mean solved voltage of ``ref``'s connected pads; ``old`` without one."""
+        if ref is None:
+            return old
+        sol = self.ground_solutions.get(self.groups.get(ref.net))
+        v = _connected(_pad_voltages(sol, self.pads(ref))) if sol is not None else []
+        return float(v.mean()) if len(v) else old
+
     def _ground_sense_change(self) -> float:
-        """Move each ground-sensing VRM's reference to its ground sense pins' new voltage."""
+        """Move each VRM's ground voltages to the ground solve's: its phases' own ground
+        pins, the pins its input returns through, and the reference it regulates above
+        (its ground sense pins, else its own ground pins; a source's or an isolated
+        converter's are 0 V, its ground's reference)."""
         change = 0.0
         for v in self.setup.vrms:
-            if v.ground_sense:
-                gsol = self.ground_solutions[self.groups[v.ground.net]]
-                new = _mean_v(gsol, self.pads(v.ground_sense))
-                change = max(change, abs(new - self.v_gsense[v.name]))
-                self.v_gsense[v.name] = new
-            if v.mesh_sense and v.ground:
-                gsol = self.ground_solutions[self.groups[v.ground.net]]
+            phases = v.all_phases()
+            gnd = [self._ground_v(ph.ground, old) for ph, old in zip(phases, self.v_gnd[v.name])]
+            vin_gnd = [self._ground_v(v.input_return(ph), old)
+                       for ph, old in zip(phases, self.v_in_gnd[v.name])]
+            own = 0.0 if v.kind in GROUND_REF_KINDS else float(np.mean(gnd))
+            if v.mesh_sense:
                 pts = self.v_gpoints[v.name]
-                for k, sp in enumerate(v.all_sense_points()):
-                    if sp.ground_sense:
-                        new = _mean_v(gsol, self.pads(sp.ground_sense))
-                        change = max(change, abs(new - pts[k]))
-                        pts[k] = new
-                if any(sp.ground_sense for sp in v.all_sense_points()):
-                    self.v_gsense[v.name] = float(np.mean(pts))
+                new_pts = [self._ground_v(sp.ground_sense, old) if sp.ground_sense else own
+                           for sp, old in zip(v.all_sense_points(), pts)]
+                change = max([change, *(abs(a - b) for a, b in zip(new_pts, pts))])
+                pts[:] = new_pts
+                ref = float(np.mean(new_pts))
+            else:
+                ref = (self._ground_v(v.ground_sense, self.v_gref[v.name])
+                       if v.ground_sense else own)
+            change = max([change, abs(ref - self.v_gref[v.name]),
+                          *(abs(a - b) for a, b in zip(gnd, self.v_gnd[v.name])),
+                          *(abs(a - b) for a, b in zip(vin_gnd, self.v_in_gnd[v.name]))])
+            self.v_gref[v.name] = ref
+            self.v_gnd[v.name], self.v_in_gnd[v.name] = gnd, vin_gnd
         return change
 
     # ------------------------------------------------------------ run
@@ -670,10 +713,11 @@ class _TreeSolver:
             self.progress.info(f"Ground sense: converged in {tree_pass} power-tree passes")
 
         not_converged_labels = {self.label_of(g) for g in self.not_converged}
-        set_point = {v.name: v.voltage for v in self.setup.vrms}
+        set_point = {v.name: v.voltage + self.v_gref[v.name] for v in self.setup.vrms}
         for label, nets, kind, drv, mesh, sol, it in solved:
-            # Drop and boost on a rail are measured from its VRM's target voltage, not the
-            # output pins (which remote sense moves); grounds from their 0 V reference.
+            # Drop and boost on a rail are measured from its VRM's target voltage above the
+            # ground it regulates against, not the output pins (which remote sense moves);
+            # grounds from their 0 V reference.
             ref = set_point[drv] if kind == "rail" else 0.0
             out.groups[label] = GroupResult(label, nets, kind, drv,
                                             NetResult(mesh, sol, compute_fields(sol, ref)), it,
@@ -695,7 +739,9 @@ class _TreeSolver:
         if not v.input:
             return ""
         vis = self.v_in[v.name]
-        lo, hi = min(vis), max(vis)
+        # Its input range is across it: from the pins its input returns through.
+        across = [vi - vg for vi, vg in zip(vis, self.v_in_gnd[v.name])]
+        lo, hi = min(across), max(across)
         vin_min, vin_max = vin_range(self.setup, v)
         if vin_min is not None and lo < vin_min:
             return f"input {lo:.4f} V is below its {vin_min:.4g} V minimum"
@@ -746,7 +792,8 @@ class _TreeSolver:
         # The worst pin is the one furthest from nominal, below (drop) or above (boost).
         worst = low if nominal - low >= high - nominal else high
         eff = float(sv.mean()) - g_mean
-        rep = LoadReport(l.name, self.label_of(g), self.load_amps[l.name], nominal,
+        amps = self.load_amps[l.name]
+        rep = LoadReport(l.name, self.label_of(g), -amps if l.sources else amps, nominal,
                          float(sv.mean()), float(sv.min()),
                          None if gv is None else g_mean, eff, nominal - eff,
                          l.tolerance_label(), None, worst, self._pin_group_rows(l, sol), low,
@@ -771,7 +818,8 @@ class _TreeSolver:
             if not len(v):                 # no pin of the group connected (#88)
                 rows.append((name, 0.0, math.nan, math.nan, math.nan))
                 continue
-            rows.append((name, grp.current, float(v.mean()), float(v.min()), float(v.max())))
+            rows.append((name, -grp.current if l.sources else grp.current, float(v.mean()),
+                         float(v.min()), float(v.max())))
         return rows
 
     def _vrm_report(self, v: Vrm, regulation: str) -> VrmReport:
@@ -779,8 +827,11 @@ class _TreeSolver:
         has_in = v.name in self.v_in
         vis, iis = ((self.v_in[v.name], self.i_in[v.name]) if has_in
                     else ([None] * n, [None] * n))
+        gnd, vin_gnd = self.v_gnd[v.name], self.v_in_gnd[v.name]
         phases = [PhaseReport(k + 1, self.v_out[v.name][k], self.i_out[v.name][k], vis[k],
-                              iis[k]) for k in range(n)]
+                              iis[k], gnd[k], vin_gnd[k]) for k in range(n)]
+        sensed = v.ground_sense or (v.mesh_sense and
+                                    any(sp.ground_sense for sp in v.all_sense_points()))
         i_total = sum(self.i_out[v.name])
         limit = v.current_limit_a
         return VrmReport(
@@ -789,9 +840,10 @@ class _TreeSolver:
             float(np.mean(vis)) if has_in else None, sum(iis) if has_in else None,
             sum(ph.p_out for ph in phases),
             sum(ph.p_in for ph in phases) if has_in else None,
-            self.v_gsense.get(v.name), phases if n > 1 else [], limit,
+            self.v_gref[v.name] if sensed else None, phases if n > 1 else [], limit,
             None if limit is None else abs(i_total) <= limit, regulation,
-            v.load_line_mohm, self.droop.get(v.name, 0.0))
+            v.load_line_mohm, self.droop.get(v.name, 0.0),
+            float(np.mean(gnd)) if v.ground else None)
 
 
 def solve_tree(snap: BoardSnapshot, setup: PISetup,

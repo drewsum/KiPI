@@ -1,0 +1,1308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KiPI Tutorial</title>
+<style>
+:root {
+  --bg: #fbfbfa; --panel: #ffffff; --text: #1f2328; --muted: #5d646d; --border: #d9dce0;
+  --accent: #2f6fd0; --accent-soft: #e7effb; --code: #f1f2f4; --pass: #1f8a3b; --fail: #c62f2f;
+  --warn: #a86400; --note-bg: #f3f6fb; --tip-bg: #f1f8f2; --warn-bg: #fdf6ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17191c; --panel: #1f2226; --text: #e4e6e9; --muted: #9aa1aa; --border: #33373d;
+    --accent: #6ea8ff; --accent-soft: #233149; --code: #2a2e33; --pass: #5fd07a; --fail: #ff7070;
+    --warn: #f0b350; --note-bg: #1f2633; --tip-bg: #1c2a21; --warn-bg: #2d2619;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17191c; --panel: #1f2226; --text: #e4e6e9; --muted: #9aa1aa; --border: #33373d;
+  --accent: #6ea8ff; --accent-soft: #233149; --code: #2a2e33; --pass: #5fd07a; --fail: #ff7070;
+  --warn: #f0b350; --note-bg: #1f2633; --tip-bg: #1c2a21; --warn-bg: #2d2619;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 -apple-system, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, kbd {
+  font-family: Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", monospace; font-size: 0.9em;
+  background: var(--code); border-radius: 4px; padding: 1px 5px;
+}
+kbd { border: 1px solid var(--border); border-bottom-width: 2px; }
+.layout { display: flex; max-width: 1280px; margin: 0 auto; }
+nav#toc {
+  position: sticky; top: 0; align-self: flex-start; width: 270px; flex: none;
+  height: 100vh; overflow-y: auto; padding: 20px 16px 40px; border-right: 1px solid var(--border);
+}
+nav#toc .brand { font-weight: 700; font-size: 1.15em; margin-bottom: 2px; }
+nav#toc .sub { color: var(--muted); font-size: 0.85em; margin-bottom: 14px; }
+nav#toc ol { list-style: none; margin: 0; padding: 0; }
+nav#toc li { margin: 1px 0; }
+nav#toc ol ol { padding-left: 14px; font-size: 0.92em; }
+nav#toc a { display: block; padding: 2px 8px; border-radius: 5px; color: var(--text); }
+nav#toc a:hover { background: var(--accent-soft); text-decoration: none; }
+nav#toc .group { margin-top: 12px; color: var(--muted); font-size: 0.78em; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; padding-left: 8px; }
+main { flex: 1; min-width: 0; padding: 24px 40px 80px; }
+h1 { font-size: 2em; margin: 0 0 4px; line-height: 1.2; }
+h2 { font-size: 1.45em; margin: 40px 0 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+h3 { font-size: 1.12em; margin: 22px 0 6px; }
+h4 { font-size: 1em; margin: 16px 0 4px; }
+.lead { color: var(--muted); font-size: 1.05em; margin-top: 0; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 8px; }
+.toolbar button {
+  font: inherit; font-size: 0.9em; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+}
+.toolbar button:hover { border-color: var(--accent); }
+details {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  margin: 10px 0; padding: 0 16px;
+}
+details > summary {
+  cursor: pointer; padding: 10px 0; font-weight: 600; list-style: none; position: relative;
+  padding-left: 20px;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: "▸"; position: absolute; left: 0; color: var(--muted); transition: transform 0.15s;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+details[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+details > .body { padding-bottom: 12px; }
+details details { background: transparent; }
+summary .hint { font-weight: 400; color: var(--muted); font-size: 0.9em; margin-left: 6px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 0.94em; }
+th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--code); font-weight: 600; }
+td:first-child { white-space: nowrap; }
+td.wrap { white-space: normal; }
+.callout { border-left: 4px solid var(--accent); background: var(--note-bg); padding: 8px 14px;
+  border-radius: 0 6px 6px 0; margin: 12px 0; }
+.callout.tip { border-color: var(--pass); background: var(--tip-bg); }
+.callout.warn { border-color: var(--warn); background: var(--warn-bg); }
+.callout b:first-child { margin-right: 4px; }
+.pass { color: var(--pass); font-weight: 600; }
+.fail { color: var(--fail); font-weight: 600; }
+.warnc { color: var(--warn); font-weight: 600; }
+figure { margin: 12px 0 18px; }
+figure img { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; display: block; }
+figcaption { color: var(--muted); font-size: 0.88em; margin-top: 4px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+ol.steps > li { margin-bottom: 6px; }
+.diagram { font-family: Consolas, Menlo, monospace; font-size: 0.85em; line-height: 1.35;
+  background: var(--code); border-radius: 6px; padding: 12px; overflow-x: auto; white-space: pre; }
+.back { font-size: 0.85em; float: right; font-weight: 400; }
+@media (max-width: 900px) {
+  .layout { display: block; }
+  nav#toc { position: static; width: auto; height: auto; border-right: none;
+    border-bottom: 1px solid var(--border); padding: 16px; }
+  main { padding: 16px; }
+  .pair { grid-template-columns: 1fr; }
+  td:first-child { white-space: normal; }
+}
+@media print {
+  nav#toc, .toolbar { display: none; }
+  details { border: none; padding: 0; }
+}
+/* The tutorial's own: numbered steps with their figures, read top to bottom. */
+.step { counter-increment: step; margin: 26px 0 10px; }
+.step::before { content: "Step " counter(step) ". "; color: var(--accent); }
+section.part { counter-reset: step; }
+figure a { display: block; }
+figure img { cursor: zoom-in; }
+figure.narrow img { max-width: 620px; }
+figure.tiny img { max-width: 420px; }
+.pair figure { margin: 0; }
+.vals td:first-child { white-space: nowrap; }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.board > div { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 12px; }
+.board b { display: block; }
+.ds { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 16px 10px; margin: 12px 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="toc" aria-label="Contents">
+  <div class="brand">KiPI Tutorial</div>
+  <div class="sub">One board, set up and solved three ways</div>
+  <ol>
+    <li class="group">Start here</li>
+    <li><a href="#intro">About this tutorial</a></li>
+    <li><a href="#board">The example board</a></li>
+    <li><a href="#open">Opening the board</a></li>
+    <li class="group">Part 1: DC</li>
+    <li><a href="#dc">DC voltage drop and heating</a>
+      <ol>
+        <li><a href="#dc-nets">Tick the nets</a></li>
+        <li><a href="#dc-vrms">VRMs</a></li>
+        <li><a href="#dc-links">Series links</a></li>
+        <li><a href="#dc-loads">Loads</a></li>
+        <li><a href="#dc-tree">Check the power tree</a></li>
+        <li><a href="#dc-settings">Solve, Mesh and Thermal tabs</a></li>
+        <li><a href="#dc-solve">Solve</a></li>
+        <li><a href="#dc-tables">Read the tables</a></li>
+        <li><a href="#dc-3d">Read the 3D view</a></li>
+        <li><a href="#dc-next">Report and save</a></li>
+      </ol></li>
+    <li class="group">Part 2: AC</li>
+    <li><a href="#ac">PDN impedance</a>
+      <ol>
+        <li><a href="#ac-start">Switch to AC</a></li>
+        <li><a href="#ac-vrms">VRMs and bandwidth</a></li>
+        <li><a href="#ac-links">Series links and ESL</a></li>
+        <li><a href="#ac-caps">Capacitor models</a></li>
+        <li><a href="#ac-datasheet">Reading a capacitor datasheet</a></li>
+        <li><a href="#ac-probes">Probes and targets</a></li>
+        <li><a href="#ac-sweep">Sweep and mesh</a></li>
+        <li><a href="#ac-solve">Solve a rail</a></li>
+        <li><a href="#ac-read">Read the impedance</a></li>
+        <li><a href="#ac-12v">The 12 V rail and its transient</a></li>
+      </ol></li>
+    <li class="group">Part 3: Coupled Noise</li>
+    <li><a href="#noise">Switcher noise on signals</a>
+      <ol>
+        <li><a href="#noise-start">What it needs</a></li>
+        <li><a href="#noise-agg">The aggressor</a></li>
+        <li><a href="#noise-victim">The victim</a></li>
+        <li><a href="#noise-settings">Capacitors and settings</a></li>
+        <li><a href="#noise-solve">Solve</a></li>
+        <li><a href="#noise-waves">Read the waveforms</a></li>
+        <li><a href="#noise-3d">Where the noise comes from</a></li>
+        <li><a href="#noise-scan">Scan nearby nets</a></li>
+      </ol></li>
+    <li class="group">After the tutorial</li>
+    <li><a href="#tolerance">Putting it together</a></li>
+    <li><a href="#more">Where to go next</a></li>
+  </ol>
+</nav>
+
+<main>
+<h1>KiPI Tutorial</h1>
+<p class="lead">One real board taken through all three of KiPI's analyses, every click shown:
+a DC voltage drop and heating solve, an AC impedance solve, and a Coupled Noise solve. Each
+part starts from a new, empty setup.</p>
+<div class="toolbar">
+  <button type="button" id="theme">Toggle light/dark</button>
+</div>
+
+<!-- ================================================================== INTRO -->
+<h2 id="intro">About this tutorial</h2>
+<p>The <a href="help.html">User Guide</a> describes every control in KiPI. This tutorial
+uses them in order on one board, the way you would on your own: what to enter, where the
+numbers come from (the schematic, a datasheet, a quick sum) and how to read what comes back.
+The <a href="solver-guide.html">Solver Guide</a> explains what each solver does underneath.</p>
+<p>The three parts stand alone, so you can go straight to the one you need:</p>
+<table>
+  <tr><th>Part</th><th>Question</th><th>You enter</th></tr>
+  <tr><td><a href="#dc">1. DC</a></td><td class="wrap">Does every part get the voltage
+    it needs with all the loads drawing current, and how hot does the copper get?</td>
+    <td class="wrap">VRMs, series links, loads, thermal limits</td></tr>
+  <tr><td><a href="#ac">2. AC</a></td><td class="wrap">How low is the supply's impedance
+    seen from a chip's power pins, from kHz to hundreds of MHz, and is it below the chip's
+    target?</td><td class="wrap">VRMs with their loop bandwidth, series links with ESL,
+    capacitor models, probes and targets</td></tr>
+  <tr><td><a href="#noise">3. Coupled Noise</a></td><td class="wrap">How much of a buck
+    converter's switching noise reaches a nearby signal, and does it stay inside the
+    receiver's noise margin?</td><td class="wrap">The switcher (aggressor), the signal
+    (victim), capacitor models</td></tr>
+</table>
+<p>Each part starts from a board with no setup, so each one lists everything that part
+needs, even where another part has entered it already. On your own board the three share
+one setup file: VRMs, series links and capacitor models entered once serve every mode.</p>
+<div class="callout tip"><b>Tip:</b> click any screenshot to see it full size. Hover any
+field in KiPI for its tooltip; many show a small drawing of what the field means.</div>
+
+<!-- ================================================================== BOARD -->
+<h2 id="board">The example board</h2>
+<p>The board is rev A of the <b>Audio Visualiser DSP board</b>: a dsPIC33AK digital signal
+processor that samples audio and drives two LED panels. It is an 8-layer, 1.574 mm board
+with 406 footprints. Its power tree:</p>
+<div class="board">
+  <div><b>12 V input</b> on the barrel jack J201 (net <code>+12Vin</code>), through the
+    TPS259474 eFuse U201 and the 10 mΩ current-sense resistor R207 onto <code>+12V</code>.</div>
+  <div><b>LED panels</b>: the connectors J2101 and J2102 each take 1.944 A from
+    <code>+12V</code>. Together they are nearly all of the board's power.</div>
+  <div><b>3.3 V buck</b>: a TPS62150A (U402) switching at 2.5 MHz from <code>+12V</code>,
+    through the 2.2 µH inductor L401 and the 20 mΩ sense resistor R406 onto
+    <code>+3.3V</code>. It remote-senses <code>+3.3V</code> through its feedback divider
+    R409/R410.</div>
+  <div><b>Off +3.3V</b>: the dsPIC and about 50 small loads; the ferrite FB701 feeds
+    <code>+3.3VA_DSP</code> (the dsPIC's analog supply, returned on <code>GNDA_DSP</code>
+    through FB702), R610 feeds the 8 MHz oscillator X601, and the Schottky diode D1001 feeds
+    a DS1683.</div>
+  <div><b>USB</b>: 5 V VBUS from J901, through the ferrite FB901 and the TPD3S014 current
+    limiter U904 onto <code>+5V_USB</code>; the CP2104 USB-UART bridge U901 makes
+    <code>+3.3V_USB</code> with its internal regulator.</div>
+</div>
+<p>Every current, tolerance and part value used below comes from that board's schematic
+and its parts' datasheets.</p>
+
+<!-- ================================================================== OPEN -->
+<h2 id="open">Opening the board</h2>
+<ul>
+  <li><b>As a KiCad plugin</b>: open the board in KiCad's PCB editor and click the KiPI
+    toolbar button. KiPI refills the zones and reads the board from the editor
+    (<a href="help.html#window">Starting KiPI</a>).</li>
+  <li><b>Standalone</b>: start KiPI with its launcher, click <b>Open…</b> and pick
+    <code>Audio_Visualiser_DSP.kicad_pcb</code>. Standalone KiPI reads the zone fills saved
+    in the file and cannot refill them, so <b>fill the zones in KiCad (B) and save</b>
+    before opening.</li>
+</ul>
+<p>Either way, KiPI draws every net of the board in 3D. With no setup file beside the board,
+the PI setup panel on the right shows <i>New setup (will be saved as
+Audio_Visualiser_DSP.kipi-setup.yml)</i>, and in red under its tabs, what it needs first:
+<i>Add a VRM (the source of a net) to start</i>.</p>
+<figure><a href="images/tutorial/dc_window_nets.jpg"><img src="images/tutorial/dc_window_nets.jpg" loading="lazy"
+  alt="KiPI's main window with the DSP board in 3D, the Nets list on the left and an empty PI setup on the right"></a>
+<figcaption>The board open in standalone KiPI, before any setup. Left: the Board panel
+(nets, layers, display, info). Middle: the 3D view. Right: the PI setup. Bottom: the
+log.</figcaption></figure>
+<div class="callout"><b>Note:</b> the Info box lists <b>Placeholders</b>: anything KiPI
+had to assume because the board file does not say. Here one zone was saved unfilled; on
+your own board, fill and save before reading results closely.</div>
+<p>To start a part over from nothing on a board that already has a setup, rename or move
+its <code>.kipi-setup.yml</code> and read the board again.</p>
+
+<!-- ================================================================== PART 1: DC -->
+<section class="part">
+<h2 id="dc">Part 1: DC voltage drop and heating</h2>
+<p>A DC solve puts every load's current through the copper at once and finds the voltage at
+every pin. It answers: does each part get a voltage inside its tolerance, which copper
+carries the current, and (with the electro-thermal solve) how hot does it get? You tell
+KiPI where the power comes from (<b>VRMs</b>), what passes it from one net to the next
+(<b>series links</b>) and what draws it (<b>loads</b>).</p>
+
+<h3 class="step" id="dc-nets">Tick the nets to analyze</h3>
+<p>The <b>Nets</b> list on the left decides which copper is solved and which nets the setup's
+pin pickers offer. With <b>Power &amp; ground only</b> ticked it lists the nets that look
+like power or ground (by name, net class and zones), and KiPI ticks a first guess.</p>
+<p>Tick every net that current flows through, from each source to each load and back:</p>
+<table class="vals">
+  <tr><th>Nets</th><th>Why</th></tr>
+  <tr><td><code>+12Vin</code>, <code>Net-(U201-OUT)</code>, <code>+12V</code></td><td class="wrap">
+    The input: J201 → eFuse U201 → R207 → the 12 V plane. The eFuse's output has no name
+    in the schematic, so KiCad calls it <code>Net-(U201-OUT)</code>. Untick
+    <b>Power &amp; ground only</b> or type in the filter box to find nets like it.</td></tr>
+  <tr><td><code>Net-(C406-Pad1)</code>, <code>+3.3V</code></td><td class="wrap">The buck's
+    output (L401 to R406) and the 3.3 V rail.</td></tr>
+  <tr><td><code>+3.3VA_DSP</code>, <code>Net-(X601-Vdd)</code>,
+    <code>Net-(D1001-K)</code></td><td class="wrap">Behind FB701, R610 and D1001. A net a
+    series link joins to a rail is solved with it even unticked, but tick it anyway: the AC
+    mode's Capacitors table lists only capacitors on ticked nets
+    (<a href="#ac-read">Part 2</a> shows what happens otherwise).</td></tr>
+  <tr><td><code>+5V_USB</code>, <code>Net-(FB901-Pad2)</code>, <code>Net-(U904-EN)</code>,
+    <code>+3.3V_USB</code></td><td class="wrap">The USB side.</td></tr>
+  <tr><td><code>GND</code>, <code>GNDA_DSP</code></td><td class="wrap">The returns.</td></tr>
+</table>
+<figure class="tiny"><a href="images/tutorial/dc_nets.png"><img src="images/tutorial/dc_nets.png" loading="lazy"
+  alt="The Nets list with the power nets ticked"></a>
+<figcaption>The Nets list. Ticked nets are solved; the others stay in the 3D view as
+context.</figcaption></figure>
+<p>Leave out nets nothing flows through for this analysis (the analog references
+<code>+1.6V_AREF_*</code>, for example): every ticked net is meshed, and a net with no source
+is reported as not driven.</p>
+
+<h3 class="step" id="dc-vrms">Add the VRMs</h3>
+<p>A <b>VRM</b> is anything that holds a net at a voltage: a connector from a bench supply,
+a regulator, a battery. Open the <b>VRMs</b> tab and click <b>Add</b>.</p>
+<figure class="narrow"><a href="images/tutorial/dc_vrm_added.png"><img src="images/tutorial/dc_vrm_added.png" loading="lazy"
+  alt="A new VRM: KiPI picked J2101 on +12V and read 12 V from the net name"></a>
+<figcaption>Add makes a first guess: the busiest part on the first ticked net (J2101, a load
+connector, on <code>+12V</code>), 12 V read from the net's name, and the part's ground
+pins.</figcaption></figure>
+<p>KiPI's guess is a start, not the answer. The 12 V really enters at the barrel jack J201,
+on <code>+12Vin</code>. Change it with the <a href="help.html#pin-picker">pin picker</a>:
+the first box is the net, the second the part (type to search: <code>j201</code>), the third
+optional pin numbers (blank means every pin of that part on that net).</p>
+<h4>The 12 V input: a source</h4>
+<table class="vals">
+  <tr><th>Field</th><th>Value</th><th>Where it comes from</th></tr>
+  <tr><td>Name</td><td>12V</td><td class="wrap">Any name; it labels the results.</td></tr>
+  <tr><td>Type</td><td>Source</td><td class="wrap">An ideal supply with nothing upstream on
+    the board.</td></tr>
+  <tr><td>Target voltage</td><td>12 V</td><td class="wrap">The adapter's voltage.</td></tr>
+  <tr><td>Output current limit</td><td>5 A</td><td class="wrap">Optional. What the input
+    may supply; the VRMs table gives PASS or FAIL against it.</td></tr>
+  <tr><td>Output pins</td><td><code>+12Vin</code> · J201</td><td class="wrap">Where the
+    current enters the copper.</td></tr>
+  <tr><td>Ground pins</td><td><code>GND</code> · J201</td><td class="wrap">Optional, but
+    with them the ground return is solved too, and every load is judged on its supply minus
+    its ground.</td></tr>
+</table>
+<figure class="narrow"><a href="images/tutorial/dc_vrm_12V.png"><img src="images/tutorial/dc_vrm_12V.png" loading="lazy"
+  alt="The 12V source VRM's fields"></a>
+<figcaption>The 12 V input. Bold fields are needed to solve; grey ones are optional; grey
+italic ones (Control loop bandwidth) are used by another analysis only.</figcaption></figure>
+
+<h4>The 3.3 V buck: a switcher with remote sense</h4>
+<p>Click <b>Add</b> again for U402. For a switcher, <b>Output pins</b> are where it drives
+the rail. Here that is the inductor's output side, L401 on <code>Net-(C406-Pad1)</code>,
+since the copper from U402 to L401 carries switched current, not the DC output. Picking the
+output part fills <b>Input pins</b> (U402 on <code>+12V</code>) and <b>Ground pins</b>.</p>
+<table class="vals">
+  <tr><th>Field</th><th>Value</th><th>Where it comes from</th></tr>
+  <tr><td>Type</td><td>Switcher</td><td class="wrap">P<sub>in</sub> = P<sub>out</sub> / η:
+    its input current on <code>+12V</code> follows from what it delivers.</td></tr>
+  <tr><td>Target voltage</td><td>3.3 V</td><td class="wrap">The rail's nominal; loads are
+    judged against it.</td></tr>
+  <tr><td>Efficiency</td><td>90 %</td><td class="wrap">Read off the TPS62150A's efficiency
+    curve for 12 V in, 3.3 V out at this load.</td></tr>
+  <tr><td>Output current limit</td><td>1 A</td><td class="wrap">The TPS62150A is a 1 A
+    part.</td></tr>
+  <tr><td>Load line</td><td>1.65 mΩ</td><td class="wrap">Optional droop with load: here it
+    stands for the converter's load regulation.</td></tr>
+  <tr><td>Input range</td><td>10.8 to 13.2 V</td><td class="wrap">12 V ± 10 %, the input
+    the design must hold regulation over.</td></tr>
+  <tr><td>DC accuracy</td><td>−2.16 % / +4.04 %</td><td class="wrap">The output's DC error: the reference's
+    accuracy and the R409/R410 divider tolerances, which <b>DC Accuracy Calculator…</b>
+    adds up. The AC target calculator uses it.</td></tr>
+  <tr><td>Control loop bandwidth</td><td>50 kHz</td><td class="wrap">Used by AC only
+    (<a href="#ac-vrms">Part 2</a>).</td></tr>
+  <tr><td>Sense pins</td><td><code>+3.3V</code> · R409</td><td class="wrap">The top of the
+    feedback divider connects to the rail at R409's pad, after R406, so the buck regulates
+    3.3 V there, not at its own pins.</td></tr>
+  <tr><td>Ground sense pins</td><td><code>GND</code> · R410</td><td class="wrap">The
+    divider's bottom resistor: the ground the feedback is measured from.</td></tr>
+</table>
+<figure class="narrow"><a href="images/tutorial/dc_vrm_p33V.png"><img src="images/tutorial/dc_vrm_p33V.png" loading="lazy"
+  alt="The +3.3V switcher VRM's fields, with sense pins on R409 and R410"></a>
+<figcaption>The 3.3 V buck: output at L401, input from <code>+12V</code>, remote sense at
+the feedback divider.</figcaption></figure>
+
+<h4>The USB side: a source and an LDO</h4>
+<p><b>+5V_USB</b> is a <b>Source</b> of 5 V on J901's VBUS pins
+(<code>Net-(FB901-Pad2)</code>). <b>+3.3V_USB</b> is the CP2104's internal regulator: an
+<b>LDO</b> on U901, output <code>+3.3V_USB</code>, input <code>+5V_USB</code>. From the
+CP2104 datasheet's regulator figures: 3.45 V out, 0.12 mA quiescent, 100 mA for other parts, a 3.0 to
+5.25 V input, and an output between 3.3 and 3.6 V (entered as the DC accuracy, in
+<b>V</b>).</p>
+<figure class="narrow"><a href="images/tutorial/dc_vrm_p33V_USB.png"><img src="images/tutorial/dc_vrm_p33V_USB.png" loading="lazy"
+  alt="The +3.3V_USB LDO's fields"></a>
+<figcaption>An LDO: I<sub>in</sub> = I<sub>out</sub> + I<sub>q</sub>. Its DC accuracy is
+in volts here, as the datasheet gives it.</figcaption></figure>
+<figure class="narrow"><a href="images/tutorial/dc_vrms_tab.png"><img src="images/tutorial/dc_vrms_tab.png" loading="lazy"
+  alt="The VRMs tab listing all four VRMs"></a>
+<figcaption>All four VRMs. Each line shows the output net, the voltage, the type and
+what feeds it (<code>← +12V</code>).</figcaption></figure>
+
+<h3 class="step" id="dc-links">Add the series links</h3>
+<p>A <b>series link</b> is a part that passes DC from one net to another: a sense
+resistor, a ferrite bead, a fuse, a load switch, a diode. Without them,
+<code>Net-(U201-OUT)</code> is a net nothing drives and the 12 V never reaches
+<code>+12V</code>; the red list under the tabs says so. Open <b>Series links</b> and
+<b>Add</b> one per part. Pick <b>Side A</b>; for a two-terminal part KiPI fills in
+<b>Side B</b> on its other net, and for a resistor reads the <b>Resistance</b> from its value.
+</p>
+<table class="vals">
+  <tr><th>Link</th><th>Between</th><th>Resistance</th><th>Where it comes from</th></tr>
+  <tr><td>U201</td><td><code>+12Vin</code> → <code>Net-(U201-OUT)</code></td><td>28.2 mΩ</td>
+    <td class="wrap">TPS259474 eFuse: its on-resistance from the datasheet. An IC that
+    passes current from pin to pin is a series link too.</td></tr>
+  <tr><td>R207</td><td><code>Net-(U201-OUT)</code> → <code>+12V</code></td><td>10 mΩ</td>
+    <td class="wrap">Read from its value, <code>0.01</code>.</td></tr>
+  <tr><td>R406</td><td><code>Net-(C406-Pad1)</code> → <code>+3.3V</code></td><td>20 mΩ</td>
+    <td class="wrap">Read from its value.</td></tr>
+  <tr><td>R610</td><td><code>+3.3V</code> → <code>Net-(X601-Vdd)</code></td><td>10 Ω</td>
+    <td class="wrap">The oscillator's supply filter resistor.</td></tr>
+  <tr><td>FB701</td><td><code>+3.3V</code> → <code>+3.3VA_DSP</code></td><td>140 mΩ</td>
+    <td class="wrap">The ferrite bead's DCR (datasheet). Its ESL matters only for AC (Part 2).</td></tr>
+  <tr><td>FB702</td><td><code>GNDA_DSP</code> → <code>GND</code></td><td>140 mΩ</td>
+    <td class="wrap">A link between two grounds: the analog ground's ferrite. KiPI solves
+    both grounds as one return.</td></tr>
+  <tr><td>FB901, U904</td><td>VBUS → <code>+5V_USB</code></td><td>140, 97 mΩ</td>
+    <td class="wrap">The USB ferrite and the TPD3S014's switch resistance.</td></tr>
+  <tr><td>D1001</td><td><code>+3.3V</code> → <code>Net-(D1001-K)</code></td><td>(model)</td>
+    <td class="wrap">A BAT43WS Schottky: imported from its SPICE model (below).</td></tr>
+</table>
+<div class="pair">
+<figure><a href="images/tutorial/dc_link_R207.png"><img src="images/tutorial/dc_link_R207.png" loading="lazy"
+  alt="The R207 series link"></a><figcaption>R207, the 10 mΩ current-sense resistor.</figcaption></figure>
+<figure><a href="images/tutorial/dc_link_FB702.png"><img src="images/tutorial/dc_link_FB702.png" loading="lazy"
+  alt="The FB702 series link between GNDA_DSP and GND"></a><figcaption>FB702 joins the
+  analog ground to GND.</figcaption></figure>
+</div>
+<h4>A diode from its SPICE model</h4>
+<p>A diode's drop changes with its current, so it is not a fixed resistance. Select the D1001
+link with <b>Side A on the anode</b> (pin 2, on <code>+3.3V</code>) and <b>Side B on the
+cathode</b> (pin 1), then click <b>Import SPICE model…</b> and pick the maker's model file.
+For the BAT43WS that is Taiwan Semiconductor's <code>BAT43WS.lib</code>, which holds a
+<code>.MODEL BAT43WS D</code> card. The dialog lists the file's diode models and two-pin
+subcircuits and shows the forward voltage the model gives at 1 mA, 100 mA and 1 A.</p>
+<figure class="tiny"><a href="images/tutorial/dc_link_spice_dialog.png"><img src="images/tutorial/dc_link_spice_dialog.png" loading="lazy"
+  alt="The SPICE model dialog with the BAT43WS diode model picked"></a>
+<figcaption>The diode card picked. The file's own <code>BAT43WS_SOD323F</code> wrapper has
+its pins in cathode, anode order, so the bare model, anode first, is the one to use with
+side A on the anode.</figcaption></figure>
+<figure class="narrow"><a href="images/tutorial/dc_link_D1001.png"><img src="images/tutorial/dc_link_D1001.png" loading="lazy"
+  alt="The D1001 link with the SPICE model in use"></a>
+<figcaption>With the model in use, the resistance and ESL are fitted from it and locked;
+the DC solve takes the drop from the model at the current the diode carries.</figcaption></figure>
+<figure class="narrow"><a href="images/tutorial/dc_links_tab.png"><img src="images/tutorial/dc_links_tab.png" loading="lazy"
+  alt="The Series links tab with all nine links"></a>
+<figcaption>All nine series links.</figcaption></figure>
+
+<h3 class="step" id="dc-loads">Add the loads</h3>
+<p>A <b>load</b> is a part that draws current from a rail: give its <b>supply pins</b>, its
+current and, to get a PASS or FAIL, its <b>tolerance</b>. Picking the supply part fills its
+<b>ground pins</b>. Currents come from datasheets (the maximum supply current, or a
+calculated one for the firmware's use case); tolerances from each part's recommended
+operating supply range.</p>
+<h4>A connector load</h4>
+<p>J2101 feeds an LED panel: 1.944 A from <code>+12V</code>, returned on GND. The panel
+needs its 12 V within ±5 %. Enter <b>Tolerance</b> min −5 %, max +5 %.</p>
+<figure class="narrow"><a href="images/tutorial/dc_load_J2101.png"><img src="images/tutorial/dc_load_J2101.png" loading="lazy"
+  alt="The J2101 load: 1.944 A from +12V, ±5 %"></a>
+<figcaption>J2101: one current spread equally over its supply pins.</figcaption></figure>
+<h4>A chip's power pins, and a tolerance in volts</h4>
+<p>The dsPIC's digital supply: <b>Supply pins</b> <code>+3.3V</code> · U701, and pins
+<code>15,28,36,41,46</code> typed in the third box, since U701 has other pins on
+<code>+3.3V</code>-connected nets. 42.6 mA, its supply current from the datasheet. Its datasheet gives the supply as 3.0 to 3.6 V, so set the unit box to <b>V</b> and
+enter 3.0 and 3.6 directly.</p>
+<figure class="narrow"><a href="images/tutorial/dc_load_U701.png"><img src="images/tutorial/dc_load_U701.png" loading="lazy"
+  alt="The U701 dsPIC VDD load with its pins and a tolerance in volts"></a>
+<figcaption>The dsPIC's VDD pins, with its tolerance as the datasheet gives it.</figcaption></figure>
+<p>Its analog supply is a load of its own: <code>+3.3VA_DSP</code> · U701 pin 7, 7.4 mA,
+ground pins on <code>GNDA_DSP</code>.</p>
+<h4>Different currents on different pins</h4>
+<p>U803 (an I²C buffer) has two supplies on <code>+3.3V</code>, VCCA (pin 1) and
+VCCB (pin 8), drawing very different currents. Set <b>Current split</b> to <b>Per pin
+group</b> and add a row for each. The results' Notes list each group's voltage.</p>
+<figure class="narrow"><a href="images/tutorial/dc_load_U803.png"><img src="images/tutorial/dc_load_U803.png" loading="lazy"
+  alt="The U803 load split into VCCA and VCCB pin groups"></a>
+<figcaption>Pin groups: 12 µA on VCCA, 2.9 mA on VCCB.</figcaption></figure>
+<h4>The rest</h4>
+<p>The same steps for every other part: the op-amps, logic, the encoder module, the status
+LEDs (each LED's current, entered on its resistor's supply pin, with no tolerance, so it
+gets no verdict) and the parts on <code>+3.3V_USB</code>. Parts fitted only sometimes are
+still entered, with <i>(DNP)</i> in their names, so the setup is the worst case. This board
+has 63 loads.</p>
+<figure class="narrow"><a href="images/tutorial/dc_loads_tab.png"><img src="images/tutorial/dc_loads_tab.png" loading="lazy"
+  alt="The Loads tab listing the board's loads"></a>
+<figcaption>The Loads tab. <b>Model ▾</b> and <b>Split across nets…</b> save typing on big
+boards: a <a href="help.html#load-models">load model</a> file applies one part's supplies
+to every copy of it, and Split shares one total current over a part's supply
+nets.</figcaption></figure>
+
+<h3 class="step" id="dc-tree">Check the power tree</h3>
+<p>Click <b>Power tree</b> on the toolbar. It draws the setup as a block diagram, left to
+right in the direction power flows: sources, regulators, rails, series links and loads. It
+is the quickest way to spot a link in the wrong place or a load on the wrong rail.</p>
+<figure><a href="images/tutorial/dc_power_tree.png"><img src="images/tutorial/dc_power_tree.png" loading="lazy"
+  alt="The power tree of the DSP board"></a>
+<figcaption>12 V in → U201 → R207 → <code>+12V</code>, feeding J2101, J2102 and the
+buck; the buck → R406 → <code>+3.3V</code> and its loads (packed in a grid), with FB701, R610 and
+D1001 branching off; the USB chain along the bottom. Hover a block for its pins; Ctrl +
+wheel zooms.</figcaption></figure>
+
+<h3 class="step" id="dc-settings">Check the Solve, Mesh and Thermal tabs</h3>
+<p>The <b>Solve</b> tab lists the net groups KiPI will solve: each rail with every net a
+series link joins to it, and the grounds. Untick a group that is not routed yet to solve
+the rest. Here all five stay ticked.</p>
+<figure class="narrow"><a href="images/tutorial/dc_solve_tab.png"><img src="images/tutorial/dc_solve_tab.png" loading="lazy"
+  alt="The Solve tab listing five net groups"></a>
+<figcaption>Five net groups. <code>+3.3V</code> takes in the four nets behind R406, FB701,
+R610 and D1001; <code>GND</code> takes in <code>GNDA_DSP</code> through FB702.</figcaption></figure>
+<p>The <b>Mesh</b> tab's defaults suit most boards; set the <b>via plating</b> your
+fabricator states (here 25 µm). Then open <b>Thermal</b> and tick <b>Electro-thermal
+co-simulation</b>: the copper's losses heat the board and warmer copper resists more. Set
+the limits to judge it against: <b>Max copper temperature</b> 65 °C and <b>Max rise above
+ambient</b> 40 °C, at 25 °C ambient in still air.</p>
+<div class="pair">
+<figure><a href="images/tutorial/dc_mesh_tab.png"><img src="images/tutorial/dc_mesh_tab.png" loading="lazy"
+  alt="The Mesh tab"></a><figcaption>Mesh: element size and via plating.</figcaption></figure>
+<figure><a href="images/tutorial/dc_thermal_tab.png"><img src="images/tutorial/dc_thermal_tab.png" loading="lazy"
+  alt="The Thermal tab with co-simulation on and limits set"></a><figcaption>Thermal: on,
+  three iterations, 65 °C and 40 °C limits.</figcaption></figure>
+</div>
+
+<h3 class="step" id="dc-solve">Solve</h3>
+<p>The red list under the tabs is now empty. Click <b>Solve all (electro-thermal)</b>. KiPI
+saves the setup next to the board, meshes the five groups and solves them, then heats the
+board with their losses and solves again, three times. The log shows each stage; this board
+took about a minute and a half. The biggest group is the ground: 2.1 million unknowns, as it
+fills three of the inner layers.</p>
+<figure><a href="images/tutorial/dc_window_results.jpg"><img src="images/tutorial/dc_window_results.jpg" loading="lazy"
+  alt="KiPI after the DC solve, the +12V group's voltage in 3D"></a>
+<figcaption>After the solve: the <code>+12V</code> group's voltage in 3D, the results
+under the setup.</figcaption></figure>
+
+<h3 class="step" id="dc-tables">Read the results tables</h3>
+<p>The <b>Loads</b> table gives each load's voltage, in mV from its VRM's target by default
+(the list at the right switches to % or volts), its lowest and highest pins, its tolerance,
+the <b>margin</b> left (negative and red when outside) and the verdict.</p>
+<figure><a href="images/tutorial/dc_results_loads.png"><img src="images/tutorial/dc_results_loads.png" loading="lazy"
+  alt="The Loads results table"></a>
+<figcaption>Every load passes. J2101 sits 188 mV below 12 V, with 412 mV of its ±600 mV
+left. X601 is 72 mV down: 7 mA through R610's 10 Ω is 70 mV of it, by design.</figcaption></figure>
+<p>What the numbers say about this board:</p>
+<ul>
+  <li><b>The LED panels</b> lose 188 and 198 mV, about 1.6 % of 12 V. They draw 3.9 A
+    between them, through the eFuse (28.2 mΩ: 110 mV), R207 (10 mΩ: 39 mV) and the
+    copper.</li>
+  <li><b>The dsPIC</b> is within 2 mV of 3.3 V: the buck senses <code>+3.3V</code> beside
+    it, and it draws little.</li>
+  <li>The <b>VRMs</b> table: the 12 V input supplies 3.935 A of its 5 A limit; the buck
+    delivers 151 mA and draws 47 mA from <code>+12V</code>, which reaches it at
+    11.84 V, inside its 10.8 to 13.2 V input range.</li>
+</ul>
+<figure><a href="images/tutorial/dc_results_vrms.png"><img src="images/tutorial/dc_results_vrms.png" loading="lazy"
+  alt="The VRMs results table"></a>
+<figcaption>VRMs: current, input voltage and power, conversion loss and the lowest voltage on
+each rail. +3.3V's lowest, −225 mV, is <code>Net-(D1001-K)</code>, beyond the diode.</figcaption></figure>
+<figure><a href="images/tutorial/dc_results_links.png"><img src="images/tutorial/dc_results_links.png" loading="lazy"
+  alt="The Series links results table"></a>
+<figcaption>Series links: the eFuse U201 dissipates 437 mW and R207 155 mW, most of the
+board's 0.82 W of heat.</figcaption></figure>
+<p>The <b>Thermal</b> tab gives the hottest copper on each layer:</p>
+<figure><a href="images/tutorial/dc_results_res.png"><img src="images/tutorial/dc_results_res.png" loading="lazy"
+  alt="The Thermal results tab"></a>
+<figcaption>60.3 °C peak, 35.3 °C over ambient, at (35.5, 39.1) mm on F.Cu: under the eFuse.
+PASS against both limits. The iterations settle to 0.000 °C by the third.</figcaption></figure>
+<p>The <b>Notes</b> tab lists what was solved: each group's nets, the solve time, the buck's
+load-line droop, U803's pin groups and any warnings or parts left out.</p>
+<figure><a href="images/tutorial/dc_results_notes.png"><img src="images/tutorial/dc_results_notes.png" loading="lazy"
+  alt="The Notes results tab"></a><figcaption>Notes.</figcaption></figure>
+
+<h3 class="step" id="dc-3d">Read the 3D view</h3>
+<p>Pick a <b>net group</b> and a <b>field</b> above the tables to colour the copper. Click
+anywhere on the copper to probe: the Info box shows the exact value there. <b>Top</b>,
+<b>Bottom</b> and <b>Iso</b> on the toolbar set the camera.</p>
+<div class="pair">
+<figure><a href="images/tutorial/dc_v_12V.jpg"><img src="images/tutorial/dc_v_12V.jpg" loading="lazy"
+  alt="Voltage on the +12V group, top view"></a><figcaption><b>Voltage</b>, +12V group: 12 V
+  at the input (top left), falling to 11.80 V at the panel connectors along the bottom
+  edge.</figcaption></figure>
+<figure><a href="images/tutorial/dc_j_12V.jpg"><img src="images/tutorial/dc_j_12V.jpg" loading="lazy"
+  alt="Current density with arrows on the +12V group"></a><figcaption><b>Current
+  density</b> with <b>Arrows</b>: the L-shaped 12 V pour carries the panel current down the
+  left edge and along the bottom. Bright spots are necks where it crowds.</figcaption></figure>
+<figure><a href="images/tutorial/dc_p_12V.jpg"><img src="images/tutorial/dc_p_12V.jpg" loading="lazy"
+  alt="Power density on the +12V group"></a><figcaption><b>Power density</b> (log scale):
+  where the copper's loss goes. The thermal solve picks up the same spots. <b>Via
+  current</b> colours each via and through-hole barrel instead; the <b>Vias</b> table lists
+  them, highest first, against a current limit.</figcaption></figure>
+<figure><a href="images/tutorial/dc_temp_iso.jpg"><img src="images/tutorial/dc_temp_iso.jpg" loading="lazy"
+  alt="Temperature from the electro-thermal solve, isometric view"></a><figcaption><b>Temperature</b>:
+  the hot spot at the eFuse and sense resistor, cooling along the pour.</figcaption></figure>
+</div>
+<p>A rail with very little drop looks one colour on the whole-range scale. Type limits into
+<b>Color scale</b> to stretch the colours over the range you care about:</p>
+<figure><a href="images/tutorial/dc_v_3V3_scaled.jpg"><img src="images/tutorial/dc_v_3V3_scaled.jpg" loading="lazy"
+  alt="Voltage on +3.3V with the color scale narrowed to 3.297 to 3.3035 V"></a>
+<figcaption>+3.3V with the scale set to 3.297 to 3.3035 V, so millivolts show: the plane
+sits at 3.300 V, held there by the buck's remote sense, highest at R406 (top left) where
+the current enters, and lowest around the dsPIC (centre), the heaviest load. The
+whole-range scale reaches down to the diode's cathode net, 225 mV lower, which hides all
+of this.</figcaption></figure>
+<figure><a href="images/tutorial/dc_v_gnd.jpg"><img src="images/tutorial/dc_v_gnd.jpg" loading="lazy"
+  alt="Voltage on the GND group, top view"></a>
+<figcaption>The ground: 0 V at the input jack (top left, the 12 V source's ground pins),
+rising to under 3 mV beneath the panel connectors as their 3.9 A returns. KiPI judges each
+load on its supply minus its ground, so that rise counts in their drop.</figcaption></figure>
+
+<h3 class="step" id="dc-next">Report and save</h3>
+<ul>
+  <li><b>Report</b> beside the Solve button writes a single-file HTML report next to the
+    board (or a PDF, chosen beside it): every table, an interactive 3D view of each group,
+    per-layer maps and the temperature map (<a href="help.html#dc-solving">details</a>).</li>
+  <li><b>Export ▾ → Save results…</b> saves the solve, to open again with <b>Open
+    results…</b> without solving.</li>
+  <li>The setup was saved with the solve as <code>Audio_Visualiser_DSP.kipi-setup.yml</code>;
+    the next session starts from it.</li>
+</ul>
+<p>When a result fails: the margin says by how much, the 3D current density shows where
+the copper is thin, and the Losses tab shows where the power goes. Change the layout in
+KiCad, then <b>Load from KiCad</b> (or <b>Reload</b>) and solve again; the setup
+stays.</p>
+</section>
+
+
+<!-- ================================================================== PART 2: AC -->
+<section class="part">
+<h2 id="ac">Part 2: PDN impedance (AC)</h2>
+<p>A chip's current is not steady: it changes with every clock edge and every burst of work.
+The supply network (planes, vias and decoupling capacitors) has an impedance <i>Z</i> that
+varies with frequency, and a current change <i>ΔI</i> moves the supply by about
+<i>ΔI</i>·|<i>Z</i>|. The AC solve finds |Z| looking into a chip's power pins, from 1 kHz to
+300 MHz here, and compares it with a <b>target impedance</b>: the most it may be for the
+supply to stay inside its AC tolerance.</p>
+<p>This part starts from a new setup again. For an AC solve, KiPI needs the <b>VRMs</b> (they
+define each rail and its loop bandwidth), the <b>series links</b> (with their inductance),
+a <b>model for each capacitor</b>, and <b>probes</b> with their targets. Loads are not
+needed.</p>
+
+<h3 class="step" id="ac-start">Switch to AC and tick the nets</h3>
+<p>Click <b>AC</b> beside <b>Mode</b> at the right end of the toolbar (or press
+<kbd>Ctrl+2</kbd>). The setup panel becomes the <b>AC setup</b>, with its own tabs. Tick the
+same nets as in <a href="#dc-nets">Part 1</a>: each rail, its ground, and every net a
+capacitor or series link on it connects to.</p>
+<figure><a href="images/tutorial/ac_window_empty.jpg"><img src="images/tutorial/ac_window_empty.jpg" loading="lazy"
+  alt="KiPI in AC mode with an empty AC setup"></a>
+<figcaption>AC mode: the setup's tabs are VRMs, Series links, Capacitors, Probes,
+Packages, Sweep and Mesh. The middle gains Impedance, Board map and Transient tabs.</figcaption></figure>
+
+<h3 class="step" id="ac-vrms">Add the VRMs, with their loop bandwidth</h3>
+<p>Add the VRMs as in <a href="#dc-vrms">Part 1</a>: the same fields, the same pins. One
+field matters only here, and an AC solve cannot run without it: the <b>Control loop
+bandwidth</b>.</p>
+<p>KiPI leaves the regulator out of the AC circuit, so the curve it draws is the
+<i>open-loop</i> impedance of the copper and capacitors, which keeps rising toward low
+frequency. Below its loop bandwidth (its gain crossover) the regulator holds the rail
+itself, so a target only applies above it. Find it in the regulator's datasheet or
+design tool, or measure it with a loop analyzer. A buck like the TPS62150A crosses over at
+tens of kHz: 50 kHz here. The 12 V adapter's response is slower: 30 kHz.</p>
+<figure class="narrow"><a href="images/tutorial/ac_vrm_3V3.png"><img src="images/tutorial/ac_vrm_3V3.png" loading="lazy"
+  alt="The +3.3V VRM in AC mode, Control loop bandwidth in bold"></a>
+<figcaption>The same VRM in AC mode: <b>Control loop bandwidth</b> is now bold (needed),
+and the fields only DC uses are in grey italics.</figcaption></figure>
+
+<h3 class="step" id="ac-links">Add the series links, with their ESL</h3>
+<p>Add the same series links as in <a href="#dc-links">Part 1</a>. In AC each link is its
+resistance plus its <b>ESL</b> (inductance), and a ferrite bead's inductance is what makes
+it a filter. For a chip resistor <b>Estimate ESL → From package</b> works it out from the
+footprint (0.4 nH for an 0402). For a bead, use <b>Ferrite bead…</b> and its datasheet's
+impedance curve.</p>
+<p>FB701 (and FB702 and FB901) is a Murata BLM15EX221SN1D: 220 Ω at 100 MHz, 140 mΩ
+DCR. Murata's product page plots its |Z|, R and X against frequency. Read |Z| low on the
+curve, where R is still small and the bead is an inductor: 17.4 Ω at 2 MHz, with R only
+1.7 Ω there. Not the 100 MHz headline: there R is 203 of its 229 Ω, and the bead is mostly
+a resistor. Even at 10 MHz (|Z| 78 Ω, R 32 Ω) the resistance would push the figure up.</p>
+<figure class="tiny"><a href="images/tutorial/ac_bead_dialog.png"><img src="images/tutorial/ac_bead_dialog.png" loading="lazy"
+  alt="The Ferrite bead ESL dialog: 17.4 ohm at 2 MHz gives 1.39 uH"></a>
+<figcaption>17.4 Ω at 2 MHz with a 140 mΩ DCR: L = √(|Z|² − DCR²) / 2πf = 1.38 µH.
+OK puts it in the link's ESL.</figcaption></figure>
+<figure class="narrow"><a href="images/tutorial/ac_link_FB701.png"><img src="images/tutorial/ac_link_FB701.png" loading="lazy"
+  alt="The FB701 series link with its ESL"></a>
+<figcaption>FB701 with its DCR and ESL. The same part, FB702 and FB901, gets the same
+values.</figcaption></figure>
+<p>A bead's maker usually also gives a SPICE model of it. <b>Import SPICE model…</b> takes
+its impedance at every frequency instead, so the bead keeps its resistive peak.</p>
+
+<h3 class="step" id="ac-caps">Make the capacitor models</h3>
+<p>Every capacitor between a rail and its ground needs a <b>model</b>: its capacitance, ESL
+and ESR, shared by all the identical parts that use it. Open <b>Capacitors</b> and click
+<b>Models from values</b>: KiPI makes one model per distinct value among the capacitors on
+the ticked nets, with the capacitance read from the value.</p>
+<figure class="narrow"><a href="images/tutorial/ac_caps_from_values.png"><img src="images/tutorial/ac_caps_from_values.png" loading="lazy"
+  alt="The models Models from values made: one per value, ESL and ESR required"></a>
+<figcaption>Five models, one per value. ESL and ESR say <i>required</i>: they come from
+each part's datasheet (next step).</figcaption></figure>
+<p>One model per value is too coarse here: this board's 10 µF parts are three different
+parts, an 0402, an 0805 and a 1206, each with its own ESL and DC bias. Make one model per
+part (<b>Add</b>, or <b>Duplicate</b> and rename), then select a row in the parts table and
+click <b>Tick same value + footprint</b> to give the model every part with that value and
+footprint. A part ticked here leaves its old model.</p>
+
+<h3 class="step" id="ac-datasheet">Read a capacitor's datasheet</h3>
+<p>Take C402 and C403, the buck's 12 V input capacitors. Their <i>Digi-Key PN</i> field gives
+445-6862-1-ND, a <b>TDK C3216X5R1E106K160AB</b>: 10 µF ±10 %, 25 V, X5R,
+1206. TDK's product page for it gives the ratings in a table and the rest in its
+<b>Characteristic Graph</b> section: impedance, ESR, capacitance and DC bias curves, each
+readable value by value by hovering over the curve.</p>
+<div class="ds">
+<table class="vals">
+  <tr><th>KiPI field</th><th>Value</th><th>Where on the datasheet</th></tr>
+  <tr><td>Capacitance</td><td>10 µF</td><td class="wrap">The nominal value, at 0 V and
+    25 °C. KiPI derates it for DC bias itself (below).</td></tr>
+  <tr><td>ESL</td><td>0.82 nH</td><td class="wrap">From the <b>Impedance</b> graph, on its
+    rising (inductive) side well above resonance, where |Z| ≈ 2πf·ESL. TDK's curve gives
+    283 mΩ at 55 MHz: 0.283 / (2π · 55 MHz) = 0.82 nH (4.71 Ω at 903 MHz gives the same).
+    Don't work it out from the resonant frequency: the capacitance that resonates there is
+    not the nominal one. The figure is the part's own, on the maker's fixture; KiPI adds the
+    pads, vias and planes on your board.</td></tr>
+  <tr><td>ESR</td><td>1.73 mΩ</td><td class="wrap">The bottom of the <b>Impedance</b>
+    curve: at self-resonance (1.52 MHz here) the reactances cancel and |Z| is the ESR. The
+    <b>ESR</b> graph reads about the same there (1.4 mΩ at 470 kHz).</td></tr>
+  <tr><td>Voltage rating</td><td>25 V</td><td class="wrap"><b>Rated Voltage</b> in the
+    table.</td></tr>
+  <tr><td>Kept at rating</td><td>23 %</td><td class="wrap">From the <b>DC Bias
+    Characteristic</b>: 2.34 µF of 10 µF left at 25 V. On the 12 V rail it reads 5.21 µF
+    at 12.5 V: this part loses half its capacitance in place. KiPI's curve through 23 % at
+    the rating gives 46 % at 12.5 V, close to TDK's 52 %.</td></tr>
+  <tr><td>Dielectric</td><td>X5R</td><td class="wrap"><b>Temperature Characteristic</b> in
+    the table, X5R (±15 %, −55 to 85 °C). Picking it fills the typical aging rate.</td></tr>
+  <tr><td>Manufacturing tolerance</td><td>10 %</td><td class="wrap">The ±10 % after the
+    capacitance (the K in the part number).</td></tr>
+</table>
+</div>
+<figure class="narrow"><a href="images/tutorial/ac_cap_10uF_1206.png"><img src="images/tutorial/ac_cap_10uF_1206.png" loading="lazy"
+  alt="The 10uF 1206 capacitor model with TDK's values and its parts ticked"></a>
+<figcaption>The 1206 model with TDK's figures. Below it, the parts table: C402 and the other
+1206 10 µF parts ticked; grey rows belong to other models.</figcaption></figure>
+<p>Where a maker gives the part's SPICE model (TDK and Murata do, on the same pages), <b>Import
+SPICE model…</b> uses the model's impedance at every frequency instead, and fits C, ESL and
+ESR to it for the tables.</p>
+<div class="callout tip"><b>Tip:</b> <b>Export…</b> writes a model to its own file, and
+<b>Import…</b> reads it on another board: a part's datasheet only needs reading once.</div>
+<p>Do the same for each part: this board has seven models, from the 0.1 µF 0402 X7R
+decoupling (65 parts) to the 100 µF tantalum bulk capacitor on 12 V.</p>
+<figure class="narrow"><a href="images/tutorial/ac_caps_tab.png"><img src="images/tutorial/ac_caps_tab.png" loading="lazy"
+  alt="The Capacitors tab with seven models"></a>
+<figcaption>Seven models. Each line gives C, ESL, ESR, the DC bias rating, the dielectric,
+the tolerance and how many parts use it.</figcaption></figure>
+
+<h3 class="step" id="ac-probes">Add the probes and their targets</h3>
+<p>A <b>probe</b> is where the impedance is measured: a device's supply pins against its
+ground pins. Open <b>Probes</b> and click <b>Add</b>. KiPI picks the busiest part on the
+first rail that also has ground pins, which is not always the one you want:</p>
+<figure class="narrow"><a href="images/tutorial/ac_probe_added.png"><img src="images/tutorial/ac_probe_added.png" loading="lazy"
+  alt="A new probe on C202"></a>
+<figcaption>The first guess landed on a capacitor, C202. Change the supply pins to the
+device you care about.</figcaption></figure>
+<p>For the dsPIC: <b>Supply pins</b> <code>+3.3V</code> · U701, pins
+<code>15,28,36,41,46</code>; <b>Ground pins</b> <code>GND</code> · U701, its ground pins
+and exposed pad. (With DC loads in the setup, <b>From DC load</b> copies a load's pins in
+one click.)</p>
+<h4>The target, from the calculator</h4>
+<p>The <b>target impedance</b> is the AC voltage the supply may move by, over the current
+step that moves it: Z<sub>target</sub> = V<sub>AC</sub> / ΔI, flat up to
+f<sub>target</sub> = 1 / (π · t<sub>rise</sub>). Click <b>Target Impedance/Frequency
+Calculator…</b> and enter:</p>
+<ul>
+  <li><b>AC voltage tolerance</b> 120 mV: the share of the dsPIC's 3.0 to 3.6 V range set
+    aside for ripple and transients, after the regulator's DC accuracy and the DC drop.
+    With a DC solve and DC loads in the setup, the <b>Copy</b> and <b>Subtract</b> buttons
+    work this out from them.</li>
+  <li><b>Load step</b> 0.0426 A: its whole current, switching on.</li>
+  <li><b>Slew rate</b> 12.3 A/µs: how fast it steps.</li>
+</ul>
+<figure class="tiny"><a href="images/tutorial/ac_target_calc.png"><img src="images/tutorial/ac_target_calc.png" loading="lazy"
+  alt="The target calculator: 120 mV over 42.6 mA gives 2.817 ohm up to 91.9 MHz"></a>
+<figcaption>120 mV / 42.6 mA = 2.817 Ω, flat up to 91.9 MHz. <b>Use for probe</b> fills
+the probe's target and its load step.</figcaption></figure>
+<figure class="narrow"><a href="images/tutorial/ac_probe_U701.png"><img src="images/tutorial/ac_probe_U701.png" loading="lazy"
+  alt="The U701 dsPIC VDD probe with its target"></a>
+<figcaption>The dsPIC probe. Its target applies from the buck's 50 kHz loop bandwidth up to
+91.9 MHz.</figcaption></figure>
+<p>The two LED panel connectors get probes too, on the 12 V rail: each steps by its whole
+1.944 A at 10 A/µs and may move by its ±5 % (600 mV), so 600 mV / 1.944 A = 309 mΩ up to
+1.64 MHz. With a <b>load step</b> and <b>slew rate</b> entered, the solve also estimates the
+rail's <a href="#ac-12v">transient response</a> at the probe.</p>
+<figure class="narrow"><a href="images/tutorial/ac_probe_J2101.png"><img src="images/tutorial/ac_probe_J2101.png" loading="lazy"
+  alt="The J2101 probe with its target and load step"></a>
+<figcaption>J2101: a 309 mΩ target and a 1.944 A, 10 A/µs load step.</figcaption></figure>
+
+<h3 class="step" id="ac-sweep">Check the Sweep and Mesh tabs</h3>
+<p><b>Sweep</b> sets the frequencies: 1 kHz to 300 MHz, 250 points per decade, the copper
+field-solved 20 times per decade. Under <b>Capacitor derating</b>, <b>DC bias</b> is on, so
+each model with a voltage rating loses capacitance at its rail's voltage; tick
+<b>Manufacturing tolerance</b>, <b>Temperature</b> or <b>Aging</b> for a worst case. The
+<b>Mesh</b> tab's defaults suit most boards.</p>
+<div class="pair">
+<figure><a href="images/tutorial/ac_sweep_tab.png"><img src="images/tutorial/ac_sweep_tab.png" loading="lazy"
+  alt="The Sweep tab"></a><figcaption>Sweep: range, resolution and capacitor derating.</figcaption></figure>
+<figure><a href="images/tutorial/ac_mesh_tab.png"><img src="images/tutorial/ac_mesh_tab.png" loading="lazy"
+  alt="The AC Mesh tab"></a><figcaption>Mesh: finer near the rail, coarser far from it.</figcaption></figure>
+</div>
+
+<h3 class="step" id="ac-solve">Solve a rail</h3>
+<p>An AC solve covers one rail against one ground. Under the tabs, pick <b>Rail</b>
+<i>+3.3V</i> (listed by its VRM) and <b>Ground</b> <i>GND</i>, then click <b>Solve
+rail</b>. The <b>Board map</b> tab comes to the front while it solves, and fills in: the
+rail's copper over its ground, the probes as red stars and each capacitor as a dot in its
+model's colour.</p>
+<figure><a href="images/tutorial/ac_3V3_board_map.png"><img src="images/tutorial/ac_3V3_board_map.png" loading="lazy"
+  alt="The Board map of the +3.3V rail with probes and capacitors"></a>
+<figcaption>The +3.3V rail's board map: the dsPIC's probe (star) among its decoupling
+capacitors. The white crosses are four capacitors with no model, left out of the solve.</figcaption></figure>
+<p>This rail is a big one: its mesh against the ground is 2.5 million unknowns, and its 111
+field solves took 19 minutes here. The log counts them down.</p>
+
+<h3 class="step" id="ac-read">Read the impedance curve</h3>
+<p>The <b>Impedance</b> tab plots |Z| against frequency: the probe's curve, solid, and its
+target, dashed, from the VRM's bandwidth (the dotted line at 50 kHz) to the target
+frequency.</p>
+<figure><a href="images/tutorial/ac_3V3_impedance.png"><img src="images/tutorial/ac_3V3_impedance.png" loading="lazy"
+  alt="The +3.3V rail's impedance at the dsPIC against its 2.8 ohm target"></a>
+<figcaption>|Z| at the dsPIC: well under its 2.8 Ω target everywhere it applies.</figcaption></figure>
+<p>Reading it left to right:</p>
+<ul>
+  <li><b>Falling at −20 dB/decade</b> up to about 1 MHz: capacitive. Below 50 kHz this is the
+    open-loop curve the regulator's loop would flatten; the target ignores it.</li>
+  <li><b>The dip near 1.5 MHz</b>, 1.6 mΩ: the 10 µF capacitors' series resonance, their
+    capacitance against their ESL and mounting.</li>
+  <li><b>The bumps near 6 and 10 MHz</b>: anti-resonances between the capacitor banks
+    (10 µF, 1 µF, 0.1 µF), where one bank's inductance rings with the next one's
+    capacitance. This is where a tight target usually fails.</li>
+  <li><b>Rising at +20 dB/decade</b> above 20 MHz: inductive. The capacitors' ESL plus their
+    pads, vias and the planes' spreading inductance.</li>
+</ul>
+<p>Click the curve to place a <b>cursor</b>; drag it or use the arrow keys. The Info box on
+the left reads the point: frequency, |Z|, phase, R, X, the equivalent L or C, and the target
+there with its margin.</p>
+<figure><a href="images/tutorial/ac_3V3_cursor0.jpg"><img src="images/tutorial/ac_3V3_cursor0.jpg" loading="lazy"
+  alt="The cursor at 99 MHz with its values in the Info box"></a>
+<figcaption>The cursor at 99 MHz, on the inductive slope.</figcaption></figure>
+<figure class="tiny"><a href="images/tutorial/ac_3V3_info.png"><img src="images/tutorial/ac_3V3_info.png" loading="lazy"
+  alt="The Info box reading the cursor: 108 mOhm at 87.6 degrees, 173 pH"></a>
+<figcaption>Info: 108 mΩ at +87.6°, nearly pure reactance, 173 pH as an inductance. That
+is the capacitors' ESL plus their mounting as seen from the dsPIC, the figure to lower with
+shorter connections and more vias. The target stops at 92 MHz, so there is none
+here.</figcaption></figure>
+<p>The <b>Results</b> table under the setup gives each probe's lowest and worst |Z| against
+its target, and the notes below it say what the solve included:</p>
+<figure><a href="images/tutorial/ac_3V3_results.png"><img src="images/tutorial/ac_3V3_results.png" loading="lazy"
+  alt="The AC results table and notes"></a>
+<figcaption>PASS: worst 99.6 mΩ at 91.4 MHz against 2.8 Ω. The notes: 73 capacitors and 5
+series links in the solve, 4.61 nF of plane capacitance, 72 capacitors derated for DC bias
+(keeping 69 to 91 % of their capacitance), and warnings.</figcaption></figure>
+<div class="callout warn"><b>Read the warnings.</b> The first names four capacitors with
+no model, left out of the solve: C1001 to C1004. They sit on <code>Net-(D1001-K)</code>,
+behind the diode. That net is solved with the rail because the D1001 link joins it, but it
+was never ticked in the Nets list, and the Capacitors table only lists capacitors whose
+pads are all on ticked nets, so they could not be given a model. The fix: tick
+<code>Net-(D1001-K)</code>, give the four parts their models (<b>Tick same value +
+footprint</b>) and solve again. Here they sit behind a diode carrying almost no current and
+barely touch the dsPIC's curve. The other warnings say how the diode was modelled without a
+DC solve of this rail, and that C711's copper reaches the rail only through parts.</div>
+
+<h3 class="step" id="ac-12v">Solve the 12 V rail and read its transient</h3>
+<p>Each rail keeps its own result, so switch <b>Rail</b> to <i>12V</i> and click <b>Solve
+rail</b> again; switching back shows the +3.3V curves without solving. The 12 V rail is
+smaller (0.69 million unknowns) and took three and a half minutes.</p>
+<figure><a href="images/tutorial/ac_12V_impedance.png"><img src="images/tutorial/ac_12V_impedance.png" loading="lazy"
+  alt="The 12 V rail's impedance at J2101 and J2102 against their 309 mOhm targets"></a>
+<figcaption>|Z| at the two panel connectors, one curve each, against their 309 mΩ target
+from 30 kHz to 1.64 MHz. The highest point that counts is right at 30 kHz: below that the
+adapter's loop holds the rail.</figcaption></figure>
+<p>The probes have a load step, so the <b>Transient</b> tab estimates what the rail does
+when each panel switches on its whole 1.944 A at 10 A/µs, holds, and switches off. The top
+plot is the load current; the lower one the rail's deviation, against dashed lines at
+± target × ΔI (the 600 mV the target stands for).</p>
+<figure><a href="images/tutorial/ac_12V_transient.png"><img src="images/tutorial/ac_12V_transient.png" loading="lazy"
+  alt="The 12 V rail's estimated transient at J2101 and J2102"></a>
+<figcaption>A 234 mV dip when a panel switches on and the same rise when it switches off,
+recovering in about 100 µs: well inside ±600 mV. The note above the plot says the 194 ns
+edge is slow enough that no ESL spike stands out.</figcaption></figure>
+<p>The estimate closes the regulator's loop at its <b>Control loop bandwidth</b> with a
+typical compensation, so the slow part (the recovery) is approximate and the fast part
+(capacitors, planes, vias) comes from the solve. Tick <b>20 MHz limit</b> to see it as an
+oscilloscope with its bandwidth limit on would.</p>
+<figure><a href="images/tutorial/ac_12V_results.png"><img src="images/tutorial/ac_12V_results.png" loading="lazy"
+  alt="The 12 V rail's results table"></a>
+<figcaption>Both connectors PASS, with their undershoot and overshoot. Note the DC bias
+line: the seven capacitors on 12 V keep only 47 to 67 % of their capacitance at 12 V, the
+TDK 1206 parts among them, as their datasheet's DC bias curve warned.</figcaption></figure>
+<ul>
+  <li><b>Report</b> beside <b>Solve rail</b> writes the shown rail's HTML or PDF report: the
+    probe table, an interactive impedance plot with each capacitor model's own curve, the
+    board map, the transient and the notes (<a href="help.html#ac-report">details</a>).</li>
+  <li><b>Save results…</b> keeps every rail solved so far, for <b>Open results…</b>;
+    <b>Export model</b> writes a probe's impedance as a Touchstone or HyperLynx file.</li>
+</ul>
+<p>When a probe fails: place the cursor on the worst point. A peak between two dips calls for
+more capacitance between the two banks, or more damping (ESR); a rising inductive slope for
+lower-ESL parts closer to the pins and more vias; a failure just above the loop bandwidth
+for more bulk capacitance.</p>
+</section>
+
+<!-- ================================================================== PART 3: NOISE -->
+<section class="part">
+<h2 id="noise">Part 3: Switcher noise on signals (Coupled Noise)</h2>
+<p>A buck converter switches its input on and off a few million times a second. Its
+<b>switch node</b> swings from 0 to 12 V in a couple of nanoseconds, and its <b>hot
+loop</b> (input capacitors, high-side switch, low-side switch and back) carries current
+pulses with edges just as fast. Both reach the traces nearby: the switch node's dV/dt
+through their mutual capacitance (<b>capacitive</b> coupling), the hot loops' dI/dt
+through their mutual inductance (<b>inductive</b>), and the switching current's return
+through shared ground copper (<b>common ground</b>). Coupled Noise builds the converter's
+waveforms from the layout, couples them onto the signals you name, the <b>victims</b>, and
+compares the noise at each receiver with its noise margin.</p>
+<p>On the DSP board the aggressor is the TPS62150A buck, U402, making +3.3V from 12 V at
+2.5 MHz. Right beside it runs its own power-good line, <code>Net-(U402-PG)</code>, to the
+74LVC1G97 gate U401: an open-drain signal held high by a 10 kΩ pull-up, about as easy to
+disturb as a logic line gets. Is it safe?</p>
+
+<h3 class="step" id="noise-start">What it needs, and switching to Noise</h3>
+<p>Coupled Noise reads the rest of the setup: an aggressor is made from a VRM of type
+<b>Switcher</b>, so the VRMs come from DC or AC mode (the Noise setup has no VRMs tab).
+It also uses the series links and the capacitor models, and an AC probe if you want the
+ripple at a chip's pins. So this part starts from the VRMs, series links, capacitor models
+and dsPIC probe of <a href="#ac">Part 2</a>, with nothing in its own tabs yet. (Starting
+truly fresh: add the switcher VRM in DC or AC mode first, as in
+<a href="#dc-vrms">Part 1</a>.)</p>
+<p>Click <b>Noise</b> beside <b>Mode</b> (or press <kbd>Ctrl+3</kbd>). The setup becomes the
+<b>Coupled Noise setup</b>, with Aggressors, Victims, Capacitors and Settings tabs, and a
+<b>Waveforms</b> tab appears beside the 3D view. Keep the same nets ticked: the board
+model solves the converter's input and output rails and their ground.</p>
+<figure><a href="images/tutorial/noise_window_empty.jpg"><img src="images/tutorial/noise_window_empty.jpg" loading="lazy"
+  alt="KiPI in Coupled Noise mode with an empty setup"></a>
+<figcaption>Noise mode, empty: the red line under the tabs says what is missing (an
+aggressor).</figcaption></figure>
+
+<h3 class="step" id="noise-agg">Add the aggressor</h3>
+<p>On the <b>Aggressors</b> tab click <b>Add</b>. KiPI makes an aggressor for the first
+switcher VRM and fills its phase from the board: the inductor between the switching device
+and the rail, its value, the switch node, the device's pins on each side, and every
+capacitor from the input and output rails to ground. The line under <b>Topology</b> shows
+the operating point it worked out: <i>Buck (auto): 12 V → 3.3 V</i>.</p>
+<figure class="narrow"><a href="images/tutorial/noise_agg_added_editor.png"><img src="images/tutorial/noise_agg_added_editor.png" loading="lazy"
+  alt="A new aggressor with its defaults"></a>
+<figcaption>Add's guess: 500 kHz, no output current (there are no DC loads in this setup),
+typical switch values, and every capacitor on 12 V ticked as an input capacitor. Most of
+it needs checking against the datasheet.</figcaption></figure>
+<p>Work down the form with the TPS62150A datasheet and the schematic:</p>
+<table>
+  <tr><th>Field</th><th>Value</th><th>Where it comes from</th></tr>
+  <tr><td>Output current</td><td>0.151 A</td><td class="wrap">What +3.3V's loads draw:
+    the sum of the DC loads on the rail from <a href="#dc-loads">Part 1</a>. With DC loads
+    in the setup, <i>from the DC loads</i> does this by itself.</td></tr>
+  <tr><td>Switching frequency</td><td>2500 kHz</td><td class="wrap">The TPS62150A's
+    2.5 MHz mode (its FSW pin tied low).</td></tr>
+  <tr><td>Rise time, Fall time</td><td>2 ns</td><td class="wrap">The switch node's edges.
+    Datasheets rarely give them; 1 to 5 ns is typical for an integrated buck, and a scope
+    on the switch node tells you exactly. Faster edges reach higher frequencies and couple
+    more.</td></tr>
+  <tr><td>Least ringing damping</td><td>0.075</td><td class="wrap">Real switch nodes ring
+    for five to ten cycles. The default 0.05 is on the pessimistic side of that; 0.075
+    is a little less. If you can, measure it: scope the switch node and count the
+    cycles.</td></tr>
+  <tr><td>Ripple at AC probes</td><td>U701 dsPIC VDD</td><td class="wrap">Tick the AC
+    probe to see the buck's ripple at the dsPIC's pins.</td></tr>
+</table>
+<p>And in the <b>Phase</b> box below:</p>
+<ul>
+  <li><b>Inductor</b> L401, 2.2 µH. It is a shielded, flat SMD part: <b>Winding axis</b>
+    <i>Vertical</i> and <b>Shielded inductor</b> ticked, so its stray field is the small one
+    a shield lets out.</li>
+  <li><b>Switch node</b> <code>Net-(L401-Pad1)</code>; <b>High-side pins</b> U402 on
+    <code>+12V</code> (its VIN pins); <b>Low-side pins</b> U402 on
+    <code>GND</code> (its ground pins). Add found these from the VRM's pins.</li>
+  <li><b>Input capacitors</b>: untick C2101 and C2102. They are on 12 V, but at the LED panel
+    connectors across the board; the buck's hot loop closes through the capacitors beside
+    it, C203, C402, C403 and C405. <b>Output capacitors</b>: C406 and C407. The ticked ones
+    are the phase's own hot loops, traced and coupled as such; with the board model on, the
+    switching current still divides among every capacitor on the rails through the copper,
+    so C2101 and C2102 carry their share and show in the plots.</li>
+  <li><b>High-side Rds(on)</b> 90 mΩ and <b>Low-side Rds(on)</b> 40 mΩ, from the datasheet's
+    electrical characteristics. They damp the ringing and set the conduction losses.
+    <b>Coss</b> and <b>Qrr</b> are not given for an integrated buck; the typical values
+    (shown in brackets) stand in.</li>
+</ul>
+<figure class="narrow"><a href="images/tutorial/noise_agg.png"><img src="images/tutorial/noise_agg.png" loading="lazy"
+  alt="The +3.3V aggressor, filled in"></a>
+<figcaption>The aggressor filled in: 0.151 A out at 2.5 MHz, a 27.6 % duty cycle, the
+dsPIC's ripple ticked, and the four input and two output capacitors of the buck's own hot
+loop.</figcaption></figure>
+<div class="pair">
+<figure><a href="images/tutorial/noise_agg_added.png"><img src="images/tutorial/noise_agg_added.png" loading="lazy"
+  alt="The Aggressors tab with its list"></a><figcaption>The Aggressors tab: one per
+  switcher. A board with several bucks gets one each, solved one at a time.</figcaption></figure>
+<figure><a href="images/tutorial/noise_victims_tab.png"><img src="images/tutorial/noise_victims_tab.png" loading="lazy"
+  alt="The Victims tab"></a><figcaption>The Victims tab, after the next step.</figcaption></figure>
+</div>
+
+<h3 class="step" id="noise-victim">Add the victim</h3>
+<p>On the <b>Victims</b> tab click <b>Add</b>. KiPI picks the first signal net that is not a
+victim yet and guesses its driver and receiver as the net's two pads farthest apart:</p>
+<figure class="narrow"><a href="images/tutorial/noise_victim_added.png"><img src="images/tutorial/noise_victim_added.png" loading="lazy"
+  alt="A new victim on the USB D+ line"></a>
+<figcaption>The first guess, the USB bridge's D+ line, as a CMOS push-pull output. Pick the
+net you want under <b>Net</b>.</figcaption></figure>
+<p>For the power-good line:</p>
+<ul>
+  <li><b>Net</b> <code>Net-(U402-PG)</code>, <b>Name</b> <i>Local PGOOD</i>.</li>
+  <li><b>Driver pins</b> U402 pin 4 (PG); <b>Receiver pins</b> U401 pin 6, the gate's
+    input.</li>
+  <li><b>Type</b>: start from <i>Open drain, pulled up</i>. PG is an open-drain output:
+    high it is held only by its pull-up, low by its switch (<b>Driving low</b> 20 Ω). The
+    preset assumes 4.7 kΩ; this board's pull-up is 10 kΩ, so set <b>Driver resistance</b>
+    to 10000 Ω, which makes the type <i>Custom</i>.</li>
+  <li><b>Receiver resistance</b> 1 MΩ and <b>Receiver capacitance</b> 3.5 pF: the 74LVC1G97's
+    input, from its datasheet.</li>
+  <li><b>Logic level</b> 3.3 V. With <b>Noise margin</b> not set, KiPI takes JESD8's
+    3.3 V CMOS thresholds, VIH 2 V and VIL 0.8 V: 800 mV of margin, the smaller of the two
+    gaps (line 3.27 V high against 2 V, 0 V low against 0.8 V).</li>
+</ul>
+<figure class="narrow"><a href="images/tutorial/noise_victim.png"><img src="images/tutorial/noise_victim.png" loading="lazy"
+  alt="The Local PGOOD victim"></a>
+<figcaption>The victim. An open drain is solved twice, held high by its pull-up and low by
+its switch, and judged by the worse.</figcaption></figure>
+<p>With <b>PI Models</b> ticked under Display, the driver and receiver are marked in orange
+in the 3D view; clicking a marker selects its victim.</p>
+
+<h3 class="step" id="noise-settings">Check the Capacitors and Settings tabs</h3>
+<p>The <b>Capacitors</b> tab is AC mode's, with the same models. Every capacitor the
+aggressor uses should have one: a capacitor without a model is taken at its board value
+with a typical ESR and ESL, and the results say so.</p>
+<div class="pair">
+<figure><a href="images/tutorial/noise_caps_tab.png"><img src="images/tutorial/noise_caps_tab.png" loading="lazy"
+  alt="The Capacitors tab in Noise mode"></a><figcaption>Capacitors: shared with AC mode.</figcaption></figure>
+<figure><a href="images/tutorial/noise_settings_tab.png"><img src="images/tutorial/noise_settings_tab.png" loading="lazy"
+  alt="The Settings tab"></a><figcaption>Settings: the defaults, with the board model on.</figcaption></figure>
+</div>
+<p>The defaults in <b>Settings</b> suit most boards. The ones worth knowing:</p>
+<ul>
+  <li><b>Board model</b>: solves the 12 V and +3.3V rails and ground with AC mode's field
+    model, so the switching currents divide among the capacitors through the copper, each
+    hot loop is traced through the real copper and vias, and the ground difference between
+    a victim's ends gives its common-ground noise. It is the slow part of a solve; untick it
+    for a quick look while you move parts around.</li>
+  <li><b>Victim segment</b> and <b>Coupling window</b>: victims are cut into 0.5 mm pieces,
+    each with its own cross-section of the copper within 3 mm of it.</li>
+  <li><b>Scan radius</b> and the <b>Scan:</b> fields: for <a href="#noise-scan">scanning</a>
+    the nets around the aggressor.</li>
+</ul>
+
+<h3 class="step" id="noise-solve">Solve the aggressor</h3>
+<p>Below the tabs, <b>Aggressor</b> is <i>+3.3V</i> and <b>Victims</b> <i>All victims</i>
+(or one by name, quicker while you rework one route). Click <b>Solve</b>. With the board
+model on this is about as slow as an AC solve of the two rails: 2.35 million unknowns and
+30 field solves, eight and a half minutes here. The waveforms themselves are exact Fourier
+series and take well under a second, so with the board model off a solve is quick.</p>
+<figure><a href="images/tutorial/noise_window_solved.jpg"><img src="images/tutorial/noise_window_solved.jpg" loading="lazy"
+  alt="KiPI after the Coupled Noise solve, Waveforms tab in front"></a>
+<figcaption>Solved: the Waveforms tab comes to the front and the results table fills in
+under the setup.</figcaption></figure>
+<p>Start with the <b>Results</b> table and its notes:</p>
+<figure><a href="images/tutorial/noise_results.png"><img src="images/tutorial/noise_results.png" loading="lazy"
+  alt="The Coupled Noise results table and notes"></a>
+<figcaption>Local PGOOD: 83.5 mV peak against its 800 mV margin, 10.4 %, mostly
+capacitive: PASS.</figcaption></figure>
+<p>Each victim's row gives its receiver's peak noise over a switching period, its margin,
+the share of the margin used, the mechanism that dominates, and the verdict. The notes say
+how the converter was modelled; read them top to bottom:</p>
+<ul>
+  <li><b>The operating point</b>: buck from 12 V to 3.3 V, 0.151 A, duty 0.276, and 0.436 A
+    p-p inductor ripple. Harmonics up to 1.61 GHz (644 of them), set by the 2 ns edges
+    and the ringing.</li>
+  <li><b>The hot loop</b>: 0.434 nH, traced through the copper; the switch node's
+    202.5 pF to ground (the 200 pF Coss assumed plus 2.5 pF of copper); ringing at
+    537 MHz. A smaller loop has less inductance, so it rings higher and with less energy:
+    this is the number a tighter layout improves.</li>
+  <li><b>The edges</b>: the rising edge is <i>hard</i>. At this light load the inductor's
+    67 mA valley current carries the node only 55 % of the way within the 20 ns dead
+    time, so the high side finishes the edge and the node rings. The falling edge is
+    <i>soft</i>, carried by 0.369 A into the low side's body diode, which damps it.</li>
+  <li><b>The board model</b>: 84 capacitors on the rails, 30 field solves, 4.84 nF of
+    plane capacitance; and the dsPIC probe's ripple, 71.6 mV p-p.</li>
+  <li><b>Near field and a radiated estimate</b>: where a near-field probe 5 mm over the
+    board would find the strongest H field (at L401) and E field (over the switch node), and
+    a first estimate at 3 m against CISPR 32 class B: 36.2 dBµV/m at 812.5 MHz against 47,
+    mostly from C203's loop. It counts the board's loops only, no cables or enclosure: an
+    indicator of which loop radiates, not a compliance result.</li>
+  <li><b>Warnings</b>: the assumed Coss and Qrr (enter them where a datasheet gives them);
+    L401's shielded stray field; D1001 biased without a DC solve; C1001 to C1004 still
+    without a model (<a href="#ac-read">as in Part 2</a>); and two places where PGOOD
+    crosses the edge of the ground plane on In1.Cu, with the inductance each detour
+    adds.</li>
+</ul>
+
+<h3 class="step" id="noise-waves">Read the waveforms</h3>
+<p>The <b>Waveforms</b> tab plots two switching periods of each quantity; pick one in the
+menu at the top left. Hover to read a curve, and untick a curve's box on the right to hide
+it. The footer gives each curve's peak-to-peak and RMS.</p>
+<div class="pair">
+<figure><a href="images/tutorial/noise_plot_sw.png"><img src="images/tutorial/noise_plot_sw.png" loading="lazy"
+  alt="The switch node voltage"></a><figcaption><b>Switch node voltage</b>: 0 to 12 V at
+  27.6 % duty, ringing on the hard rising edge, one small undershoot on the soft
+  falling one.</figcaption></figure>
+<figure><a href="images/tutorial/noise_plot_il.png"><img src="images/tutorial/noise_plot_il.png" loading="lazy"
+  alt="The inductor current"></a><figcaption><b>Inductor currents</b>: a 0.436 A p-p
+  triangle around the 0.151 A output, dipping just below zero.</figcaption></figure>
+</div>
+<p>The inductor current dips below zero because KiPI models the buck in continuous
+conduction. At light load many bucks, the TPS62150A among them, switch to a power-save mode
+that skips pulses instead. For a worst case the continuous waveform, with its fast edges
+every period, is the right one to check.</p>
+<div class="pair">
+<figure><a href="images/tutorial/noise_plot_cin.png"><img src="images/tutorial/noise_plot_cin.png" loading="lazy"
+  alt="The input capacitor currents"></a><figcaption><b>Input capacitor currents</b>,
+  ringing at each edge. The board model shares the current out through the copper, so the
+  far-off C2101 and C2102 take their part too.</figcaption></figure>
+<figure><a href="images/tutorial/noise_plot_cout.png"><img src="images/tutorial/noise_plot_cout.png" loading="lazy"
+  alt="The output capacitor currents"></a><figcaption><b>Output capacitor currents</b>:
+  the inductor's ripple, shared among the capacitors on +3.3V.</figcaption></figure>
+</div>
+<div class="pair">
+<figure><a href="images/tutorial/noise_plot_ripple.png"><img src="images/tutorial/noise_plot_ripple.png" loading="lazy"
+  alt="The input and output ripple voltage"></a><figcaption><b>Input and output ripple
+  voltage</b> at the switching device's pins: 2.24 V p-p of spikes on 12 V at the hard
+  edge, 438 mV on 3.3 V, nearly all of it the 537 MHz ringing.</figcaption></figure>
+<figure><a href="images/tutorial/noise_plot_probes.png"><img src="images/tutorial/noise_plot_probes.png" loading="lazy"
+  alt="The ripple at the dsPIC's probe"></a><figcaption><b>Ripple at AC probes</b>: at the
+  dsPIC's pins, across the board, 71.6 mV p-p and 3.6 mV RMS.</figcaption></figure>
+</div>
+<p>Spikes that big look alarming, but they last a nanosecond or two. Tick <b>20 MHz
+limit</b> to see any view as an oscilloscope with its bandwidth limit on would (the usual way
+ripple is specified); the titles and the table keep the full bandwidth's figures. Tick
+<b>Spectrum</b> to see the harmonics instead:</p>
+<figure class="narrow"><a href="images/tutorial/noise_plot_sw_spectrum.png"><img src="images/tutorial/noise_plot_sw_spectrum.png" loading="lazy"
+  alt="The switch node's spectrum"></a>
+<figcaption>The switch node's spectrum: harmonics of 2.5 MHz falling at −20 dB/decade,
+then faster past the edges' corner (1/(π·2 ns), 159 MHz), with the ringing's hump near
+537 MHz.</figcaption></figure>
+<h4>The victim's noise</h4>
+<p><b>Victim noise</b> plots the selected victim's noise at its receiver and at its driver
+end. Tick <b>Capacitive</b>, <b>Inductive</b> or <b>Common</b> to add each mechanism's own
+curve. <b>Victim held high and low</b> plots the line as it sits, with the noise on it,
+against VIH and VIL:</p>
+<div class="pair">
+<figure><a href="images/tutorial/noise_plot_victim.png"><img src="images/tutorial/noise_plot_victim.png" loading="lazy"
+  alt="PGOOD's noise at the receiver and driver"></a><figcaption><b>Victim noise</b>:
+  bursts at each edge of the switch node, a few tens of mV.</figcaption></figure>
+<figure><a href="images/tutorial/noise_plot_states.png"><img src="images/tutorial/noise_plot_states.png" loading="lazy"
+  alt="PGOOD held high and held low"></a><figcaption><b>Held high and low</b>: held high
+  by the pull-up, the noise reaches 8 mV toward VIH, which is 1.27 V away; held low by the
+  20 Ω switch, 76 mV toward VIL, 800 mV away.</figcaption></figure>
+</div>
+<p>An open drain is solved in both states because its driver differs: the 10 kΩ pull-up
+high, the 20 Ω switch low. The verdict takes the larger noise of the two against the
+smaller margin: 83.5 mV of 800, a comfortable PASS. A victim using more than about half
+its margin deserves a closer look, and a FAIL a layout change (see
+<a href="#noise-3d">where the noise comes from</a>).</p>
+<figure class="narrow"><a href="images/tutorial/noise_plot_victim_20MHz.png"><img src="images/tutorial/noise_plot_victim_20MHz.png" loading="lazy"
+  alt="PGOOD's noise with the 20 MHz limit"></a>
+<figcaption>With <b>20 MHz limit</b> ticked, what a scope would show: about 12 mV p-p. A
+logic input responds far faster than 20 MHz, so the verdict stays on the full
+bandwidth.</figcaption></figure>
+
+<h3 class="step" id="noise-3d">See where the noise comes from</h3>
+<p>Three menus under the results table draw the solve in the 3D view (click the
+<b>3D view</b> tab). They answer the question a FAIL leaves: what to move.</p>
+<h4>Coupling in 3D</h4>
+<p>Pick <b>Superposition</b> (or one mechanism). Each piece of the selected victim's trace
+is coloured by its share of the receiver's peak: red adds to it, blue takes from it, and
+the shares add up exactly to the peak. The common-ground share is a dot at the driver.
+The brightest pieces are the ones to reroute.</p>
+<figure><a href="images/tutorial/noise_3d_coupling_zoom.png"><img src="images/tutorial/noise_3d_coupling_zoom.png" loading="lazy"
+  alt="PGOOD's trace coloured by its share of the peak noise"></a>
+<figcaption>From the top: PGOOD leaves U402's pin (the dot, its small common-ground share)
+and runs up past the buck's capacitors to a via. No piece stands out: the 83 mV peak,
+1.66 ns into the period on the hard edge, is spread thinly along the whole short
+route.</figcaption></figure>
+<h4>Hot loops in 3D</h4>
+<p>Pick <b>All capacitors</b>, or one. Each capacitor's loop is drawn as streamlines of
+the current the solve traced through the copper, in its own colour with its name at the
+capacitor and cones pointing the way the current flows: from its positive pad to the
+switching device, through it, and back through the ground's copper, vias and plane. Where
+the lines bunch the current is densest; where they dive down a via and run in the plane,
+that is where the return really goes. The line under the menu gives each loop's
+inductance.</p>
+<figure><a href="images/tutorial/noise_3d_loops.png"><img src="images/tutorial/noise_3d_loops.png" loading="lazy"
+  alt="The buck's six capacitor loops drawn in 3D"></a>
+<figcaption>The six loops. C402, C403 and C405, right beside U402, close tightly round it;
+C203, the 100 µF bulk part further off, swings wide, which is why the radiated estimate
+names its loop. C406 and C407 carry the output ripple back from L401.</figcaption></figure>
+<h4>Fields in 3D</h4>
+<p>Pick <b>H field</b> (the current loops and the inductor's stray field) or <b>E field</b>
+(the switch node's charge) and tick the sources in the list. Each point of a slice over
+the board, at the height entered, is coloured by its peak over a switching period, with
+arrows along the field. Tick <b>Animate</b> to play it through one period; click a part or
+net in the 3D view to add its field.</p>
+<div class="pair">
+<figure><a href="images/tutorial/noise_3d_hfield.png"><img src="images/tutorial/noise_3d_hfield.png" loading="lazy"
+  alt="The H field of all the loops 1 mm over the board"></a><figcaption>The H field
+  1 mm over the board from every loop and L401: strongest at the inductor, falling off
+  within a few millimetres.</figcaption></figure>
+<figure><a href="images/tutorial/noise_fields_box.png"><img src="images/tutorial/noise_fields_box.png" loading="lazy"
+  alt="The Fields in 3D controls"></a><figcaption>The sources ticked, and the slice's
+  peak: 283 A/m at L401.</figcaption></figure>
+</div>
+<p>The mechanisms call for different fixes. <b>Capacitive</b> noise comes from the switch
+node's dV/dt: keep victims away from the switch node's copper, or behind a plane, and
+drive them harder (a smaller pull-up). <b>Inductive</b> noise comes from the hot loops'
+dI/dt: make the loops small, keep them over a solid plane, and route victims away from
+them or on the far side of the plane. <b>Common</b> noise comes from the switching
+current's return: give the hot loop its own short return to ground and keep the victim's
+driver and receiver grounds out of it.</p>
+
+<h3 class="step" id="noise-scan">Scan the nets nearby</h3>
+<p>The victims you name are the ones you thought of. To find the ones you did not, tick
+<b>Scan nearby nets</b> beside <b>Victims</b> and set the <b>Scan radius</b> under it: every
+signal net with a trace that close to the aggressor's parts gets a quick estimate, and the
+worst (<b>Scan: solve in full</b> in Settings, 10 by default) are solved in full. 10 mm
+takes in 28 nets on this board.</p>
+<figure class="narrow"><a href="images/tutorial/noise_scan_row.png"><img src="images/tutorial/noise_scan_row.png" loading="lazy"
+  alt="Scan nearby nets ticked with a 10 mm radius, 28 nets"></a>
+<figcaption>Scan nearby nets ticked: 10 mm, 28 nets. A larger radius takes in more nets
+and takes longer.</figcaption></figure>
+<p>The real drivers of scanned nets are not known, so they are solved as <b>Scan: victim
+type</b>, <i>High impedance (undriven)</i> by default: a floating line held by nothing but
+its inputs' leakage, the worst case for capacitive coupling. Its margin is smaller too:
+undriven, the line sits half way, 1.65 V, and its margin is the 350 mV to the nearer
+threshold. A named victim keeps its own type. Click <b>Solve</b> again:</p>
+<figure><a href="images/tutorial/noise_scan_table.png"><img src="images/tutorial/noise_scan_table.png" loading="lazy"
+  alt="The scan's results: I2C_SDA, I2C_SCL and others marked (scan)"></a>
+<figcaption>The scan's nets are marked <b>(scan)</b>. Worst: I2C_SDA, 121 mV against
+350 mV (34.5 %), inductive. Scroll the table for the rest.</figcaption></figure>
+<p>All PASS, even as undriven lines. I2C_SDA comes closest, and inductively: somewhere
+along its long route it runs close to the buck's hot loops (<b>Coupling in 3D</b> shows
+where). Held by its real pull-up it would do better than undriven; to check it properly,
+add it as a victim with its real driver and receiver and solve again. The notes grow long with a scan: each scanned net's plane
+crossings are listed too.</p>
+<figure><a href="images/tutorial/noise_window_scan.jpg"><img src="images/tutorial/noise_window_scan.jpg" loading="lazy"
+  alt="KiPI after the scan"></a>
+<figcaption>After the scan, the worst victim is selected and plotted: I2C_SDA's noise
+at U302, well inside its ±350 mV.</figcaption></figure>
+<ul>
+  <li><b>Report</b> writes the shown aggressor's HTML or PDF report: the victims against
+    their margins, the parasitics, the waveforms, each victim's noise by mechanism, the
+    scan's estimates and the notes (<a href="help.html#noise-solving">details</a>).</li>
+  <li><b>Save results…</b> keeps every solved aggressor for <b>Open results…</b>.</li>
+</ul>
+</section>
+
+<!-- ================================================================== AFTER -->
+<h2 id="tolerance">Putting it together</h2>
+<p>Each part answered one question. A load's whole voltage budget takes all three: the DC
+drop (Part 1), the ripple a switcher puts on its rail (Part 3) and the transient a load
+step causes (Part 2), on top of the regulator's own accuracy. The <b>Tolerance</b> button
+on the toolbar opens a window that adds them up per load, side by side against each load's
+DC, AC and total tolerances, from whichever results are loaded, solved or opened from
+files. On your own board, where the three modes share one setup:</p>
+<ol class="steps">
+  <li>Give each load a tolerance, and its <b>DC tolerance</b> and <b>AC tolerance</b>
+    where its datasheet splits them (DC setup, Loads).</li>
+  <li>Solve DC. Give each load you care about an AC probe on the same pins (<b>From DC
+    load</b> in AC mode) with a load step, and solve its rail.</li>
+  <li>In Coupled Noise, tick that probe under the switcher's <b>Ripple at AC probes</b> and
+    solve.</li>
+  <li>Open <b>Tolerance</b>, tick the loads, and read each one's PASS or FAIL. Save the
+    table to keep it with the board revision.</li>
+</ol>
+<p>The <a href="help.html#tolerance">Tolerance stack-up</a> section of the User Guide
+describes every column.</p>
+
+<h2 id="more">Where to go next</h2>
+<ul>
+  <li>The <a href="help.html">User Guide</a>: every control, every result column, the
+    <a href="help.html#workflows">step-by-step workflows</a> (multi-phase regulators, remote
+    sense, partial solves, decoupling studies) and
+    <a href="help.html#troubleshooting">troubleshooting</a>.</li>
+  <li>The <a href="solver-guide.html">Solver Guide</a>: what PI analysis is, and how KiPI's
+    mesh and its DC, thermal, AC and coupled noise solvers work.</li>
+  <li>Hover any field in KiPI for its tooltip, and press <kbd>F1</kbd> for the User
+    Guide.</li>
+</ul>
+
+</main>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  try {
+    var saved = localStorage.getItem("kipi-help-theme");
+    if (saved) root.setAttribute("data-theme", saved);
+  } catch (e) {}
+  document.getElementById("theme").onclick = function () {
+    var dark = root.getAttribute("data-theme") === "dark" || (!root.getAttribute("data-theme") &&
+      window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("kipi-help-theme", next); } catch (e) {}
+  };
+})();
+</script>
+</body>
+</html>

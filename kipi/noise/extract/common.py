@@ -195,9 +195,9 @@ def board_ports(snap: BoardSnapshot, setup: PISetup, agg, op,
                 solved = k.name in link_currents
                 k = biased_link(setup, k, link_currents)
                 if k.is_diode:
-                    src = "from the DC solve" if solved else "the DC loads beyond it, estimated"
+                    how = "from the DC solve" if solved else "the DC loads beyond it, estimated"
                     notes.append(f"Series link {k.name}: diode small-signal model at "
-                                 f"{k.bias_a:.3g} A, {src}")
+                                 f"{k.bias_a:.3g} A, {how}")
                 ports += link_ports(k, lambda p: _pads(snap, p))
     if solved_v:
         notes.append(f"Capacitors derated at the DC solve's voltage across them: "

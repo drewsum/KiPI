@@ -4,7 +4,131 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 1.0.0 (in development)
+## 1.0.1
+
+### Added
+- **A load can source current onto its rail** (#241). The load editor has a new
+  **Direction** row, off by default, for a part that back-feeds its rail. Its current
+  then flows into the copper, the VRM supplies that much less, and its ground pins take
+  the current out. Results show its current as negative, and the power tree diagram
+  draws its arrow into the rail. Setup files without it read as before.
+- **Undo and Redo for the setup** (#240). Two buttons on the main toolbar (Ctrl+Z and
+  Ctrl+Y), in the plugin and standalone, step back and forward through the last 25 setup
+  changes in any mode, including imports, stackup edits and the nets ticked. Edits made
+  close together count as one step. Reading the board again starts a new history, and
+  only Save writes the setup file.
+- **Tutorial** (#242). A new page, `docs/tutorial.html`, hosted beside the user guide
+  at <https://drewsum.github.io/KiPI/tutorial.html>. It takes the Audio Visualiser DSP
+  board through a DC, an AC and a Coupled Noise solve, each from a new setup, with a
+  screenshot of every step: nets, VRMs, series links (a diode from its SPICE model),
+  loads, capacitor models read off a TDK datasheet, probes and targets, aggressors and
+  victims, and reading each result. The README, the user guide and the About dialog link
+  to it.
+
+### Changed
+- **A VRM regulates above its own ground pins** (#244, from Tomachie). An LDO or switcher
+  without ground sense pins now holds its output above the voltage at its own ground pins,
+  as a real regulator does, instead of above the board's 0 V. When the return current
+  lifts its ground pins, its output moves up with them, and its ground is iterated with
+  the rails as a ground-sense VRM's already was. A source's ground pins are still the
+  0 V reference, and so are an isolated converter's output ground pins. A VRM without
+  ground pins is held above 0 V as before.
+- **A VRM's power, loss and input range are across it.** A switcher's input current comes
+  from (V_out − V_gnd) × I_out = η × (V_in − V_gnd) × I_in. An isolated converter's input
+  is measured from its input ground pins. P out, P in, the loss (and the heat it puts into
+  the board) and the input range check are all taken from its ground pins, not 0 V. A
+  rail's drop is measured from its target voltage above that ground. The report and the
+  VRM CSV have a new **V gnd** column: each VRM's ground pins' voltage.
+- **Several sources on one ground are noted.** They all hold their ground pins at the
+  same 0 V, as if tied off the board, as before; the Notes now say so. The user guide
+  and the Solver Guide (new section *Ground and the 0 V reference*) describe where 0 V
+  comes from and what each VRM regulates against.
+- **Diodes and multi-pin FETs point to a SPICE model.** The series link editor's note and
+  its **Import SPICE model…** tooltip say a SPICE model is the best way to model a diode,
+  or a FET with several drain and source pins. As plain pins, each side's pins are tied
+  into one node, which can hide a pin the copper starves. Since transistors are not read,
+  the user guide shows a FET as a multi-pin `.SUBCKT` of resistors, one pin per drain and
+  source pin, joined through its RDS(on).
+
+### Fixed
+- **A via between the switching FETs made the hot loop planeless** (#247). The image plane
+  was found from one point, midway between the device's high-side and low-side pins. A
+  via there (where a half-bridge's switch node often escapes) leaves an antipad in every
+  plane, so no plane was found and the loop was solved in free air: its inductance came
+  out several times too high (2.8 times on the test board), with nothing said. The plane
+  is now the nearest one covering at least half of the hot loop's pads' footprint (the
+  device's and the hot-loop capacitors' pads), and a single point the planes miss (an
+  inductor's, a switch-node patch's) takes the plane covering the rings round it out to
+  1.5 mm. A hot loop with no plane under it says so in its notes. Reported by Dant-hw.
+- **Coupled Noise failed with a diode on the rails** (#242). With the board model on, an
+  aggressor whose input or output rail had a diode series link (a Schottky feeding a
+  sub-rail, say) stopped with `ValueError: invalid literal for int()`: noting the diode's
+  bias overwrote the list of the switcher's source ports with the note's text. It solves
+  now, with the diode's note as before.
+- **Hot loops in 3D could use up the computer's memory** (#242). A streamline of a
+  capacitor's traced loop that met a sliver triangle in the copper's mesh could cross
+  into the next triangle at a point far off the board (10¹¹ mm away on the DSP board),
+  and *All capacitors* then drew a cone every 2 mm along it until memory ran out. Each
+  crossing now stays on the edge it crosses, and a loop's cones are capped at 2000
+  (spaced wider on a longer path), so results saved before this open safely too. The
+  coupling and the loops' inductance never used the streamlines and are unchanged.
+- **The plugin did not start on macOS** (#237). KiCad starts plugins with the
+  `PYTHONHOME` and `PYTHONPATH` of its bundled Python 3.9, and clears them only on
+  Windows. A newer Python selected in *Preferences → Plugins*, as the README said to do,
+  stopped before running any KiPI code (`No module named 'encodings'`). With KiCad's own
+  Python, KiPI's packages could not be installed. Now the README says to keep KiCad's
+  Python. On the first click, KiPI sees that it is too old, sets up its own environment
+  from a Python 3.10 to 3.13 it finds (with the same setup window), and runs the plugin
+  there without KiCad's Python settings. It still connects to the PCB editor. Looking
+  for that Python now also searches Homebrew, python.org and `~/.local/bin`, which are
+  not on the PATH of an app started from the Dock. CI runs this start on macOS's own
+  Python 3.9.
+- **Meshing failed on systems with a decimal comma** (#236). On Linux and macOS, Qt applies
+  the system locale to the whole process, so Triangle read the "0.01" in its options as 0
+  and stopped, and read a minimum angle such as 28.5 as 28. KiPI now keeps C-level numbers
+  in the C locale. Value fields still show the user's decimal comma. CI now also runs
+  the tests on Linux in a Swedish locale (`sv_SE.UTF-8`), so a decimal comma or U+2212
+  minus that breaks anything shows up before release. That run found a second Triangle
+  call, in Coupled Noise's trace cross-sections, without the fallback check; every
+  Triangle call now has it.
+- **A copper pour with a zero-area hole was left out of the solve** (#238). Zone fills
+  can carry a hole outline that encloses nothing (collinear or pinched-out points). The
+  point KiPI gave Triangle to mark that hole fell on the outline, in the copper, so
+  Triangle removed the whole polygon. Pads on it read as DISCONNECTED, the net showed
+  thousands of single-node islands, and their current went missing from the source.
+  KiPI now skips such outlines. If marking the holes still leaves no mesh, KiPI meshes
+  the polygon without the hole points and then removes the triangles inside the holes.
+  Thanks to @FractalEngineer.
+- **Pads cut off from their pour by a slit in the fill** (#245, from Tomachie). A slit
+  the fill or the simplification leaves (a hole ring of almost no width) put the point
+  marking it on its edge, in the copper, and Triangle then removed the copper around it.
+  Such points are now dropped with the zero-area rings above, and the warning says how
+  many rings were ignored. A pad smaller than the mesh's triangles now takes the nearest
+  node of its copper, and when the mesh is built without the pad outlines a node is
+  placed inside each pad, so its terminal still finds one.
+- **Slow meshing on planes with thousands of holes** (#245, from Tomachie). Clipping every
+  pad outline against the polygon cost more than the mesh. Only outlines whose box meets
+  the polygon are clipped now, against the polygon's edge band built once.
+- **ODB++ pins named with their part's reference** (#245, from Tomachie). A pin named
+  `U1-3` is read as pin 3 of U1.
+- **PDF report images ran off the page on macOS** (#245, from Tomachie). Qt there lays
+  images out at 72 pixels to the inch, a third wider, so the layer maps ran off the
+  page's right edge and lost their colour scales. The report now measures how Qt scales
+  an image on the page and sizes them to match.
+- **Negative values in Swedish and similar locales** (#236). These locales write minus as
+  U+2212, which value fields rejected, so a negative value shown there could not be edited.
+- **No board outline when a footprint drew part of the board edge**. A connector's
+  footprint often draws the edge's cutout for it on Edge.Cuts (a USB receptacle's notch,
+  as on KiCad's Tiny Tapeout demo), and KiCad joins those edges to the board's own. KiPI
+  read only the board's, so the outline did not close and the 3D view and the thermal
+  model had no board edge ("No closed board outline found on Edge.Cuts"). Both KiCad
+  readers now take in the footprints' edges too. The outline also joins ends that lie
+  within 0.02 mm, as KiCad does: a placed footprint's edges can miss the board's by a
+  few nm. That helps ODB++ and HyperLynx boards too.
+- **The README's user guide links opened the raw file on GitHub** (#239). They now open
+  the hosted guide on GitHub Pages, as the Solver Guide link already did.
+
+## 1.0.0
 
 ### Added
 - **KiCad Plugin and Content Manager package** (#7). Each release now has

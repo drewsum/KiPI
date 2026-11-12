@@ -319,7 +319,8 @@ def _fp_angle(fp) -> Optional[float]:
 
 
 def _outline(board_shapes, progress) -> List[Poly]:
-    """Board outline polygons from Edge.Cuts graphics (best effort)."""
+    """Board outline polygons from Edge.Cuts graphics, the board's and its footprints'
+    (best effort)."""
     from kipy.board_types import BoardArc, BoardCircle, BoardPolygon, BoardRectangle, BoardSegment
     from kipy.proto.board.board_types_pb2 import BoardLayer
     try:
@@ -509,7 +510,7 @@ def extract_board(board, refill_zones: bool = False,
         zones.extend(copper_shape_zones(board_shapes + fp_shapes, cu_ids, progress))
 
     with progress.timed("Reading board outline"):
-        outline = _outline(board_shapes, progress)
+        outline = _outline(board_shapes + fp_shapes, progress)
 
     with progress.timed("Reading silkscreen"):
         silkscreen = read_silkscreen(board, board_shapes + fp_shapes, kfootprints, progress,

@@ -461,8 +461,10 @@ class CopperPaths:
                 dist = np.where(moving, -lam / np.where(moving, dlam, 1.0), np.inf)
                 dist = np.where(dist < 0, 0.0, dist)
                 for i in [int(i) for i in np.argsort(dist) if np.isfinite(dist[i])]:
-                    q = p + u * dist[i]
                     j, kk = [nodes[x] for x in range(3) if x != i]
+                    # On the edge it crosses: past the first edge the line runs outside
+                    # the triangle, as far off as a sliver's near-parallel edge puts it.
+                    q = _on_edge(p + u * dist[i], pts[j], pts[kk])
                     if j in end and kk in end:
                         path.append((q[0], q[1], self.z[lid]))
                         return path, j
@@ -548,6 +550,13 @@ class CopperPaths:
             if len(path) >= 2:
                 lines.append(_simplify(np.array(path, float)))
         return lines, complete and bool(seeds)
+
+
+def _on_edge(q, a, b) -> np.ndarray:
+    """The point of the edge from ``a`` to ``b`` nearest ``q``."""
+    e = b - a
+    s = float((q - a) @ e) / max(float(e @ e), _TINY)
+    return a + min(max(s, 0.0), 1.0) * e
 
 
 def _simplify(path: np.ndarray) -> np.ndarray:

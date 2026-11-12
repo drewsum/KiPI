@@ -16,6 +16,8 @@ _DOCS = Path(__file__).resolve().parents[2] / "docs"
 ONLINE = "https://drewsum.github.io/KiPI/help.html"
 # What PI analysis is and how KiPI's solvers work (#92).
 SOLVER_GUIDE_ONLINE = "https://drewsum.github.io/KiPI/solver-guide.html"
+# One board set up and solved in every mode, step by step (#242).
+TUTORIAL_ONLINE = "https://drewsum.github.io/KiPI/tutorial.html"
 
 
 def help_path() -> Optional[Path]:
@@ -26,11 +28,20 @@ def help_path() -> Optional[Path]:
 
 def solver_guide_url() -> str:
     """The Solver Guide: the copy installed with KiPI, else the online one."""
-    p = _DOCS / "solver-guide.html"
+    return _doc_url("solver-guide.html", SOLVER_GUIDE_ONLINE)
+
+
+def tutorial_url() -> str:
+    """The Tutorial: the copy installed with KiPI, else the online one."""
+    return _doc_url("tutorial.html", TUTORIAL_ONLINE)
+
+
+def _doc_url(name: str, online: str) -> str:
+    p = _DOCS / name
     if p.is_file():
         from qtpy.QtCore import QUrl
         return QUrl.fromLocalFile(str(p)).toString()
-    return SOLVER_GUIDE_ONLINE
+    return online
 
 
 def open_help(parent: Optional[QWidget] = None) -> bool:

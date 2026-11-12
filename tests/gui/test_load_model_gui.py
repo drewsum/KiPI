@@ -91,3 +91,14 @@ def test_dc_loads_get_added_from_a_hyperlynx_model_one_per_net(app, accept, tmp_
     u2.current = 0.0
     panel.apply_load_model(model)
     assert u2.current == 0.2 and loads["U1 VIN"].current == 0.2
+
+
+def test_load_editor_saves_a_sourcing_load(app):
+    from kipi.dc.gui.pi_panel import PIPanel
+    panel = PIPanel()
+    panel.snapshot, panel.setup = board(), setup("ldo")
+    ed, load = panel.load_list.editor, panel.setup.loads[0]
+    ed.load(load)
+    assert not ed.sources.isChecked()
+    ed.sources.setChecked(True)                # #241
+    assert load.sources and load.current == 1.0
