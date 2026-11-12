@@ -947,7 +947,37 @@ links from a Tomachie power-tree file (<code>&lt;schematic&gt;.pdn.json</code>, 
 current and resistance are solved; each maximum the file gives is kept for a
 <b>Worst case (max)</b> solve, chosen beside <b>Solve all</b>. A current the file does not
 give is marked not known, and the results it touches are INCOMPLETE. The log lists what
-could not be placed on the board. Problems that stop a solve are listed in red under the tabs
+could not be placed on the board.</p>
+<p>What the import fills in, all of it editable afterwards:</p>
+<ul>
+  <li><b>Ground pins</b> of every source, regulator and load, so return current flows in
+  the ground copper. A pull resistor returns through the part it pulls, and a motor
+  through its driver. An isolated converter becomes an <b>Isolated</b> VRM with separate
+  input and output grounds. A ground that no source holds at 0&nbsp;V is left to an ideal
+  ground, and the log says so.</li>
+  <li><b>Remote sense</b>: a regulator's sense pins, or the point on the rail they are
+  tied to, and its return-sense pins become the VRM's sense and ground sense.</li>
+  <li><b>Type and rating per output</b>: on a part with several outputs (a PMIC), each
+  output is an LDO or a switcher on its own, with its own rated current as the current
+  limit.</li>
+  <li><b>DC accuracy</b>: a regulator's output band from the file becomes the VRM's DC
+  accuracy in volts. A board input's stated range becomes its source's accuracy.</li>
+  <li><b>Series links</b> for parts between rails, input filters (a ferrite ahead of a
+  regulator or a load), parts joining two ground nets (a 0&nbsp;&Omega; resistor, a net
+  tie) and a board input's series parts. A switcher's output inductor is a
+  0&nbsp;&Omega; link, because it is inside the regulation loop. Its drop is regulated
+  out and its loss is counted in the efficiency. If the feedback is actually taken
+  before the inductor, this understates the rail's drop. Enter its resistance by hand in
+  that case.</li>
+  <li><b>Loads</b> at their typical current, with a PASS / FAIL range taken from the
+  rail's range, or from the datasheet's supply range where that is stricter. On a rail
+  fed by a board input, the datasheet's range is always used. A part on a rail only by a
+  detect, enable or reference pin is not a load. A part that draws what it drives is
+  solved at its own static current, which understates what it draws. ICs with no supply
+  range in the file are listed in the log.</li>
+</ul>
+<p>Fields the importer does not read, such as <code>details</code> objects, are
+skipped. Problems that stop a solve are listed in red under the tabs
 as you edit. The VRMs, Loads and Series links tabs share one layout: a list with <b>Add</b>,
 <b>Duplicate</b> and <b>Remove</b>, and an editor for the selected entry below it.</p>
 
@@ -2581,8 +2611,10 @@ them a model or confirm they really do not belong on this rail.</p>
     parts' datasheets: every power rail with its voltage and where it comes from; each
     regulator with its type, efficiency, quiescent current, dropout and input range; the
     parts in series between rails (fuses, ferrites, inductors, load switches, 0&nbsp;&Omega;
-    links) with their DC resistance; and every load with its typical and maximum current and
-    the lowest supply voltage its datasheet allows. <b>Import…</b> in the DC setup reads it.
+    links) with their DC resistance; the ground pins of each source, regulator and load;
+    each regulator's remote sense point and output accuracy; and every load with its
+    typical and maximum current and the supply range its datasheet allows.
+    <b>Import…</b> in the DC setup reads it (see <a href="#dc-setup">DC setup tabs</a>).
     It saves hours of reading datasheets and typing values in.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.yml</code></td><td class="wrap">The setup: ticked nets, VRMs,
     loads, series links, mesh, copper and thermal settings, capacitor models, probes and the
