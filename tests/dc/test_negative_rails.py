@@ -45,23 +45,15 @@ def test_switcher_draws_power_from_either_polarity(vin):
 
 def test_ground_return_of_a_negative_rail():
     # An LDO passes its current through, so the return flows from J1's ground pin to the
-    # load's (past U1's, 1 mm of pad): the load's ground sits below 0 V, which shrinks what
-    # it sees further.
-    s = _negative(ground=True)
-    s.settings.regulate_above_own_ground = False        # U1 held at -3.3 V from 0 V (the default)
-    res = solve_tree(board(), s)
-    ld = by_name(res.loads, "U2")
+    # load's (past U1's, 1 mm of pad): U1's ground pin sits R(9) below 0 V and the load's
+    # R(19). U1 holds its output -3.3 V above its own ground pin, so the load sees -3.3 V
+    # shrunk by the rail's R(8) and the R(10) of ground between U1's pin and its own.
+    res = solve_tree(board(), _negative(ground=True))
+    ld, u1 = by_name(res.loads, "U2"), by_name(res.vrms, "U1")
+    assert u1.v_ground == pytest.approx(-1.0 * R(9), rel=1e-6)
+    assert u1.v_out == pytest.approx(-3.3 - 1.0 * R(9), rel=1e-6)
+    assert u1.v_ground_sense is None                    # it has no ground sense pins
     assert ld.v_ground == pytest.approx(-1.0 * R(19), rel=1e-6)
-    assert ld.v_effective == pytest.approx(-3.3 + 1.0 * R(27), rel=1e-6)
+    assert ld.v_effective == pytest.approx(-3.3 + 1.0 * R(18), rel=1e-6)
     for g in res.groups.values():
         assert g.result.fields.summary["kcl_error"] < 1e-9, g.name
-
-    # U1 regulates above its own ground pins (regulate_above_own_ground): its output moves
-    # with them, so the load sees that much more of the -3.3 V; its ground return is unchanged.
-    s2 = _negative(ground=True)
-    s2.settings.regulate_above_own_ground = True
-    res2 = solve_tree(board(), s2)
-    ld2, u1 = by_name(res2.loads, "U2"), by_name(res2.vrms, "U1")
-    assert ld2.v_ground == pytest.approx(ld.v_ground, rel=1e-6)
-    assert ld2.v_effective == pytest.approx(ld.v_effective + u1.v_ground_sense, rel=1e-6)
-    assert u1.v_ground_sense < 0                        # the return lifts it below 0 V

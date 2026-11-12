@@ -835,6 +835,28 @@ output current, efficiency or quiescent current) is applied as a load upstream. 
 <p>Voltages are measured against the source's ground (0 V). If ground pins are given, the
 ground return is solved too and a load's ground rises above 0 V. The figure to compare with
 the VRM's regulated voltage is the load's <b>effective voltage</b>: supply minus ground at the load.</p>
+<ul>
+  <li><b>The 0 V reference.</b> A source VRM's ground pins hold its ground at 0 V. Every
+    other voltage on that ground is solved from the current returning through the copper.
+    An isolated converter's output ground pins are the 0 V of the ground on its output side.</li>
+  <li><b>Several sources on one ground.</b> Two or more sources (two input connectors, say)
+    all hold their ground pins at the same 0 V, as if their grounds were tied together off
+    the board. The copper decides how much of the return comes back to each; sources on the
+    same ground pins split it by what each delivers. The Notes list every ground with more
+    than one such reference.</li>
+  <li><b>Every other VRM regulates above its own ground.</b> An LDO or switcher holds its
+    output at its set voltage above its <b>ground sense pins</b> or, without them, above its
+    own <b>ground pins</b>, as a real regulator does. When the return current lifts its ground
+    pins, its output moves up with them, and its loads see only the drop between them. A VRM
+    with no ground pins (or whose ground net is excluded) is held above 0 V.</li>
+  <li><b>Measured across the VRM.</b> A switcher's power out and in, its input range check
+    and the loss in the results are all across the VRM, from its ground pins:
+    (V<sub>out</sub> − V<sub>gnd</sub>)·I<sub>out</sub> =
+    η·(V<sub>in</sub> − V<sub>gnd</sub>)·I<sub>in</sub>. An isolated converter's input is
+    measured from its input ground pins. A rail's drop and boost are measured from its
+    target voltage above that ground. The report's <b>V gnd</b> column shows each VRM's
+    ground pins' voltage.</li>
+</ul>
 <h4 id="vrm-isolated">Isolated converters</h4>
 <p>A VRM of type <b>Isolated</b> (a flyback, a forward converter or an isolated module) is a
 switcher whose output side has a ground of its own. Its <b>Output ground pins</b> hold that
@@ -990,18 +1012,21 @@ as you edit. The VRMs, Loads and Series links tabs share one layout: a list with
     links it into the power tree. Filled in from the output part when it has one other
     rail.</td></tr>
   <tr><td>Ground pins</td><td class="wrap">Optional: solve the ground return as well. Filled in
-    with the output part's ground pins. On an isolated converter, <b>Output ground pins</b>:
+    with the output part's ground pins. An LDO or switcher regulates its output above them
+    when it has no ground sense pins (see <a href="#dc-concepts">voltage references</a>). On a
+    source they hold the ground at 0 V; on an isolated converter, <b>Output ground pins</b>:
     the output side's ground, which they hold at 0 V.</td></tr>
   <tr><td>Input ground pins</td><td class="wrap">Isolated only, optional: the input side's
     ground pins, where its input current returns to the VRM feeding it. Filled in with the
     output part's pins on its other ground net.</td></tr>
   <tr><td>Sense pins</td><td class="wrap">Optional remote sense (positive).</td></tr>
   <tr><td>Ground sense pins</td><td class="wrap">Optional negative remote sense on the ground net
-    (needs ground pins).</td></tr>
+    (needs ground pins): the VRM regulates above them instead of its own ground pins.</td></tr>
   <tr><td>Mesh sense</td><td class="wrap">Off by default. Any number of sense points (<b>Sense
     points</b>, edited one at a time with <b>Edit sense point</b>), each with its own sense
     and optional ground sense pins. Every point's sense pins are held at the regulated voltage
-    (less the load line), above its own ground sense pins; the VRM's current enters there
+    (less the load line), above its own ground sense pins, or the VRM's own ground pins for a
+    point without them; the VRM's current enters there
     and its output pins only measure.</td></tr>
 </table>
 </div>

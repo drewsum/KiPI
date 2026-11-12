@@ -107,14 +107,18 @@ class PhaseReport:
     i_out: float
     v_in: Optional[float]
     i_in: Optional[float]
+    # Its own ground pins and the pins its input returns through: its power is across
+    # them (results saved before these read 0 V, as they were solved).
+    v_gnd: float = 0.0
+    v_in_gnd: float = 0.0
 
     @property
     def p_out(self) -> float:
-        return self.v_out * self.i_out
+        return (self.v_out - self.v_gnd) * self.i_out
 
     @property
     def p_in(self) -> Optional[float]:
-        return None if self.v_in is None else self.v_in * self.i_in
+        return None if self.v_in is None else (self.v_in - self.v_in_gnd) * self.i_in
 
     @property
     def p_loss(self) -> Optional[float]:
@@ -143,13 +147,14 @@ class VrmReport:
     load_line_mohm: float = 0.0               # load line (#94), 0 = none
     v_droop: float = 0.0                      # load line x I out: how far v_target is
                                               # below v_set
+    v_ground: Optional[float] = None          # at its own ground pins (mean of its phases')
 
     def __setstate__(self, state):
         # Results files saved before multi-phase VRMs, current limits, regulation
         # checks or load lines lack those fields.
         self.__dict__.update({"phases": [], "current_limit_a": None, "passed": None,
                               "regulation": "", "load_line_mohm": 0.0,
-                              "v_droop": 0.0, **state})
+                              "v_droop": 0.0, "v_ground": None, **state})
 
     @property
     def v_target(self) -> float:

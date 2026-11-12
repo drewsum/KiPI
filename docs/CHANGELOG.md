@@ -26,14 +26,23 @@ milestones rather than versions that were ever set.
   to it.
 
 ### Changed
-- **A VRM regulates above its own ground pins** (#244, from Tomachie). A VRM without
-  ground sense pins now holds its output above the voltage at its own ground pins, as a
-  converter does, instead of above the board's 0 V. When the ground copper lifts its
-  ground pins, its output moves up with them, and its ground is iterated with the rails
-  as a ground-sense VRM's already was. A VRM whose ground pins are the 0 V reference (a
-  board input, an isolated output side) is not moved. A switcher's input current now
-  comes from the voltages across it: (V_out − V_gnd) × I_out = η × (V_in − V_gnd) × I_in.
-  The `regulate_above_own_ground` solve setting turns it off.
+- **A VRM regulates above its own ground pins** (#244, from Tomachie). An LDO or switcher
+  without ground sense pins now holds its output above the voltage at its own ground pins,
+  as a real regulator does, instead of above the board's 0 V. When the return current
+  lifts its ground pins, its output moves up with them, and its ground is iterated with
+  the rails as a ground-sense VRM's already was. A source's ground pins are still the
+  0 V reference, and so are an isolated converter's output ground pins. A VRM without
+  ground pins is held above 0 V as before.
+- **A VRM's power, loss and input range are across it.** A switcher's input current comes
+  from (V_out − V_gnd) × I_out = η × (V_in − V_gnd) × I_in. An isolated converter's input
+  is measured from its input ground pins. P out, P in, the loss (and the heat it puts into
+  the board) and the input range check are all taken from its ground pins, not 0 V. A
+  rail's drop is measured from its target voltage above that ground. The report and the
+  VRM CSV have a new **V gnd** column: each VRM's ground pins' voltage.
+- **Several sources on one ground are noted.** They all hold their ground pins at the
+  same 0 V, as if tied off the board, as before; the Notes now say so. The user guide
+  and the Solver Guide (new section *Ground and the 0 V reference*) describe where 0 V
+  comes from and what each VRM regulates against.
 
 ### Fixed
 - **Coupled Noise failed with a diode on the rails** (#242). With the board model on, an

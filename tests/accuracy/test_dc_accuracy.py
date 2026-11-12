@@ -176,11 +176,7 @@ def test_planes_on_two_layers_share_by_thickness(plane_board):
 
 @pytest.fixture(scope="module")
 def chain():
-    # The hand calculation holds each VRM above 0 V; the switcher above its own ground
-    # pin is checked on its own below.
-    snap, setup = open_board("power_chain")
-    setup.settings.regulate_above_own_ground = False
-    return snap, setup, solve_tree(snap, setup)
+    return _solve("power_chain")
 
 
 def _r(snap, gap):
@@ -197,20 +193,26 @@ def _hand(snap):
     g = boards.PowerChain
     out = {"U2.i_in": g.I_U3 + g.IQ_LDO}
     i_out1 = g.I_U4 + out["U2.i_in"]
-    # Switcher input: V = V_src - R·(P/(η·V) + I_q), a quadratic in V.
+    # The switcher U1 holds +3V3 V_SMPS above its own ground pin U1.3 and draws its power
+    # across its input and ground pins: V = V_in - V_gnd = V_src - R·(P/(η·V) + I_q), a
+    # quadratic in V, R the loop through VIN and back through GND to J1. All of the
+    # source's current comes back through GND between J1.2 and U1.3.
     r_vin = _r(snap, _gap(g.VIN, "J1.1", "U1.1"))
+    r_gnd = _r(snap, _gap(g.GND, "J1.2", "U1.3"))
     p = g.V_SMPS * i_out1 / g.ETA
-    a = g.V_SRC - r_vin * g.IQ_SMPS
-    out["U1.v_in"] = (a + math.sqrt(a * a - 4 * r_vin * p)) / 2
-    out["U1.i_in"] = p / out["U1.v_in"] + g.IQ_SMPS
+    a = g.V_SRC - (r_vin + r_gnd) * g.IQ_SMPS
+    v_across = (a + math.sqrt(a * a - 4 * (r_vin + r_gnd) * p)) / 2
+    out["U1.i_in"] = p / v_across + g.IQ_SMPS
+    out["U1.gnd"] = out["U1.i_in"] * r_gnd
+    out["U1.v_in"] = v_across + out["U1.gnd"]
+    out["U1.v_out"] = g.V_SMPS + out["U1.gnd"]
     # +3V3 and +3V3_F, joined by the ferrite.
-    out["U4.v"] = g.V_SMPS - i_out1 * _r(snap, _gap(g.V3V3, "U1.2", "U4.1"))
+    out["U4.v"] = out["U1.v_out"] - i_out1 * _r(snap, _gap(g.V3V3, "U1.2", "U4.1"))
     out["U2.v_in"] = out["U4.v"] - out["U2.i_in"] * (
         _r(snap, _gap(g.V3V3, "U4.1", "FB1.1")) + g.R_FB
         + _r(snap, _gap(g.V3V3_F, "FB1.2", "U2.1")))
     # Ground: every return flows back to J1.2, the 0 V reference.
     gd = g.GND
-    out["U1.gnd"] = out["U1.i_in"] * _r(snap, _gap(gd, "J1.2", "U1.3"))
     out["U4.gnd"] = out["U1.gnd"] + (g.I_U3 + g.IQ_LDO + g.I_U4) * _r(
         snap, _gap(gd, "U1.3", "U4.2"))
     out["U2.gnd"] = out["U4.gnd"] + (g.I_U3 + g.IQ_LDO) * _r(snap, _gap(gd, "U4.2", "U2.3"))
@@ -238,7 +240,12 @@ def test_power_chain_voltages(chain):
     snap, _, tree = chain
     g, hand = boards.PowerChain, _hand(snap)
     tol = dict(abs=2e-5)                                # 20 µV
-    assert _vrm(tree, "U1").v_in == pytest.approx(hand["U1.v_in"], **tol)
+    u1 = _vrm(tree, "U1")
+    assert u1.v_ground == pytest.approx(hand["U1.gnd"], **tol)
+    assert u1.v_out == pytest.approx(hand["U1.v_out"], **tol)
+    assert u1.v_in == pytest.approx(hand["U1.v_in"], **tol)
+    assert u1.p_in == pytest.approx((hand["U1.v_in"] - hand["U1.gnd"]) * hand["U1.i_in"],
+                                    rel=1e-6)                 # across it, not from 0 V
     assert _vrm(tree, "U2").v_in == pytest.approx(hand["U2.v_in"], **tol)
     assert _vrm(tree, "U2").v_out == pytest.approx(hand["U2.v_out"], **tol)
     u3, u4 = _load(tree, "U3"), _load(tree, "U4")
@@ -249,26 +256,3 @@ def test_power_chain_voltages(chain):
     assert u3.v_effective == pytest.approx(g.V_LDO, abs=1e-8)      # sensed at the load
     assert u3.passed and u4.passed
 
-
-def test_power_chain_switcher_above_its_own_ground():
-    """By default (regulate_above_own_ground) the switcher U1 holds +3V3 V_SMPS above its own ground
-    pin and draws its power across its input and ground pins: V = V_in - V_gnd =
-    V_src - R·(P/(η·V) + I_q), R the loop through VIN and back through GND to J1."""
-    snap, setup = open_board("power_chain")
-    tree = solve_tree(snap, setup)
-    g, hand = boards.PowerChain, _hand(snap)
-    r_vin = _r(snap, _gap(g.VIN, "J1.1", "U1.1"))
-    r_gnd = _r(snap, _gap(g.GND, "J1.2", "U1.3"))
-    i_out1 = g.I_U4 + hand["U2.i_in"]
-    p = g.V_SMPS * i_out1 / g.ETA
-    a = g.V_SRC - (r_vin + r_gnd) * g.IQ_SMPS
-    v_across = (a + math.sqrt(a * a - 4 * (r_vin + r_gnd) * p)) / 2
-    i_in = p / v_across + g.IQ_SMPS
-    u1_gnd = i_in * r_gnd
-    u4_v = g.V_SMPS + u1_gnd - i_out1 * _r(snap, _gap(g.V3V3, "U1.2", "U4.1"))
-    assert _vrm(tree, "U1").i_in == pytest.approx(i_in, rel=1e-6)
-    assert _vrm(tree, "J1").i_out == pytest.approx(i_in, rel=1e-6)
-    tol = dict(abs=2e-5)                                # 20 µV
-    assert _vrm(tree, "U1").v_in == pytest.approx(v_across + u1_gnd, **tol)
-    assert _load(tree, "U4").v_supply == pytest.approx(u4_v, **tol)
-    assert i_in > hand["U1.i_in"]                       # the ground's rise costs input power
