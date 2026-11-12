@@ -4,7 +4,7 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
-## 1.0.1 (in development)
+## 1.0.1
 
 ### Added
 - **A load can source current onto its rail** (#241). The load editor has a new
@@ -99,6 +99,22 @@ milestones rather than versions that were ever set.
   KiPI now skips such outlines. If marking the holes still leaves no mesh, KiPI meshes
   the polygon without the hole points and then removes the triangles inside the holes.
   Thanks to @FractalEngineer.
+- **Pads cut off from their pour by a slit in the fill** (#245, from Tomachie). A slit
+  the fill or the simplification leaves (a hole ring of almost no width) put the point
+  marking it on its edge, in the copper, and Triangle then removed the copper around it.
+  Such points are now dropped with the zero-area rings above, and the warning says how
+  many rings were ignored. A pad smaller than the mesh's triangles now takes the nearest
+  node of its copper, and when the mesh is built without the pad outlines a node is
+  placed inside each pad, so its terminal still finds one.
+- **Slow meshing on planes with thousands of holes** (#245, from Tomachie). Clipping every
+  pad outline against the polygon cost more than the mesh. Only outlines whose box meets
+  the polygon are clipped now, against the polygon's edge band built once.
+- **ODB++ pins named with their part's reference** (#245, from Tomachie). A pin named
+  `U1-3` is read as pin 3 of U1.
+- **PDF report images ran off the page on macOS** (#245, from Tomachie). Qt there lays
+  images out at 72 pixels to the inch, a third wider, so the layer maps ran off the
+  page's right edge and lost their colour scales. The report now measures how Qt scales
+  an image on the page and sizes them to match.
 - **Negative values in Swedish and similar locales** (#236). These locales write minus as
   U+2212, which value fields rejected, so a negative value shown there could not be edited.
 - **No board outline when a footprint drew part of the board edge**. A connector's
