@@ -4,6 +4,40 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## 1.0.2
+
+### Changed
+- **A Tomachie power-tree import fills in more of the setup** (#250, from Tomachie). Only
+  the importer changes; the solver works as before, and every value it fills in is one
+  the user can see and edit in the window. Importing the same `.pdn.json` again gives a
+  different setup, and different results:
+  - **Ground pins.** Each source, regulator and load gets its ground pins, so return
+    current flows in the ground copper. A pull resistor returns through the part it
+    pulls, and a motor through its driver. An isolated converter is imported as an
+    isolated VRM, with its input and output grounds kept apart. A ground that no source
+    holds at 0 V is left to an ideal ground, and the log says so.
+  - **Remote sense.** A regulator's sense pins, or the point on the rail they are tied
+    to, and its return-sense pins become the VRM's sense and ground sense.
+  - **A switcher's output inductor is a 0 Ω link.** It sits inside the regulation loop,
+    so its drop is regulated out and its loss is in the efficiency. This is said in the
+    log. An inductor after a load switch keeps its resistance.
+  - **Each output of a multi-output part has its own type.** A PMIC's LDO output draws
+    its output current from the input, and its buck outputs draw their power over the
+    efficiency. Each output gets its own rated current as the VRM's current limit.
+  - **DC accuracy.** A regulator's output band from the file becomes the VRM's DC
+    accuracy in volts. A board input's stated range becomes its source's accuracy.
+  - **More series links.** Input filters (a ferrite ahead of a regulator or a load),
+    parts joining two ground nets (a 0 Ω resistor, a net tie) and a board input's series
+    parts are imported as series links.
+  - **Loads.** A part on a rail only by a detect, enable or reference pin is no longer a
+    load. A load that draws what it drives is solved at its own static current from its
+    datasheet instead of 0 A. On a rail fed by a board input, a load's datasheet supply
+    range replaces the rail's range for PASS / FAIL, even where it is wider. ICs with no
+    supply range in the file are listed in the log.
+  - **Unread fields.** As before, `details` objects and any other fields the importer
+    does not read are skipped and do not cause the file to be refused. The importer's
+    documentation now says so.
+
 ## 1.0.1
 
 ### Added
