@@ -34,8 +34,9 @@ current. What maps where:
   maximum supply voltage where those are stricter. A part on a rail by a detect, enable
   or reference pin only is not a load.
 
-Only the fields named here are read. A field the importer does not know (a key beginning
-``x_``, or any other) is skipped, never a reason to refuse the file.
+Only the fields named here are read. A ``details`` object, at any level of the file,
+holds what the file knows beyond them (other tools' data) and is not read; nor is any
+other field the importer does not name. Neither is a reason to refuse the file.
 
 KiPI solves one value per item, so where the file gives a range only one end is used:
 the typical current of a load and the typical resistance of a series part (the maximum

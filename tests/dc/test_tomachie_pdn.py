@@ -630,13 +630,14 @@ def test_a_driven_led_returns_through_its_driver():
     assert led.current == pytest.approx(0.0045)
 
 
-def test_unknown_fields_are_skipped():
-    """A field the importer does not know - a key beginning x_, at any level - is skipped,
-    never a reason to refuse the file."""
+def test_details_and_unknown_fields_are_skipped():
+    """A ``details`` object at any level, and any field the importer does not name, is
+    skipped, never a reason to refuse the file."""
     pdn = copy.deepcopy(PDN)
-    pdn["x_process"] = {"via_plating": {"through_um": 20}}
-    pdn["rails"][1]["x_worst_case"] = {"total_current_max": {"amps": 2.0}}
-    pdn["rails"][1]["loads"][0]["x_die"] = {"package_ohms": {"1": 0.02}}
+    pdn["details"] = {"process": {"via_plating": {"through_um": 20}}}
+    pdn["rails"][1]["details"] = {"worst_case": {"total_current_max": {"amps": 2.0}}}
+    pdn["rails"][1]["loads"][0]["details"] = {"die": {"package_ohms": {"1": 0.02}}}
+    pdn["rails"][1]["loads"][0]["some_future_field"] = 7
     setup, _ = run(pdn)
     assert [l.name for l in setup.loads] == ["U2"] and validate(setup) == []
 
