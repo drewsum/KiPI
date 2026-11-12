@@ -70,7 +70,7 @@ MAX_FILE_BYTES = 64 << 20       # a power-tree file is kilobytes; this is not on
 SOURCE_ROLES = ("board_input", "battery", "generator")
 VRM_KIND = {"linear": "ldo", "switching": "smps", "isolated": "isolated"}
 # A part on a rail by a signal pin only (detect, enable, reference): 0 A, not a load.
-# "signal_pin_only" since Tomachie 7710456a; "not_a_supply" in files written before.
+# Older files name it "not_a_supply"; both are read.
 NOT_A_LOAD = ("signal_pin_only", "not_a_supply")
 # Loads whose supply range is the datasheet's to state (a resistor's or a connector's is
 # not): one not stated is a value still to find.
@@ -98,8 +98,8 @@ def _return_part(load: dict) -> str:
 
 def path_to_rail(parts: List[dict], start: str, rail: str) -> List[dict]:
     """The parts of a regulator's ``output_path`` that lead from its output net to its
-    rail, in order. Files written before Tomachie 5.137 also list parts that only hang
-    off the output node (pull-ups, feedback-divider legs); those are not on the walk."""
+    rail, in order. Some older files also list parts that only hang off the output
+    node (pull-ups, feedback-divider legs); those are not on the walk."""
     reached: Dict[str, Optional[dict]] = {start: None}
     queue = deque([start])
     while queue and rail not in reached:
