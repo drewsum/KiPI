@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Importing a Tomachie power-tree file onto a board."""
 
 import copy

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC panel keeps each rail's last results: changing the Rail selection shows that rail's
 results again, or clears the view if it has not been solved."""
 

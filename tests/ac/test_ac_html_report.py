@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC HTML report: written from a real solve, self-contained, with every section; and
 the AC panel's HTML report option."""
 

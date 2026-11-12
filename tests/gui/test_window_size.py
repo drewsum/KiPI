@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The main window must fit a common screen when maximized. Its minimum size is the sum of
 its docks' minimums; once that is taller or wider than the screen, Windows places the
 window partly off it and the bottom (the log) is cut off."""

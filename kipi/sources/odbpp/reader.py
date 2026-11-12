@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Read an ODB++ job (a folder, ``.zip`` or ``.tgz``) into a
 :class:`~kipi.core.model.board.BoardSnapshot`.
 

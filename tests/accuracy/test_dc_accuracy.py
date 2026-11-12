@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """DC solves of the validation boards against hand calculations (#70).
 
 Each board is solved from its checked-in snapshot and setup, the way the plugin opens

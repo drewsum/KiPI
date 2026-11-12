@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Power-integrity setup panel: VRMs, loads and series links, all user-defined.
 
 Each tab is a list of items with an editor form. Edits go straight into the

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Copper temperature limits after an electro-thermal solve: the hottest solved copper on
 each layer, graded against a maximum temperature and a maximum rise above ambient, in the
 setup file, the CSV export and the Thermal results tab."""

@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """PDF reports (#119): the DC and AC reports printed without what needs a browser, the
 setting that picks the format, the panels' option, and HTML where a PDF cannot be made. The
 DC report's 3D views go in it as an attached web page (#133)."""

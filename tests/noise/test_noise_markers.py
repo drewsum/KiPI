@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Coupled Noise mode's 3D markers (#69): each victim's driver and receiver pins."""
 
 import os

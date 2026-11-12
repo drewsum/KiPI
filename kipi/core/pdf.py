@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Print a report's HTML to a PDF file (#119), with Qt's rich text engine.
 
 PySide6 is already one of KiPI's packages, so this needs nothing more; a browser engine

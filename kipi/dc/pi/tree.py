@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Solve a whole power tree defined in a :class:`~kipi.dc.pi.model.PISetup`.
 
 Each net group (nets joined by DC connections) is one FEM problem driven by its single

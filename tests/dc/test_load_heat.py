@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """Load power and DC connection losses as heat in the electro-thermal solve (#62)."""
 
 import copy

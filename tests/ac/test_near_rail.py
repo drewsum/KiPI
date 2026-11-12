@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The AC mesh is graded only at plated holes near the rail (#123)."""
 
 import os

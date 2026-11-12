@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """The Target Impedance/Frequency Calculator: Z = V_ac / I_step up to f = 1 / (pi t_rise),
 with t_rise = I_step / slew, and its result lands in the probe's target fields."""
 

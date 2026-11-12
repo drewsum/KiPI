@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """KiPI main window: board browser, 3D copper view and live log."""
 
 from __future__ import annotations
