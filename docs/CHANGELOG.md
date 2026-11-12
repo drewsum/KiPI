@@ -51,6 +51,15 @@ milestones rather than versions that were ever set.
   source pin, joined through its RDS(on).
 
 ### Fixed
+- **A via between the switching FETs made the hot loop planeless** (#247). The image plane
+  was found from one point, midway between the device's high-side and low-side pins. A
+  via there (where a half-bridge's switch node often escapes) leaves an antipad in every
+  plane, so no plane was found and the loop was solved in free air: its inductance came
+  out several times too high (2.8 times on the test board), with nothing said. The plane
+  is now the nearest one covering at least half of the hot loop's pads' footprint (the
+  device's and the hot-loop capacitors' pads), and a single point the planes miss (an
+  inductor's, a switch-node patch's) takes the plane covering the rings round it out to
+  1.5 mm. A hot loop with no plane under it says so in its notes. Reported by Dant-hw.
 - **Coupled Noise failed with a diode on the rails** (#242). With the board model on, an
   aggressor whose input or output rail had a diode series link (a Schottky feeding a
   sub-rail, say) stopped with `ValueError: invalid literal for int()`: noting the diode's

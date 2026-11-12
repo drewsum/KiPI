@@ -8,7 +8,7 @@ traced through the copper (#187, :mod:`kipi.noise.extract.copper`): DC conductio
 on the rails' and ground's mesh give where its current flows, pours, traces, vias and
 plane, and that distribution is the loop for the partial inductances
 (:mod:`kipi.noise.extract.peec`) and for the inductive coupling, with the nearest solid
-plane under the device as an image plane. Without the board model the loop is drawn as
+plane under most of the loop's pads as an image plane (#247). Without the board model the loop is drawn as
 straight segments between the pads (on the device's layer, with a via drop where the
 capacitor is on the other side), each as wide as the net's copper along it. The phase's
 loop inductance is the device's package inductance plus the capacitors' branches (their
@@ -76,6 +76,15 @@ IND_WINDING = 0.6
 IND_SHIELDED_WINDING = 0.35
 IND_SHIELDED_SHARE = 0.1
 MU0_H_PER_MM = 4e-10 * math.pi
+# The image plane (#247): the nearest plane covering this share of the loop's pads'
+# footprint, grown by the margin; a point the plane misses (a via's antipad) takes the
+# plane covering this share of the rings round it, out to the probe's radius.
+PLANE_SHARE = 0.5
+PLANE_MARGIN_MM = 0.5
+PLANE_PROBE_MM = 1.5
+_PROBE = np.array([(r * math.cos(a), r * math.sin(a))
+                   for r in (PLANE_PROBE_MM / 3, 2 * PLANE_PROBE_MM / 3, PLANE_PROBE_MM)
+                   for a in np.arange(8) * math.pi / 4])
 
 
 @dataclass
@@ -218,17 +227,38 @@ class _Board:
             return 0.0 if length >= 1e-6 else 1.0
         return float(LineString([a[:2], b[:2]]).intersection(cu).length / length)
 
-    def plane_under(self, layer: int, xy) -> Tuple[Optional[float], str, Optional[int]]:
+    def plane_under(self, layer: int, where) -> Tuple[Optional[float], str, Optional[int]]:
         """The facing surface's z, name and id of the nearest solid plane inward of
-        ``layer`` at ``xy``."""
+        ``layer`` under ``where``: a point (x, y), or a region (a shapely geometry) the
+        plane covers at least :data:`PLANE_SHARE` of. A point in a hole of every plane
+        (a via's antipad) takes the plane covering that share of the rings round it, out
+        to :data:`PLANE_PROBE_MM` (#247)."""
         from shapely.geometry import Point
+        if where is None:
+            return None, "", None
+        if not hasattr(where, "area"):
+            import shapely
+            pt = Point(where[0], where[1])
+            found = self._plane_under(layer, lambda g: g.contains(pt))
+            if found[2] is not None:
+                return found
+            ring = _PROBE + np.asarray(where[:2], float)
+            return self._plane_under(layer, lambda g: shapely.contains_xy(
+                g, ring[:, 0], ring[:, 1]).mean() >= PLANE_SHARE)
+        area = where.area
+        if area <= 0:
+            return None, "", None
+        return self._plane_under(
+            layer, lambda g: g.intersection(where).area >= PLANE_SHARE * area)
+
+    def _plane_under(self, layer: int, covers) -> Tuple[Optional[float], str, Optional[int]]:
         i = self.order.index(layer)
         step = 1 if i < len(self.order) / 2 else -1
         j = i + step
         while 0 <= j < len(self.order):
             lid = self.order[j]
             g = self.planes(lid)
-            if g is not None and g.contains(Point(xy[0], xy[1])):
+            if g is not None and covers(g):
                 lay = self.stack.layer(lid)
                 return (lay.z_top_mm if step > 0 else lay.z_bottom_mm), lay.name, lid
             j += step
@@ -240,6 +270,15 @@ def _centroid(pads: List[Pad]) -> Optional[Tuple[float, float]]:
         return None
     return (sum(p.position[0] for p in pads) / len(pads),
             sum(p.position[1] for p in pads) / len(pads))
+
+
+def _footprint(pads: List[Pad]):
+    """The pads' convex hull, grown by :data:`PLANE_MARGIN_MM`: the patch of board a
+    loop between them spans."""
+    from shapely.geometry import MultiPoint
+    if not pads:
+        return None
+    return MultiPoint([p.position[:2] for p in pads]).convex_hull.buffer(PLANE_MARGIN_MM)
 
 
 def _pin_point(board: _Board, pin: Optional[PinRef]):
@@ -507,10 +546,23 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
     rail_net = vout_net if topology == "buck" else vin_net
     l_rail = _centroid([p for p in ind_pads if p.net == rail_net])
 
+    # The image plane: the nearest one under most of the hot loop's pads (#247), else
+    # under the device, between its high-side and low-side pins.
     z_plane, plane_name, plane_id = (None, "", None)
     if a_pt is not None and b_pt is not None:
-        mid = ((a_pt[0] + b_pt[0]) / 2, (a_pt[1] + b_pt[1]) / 2)
-        z_plane, plane_name, plane_id = board.plane_under(dev_layer, mid)
+        hot = ((vin_net, phase.input_caps) if topology == "buck"
+               else (vout_net, phase.output_caps))
+        loop_pads = [*board.pads(hs.ref, hs.net, hs.pins), *board.pads(ls.ref, ls.net, ls.pins),
+                     *(p for r in hot[1] for p in board.pads(r) if p.net in (hot[0], gnd))]
+        z_plane, plane_name, plane_id = board.plane_under(dev_layer, _footprint(loop_pads))
+        if plane_id is None:
+            mid = ((a_pt[0] + b_pt[0]) / 2, (a_pt[1] + b_pt[1]) / 2)
+            z_plane, plane_name, plane_id = board.plane_under(dev_layer, mid)
+        if plane_id is None:
+            notes.append(f"No solid plane under the hot loop on the layers inward of "
+                         f"{board.stack.layer(dev_layer).name}: it is a loop in free air, "
+                         "without the image currents a plane would carry, so its "
+                         "inductance is the highest the layout allows")
     plane = _plane_faces(board, plane_id)
     cap_loops: Dict[str, CapLoop] = {}
     hot_in = topology == "buck"
@@ -654,7 +706,9 @@ def phase_layout(snap: BoardSnapshot, setup: PISetup, phase: AggressorPhase, ind
                            qrr_default, traced_all)
     if ind_loop is not None and plane_id is None:
         # No plane under the device: the one under the inductor takes its images.
-        centre = np.mean(ind_loop.paths[0][:-1], axis=0)
-        z_plane, _, plane_id = board.plane_under(ind_layer, (centre[0], centre[1]))
+        z_plane, _, plane_id = board.plane_under(ind_layer, _footprint(ind_pads))
+        if plane_id is None:
+            centre = np.mean(ind_loop.paths[0][:-1], axis=0)
+            z_plane, _, plane_id = board.plane_under(ind_layer, (centre[0], centre[1]))
     return PhaseLayout(report, in_caps, out_caps, cap_loops, z_plane, plane_id, ind_loop,
                        phase.inductor if ind_loop is not None else "")

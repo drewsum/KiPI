@@ -656,7 +656,11 @@ pieces' partial inductances (Ruehli's PEEC): Neumann's double integral
 M = μ₀/4π·∬ dl·dl′/R, with the inner integral in closed form and each bar's cross-section
 entering as its geometric mean radius 0.2235·(w + t). A solid plane under the loop is a
 perfect conductor by images: the mirrored loop, carrying the opposite current, takes away
-most of the inductance of a flat loop close over it. Against closed forms this gives a
+most of the inductance of a flat loop close over it. The image plane is the nearest one,
+inward of the device's layer, that covers at least half of the loop's pads' footprint (the
+device's high-side and low-side pads and the hot-loop capacitors' pads, their convex hull
+grown by 0.5 mm), so a via's antipad between the device's pins does not lose it. Without
+one the loop is in free air and the notes say so. Against closed forms this gives a
 bar's self inductance within 0.5 % and a square loop's within 2 %.</p>
 <p>The loop's inductance L with the switch node's capacitance C (the device's Coss plus its
 copper over the neighbouring planes) rings at f = 1/(2π√(L·C)) on every edge, damped by
