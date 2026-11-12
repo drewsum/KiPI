@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Negative rails (#220): a load's current is what it draws from its rail, so on a negative
 rail it flows into the copper and the pins rise toward 0 V, and the VRMs upstream draw
 power from the rails feeding them whatever their polarity."""

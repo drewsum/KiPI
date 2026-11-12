@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """The nets ticked in the Board panel are part of the setup: saved, restored, and kept
 when the board is re-read from KiCad. Only a board with no choice yet gets a guess."""
 

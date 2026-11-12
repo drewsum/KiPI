@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Capacitor aging (#109): a model with a dielectric loses its aging rate per decade of
 hours operated past 1000 hours, when Capacitor aging is ticked in the sweep settings, on
 top of any DC bias."""

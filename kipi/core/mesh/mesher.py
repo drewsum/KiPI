@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Conforming triangle mesh of one net's copper on every layer.
 
 Each connected copper polygon is meshed with Shewchuk's Triangle (quality + max

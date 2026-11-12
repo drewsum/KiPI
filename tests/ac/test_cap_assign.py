@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Assigning capacitors to a model: the parts table shows each part's footprint, and parts
 can be ticked by value, footprint or both (#64)."""
 

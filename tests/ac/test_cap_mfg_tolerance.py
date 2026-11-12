@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Capacitor manufacturing tolerance: a model with one is solved at the low end of it,
 the worst case for a PDN, when Capacitor manufacturing tolerance is ticked in the sweep
 settings, on top of any DC bias, aging and temperature."""

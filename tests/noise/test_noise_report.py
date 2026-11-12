@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """The Coupled Noise report, the victims a solve covers, and the scan's controls (#69)."""
 
 import os

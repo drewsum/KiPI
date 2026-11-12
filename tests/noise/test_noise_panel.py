@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """The Coupled Noise mode's setup panel and its place in the window (#69)."""
 
 import os

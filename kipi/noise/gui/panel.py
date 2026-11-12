@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """The Coupled Noise setup panel (#69), shown in place of the DC panel in Coupled Noise
 mode.
 

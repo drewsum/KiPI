@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """The analysis mode switch at the right end of the toolbar: DC by default, AC shows its
 own (placeholder) setup panel and keeps the DC setup for when DC comes back."""
 

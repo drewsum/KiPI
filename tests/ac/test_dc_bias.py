@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Capacitor DC bias (#74): models with a voltage rating can be derated by the DC voltage
 across each part, from the last DC solve or else the rail's VRM target voltage, with a switch
 in the sweep settings to turn it off."""

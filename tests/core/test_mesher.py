@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """Mesher robustness: inputs that used to hang or crash Triangle."""
 
 import locale

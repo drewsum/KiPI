@@ -1,4 +1,3 @@
-# Portions Copyright (c) 2026 Tomachie LLC.
 """The setup panel must only change the setup when the user edits it."""
 
 import os
