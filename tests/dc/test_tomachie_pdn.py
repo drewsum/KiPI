@@ -491,6 +491,10 @@ def test_a_pull_resistor_returns_through_the_part_it_pulls():
     assert load.ground is not None and (load.ground.ref, load.ground.net) == ("U1", "GND")
 
 
+FB1 = {"refdes": "FB1", "class": "ferrite", "net_in": "VIN", "net_out": "VIN_F",
+       "resistance_ohm": 0.05, "datasheet_figures": []}
+
+
 def test_a_datasheet_supply_range_on_a_board_input_rail_is_the_loads_tolerance():
     """On a rail a board input feeds, the rail's range is the source's own (11 to 13 V):
     the load's datasheet range takes its place, lower and upper end alike."""
@@ -498,7 +502,7 @@ def test_a_datasheet_supply_range_on_a_board_input_rail_is_the_loads_tolerance()
                                "current": {"amps": 0.2, "basis": "typ"},
                                "supply_min": {"volts": 10.8, "basis": "min"},
                                "supply_max": {"volts": 12.6, "basis": "max"},
-                               "input_net": "VIN_F", "input_filter": []})
+                               "input_net": "VIN_F", "input_filter": [FB1]})
     setup, _ = TomachiePdnImporter(pdn, filtered_board()).run()
     u1 = by_name(setup.loads, "U1")
     assert (u1.tol_pct, u1.tol_min, u1.tol_max) == (False, 10.8, 12.6)
@@ -507,7 +511,7 @@ def test_a_datasheet_supply_range_on_a_board_input_rail_is_the_loads_tolerance()
 def test_an_ic_with_no_stated_supply_range_is_named():
     pdn = _behind_ferrite_pdn({"role": "ic", "refdes": "U1", "pins": ["U1_1"],
                                "current": {"amps": 0.2, "basis": "typ"},
-                               "input_net": "VIN_F", "input_filter": []})
+                               "input_net": "VIN_F", "input_filter": [FB1]})
     _, notes = TomachiePdnImporter(pdn, filtered_board()).run()
     assert any(n.startswith("No supply voltage range is stated") and "U1" in n for n in notes)
 
