@@ -1162,6 +1162,24 @@ notes say which. The DCR and ESL shown are its slope resistance and inductance a
 diode that is reverse biased with a load beyond it and no other supply has no DC solution,
 and says so. The junction is read at 27 °C. Setups from 0.9.2 with a constant forward drop
 load with a diode model of that drop.</p>
+<p><b>A FET with several drain and source pins</b> (a load switch, an ideal-diode FET)
+is best imported too. As plain side A and side B pins, each side's pins are tied into one
+node, which shares the current over them perfectly and can hide a pin the copper starves.
+KiPI does not read transistors, so a maker's MOSFET model will not import. Instead write a
+<code>.SUBCKT</code> of resistors with a pin for each drain and source pin, joined through
+the FET's RDS(on), and leave the gate out. In the dialog, map each of its pins to the FET's
+pin; each becomes a side of the link, and DC takes the conductance between them. For
+example, with the pin resistances made up:</p>
+<pre>.SUBCKT FET D1 D2 D3 D4 S1 S2 S3
+RD1 D1 d 0.2m
+RD2 D2 d 0.2m
+RD3 D3 d 0.2m
+RD4 D4 d 0.2m
+RDS d s 4m
+RS1 S1 s 0.3m
+RS2 S2 s 0.3m
+RS3 S3 s 0.3m
+.ENDS</pre>
 <p><b>What KiPI reads from a SPICE file.</b> A two-pin <code>.SUBCKT</code> of resistors,
 inductors, capacitors and diodes, which is how makers model capacitors, resistors, ferrite
 beads and diodes, or a diode's <code>.model D</code> card. Diodes use IS, N, RS, BV, IBV,

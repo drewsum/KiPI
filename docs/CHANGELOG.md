@@ -43,6 +43,12 @@ milestones rather than versions that were ever set.
   same 0 V, as if tied off the board, as before; the Notes now say so. The user guide
   and the Solver Guide (new section *Ground and the 0 V reference*) describe where 0 V
   comes from and what each VRM regulates against.
+- **Diodes and multi-pin FETs point to a SPICE model.** The series link editor's note and
+  its **Import SPICE model…** tooltip say a SPICE model is the best way to model a diode,
+  or a FET with several drain and source pins. As plain pins, each side's pins are tied
+  into one node, which can hide a pin the copper starves. Since transistors are not read,
+  the user guide shows a FET as a multi-pin `.SUBCKT` of resistors, one pin per drain and
+  source pin, joined through its RDS(on).
 
 ### Fixed
 - **Coupled Noise failed with a diode on the rails** (#242). With the board model on, an
