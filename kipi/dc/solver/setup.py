@@ -1,3 +1,4 @@
+# Portions Copyright (c) 2026 Tomachie LLC.
 """What to solve: sources, loads, series parts and numerical settings.
 
 A problem covers one *extended net*: one or more nets joined by series parts (sense
@@ -87,6 +88,12 @@ class SolveSettings:
     large_pads_as_copper: bool = False
     large_pad_mm2: float = 10.0
     pad_contact_share: float = 0.25
+    # A VRM with no ground sense pins regulates its output above its own ground pins, as
+    # a converter does: its output moves with them when their copper lifts them. Its
+    # ground is then iterated with the rails like a ground sense. A VRM whose ground pins
+    # are the 0 V reference (a source, an isolated output side) is not moved. Off: the
+    # output is held above 0 V.
+    regulate_above_own_ground: bool = True
 
     def __post_init__(self):
         # A setup file stores the rules as plain objects.

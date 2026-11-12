@@ -25,6 +25,16 @@ milestones rather than versions that were ever set.
   victims, and reading each result. The README, the user guide and the About dialog link
   to it.
 
+### Changed
+- **A VRM regulates above its own ground pins** (#244, from Tomachie). A VRM without
+  ground sense pins now holds its output above the voltage at its own ground pins, as a
+  converter does, instead of above the board's 0 V. When the ground copper lifts its
+  ground pins, its output moves up with them, and its ground is iterated with the rails
+  as a ground-sense VRM's already was. A VRM whose ground pins are the 0 V reference (a
+  board input, an isolated output side) is not moved. A switcher's input current now
+  comes from the voltages across it: (V_out − V_gnd) × I_out = η × (V_in − V_gnd) × I_in.
+  The `regulate_above_own_ground` solve setting turns it off.
+
 ### Fixed
 - **Coupled Noise failed with a diode on the rails** (#242). With the board model on, an
   aggressor whose input or output rail had a diode series link (a Schottky feeding a
