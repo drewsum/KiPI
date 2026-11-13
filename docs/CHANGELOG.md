@@ -46,6 +46,17 @@ milestones rather than versions that were ever set.
   already in the setup for that part and net takes the file's pins, and the import notes
   say which pins it had before. Importing the same file again gives a different setup
   where a part has more pins on the net than the file names.
+- **Stackup edits reverted when Enter was pressed** (#252). In the Stackup window, Enter
+  in a thickness, εr or k field clicked **Reset**, the dialog's default button, so the
+  values went back to KiCad's. Enter now only finishes the field; neither button is a
+  default. Reported by DnertL.
+- **Stackup edits rebuilt the board view while they were typed** (#252). A pause of
+  0.4 s while typing applied the stackup, which rebuilt every net's mesh (about 3 s on an
+  800-net board). The cross-section still follows each keystroke, but the board view and
+  the analyses now take the stackup when the field is finished (Enter, Tab or a click
+  elsewhere), a material is chosen, the window is closed, or the setup is saved or solved.
+  A material, εr or k change no longer rebuilds the nets, as their meshes depend only on
+  the thicknesses.
 
 ## 1.0.1
 

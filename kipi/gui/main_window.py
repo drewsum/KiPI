@@ -1736,6 +1736,8 @@ class MainWindow(QMainWindow):
     def _save_setup(self):
         if self._setup_path is None:
             return
+        # A stackup edit still being typed is applied first (#252), so this uses it.
+        self.stackup_window.flush()
         if self.snapshot is not None:   # a checkbox change may not have synced yet
             self.solve_panel.setup.nets = self._checked_nets()
         try:
@@ -1757,6 +1759,8 @@ class MainWindow(QMainWindow):
         self.tolerance_view.set_dc(tree, source, when or _now())
 
     def run_solve(self, setup):
+        # A stackup edit still being typed is applied first (#252), so this uses it.
+        self.stackup_window.flush()
         snap = self.snapshot
         if snap is None:
             return
@@ -1892,6 +1896,8 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ AC solve
     def run_ac_solve(self, setup, vrm_name: str, gnd: str):
+        # A stackup edit still being typed is applied first (#252), so this uses it.
+        self.stackup_window.flush()
         snap = self.snapshot
         if snap is None:
             return
@@ -1949,6 +1955,8 @@ class MainWindow(QMainWindow):
 
     def run_noise_solve(self, setup, aggressor: str):
         """Solve one aggressor (#69): its waveforms are shown as soon as they are built."""
+        # A stackup edit still being typed is applied first (#252), so this uses it.
+        self.stackup_window.flush()
         snap = self.snapshot
         if snap is None:
             return
@@ -2087,8 +2095,13 @@ class MainWindow(QMainWindow):
             self._apply_stackup(snap, st)
 
     def _apply_stackup(self, snap, st):
-        from kipi.core.model.stackup import to_setup
+        from kipi.core.model.stackup import coating_thicknesses, thicknesses, to_setup
         from kipi.core.viz.meshes import board_body
+        old = snap.stackup
+        # The 3D view and the net meshes depend only on the thicknesses: a material, εr
+        # or k change leaves them as they are (#252).
+        same_shape = (old is not None and thicknesses(old) == thicknesses(st)
+                      and coating_thicknesses(old) == coating_thicknesses(st))
         snap.stackup = st
         self.solve_panel.setup.stackup = to_setup(st) if st.edited else None
         self.log(f"Stackup: {'edited in KiPI' if st.edited else 'from KiCad'}, "
@@ -2097,8 +2110,11 @@ class MainWindow(QMainWindow):
         if self._tree is not None:
             self._set_tree(None, {})
             self.solve_panel.clear_results()
-        self._populate_layers()
         self._show_board_summary()
+        if same_shape:
+            self.viewer.clear_result()      # the DC result just cleared; the copper stays
+            return
+        self._populate_layers()
         self.viewer.set_board(*board_body(snap), reset_view=False)
         self._coatings_wanted = True
         for i in range(self.layer_list.count()):

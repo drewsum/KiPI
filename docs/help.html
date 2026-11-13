@@ -576,6 +576,11 @@ electro-thermal solve uses them: heat leaving the outer copper for the air cross
   <li>The stackup and resistivities are saved with the PI setup. An edited stackup is used
     again the next time the board is opened (unlocked). If a layer has been added, removed
     or renamed in KiCad since, the log says so and KiCad's stackup is used.</li>
+  <li>The cross-section follows a value as it is typed. The board view and the analyses
+    take it when the field is finished: press Enter or Tab, or click elsewhere. Choosing a
+    material, closing the window, saving the setup and starting a solve also apply it.
+    A thickness change redraws the board's copper; a material, εr or k change does
+    not.</li>
   <li>To compare stackups, solve, edit, and solve again. A stackup change clears the DC
     results, which were for the old stackup; the AC results stay until a rail is solved
     again. Reports note a stackup edited in KiPI.</li>
