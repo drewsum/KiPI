@@ -1453,8 +1453,145 @@ nets:
 - Net-(R6-Pad1)
 excluded_nets: []
 stackup: null
-caps: []
-probes: []
+caps:
+- name: C100n_0402
+  capacitance_f: 1.0e-07
+  esl_h: 4.0e-10
+  esr_ohm: 0.03
+  refs:
+  - C2
+  - C3
+  - C4
+  - C5
+  - C6
+  - C7
+  - C9
+  - C10
+  - C15
+  - C17
+  - C18
+  - C20
+  - C21
+  - C22
+  - C23
+  - C24
+  - C25
+  - C30
+  - C32
+  - C34
+  - C35
+  - C36
+  - C37
+  - C42
+  - C43
+  - C47
+  - C48
+  - C55
+  - C56
+  - C60
+  - C61
+  - C62
+  - C63
+  - C68
+  - C69
+  - C70
+  - C71
+  - C77
+  - C81
+  - C84
+  - C85
+  rated_v: 25.0
+  kept_at_rated_pct: 40.0
+  dielectric: X5R
+  aging_pct_per_decade: 3.0
+  mfg_tolerance_pct: 10.0
+  spice: null
+- name: C4u7_0603
+  capacitance_f: 4.7e-06
+  esl_h: 5.8e-10
+  esr_ohm: 0.008
+  refs:
+  - C1
+  - C14
+  - C19
+  - C27
+  - C28
+  rated_v: 10.0
+  kept_at_rated_pct: 40.0
+  dielectric: X5R
+  aging_pct_per_decade: 3.0
+  mfg_tolerance_pct: 10.0
+  spice: null
+probes:
+- name: U30 +1V2
+  rail:
+    ref: U30
+    net: +1V2
+    pins:
+    - D4
+    - D8
+    - H4
+    - H8
+  ground:
+    ref: U30
+    net: GND
+    pins: []
+  target_ohm: null
+  target_hz: null
+  target_custom: false
+  target_points: []
+  step_a: null
+  slew_a_per_us: null
+  package: ''
+  die_port: 0
+- name: U30 +3V3
+  rail:
+    ref: U30
+    net: +3V3
+    pins:
+    - C10
+    - D6
+    - F8
+    - H6
+    - L11
+  ground:
+    ref: U30
+    net: GND
+    pins: []
+  target_ohm: null
+  target_hz: null
+  target_custom: false
+  target_points: []
+  step_a: null
+  slew_a_per_us: null
+  package: ''
+  die_port: 0
+- name: U1 +3V3
+  rail:
+    ref: U1
+    net: +3V3
+    pins:
+    - '3'
+    - '7'
+    - '11'
+    - '17'
+    - '27'
+    - '32'
+    - '43'
+    - '44'
+    - '55'
+  ground:
+    ref: U1
+    net: GND
+    pins: []
+  target_ohm: null
+  target_hz: null
+  target_custom: false
+  target_points: []
+  step_a: null
+  slew_a_per_us: null
+  package: ''
+  die_port: 0
 packages: []
 ac:
   f_start_hz: 1000.0
@@ -1469,11 +1606,11 @@ ac:
   far_max_edge_mm: 5.0
   loss_tangent: 0.02
   default_er: 4.3
-  rail: ''
-  ground: ''
+  rail: U8_3V3
+  ground: GND
   html_report: false
   report_format: html
-  dc_bias: true
+  dc_bias: false
   mfg_tolerance: false
   aging: false
   aging_hours: 87600.0
