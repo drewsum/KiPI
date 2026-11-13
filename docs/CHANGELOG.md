@@ -38,6 +38,15 @@ milestones rather than versions that were ever set.
     does not read are skipped and do not cause the file to be refused. The importer's
     documentation now says so.
 
+### Fixed
+- **A HyperLynx session file's DC sinks load only the pins it names** (#251). When every
+  sink pin of a part on a net drew the same current, the import dropped the pin list, so
+  the load drew its current from every pin of the part on that net, including pins the
+  file does not load. A load from a session file now always lists its sink pins. A load
+  already in the setup for that part and net takes the file's pins, and the import notes
+  say which pins it had before. Importing the same file again gives a different setup
+  where a part has more pins on the net than the file names.
+
 ## 1.0.1
 
 ### Added
