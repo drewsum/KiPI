@@ -1307,10 +1307,14 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     and silkscreen on the way (Stackup window).</td></tr>
   <tr><td>Grid</td><td class="wrap">Thermal cell size; <i>auto</i> is about 250 cells across
     the board.</td></tr>
-  <tr><td>Include load power dissipation</td><td class="wrap">Off by default. When ticked,
-    each load heats the board with the power it draws: the sum over its supply and ground
-    pins of pin current × pin voltage, spread over those pins. A load without ground pins is
-    taken as returning at 0 V.</td></tr>
+  <tr><td>Component heat</td><td class="wrap">Off by default: only the copper and vias heat
+    the board. When ticked, the parts heat it too: each DC connection its I²R, at its pins;
+    each VRM its conversion loss (P in − P out), at its output pins; and each load the power
+    it draws, the sum over its supply and ground pins of pin current × pin voltage, spread
+    over those pins. A load without ground pins is taken as returning at 0 V. The results
+    say how much of each went in, or, when it is off, how much was left out. (Before 1.0.2
+    this was <i>Include load power dissipation</i>, for the loads alone, and the DC
+    connections and VRMs always heated the board.)</td></tr>
   <tr><td>Edge boundaries</td><td class="wrap">Optional. <b>Edit…</b> opens a top-down view
     of the board where you mark stretches of its edge to hold at a fixed temperature, as a
     conduction-cooled heatframe, cold wall or wedge lock does. Click an edge to take its
@@ -1324,13 +1328,14 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     on any layer is FAIL.</td></tr>
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
 </table>
-<p>Heat comes from every solved net and layer, vias, DC connections (I²R, at their pins), VRM
-conversion loss and, with <b>Include load power dissipation</b>, the loads. Each copper layer
+<p>Heat comes from every solved net and layer and its vias and, with <b>Component heat</b>,
+from the DC connections (I²R, at their pins), the VRMs' conversion loss and the loads. Each copper layer
 has its own temperature: heat goes onto the layer it is made on (a part's on the layers of its
 pads), crosses the laminate to the layers above and below, and goes down plated holes on any
 net. Only the top and bottom layers lose heat to the air; edge boundaries, if any, take
 heat from every layer. The report's
-<b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
+<b>Component power dissipation</b> table lists the DC connections', VRMs' and loads' heat
+when <b>Component heat</b> is on. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
 </div>

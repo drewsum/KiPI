@@ -222,7 +222,7 @@ def test_ldo_dropout_is_judged_on_the_worst_phase():
 def test_heat_by_source_with_phases():
     from kipi.dc.thermal.cosim import heat_sources
     snap, s = board(), two_phase("smps", eff=0.85)
-    s.thermal.load_power = True
+    s.thermal.component_heat = True
     tree = solve_tree(snap, s)
     u1, ld = by_name(tree.vrms, "U1"), by_name(tree.loads, "U2")
     xy, w, _, by_kind = heat_sources(tree, snap, s)

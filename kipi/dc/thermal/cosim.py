@@ -2,10 +2,10 @@
 
 Each iteration solves every rail and ground group with copper resistivity at the
 current temperature, gathers all the heat on the board (copper and barrel losses of
-every group, DC-connection parts, VRM conversion losses and, if asked for, the heat the
-loads put out) onto one grid, and solves the board temperature, with any edge boundaries
-(#221) held at their temperatures. The user chooses how many
-iterations to run; the change in peak temperature per iteration is reported so
+every group and, with component heat on (#253), the DC-connection parts' losses, the
+regulators' conversion losses and the heat the loads put out) onto one grid, and solves the board
+temperature, with any edge boundaries (#221) held at their temperatures. The user chooses
+how many iterations to run; the change in peak temperature per iteration is reported so
 convergence can be judged.
 """
 
@@ -38,12 +38,14 @@ class ThermalResult:
     load_heat_w: Dict[str, float] = field(default_factory=dict)   # per load, if included
     layers: List[int] = field(default_factory=list)     # copper layer id of each temps layer
     edge_w: List[tuple] = field(default_factory=list)   # (name, degC, W taken) per edge boundary
+    vrm_loss_w: float = 0.0       # the VRMs' conversion loss, heating the board or not
+    link_loss_w: float = 0.0      # the DC connections' I²R, heating the board or not
 
     def __setstate__(self, state):
         # Results saved before load heat was an option (#62), broken down by kind, or
         # solved per layer: those have one (ny, nx) sheet for every layer.
         self.__dict__.update({"load_heat_w": {}, "heat_by_kind": {}, "layers": [], "edge_w": [],
-                              **state})
+                              "vrm_loss_w": 0.0, "link_loss_w": 0.0, **state})
         if "temps" in state and np.ndim(self.temps) == 2:
             self.temps = np.asarray(self.temps)[None]
 
@@ -51,6 +53,24 @@ class ThermalResult:
         """"copper 0.12 W, loads 1.4 W, ..." largest first."""
         return ", ".join(f"{k} {w:.3g} W" for k, w in
                          sorted(self.heat_by_kind.items(), key=lambda kv: -kv[1]))
+
+    def component_heat_text(self) -> str:
+        """" (of which 1.2 W from loads, 0.66 W from VRM conversion, 0.01 W from DC
+        connections)" with component heat (#253), or " (component heat off: ... not
+        included)" without it."""
+        vrm = self.heat_by_kind.get("VRM conversion", 0.0)
+        links = self.heat_by_kind.get("DC connections", 0.0)
+        if self.settings.component_heat:
+            loads = sum(max(v, 0.0) for v in self.load_heat_w.values())
+            return (f" (of which {loads:.3g} W from loads, {vrm:.3g} W from VRM conversion, "
+                    f"{links:.3g} W from DC connections)")
+        if vrm or links:   # saved before #253, when these heated the board regardless
+            return (f" (of which {vrm:.3g} W from VRM conversion, {links:.3g} W from DC "
+                    "connections; load power not included)")
+        left = [f"{what} ({w:.3g} W)" for what, w in
+                (("DC connection loss", self.link_loss_w),
+                 ("VRM conversion loss", self.vrm_loss_w)) if w]
+        return f" (component heat off: {', '.join(left + ['load power'])} not included)"
 
     def edges_text(self) -> str:
         """"; edges held: Frame at 60 °C takes 1.2 W" (#221), or "" without any."""
@@ -187,14 +207,22 @@ class _Heat:
         return np.vstack(self.xy), np.concatenate(self.w), np.concatenate(self.layer)
 
 
-def _copper_heat(heat: _Heat, tree: TreeResult):
-    """Copper and barrel losses of every group, and the DC-connection parts' losses."""
+def _link_loss(tree: TreeResult) -> float:
+    """The DC connections' I²R, over every group."""
+    return float(sum(sr.power for g in tree.groups.values() for sr in g.result.fields.series))
+
+
+def _copper_heat(heat: _Heat, tree: TreeResult, links: bool):
+    """Copper and barrel losses of every group, and with ``links`` the DC-connection parts'
+    losses (component heat, #253)."""
     for g in tree.groups.values():
         r = g.result
         heat.add_field("copper", r.mesh.points[r.mesh.tris].mean(axis=1),
                        np.nan_to_num(r.fields.tri_power), r.mesh.tri_layer)
         for v in r.fields.vias:
             heat.add_hole("vias", v.owner_id, v.position, v.power)
+        if not links:
+            continue
         for e, sr in zip(r.solution.series_elements, r.fields.series):
             link = r.solution.problem.series[e.link]
             pads = ([p for group in link.groups for p in group] if link.groups
@@ -217,12 +245,14 @@ def _vrm_heat(heat: _Heat, tree: TreeResult, snap: BoardSnapshot, setup: PISetup
 def heat_sources(tree: TreeResult, snap: BoardSnapshot, setup: PISetup,
                  thermal: Optional[ThermalSettings] = None):
     """(xy (N, 2) KiCad mm, watts (N,), copper layer id (N,; -1: every layer), watts by
-    kind) for every loss on the board, with the heat of each load if the thermal settings
-    (default: the setup's) include it."""
+    kind) for every loss on the board: the copper and vias, and with component heat on in
+    the thermal settings (default: the setup's), the DC connections' I²R, the VRMs'
+    conversion loss and each load's power (#253)."""
     heat = _Heat(snap)
-    _copper_heat(heat, tree)
-    _vrm_heat(heat, tree, snap, setup)
-    if (thermal or setup.thermal).load_power:
+    parts = (thermal or setup.thermal).component_heat
+    _copper_heat(heat, tree, parts)
+    if parts:
+        _vrm_heat(heat, tree, snap, setup)
         for watts, pads in load_powers(tree, snap, setup).values():
             heat.add_pads("loads", pads, watts)
     xy, w, layers = heat.arrays()
@@ -253,7 +283,7 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
         heat = model.empty_heat()
         model.deposit(heat, xy, w, layers)
         heat_total = float(w.sum())
-        if thermal.load_power:
+        if thermal.component_heat:
             loads_w = {k: v[0] for k, v in load_powers(tree, snap, setup).items()}
             progress.info(f"  loads: {sum(max(v, 0.0) for v in loads_w.values()) * 1e3:.1f} mW "
                           f"({len(loads_w)} load(s))")
@@ -271,7 +301,9 @@ def solve_electrothermal(snap: BoardSnapshot, setup: PISetup, thermal: ThermalSe
                       f"max change {dt:.3f} °C")
     tree.thermal = ThermalResult(thermal, model.x, model.y, temps, history, heat_w=heat_total,
                                  heat_by_kind=by_kind, dielectrics=model.dielectrics,
-                                 load_heat_w=loads_w, layers=model.layers, edge_w=edge_w)
+                                 load_heat_w=loads_w, layers=model.layers, edge_w=edge_w,
+                                 vrm_loss_w=sum(v.p_loss or 0.0 for v in tree.vrms),
+                                 link_loss_w=_link_loss(tree))
     tree.solve_s = time.perf_counter() - t0
     if n > 1 and history[-1]["dt_max"] > 0.05 * max(history[-1]["t_max"] - thermal.ambient_c, 1e-9):
         tree.warnings.append(f"Electro-thermal solve may not have settled: the last iteration "

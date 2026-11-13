@@ -112,7 +112,7 @@ def test_loads_heat_the_board_with_the_power_they_take():
     snap = board()
     s = setup("ldo")
     res = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=True))
+                                                   component_heat=True))
     ld = by_name(res.loads, "U2")
     th = res.thermal
     assert th.heat_by_kind["loads"] == pytest.approx(ld.v_effective * ld.current, rel=1e-9)
@@ -126,9 +126,9 @@ def test_load_heat_raises_the_board_temperature():
     snap = board()
     s = setup("ldo")
     hot = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=True))
+                                                   component_heat=True))
     cool = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                   load_power=False))
+                                                   component_heat=False))
     assert hot.thermal.t_max > cool.thermal.t_max + 1.0
 
 
@@ -315,12 +315,13 @@ def test_laminate_is_shared_by_the_copper_it_touches():
 
 def test_each_layer_of_the_cosim_has_its_own_temperature():
     """The rail is on F.Cu and the ground return on B.Cu: F.Cu, carrying the regulator's and
-    the rail's heat, runs hotter, and the solvers read each layer's own copper."""
+    the rail's heat, runs hotter, and the solvers read each layer's own copper. The
+    regulator's heat is component heat (#253)."""
     from kipi.dc.pi.report import layer_temps
     snap = board()
     s = setup("ldo", ground=True)
     tree = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=2,
-                                                         grid_mm=0.5))
+                                                         grid_mm=0.5, component_heat=True))
     th = tree.thermal
     assert th.layers == [F, B] and th.temps.shape[0] == 2
     rows = {r.layer: r for r in layer_temps(tree, snap)}

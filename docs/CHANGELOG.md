@@ -7,6 +7,16 @@ milestones rather than versions that were ever set.
 ## 1.0.2
 
 ### Changed
+- **"Component heat" replaces "Include load power dissipation"** (#253). The thermal
+  settings' checkbox now turns all heat from parts on or off together: the loads' power,
+  each VRM's conversion loss (P in − P out, at its output pins) and each DC connection's
+  I²R (at its pins). Off, the default, only the copper and vias heat the board. This
+  changes results: before, the VRMs' and DC connections' losses always heated the board,
+  so an electro-thermal solve of a setup with the box unticked, opened again, runs cooler
+  where it has regulators or series links. Tick **Component heat** to heat with them (and
+  the loads). The results and the report say how much of each kind went in, or how much
+  was left out. Setup files and results saved with `load_power` read it as
+  `component_heat`, and are saved with `component_heat`.
 - **A Tomachie power-tree import fills in more of the setup** (#250, from Tomachie). Only
   the importer changes; the solver works as before, and every value it fills in is one
   the user can see and edit in the window. Importing the same `.pdn.json` again gives a
