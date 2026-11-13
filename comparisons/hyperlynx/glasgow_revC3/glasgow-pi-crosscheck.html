@@ -130,7 +130,13 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
 select { font: inherit; font-size: 0.9em; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
 .chart { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow-x: auto; }
-#chart { display: block; width: 100%; min-width: 620px; height: auto; }
+#chart { display: block; width: 100%; min-width: 620px; height: auto; touch-action: manipulation; }
+.chart { position: relative; }
+#tip { position: absolute; pointer-events: none; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; font-size: 0.85em; line-height: 1.35; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 2; }
+#tip[hidden] { display: none; }
+#tip .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+#chart circle.dot { cursor: pointer; }
+#chart circle.dot.on { stroke: var(--text); stroke-width: 2; }
 figure.plot img { background: #fff; max-width: 680px; width: 100%; }
 .pair figure.plot img { max-width: 100%; }
 .dpos { color: var(--warn); } .dneg { color: var(--accent); }
@@ -205,8 +211,8 @@ differences that remain come from how each tool treats series parts and ground.<
   </div>
 </div>
 <figure>
-<div class="chart"><svg id="chart" viewBox="0 0 980 340" role="img" aria-label="Voltage difference, KiPI minus HyperLynx, at each pin, grouped by HyperLynx analysis"></svg></div>
-<figcaption>The green band is ±0.1&nbsp;mV, the resolution HyperLynx prints. Hover over a point to see its pin. HyperLynx doesn't report ground pins for VIOA and VIOB.</figcaption>
+<div class="chart"><svg id="chart" viewBox="0 0 980 340" role="img" aria-label="Voltage difference, KiPI minus HyperLynx, at each pin, grouped by HyperLynx analysis"></svg><div id="tip" role="status" hidden></div></div>
+<figcaption>The green band is ±0.1&nbsp;mV, the resolution HyperLynx prints. Hover over or tap a point to see its pin and both tools' voltages. With <b>Ground pins</b> selected, VIOA and VIOB are empty because HyperLynx doesn't report ground pins for them.</figcaption>
 </figure>
 
 <h2 id="rails">By analysis</h2>
@@ -317,9 +323,24 @@ function chart(){
   const r=D.rows.filter(x=>x.block===b&&isG(x)===gnd&&x[mode]!=null);
   s+=`<text x="${x0+bw/2}" y="${H-B+34}" text-anchor="middle" font-size="10.5" fill="var(--muted)" >${r.length?r.length+' pins':'not reported'}</text>`;
   r.forEach((x,j)=>{const cx=x0+10+(r.length>1?j*(bw-20)/(r.length-1):(bw-20)/2);const v=x[mode];
-   s+=`<circle cx="${cx.toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.6" fill="var(--accent)" fill-opacity=".85" stroke="var(--panel)" stroke-width=".8"><title>${esc(x.pin)} (${esc(x.net)}): ${sg(v)} mV</title></circle>`;});
+   const tip=`<b>${esc(x.pin)}</b> <code>${esc(x.net)}</code><br><span class="v">${sg(v)} mV</span> · HL ${f(x.v_hl,4)} V · KiPI ${f(x.v_k,5)} V${Math.abs(v)>3?' (off scale)':''}`;
+   s+=`<circle class="dot" cx="${cx.toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.6" fill="var(--accent)" fill-opacity=".85" stroke="var(--panel)" stroke-width=".8" data-tip="${tip.replace(/"/g,'&quot;')}"></circle>`;});
  });
- svg.innerHTML=s;}
+ svg.innerHTML=s;hideTip();}
+const TIP=$('tip');let onDot=null;
+function hideTip(){TIP.hidden=true;if(onDot){onDot.classList.remove('on');onDot=null;}}
+function showTip(c){if(onDot&&onDot!==c)onDot.classList.remove('on');onDot=c;c.classList.add('on');
+ TIP.innerHTML=c.getAttribute('data-tip');TIP.hidden=false;
+ const box=TIP.parentNode,br=box.getBoundingClientRect(),cr=c.getBoundingClientRect();
+ let x=cr.left+cr.width/2-br.left+box.scrollLeft,y=cr.top-br.top;
+ const w=TIP.offsetWidth,h=TIP.offsetHeight,minX=box.scrollLeft+4,maxX=box.scrollLeft+box.clientWidth-w-4;
+ let left=Math.max(minX,Math.min(maxX,x-w/2)),top=y-h-8;if(top<4)top=y+cr.height+8;
+ TIP.style.left=left+'px';TIP.style.top=top+'px';}
+const SVG=$('chart');
+SVG.addEventListener('pointerover',e=>{if(e.target.classList.contains('dot'))showTip(e.target);});
+SVG.addEventListener('pointerout',e=>{if(e.pointerType==='mouse'&&e.target.classList.contains('dot'))hideTip();});
+SVG.addEventListener('click',e=>{if(e.target.classList.contains('dot'))showTip(e.target);else hideTip();});
+TIP.parentNode.addEventListener('scroll',hideTip);
 function group(ids,on){ids.forEach(i=>$(i).setAttribute('aria-pressed',i===on?'true':'false'));}
 ['d','dr','drs'].forEach(m=>$('b-'+m).onclick=()=>{mode=m;group(['b-d','b-dr','b-drs'],'b-'+m);chart()});
 $('b-pwr').onclick=()=>{gnd=false;group(['b-pwr','b-gnd'],'b-pwr');chart()};
