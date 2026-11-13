@@ -14,6 +14,11 @@
 ([source](docs/solver-guide.html)): what PI analysis is, why it matters, and how KiPI's mesh
 and its DC, thermal, AC and coupled noise solvers work.
 
+**How does KiPI compare to a commercial tool? See the
+[HyperLynx PI comparison report](https://drewsum.github.io/KiPI/hyperlynx-comparison.html)**
+([source](docs/hyperlynx-comparison.html)): KiPI and HyperLynx PI
+solve the same DC drop on the Glasgow revC3 board, compared pin by pin.
+
 KiPI is a power integrity analyzer that runs standalone or as a KiCad 9 and 10 IPC plugin. It has three
 analysis modes:
 
