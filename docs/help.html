@@ -333,8 +333,8 @@ title bar, or drag it onto the main window, to dock it again.</p>
     board files with <b>Open…</b> and needs no KiCad. The title bar then ends in
     <i>(standalone)</i>, and the controls that need KiCad are hidden (see the
     <a href="#toolbar">toolbar</a>). Standalone opens KiCad board files
-    (<code>.kicad_pcb</code>), ODB++ jobs, HyperLynx files (<code>.hyp</code>) and KiPI
-    snapshots (<code>.kipi.json.gz</code>).</li>
+    (<code>.kicad_pcb</code>), ODB++ jobs, HyperLynx files (<code>.hyp</code>), EasyEDA
+    Pro projects (<code>.epro2</code>) and KiPI snapshots (<code>.kipi.json.gz</code>).</li>
   <li><b>KiCad board files.</b> A <code>.kicad_pcb</code> from KiCad 7 to 10 reads the
     same as the plugin reads it from KiCad, so a board set up in the plugin opens standalone
     with its setup. Net classes come from the <code>.kicad_pro</code> next to it. KiPI uses
@@ -355,6 +355,13 @@ title bar, or drag it onto the main window, to dock it again.</p>
     part sits or how it is turned, so each part is placed in the middle of its pads (listed
     under <b>Placeholders</b>); KiCad's export also leaves out pads with no net. The setup
     is found by the file's name, as for an ODB++ job.</li>
+  <li><b>EasyEDA Pro projects.</b> Open a <code>.epro2</code> archive saved with
+    <i>File &rarr; Save As &rarr; Save Project to Local</i>. KiPI reads copper, nets, pads,
+    vias, parts and the stackup from the project itself, so no ODB++ export is needed.
+    Dielectric constants left empty use KiPI's default &epsilon;r for AC; blind vias are
+    modeled as through vias; bottom-side parts use a best-effort mirror. Older
+    <code>.epro</code> archives, <code>.eprj3</code> folders and <code>.eprj2</code>
+    databases are not read.</li>
   <li><b>Plugin setup.</b> KiCad installs only what KiPI needs to start, so the KiPI button
     appears within seconds. The first click shows the setup window: the packages KiPI
     installs into KiCad's plugin environment for it, with their sizes, and PARDISO on
@@ -429,7 +436,8 @@ of decimals, plus more when a small typed value needs them.</p>
   <tr><td><b>Open…</b><br><small>standalone</small></td><td class="wrap">Opens a board file:
     a KiCad board (<code>.kicad_pcb</code>), an ODB++ job (<code>.zip</code>,
     <code>.tgz</code>, or its <code>matrix/matrix</code> file), a HyperLynx file
-    (<code>.hyp</code>) or a KiPI snapshot (<code>.kipi.json.gz</code>).
+    (<code>.hyp</code>), an EasyEDA Pro project (<code>.epro2</code>) or a KiPI snapshot
+    (<code>.kipi.json.gz</code>).
     Its saved setup comes with it, as with <b>Load from KiCad</b>. The arrow beside it lists
     the boards opened lately.</td></tr>
   <tr><td><b>Reload</b><br><small>standalone</small></td><td class="wrap">Reads the open board
@@ -2639,6 +2647,8 @@ them a model or confirm they really do not belong on this rail.</p>
     are deprecated: a future KiPI will stop reading them.</td></tr>
   <tr><td><code>*.kipi.json.gz</code></td><td class="wrap">A board snapshot (copper, stackup,
     pads, vias, parts).</td></tr>
+  <tr><td><code>*.epro2</code></td><td class="wrap">An EasyEDA Pro project archive. KiPI reads
+    it; it never writes this format.</td></tr>
   <tr><td><code>*.kipi-dc-results</code></td><td class="wrap">A saved DC solve: JSON and NumPy
     arrays in a zip.</td></tr>
   <tr><td><code>*.kipi-dc-thermal-results</code></td><td class="wrap">A saved electro-thermal
@@ -2762,6 +2772,22 @@ If the running programs cannot be listed, KiPI carries on.</p></div>
     where it sits.</li>
   <li><b>"pad stacks are used but not in the file":</b> those pads are read with no copper.
     Export the file again from the design tool.</li>
+</ul></div>
+</details>
+<details id="ts-easyeda">
+<summary>An EasyEDA Pro .epro2 project opens with parts or copper missing</summary>
+<div class="body"><ul>
+  <li><b>"not an EasyEDA Pro .epro2 archive":</b> the file is not a ZIP. Save the project
+    again with <i>File &rarr; Save As &rarr; Save Project to Local</i>.</li>
+  <li><b>"older EasyEDA Pro .epro project":</b> the archive is the V2.2 format. Open it in
+    EasyEDA Pro 4 and save it as <code>.epro2</code>.</li>
+  <li><b>"has no PCB document":</b> the project is schematic-only or a library.</li>
+  <li><b>Bottom-side parts look mirrored:</b> their mirroring is a best guess until checked
+    against a bottom-heavy project.</li>
+  <li><b>Blind or buried vias are through vias:</b> the rule that gives their layer span is
+    not read yet.</li>
+  <li><b>No dielectric constants:</b> AC uses KiPI's default &epsilon;r; set the stackup's
+    values in the stackup window.</li>
 </ul></div>
 </details>
 <details>

@@ -48,6 +48,11 @@ def _hyp(path: Path) -> BoardSource:
     return HypFileSource(path)
 
 
+def _easyeda_pro(path: Path) -> BoardSource:
+    from kipi.sources.easyeda_pro.source import EasyedaProSource
+    return EasyedaProSource(path)
+
+
 def _snapshot(path: Path) -> BoardSource:
     from kipi.sources.snapshot_file import SnapshotFileSource
     return SnapshotFileSource(path)
@@ -58,6 +63,7 @@ FORMATS: List[FileFormat] = [
     # An unpacked job is opened by its folder, or by picking its matrix/matrix file.
     FileFormat("ODB++", ("*.zip", "*.tgz", "*.tar.gz", "matrix"), _odb, _odb_folder),
     FileFormat("HyperLynx", ("*.hyp",), _hyp),
+    FileFormat("EasyEDA Pro (epro2)", ("*.epro2",), _easyeda_pro),
     FileFormat("KiPI snapshot", ("*.json.gz", "*.json"), _snapshot),
 ]
 

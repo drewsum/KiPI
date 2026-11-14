@@ -99,9 +99,9 @@ def test_the_registry_knows_snapshots(board_file):
     with pytest.raises(ValueError, match="cannot open"):
         registry.open_board("board.brd")
     assert registry.file_filter().startswith(
-        "Boards (*.kicad_pcb *.zip *.tgz *.tar.gz matrix *.hyp *.json.gz *.json);;"
+        "Boards (*.kicad_pcb *.zip *.tgz *.tar.gz matrix *.hyp *.epro2 *.json.gz *.json);;"
         "KiCad board (*.kicad_pcb);;ODB++ (*.zip *.tgz *.tar.gz matrix);;HyperLynx (*.hyp);;"
-        "KiPI snapshot (")
+        "EasyEDA Pro (epro2) (*.epro2);;KiPI snapshot (")
     assert src.files() == [board_file]
 
 
@@ -204,6 +204,24 @@ def test_standalone_opens_hyperlynx_files(app, no_3d, tmp_path, monkeypatch):
     assert w.snapshot.source_format == "hyp" and w.snapshot.board_name == "small"
     assert [Path(f) for f in w._watcher.files()] == [board]
     assert "HyperLynx" in w.act_open.toolTip()
+    w.close()
+
+
+def test_standalone_opens_easyeda_projects(app, no_3d, tmp_path, monkeypatch):
+    from qtpy.QtCore import QSettings
+    from kipi.gui import recent
+    from kipi.gui.main_window import MainWindow
+    ini = str(tmp_path / "settings.ini")
+    monkeypatch.setattr(recent, "settings", lambda: QSettings(ini, QSettings.IniFormat))
+    project = tmp_path / "features.epro2"
+    shutil.copy(Path(__file__).parents[1] / "data" / "easyeda" / "features.epro2", project)
+    w = MainWindow()
+    w.open_path(str(project))
+    _idle(app, w)
+    assert w.snapshot.source_format == "easyeda-epro2"
+    assert w.snapshot.board_name == "features"
+    assert [Path(f) for f in w._watcher.files()] == [project]
+    assert "EasyEDA Pro (epro2)" in w.act_open.toolTip()
     w.close()
 
 

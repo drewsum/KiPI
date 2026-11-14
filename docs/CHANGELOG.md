@@ -6,6 +6,19 @@ milestones rather than versions that were ever set.
 
 ## 1.0.2
 
+### Added
+- **EasyEDA Pro projects open standalone** (#257, from @LC-xiaotao's fork). **Open…**
+  now reads EasyEDA Pro `.epro2` project archives directly, with no ODB++ export needed.
+  It reads the stackup, nets, tracks, vias, pads, parts and pours. Empty dielectric
+  constants use KiPI's default εr, blind and buried vias are treated as through vias,
+  and bottom-side parts are mirrored on a best guess. Older `.epro` archives, `.eprj3`
+  folders and `.eprj2` databases are not read.
+- **ODB++ jobs from EasyEDA Pro read at the right scale** (#257, from @LC-xiaotao's fork).
+  EasyEDA Pro leaves the units out of `misc/info` and gives them in the step's own files
+  instead. KiPI now looks there before falling back to ODB++'s default of inches, which
+  had scaled the board by 25.4. EasyEDA's `.copper_weight`, which it writes in µm rather
+  than ounces, is read as µm. These boards are labelled *EasyEDA Pro (ODB++)*.
+
 ### Changed
 - **"Component heat" replaces "Include load power dissipation"** (#253). The thermal
   settings' checkbox now turns all heat from parts on or off together: the loads' power,
