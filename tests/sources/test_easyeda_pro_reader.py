@@ -17,8 +17,8 @@ from kipi.sources.easyeda_pro.documents import (
     Document, parse_stream, split_record,
 )
 from kipi.sources.easyeda_pro.primitives import (
-    MAX_ERROR_MM, Units, choose_units, flatten_path, pad_shape_for_layer,
-    place_in_component, to_ring,
+    MAX_ERROR_MM, Units, _as_list, choose_units, flatten_path, pad_shape_for_layer,
+    pad_shape_rings, place_in_component, to_ring,
 )
 from kipi.sources.easyeda_pro.reader import read_board
 
@@ -285,3 +285,36 @@ def test_placed_pad_connects_to_board_copper(
     assert pad.net == "VCC" and pad.shapes.keys() == {copper_layer}
     # Displaced pads become separate copper islands, and cannot draw current.
     assert net_layer_copper(board, "VCC", copper_layer).geom_type == "Polygon"
+
+
+# ---------------------------------------------------------------------------
+# Damaged or hostile input (#257): bounded work, and a readable error at worst
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("sides, expected", [
+    (10**12, 64), (2, 3), (0, 6), (-5, 3), ("many", 6), (float("inf"), 6), (8, 8),
+])
+def test_an_ngon_pad_has_a_bounded_number_of_sides(sides, expected):
+    rings, _ = pad_shape_rings({"padType": "NGON", "width": 20, "sides": sides},
+                               MAX_ERROR_MM)
+    assert len(rings) == 1 and len(rings[0]) == expected
+
+
+def test_a_deeply_nested_string_payload_reads_as_empty():
+    deep = "[" * 100_000 + "]" * 100_000
+    assert _as_list(deep) == []
+    assert flatten_path(deep) == []
+
+
+def test_a_deeply_nested_record_is_skipped_like_a_malformed_line():
+    deep = "[" * 100_000 + "]" * 100_000
+    deep_id = json.dumps(deep)       # a JSON string holding deeply nested JSON text
+    stream = (
+        '{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"p","client":"c"}|\n'
+        f'{{"type":"LINE","ticket":1,"id":"a"}}||{deep}|\n'
+        f'{{"type":"LINE","ticket":1,"id":{deep_id}}}||{{"width":1}}|\n'
+        '{"type":"LINE","ticket":1,"id":"b"}||{"width":2}|\n'
+    )
+    documents, errors = parse_stream(stream)
+    assert any("nested too deeply" in error for error in errors)
+    assert [r["width"] for r in documents[0].of_type("LINE") if r["id"] == "b"] == [2]

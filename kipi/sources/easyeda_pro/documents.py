@@ -58,7 +58,7 @@ def normalize_id(outer: dict) -> str:
     if text[:1] in "[{":
         try:
             return json.dumps(json.loads(text), ensure_ascii=False, separators=(",", ":"))
-        except ValueError:
+        except (ValueError, RecursionError):
             return text
     return text
 
@@ -153,8 +153,12 @@ def parse_stream(text: str) -> Tuple[List[Document], List[str]]:
             continue
         try:
             outer, inner = split_record(line)
-        except (RecordError, ValueError, json.JSONDecodeError) as exc:
+        except (RecordError, ValueError) as exc:
             errors.append(f"line {lineno}: {exc}")
+            continue
+        except RecursionError:
+            # Nested too deeply to parse: skipped like any other malformed line (#257).
+            errors.append(f"line {lineno}: nested too deeply to read")
             continue
 
         if outer.get("type") == "DOCHEAD":

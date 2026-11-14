@@ -12,7 +12,9 @@ milestones rather than versions that were ever set.
   It reads the stackup, nets, tracks, vias, pads, parts and pours. Empty dielectric
   constants use KiPI's default εr, blind and buried vias are treated as through vias,
   and bottom-side parts are mirrored on a best guess. Older `.epro` archives, `.eprj3`
-  folders and `.eprj2` databases are not read.
+  folders and `.eprj2` databases are not read. A damaged or hostile `.epro2` cannot hang
+  the import: a polygon pad's side count is held to 3 to 64, and records nested too
+  deeply to parse are skipped and counted like other unreadable lines.
 - **ODB++ jobs from EasyEDA Pro read at the right scale** (#257, from @LC-xiaotao's fork).
   EasyEDA Pro leaves the units out of `misc/info` and gives them in the step's own files
   instead. KiPI now looks there before falling back to ODB++'s default of inches, which

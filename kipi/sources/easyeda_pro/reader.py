@@ -38,7 +38,7 @@ def _array_id(record: dict, index: int = 1) -> str:
             parsed = json.loads(value)
             if isinstance(parsed, list) and len(parsed) > index:
                 return str(parsed[index])
-        except ValueError:
+        except (ValueError, RecursionError):
             pass
     return ""
 
@@ -65,7 +65,7 @@ def _layer_number(record: dict) -> Optional[int]:
             parsed = json.loads(raw)
             if isinstance(parsed, list) and len(parsed) > 1:
                 return int(parsed[1])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             return None
     return None
 
@@ -77,7 +77,7 @@ def _phys_layer_number(record: dict) -> Optional[int]:
             parsed = json.loads(raw)
             if isinstance(parsed, list) and len(parsed) > 1:
                 return int(parsed[1])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             return None
     value = record.get("layerId")
     try:
@@ -302,7 +302,7 @@ def _pad_net_map(pcb: Document) -> Dict[Tuple[str, str], str]:
             continue
         try:
             parts = json.loads(raw)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if not isinstance(parts, list) or len(parts) < 3:
             continue

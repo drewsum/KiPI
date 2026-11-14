@@ -24,6 +24,9 @@ Point = Tuple[float, float]
 MAX_ERROR_MM = 0.005
 CIRCLE_POINTS = 64
 ARC_STEPS = 16
+#: A polygon pad has a handful of sides; past this it is read as a circle. Bounds the work
+#: a damaged or hostile file can ask for (#257).
+MAX_NGON_SIDES = CIRCLE_POINTS
 
 
 @dataclass(frozen=True)
@@ -169,12 +172,14 @@ def _as_list(value: Any) -> Any:
         text = value.strip()
         if not text:
             return []
+        # A deeply nested string raises RecursionError (or MemoryError) rather than
+        # ValueError; it is unreadable data like any other, not a reason to fail the import.
         try:
             return json.loads(text)
-        except ValueError:
+        except (ValueError, RecursionError, MemoryError):
             try:
                 return ast.literal_eval(text)
-            except (ValueError, SyntaxError):
+            except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
                 return []
     return value
 
@@ -415,7 +420,11 @@ def pad_shape_rings(shape: Any, max_error: float) -> Tuple[List[List[Point]], bo
     if kind == "NGON":
         if width <= 0:
             return [], False
-        sides = int(definition.get("sides") or 6)
+        try:
+            sides = int(definition.get("sides") or 6)
+        except (TypeError, ValueError, OverflowError):
+            sides = 6
+        sides = min(max(sides, 3), MAX_NGON_SIDES)
         return [[(width / 2.0 * math.cos(2 * math.pi * i / sides),
                   width / 2.0 * math.sin(2 * math.pi * i / sides))
                  for i in range(sides)]], False

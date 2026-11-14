@@ -110,7 +110,7 @@ def open_project(path) -> ProjectFiles:
                 value = json.loads(_decode(archive.read(meta_name)))
                 if isinstance(value, dict):
                     project = value
-            except (OSError, ValueError):
+            except (OSError, ValueError, RecursionError):
                 project = {}
 
     return ProjectFiles(path=path, project=project,
