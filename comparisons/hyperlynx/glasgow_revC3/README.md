@@ -22,10 +22,4 @@ KiCad's `.hyp` export loses plated-through pads that share a pin number within o
 - `hyp-export/glasgow_revC3_hypfix.kicad_pcb`: the revC3 board with every repeated plated pad turned into a GND board via at the same place, size and drill, and the second copy of each exposed pad into a copper zone of its shape. The copper is unchanged; only the pin names become unique. J1's slotted shield tabs (`/SHLD`, not simulated) are left as they are. Export the `.hyp` from this file (File → Export → Hyperlynx).
 - `hyp-export/unique_pins.py`: the script that made it, with KiCad's `pcbnew` module: `python3 unique_pins.py glasgow.kicad_pcb glasgow_revC3_hypfix.kicad_pcb`.
 
-## DC drop from the fixed export (`dc/`)
-
-- `dc/hyperlynx_dc_fixed_export.txt`: HyperLynx PI DC drop for all six analyses, solved on the `.hyp` exported from `hyp-export/glasgow_revC3_hypfix.kicad_pcb` (U1, U8, U36 thermal vias and the mounting-hole vias present). The header lines naming the machine, user and directory are removed, and the all-zero GND "Other vias" table of the VIO_AUX analysis is left out.
-- Against the first export, every plane and ground pin moves by at most 0.1 mV (HyperLynx's display step). The series parts' drops are higher than in the first run and no longer scale by one factor (×1.023 before; ×1.028 to ×1.046 now, R31/R32 highest), which moves the `+5V` pins down 0.7 to 0.9 mV and the PLL pins down 2.0 to 2.2 mV. The sink pins also differ: U1's +3V3 ground sink is on ten GND pins (was U1.56/U1.57), and U8's ground is U8.7 only.
-- `dc/hyperlynx_temp_*.png`: HyperLynx's copper temperature for that run, one map per layer (24.0 to 31.6 °C). HyperLynx's series-part resistances follow it: each part's factor matches copper's temperature coefficient (0.393 %/°C from 20 °C) at the map's temperature under the part, from about 27 °C at FB1 to about 31.5 °C at R31/R32 beside the FPGA.
-
 Board: [GlasgowEmbedded/glasgow](https://github.com/GlasgowEmbedded/glasgow) `hardware/boards/glasgow/revC3` at commit `70cb38c9b03471acd2eabb76c82308891bec2ca5`.
