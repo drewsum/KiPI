@@ -11,7 +11,7 @@ DC drop and AC impedance cross-check for drewsum/KiPI#234.
 
 - `glasgow_revC3_ac.bud`: the DC session file plus the capacitor groups (`DCCGROUPS`, `DCCAPACITORS`): `C100n_0402`, `C4u7_0603` and `C150u_POLY`, one per part number. HyperLynx keeps only the group names and members; each group's C, ESR and ESL are entered in HyperLynx.
 - `glasgow-kipi-setup-ldo.yml` carries the matching KiPI models for +3V3 and +1V2: `C100n_0402` (100 nF, 30 mΩ, 0.40 nH) and `C4u7_0603` (4.7 µF, 8 mΩ, 0.58 nH). It also has probes at U30 (+1V2 balls D4/D8/H4/H8; +3V3 balls C10/D6/F8/H6/L11; against U30's GND balls) and U1, with DC bias, tolerance, aging and temperature derating off.
-- `ac/hyperlynx_U30_1V2.z1p`, `ac/hyperlynx_U30_3V3.z1p`: HyperLynx PI (Hybrid Solver VX.2.8) Z-parameters at U30. The header lines naming the machine, user and directory are removed.
+- `ac/hyperlynx_U30_1V2.z1p`, `ac/hyperlynx_U30_3V3.z1p`: HyperLynx PI (Hybrid Solver VX.2.8) Z-parameters at U30. The header lines naming the machine, user and directory are removed. +3V3 is from the `hyp-export/` board (U1's thermal vias present); +1V2 is from the first export. `ac/hyperlynx_U30_3V3_run1_U1_vias_missing.z1p` is the first +3V3 run, 5.5 µF short.
 - `ac/kipi_U30_1V2.z1p`, `ac/kipi_U30_3V3.z1p`, `ac/kipi_U1_3V3.z1p`: KiPI's, from the LDO setup at its own sweep settings (1 kHz to 300 MHz).
 - `ac/glasgow_U30_Z_compare.csv`: both at HyperLynx's 250 frequencies (KiPI interpolated), and `ac/glasgow_U30_Z_hyperlynx_vs_kipi.png` the plot.
 
