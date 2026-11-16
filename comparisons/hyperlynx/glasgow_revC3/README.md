@@ -15,4 +15,11 @@ DC drop and AC impedance cross-check for drewsum/KiPI#234.
 - `ac/kipi_U30_1V2.z1p`, `ac/kipi_U30_3V3.z1p`, `ac/kipi_U1_3V3.z1p`: KiPI's, from the LDO setup at its own sweep settings (1 kHz to 300 MHz).
 - `ac/glasgow_U30_Z_compare.csv`: both at HyperLynx's 250 frequencies (KiPI interpolated), and `ac/glasgow_U30_Z_hyperlynx_vs_kipi.png` the plot.
 
+## Exporting the board to HyperLynx (`hyp-export/`)
+
+KiCad's `.hyp` export loses plated-through pads that share a pin number within one footprint (HyperLynx names pins `refdes.pin`). On revC3 that drops U1's 25 thermal vias (all pad 57), U8's and U36's (pad 7) and the mounting holes' stitching vias. C1–C7, C9 and C10 return to GND only through U1's thermal vias, so in HyperLynx they float and +3V3 is short 4.7 µF + 8 × 100 nF (12.3 µF seen against 17.8 µF).
+
+- `hyp-export/glasgow_revC3_hypfix.kicad_pcb`: the revC3 board with every repeated plated pad turned into a GND board via at the same place, size and drill, and the second copy of each exposed pad into a copper zone of its shape. The copper is unchanged; only the pin names become unique. J1's slotted shield tabs (`/SHLD`, not simulated) are left as they are. Export the `.hyp` from this file (File → Export → Hyperlynx).
+- `hyp-export/unique_pins.py`: the script that made it, with KiCad's `pcbnew` module: `python3 unique_pins.py glasgow.kicad_pcb glasgow_revC3_hypfix.kicad_pcb`.
+
 Board: [GlasgowEmbedded/glasgow](https://github.com/GlasgowEmbedded/glasgow) `hardware/boards/glasgow/revC3` at commit `70cb38c9b03471acd2eabb76c82308891bec2ca5`.
