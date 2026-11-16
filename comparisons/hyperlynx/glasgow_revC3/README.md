@@ -22,4 +22,11 @@ KiCad's `.hyp` export loses plated-through pads that share a pin number within o
 - `hyp-export/glasgow_revC3_hypfix.kicad_pcb`: the revC3 board with every repeated plated pad turned into a GND board via at the same place, size and drill, and the second copy of each exposed pad into a copper zone of its shape. The copper is unchanged; only the pin names become unique. J1's slotted shield tabs (`/SHLD`, not simulated) are left as they are. Export the `.hyp` from this file (File → Export → Hyperlynx).
 - `hyp-export/unique_pins.py`: the script that made it, with KiCad's `pcbnew` module: `python3 unique_pins.py glasgow.kicad_pcb glasgow_revC3_hypfix.kicad_pcb`.
 
+## DC drop and thermal from the fixed export (`dc/`)
+
+- `dc/hyperlynx_dc_fixed_export.txt`: HyperLynx PI DC drop for all six analyses with the electro-thermal co-solve, from the `.hyp` exported from `hyp-export/glasgow_revC3_hypfix.kicad_pcb`. The header lines naming the machine, user and directory are removed.
+- `dc/hyperlynx_temp_*.png`: HyperLynx's copper temperature for that run, one map per layer: 25 °C ambient, no airflow, heat from the copper and the series parts only.
+- Against the first export, every pin moves by 0.4 mV or less. Every series part reads ×1.020 its BUD resistance (×1.023 in the first run): copper's temperature coefficient taken from 20 °C to 25 °C.
+- KiPI with the same heat sources (copper, vias and the series parts' 48 mW; no regulator or load heat) puts the hot spot on FB1 as HyperLynx does, but runs hotter: 31.9 °C peak on F.Cu against 28.5 °C, and 25.5 to 26.6 °C elsewhere against 25.0 to 25.3 °C.
+
 Board: [GlasgowEmbedded/glasgow](https://github.com/GlasgowEmbedded/glasgow) `hardware/boards/glasgow/revC3` at commit `70cb38c9b03471acd2eabb76c82308891bec2ca5`.
