@@ -524,7 +524,12 @@ add `resources/kipi_64.png` there as `icon.png` as well. Once a version is merge
 can't change, so never replace a release's PCM zip. Tag a release `vX.Y.Z`: a tag like
 `v1.0.0-rc1` gets the manual zip only, since PCM version numbers can't have suffixes.
 
-### Codebase Layout
+### [Codebase Layout](https://drewsum.github.io/KiPI/architecture.html)
+
+**[Open the interactive architecture diagram](https://drewsum.github.io/KiPI/architecture.html)**
+([source](docs/architecture.html)): KiPI's modules as cards you can drag, with a step-through of
+how a board flows from launch to results. Use the bottom dock, the arrow keys or Space to
+step, **0**–**9** to jump to a phase, **F** to fit and **R** to reset.
 
 | Path | Purpose |
 |---|---|

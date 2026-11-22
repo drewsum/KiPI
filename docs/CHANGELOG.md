@@ -22,6 +22,10 @@ milestones rather than versions that were ever set.
   than ounces, is read as µm. These boards are labelled *EasyEDA Pro (ODB++)*.
 
 ### Changed
+- **Interactive architecture diagram.** The README's *Codebase Layout* links a
+  [system flow diagram](https://drewsum.github.io/KiPI/architecture.html) on GitHub Pages: KiPI's
+  modules as movable cards, stepping through launch, board loading, the solves, results,
+  reports and the tolerance stack-up.
 - **"Component heat" replaces "Include load power dissipation"** (#253). The thermal
   settings' checkbox now turns all heat from parts on or off together: the loads' power,
   each VRM's conversion loss (P in − P out, at its output pins) and each DC connection's
