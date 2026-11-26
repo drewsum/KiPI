@@ -1550,7 +1550,9 @@ links) against one <b>ground</b> net. It includes:</p>
     cavity resonances, and the inductance of vias and their mounting.</li>
   <li><b>Capacitors</b> between the rail and ground, each as a series R-L-C from its
     <a href="#ac-caps">model</a>. Only the part's own ESL is entered; its mounting (pads, vias,
-    planes) is simulated.</li>
+    planes) is simulated. An ESL that already includes the mounting, such as a HyperLynx
+    decoupling model with <i>includes mounting</i> set, counts the mounting twice here: enter the
+    part's own ESL instead.</li>
   <li><b>Series links</b> as their resistance plus ESL.</li>
 </ul>
 <div class="callout"><b>Note:</b> the VRM itself is not modeled as an impedance. In AC, VRMs only
