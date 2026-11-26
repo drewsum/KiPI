@@ -557,3 +557,46 @@ def test_pins_named_with_their_refdes_read_as_numbers(tmp_path, snap):
             out.append(line)
         files[name] = "\n".join(out).encode("latin-1")
     _same_board(read_board(_zip(tmp_path / "prefixed.zip", files)), snap)
+
+
+def test_units_come_from_the_step_when_misc_info_omits_them(tmp_path):
+    """嘉立创EDA专业版 writes UNITS=MM in the step header and attrlists, not misc/info.
+    Falling back to ODB++'s inches would scale coordinates and thicknesses by 25.4."""
+    files = _files()
+    files["misc/info"] = files["misc/info"].decode().replace("UNITS=MM\n", "").encode()
+    got = read_board(_zip(tmp_path / "units-in-step.zip", files))
+    ref = read_board(ZIP)
+    assert got.outline == ref.outline
+    assert got.pads == ref.pads and got.tracks == ref.tracks
+    assert [c.thickness_mm for c in got.stackup.copper] == pytest.approx(
+        [c.thickness_mm for c in ref.stackup.copper])
+    assert got.stackup.board_thickness_mm == pytest.approx(ref.stackup.board_thickness_mm)
+
+
+def test_easyeda_copper_weight_is_microns(tmp_path):
+    """EasyEDA writes .copper_weight=35.0012 for 35 µm copper, not 35 ounces."""
+    files = _files()
+    attr = files["steps/pcb/layers/f.cu/attrlist"].decode()
+    attr = attr.replace(".layer_dielectric=0.0350", ".layer_dielectric=0")
+    attr = attr.replace(".copper_weight=1.0", ".copper_weight=35.0012")
+    files["steps/pcb/layers/f.cu/attrlist"] = ("UNITS=MM\n" + attr).encode()
+    got = read_board(_zip(tmp_path / "easyeda-copper.zip", files))
+    f_cu = next(c for c in got.stackup.copper if c.name == "F.Cu")
+    assert f_cu.thickness_mm == pytest.approx(0.0350012, abs=1e-6)
+
+
+def test_easyeda_jobs_are_labelled(tmp_path, snap):
+    """嘉立创EDA专业版 writes ODB_SOURCE=EasyEDA Pro; the board is labelled by it, and
+    read by the same ODB++ reader."""
+    files = _files()
+    info = files["misc/info"].decode()
+    info = info.replace("ODB_SOURCE=KiCad EDA", "ODB_SOURCE=EasyEDA Pro v4.1.93")
+    info = info.replace("SAVE_APP=KiCad EDA 10.0.7", "SAVE_APP=")
+    files["misc/info"] = info.encode()
+    got = read_board(_zip(tmp_path / "easyeda.zip", files))
+    assert got.source_format == "easyeda-odb"
+    assert got.format_name == "EasyEDA Pro (ODB++)"
+    # Same reader: only the label differs. (The KiCad-only naming of unnumbered NPTH
+    # pads stays off for other tools, so pads are compared by count.)
+    assert len(got.pads) == len(snap.pads)
+    assert got.tracks == snap.tracks and got.vias == snap.vias

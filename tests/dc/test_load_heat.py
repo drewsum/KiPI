@@ -1,5 +1,6 @@
 # Portions Copyright (c) 2026 Tomachie LLC.
-"""Load power and DC connection losses as heat in the electro-thermal solve (#62)."""
+"""Component heat (load power, #62, and VRM conversion loss, #253) and DC connection
+losses as heat in the electro-thermal solve."""
 
 import copy
 from types import SimpleNamespace
@@ -49,33 +50,86 @@ def test_a_load_without_ground_pins_returns_at_zero_volts():
     assert watts == pytest.approx(tree.loads[0].current * tree.loads[0].v_supply, rel=1e-9)
 
 
-def test_load_power_is_heat_only_when_ticked(solved):
+def test_component_heat_off_heats_with_the_copper_and_vias_alone(solved):
+    snap, s, tree = solved
+    assert not s.thermal.component_heat                       # off by default
+    u1 = next(v for v in tree.vrms if v.name == "U1")
+    assert u1.p_loss > 0
+    _, w, _, by_kind = heat_sources(tree, snap, s)
+    assert "VRM conversion" not in by_kind and "loads" not in by_kind
+    assert set(by_kind) <= {"copper", "vias"}
+    assert w.sum() == pytest.approx(sum(by_kind.values()), rel=1e-12)
+
+
+def test_component_heat_on_adds_the_loads_vrm_conversion_and_dc_connections(solved):
     snap, s, tree = solved
     off = heat_sources(tree, snap, s)[1].sum()
     on_setup = copy.deepcopy(s)
-    on_setup.thermal.load_power = True
-    on = heat_sources(tree, snap, on_setup)[1].sum()
-    assert on - off == pytest.approx(load_powers(tree, snap, s)["U2"][0], rel=1e-9)
+    on_setup.thermal.component_heat = True
+    _, w, _, by_kind = heat_sources(tree, snap, on_setup)
+    load_w = load_powers(tree, snap, s)["U2"][0]
+    u1 = next(v for v in tree.vrms if v.name == "U1")
+    assert by_kind["loads"] == pytest.approx(load_w, rel=1e-9)
+    assert by_kind["VRM conversion"] == pytest.approx(u1.p_loss, rel=1e-9)
+    links = sum(sr.power for g in tree.groups.values() for sr in g.result.fields.series)
+    assert by_kind.get("DC connections", 0.0) == pytest.approx(links, rel=1e-9)
+    assert w.sum() - off == pytest.approx(load_w + u1.p_loss + links, rel=1e-9)
 
 
-def test_electrothermal_with_load_power_runs_hotter():
+def test_electrothermal_with_component_heat_runs_hotter():
     snap = board()
     s = setup("ldo", iq=0.01, ground=True)
     th = ThermalSettings(enabled=True, iterations=1, grid_mm=0.5)
-    cool = solve_electrothermal(snap, s, th).thermal
+    cool_tree = solve_electrothermal(snap, s, th)
+    cool = cool_tree.thermal
     hot = solve_electrothermal(snap, s, ThermalSettings(enabled=True, iterations=1, grid_mm=0.5,
-                                                        load_power=True)).thermal
-    assert cool.load_heat_w == {}
+                                                        component_heat=True)).thermal
+    vrm_w = hot.heat_by_kind["VRM conversion"]
+    link_w = hot.heat_by_kind.get("DC connections", 0.0)
+    assert cool.load_heat_w == {} and set(cool.heat_by_kind) <= {"copper", "vias"}
     assert set(hot.load_heat_w) == {"U2"}
-    assert hot.heat_w == pytest.approx(cool.heat_w + hot.load_heat_w["U2"], rel=1e-6)
+    assert hot.heat_w == pytest.approx(cool.heat_w + hot.load_heat_w["U2"] + vrm_w + link_w,
+                                       rel=1e-6)
     assert hot.t_max > cool.t_max
+    # The results say which component heat went in, or what was left out.
+    assert cool.vrm_loss_w == pytest.approx(
+        next(v for v in cool_tree.vrms if v.name == "U1").p_loss, rel=1e-9)
+    assert cool.component_heat_text().startswith(" (component heat off: ")
+    assert (f"VRM conversion loss ({cool.vrm_loss_w:.3g} W)" in cool.component_heat_text()
+            and "load power not included)" in cool.component_heat_text())
+    assert hot.component_heat_text() == (
+        f" (of which {hot.load_heat_w['U2']:.3g} W from loads, {vrm_w:.3g} W from VRM "
+        f"conversion, {link_w:.3g} W from DC connections)")
 
 
-def test_load_power_round_trips_through_the_setup_file():
+def test_component_heat_round_trips_through_the_setup_file():
     s = setup("ldo")
-    s.thermal.load_power = True
-    assert PISetup.from_dict(s.to_dict()).thermal.load_power
-    assert not PISetup.from_dict(setup("ldo").to_dict()).thermal.load_power    # off by default
+    s.thermal.component_heat = True
+    d = s.to_dict()
+    assert d["thermal"]["component_heat"] and "load_power" not in d["thermal"]
+    assert PISetup.from_dict(d).thermal.component_heat
+    assert not PISetup.from_dict(setup("ldo").to_dict()).thermal.component_heat  # off by default
+
+
+@pytest.mark.parametrize("on", [False, True])
+def test_setups_saved_with_load_power_read_it_as_component_heat(on):
+    d = setup("ldo").to_dict()
+    del d["thermal"]["component_heat"]
+    d["thermal"]["load_power"] = on                   # saved before #253
+    assert PISetup.from_dict(d).thermal.component_heat is on
+
+
+@pytest.mark.parametrize("on", [False, True])
+def test_results_saved_with_load_power_read_it_as_component_heat(on):
+    st = ThermalSettings.__new__(ThermalSettings)
+    state = vars(ThermalSettings()).copy()
+    del state["component_heat"]
+    st.__setstate__({**state, "load_power": on})
+    assert st.component_heat is on and not hasattr(st, "load_power")
+    # Before #253 the VRMs heated the board either way; such a result says so.
+    th = ThermalResult.__new__(ThermalResult)
+    th.__setstate__({"settings": st, "heat_w": 1.0, "heat_by_kind": {"VRM conversion": 0.5}})
+    assert "0.5 W from VRM conversion" in th.component_heat_text()
 
 
 def test_setups_with_a_stated_load_heat_still_open():
@@ -106,7 +160,7 @@ def _pad(pid, net, ref, num, g):
 
 
 def test_dc_connection_losses_heat_its_pins():
-    """A DC connection's I²R lands on its pins, with or without the load power option."""
+    """A DC connection's I²R lands on its pins with component heat, and not without (#253)."""
     snap = _strip([_pad("src", "A", "J1", "1", box(0, 0, 1, 1)),
                    _pad("r1a", "A", "R1", "1", box(9, 0, 10, 1)),
                    _pad("r1b", "B", "R1", "2", box(12, 0, 13, 1)),
@@ -116,29 +170,30 @@ def test_dc_connection_losses_heat_its_pins():
                                series=[SeriesLink("R1", ["r1a"], ["r1b"], 0.02)],
                                nets=["A", "B"]))
     tree = SimpleNamespace(groups={"A + B": SimpleNamespace(result=res)}, vrms=[])
-    for load_power in (False, True):
-        s = SimpleNamespace(vrms=[], loads=[], thermal=ThermalSettings(load_power=load_power))
+    for on in (False, True):
+        s = SimpleNamespace(vrms=[], loads=[], thermal=ThermalSettings(component_heat=on))
         xy, w, _, _ = heat_sources(tree, snap, s)
         at_r1 = np.isin(xy[:, 0], [9.5, 12.5]) & (xy[:, 1] == 0.5)
-        assert w[at_r1].sum() == pytest.approx(2.0 ** 2 * 0.02, rel=1e-9)
+        assert w[at_r1].sum() == pytest.approx(2.0 ** 2 * 0.02 if on else 0.0, rel=1e-9)
 
 
-def test_load_power_checkbox(qapp_offscreen):
+def test_component_heat_checkbox(qapp_offscreen):
     from kipi.dc.gui.pi_panel import PIPanel
     snap = board()
     s = setup("ldo", ground=True)
     panel = PIPanel()
     panel.set_board(snap, s)
-    box_ = panel.chk_load_power
+    box_ = panel.chk_component_heat
+    assert box_.text() == "Component heat"
     assert not box_.isChecked() and not box_.isEnabled()      # off, and thermal is off
     panel.chk_thermal.setChecked(True)
     assert box_.isEnabled()
     box_.setChecked(True)
-    assert s.thermal.load_power
+    assert s.thermal.component_heat
     s2 = setup("ldo")
-    s2.thermal.load_power = True
+    s2.thermal.component_heat = True
     panel.set_board(snap, s2)                           # a saved setup's choice shows
-    assert panel.chk_load_power.isChecked()
+    assert panel.chk_component_heat.isChecked()
 
 
 @pytest.fixture(scope="module")

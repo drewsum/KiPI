@@ -235,12 +235,10 @@ def parts_on_net(snap: BoardSnapshot, net: str):
 # ---------------------------------------------------------------------------
 
 
-def _load_heat(th) -> str:
-    """' (of which x W from loads)' when the solve heated the board with the loads (#62)."""
-    loads = getattr(th, "load_heat_w", {}) or {}
-    if not getattr(th.settings, "load_power", False):
-        return ""
-    return f" (of which {sum(max(v, 0.0) for v in loads.values()):.3g} W from loads)"
+def _component_heat(th) -> str:
+    """Which component heat the solve put into the board: the loads' and the VRMs'
+    conversion loss, or neither (#253)."""
+    return html.escape(th.component_heat_text())
 
 
 class PinPicker(QWidget):
@@ -2000,7 +1998,8 @@ class PIPanel(QWidget, PartSelection):
                       f"</span>: {html.escape(limits_text(limits))}.")
         self.lbl_thermal.setText(
             f"Peak copper temperature <b>{tmax:.1f} °C</b> ({tmax - ambient:+.1f} °C) at "
-            f"({x:.1f}, {y:.1f}) mm{self._peak_layer(th)}; {th.heat_w:.3g} W into the board{_load_heat(th)}, "
+            f"({x:.1f}, {y:.1f}) mm{self._peak_layer(th)}; {th.heat_w:.3g} W into the board"
+            f"{_component_heat(th)}, "
             f"ambient {ambient:g} °C, airflow {th.settings.airflow_m_s:g} m/s"
             f"{html.escape(th.edges_text())}.<br>{judged}")
         details = ["Iterations: " + ", ".join(
@@ -2214,13 +2213,15 @@ class PIPanel(QWidget, PartSelection):
         f.addRow("Iterations", self.spin_iters)
         f.addRow("Airflow", self.spin_airflow)
         f.addRow("Grid", self.spin_tgrid)
-        self.chk_load_power = QCheckBox("Include load power dissipation")
-        self.chk_load_power.setChecked(t.load_power)
-        self.chk_load_power.setToolTip(
-            "Heat the board with the power each load draws too: the sum over its supply and "
-            "ground pins of pin current × pin voltage, spread over those pins. Off: only "
-            "copper, via, DC connection and VRM conversion losses heat the board.")
-        f.addRow(self.chk_load_power)
+        self.chk_component_heat = QCheckBox("Component heat")
+        self.chk_component_heat.setChecked(t.component_heat)
+        self.chk_component_heat.setToolTip(
+            "Heat the board with the components too: each DC connection's I²R (at its "
+            "pins), each VRM's conversion loss (P in − P out, at its output pins) and each "
+            "load's power (the sum over its supply and ground pins of pin current × pin "
+            "voltage, spread over those pins). Off: only the copper and vias heat the "
+            "board.")
+        f.addRow(self.chk_component_heat)
         self.btn_edges = QPushButton("Edit…")
         self.lbl_edges = QLabel()
         self.lbl_edges.setStyleSheet("color: #999;")
@@ -2258,15 +2259,16 @@ class PIPanel(QWidget, PartSelection):
         f.addRow("Max rise above ambient", self.spin_max_rise)
         for sp in (self.spin_max_t, self.spin_max_rise):
             f.labelForField(sp).setToolTip(sp.toolTip())
-        note = QLabel("Heat from every net and layer (copper, vias, DC parts, VRM conversion "
-                      "loss and, if ticked, load power) spreads through the board's copper "
+        note = QLabel("Heat from every net and layer (copper, vias and, with Component "
+                      "heat, DC parts, VRM conversion loss and the loads' power) spreads "
+                      "through the board's copper "
                       "and laminate and leaves both faces by convection: h = 10 + 3.8·v W/m²K "
                       "per face. Each layer's thermal conductivity is in the Stackup window.")
         note.setWordWrap(True)
         note.setStyleSheet("color: #999;")
         f.addRow(note)
         self.chk_thermal.toggled.connect(self._thermal_changed)
-        self.chk_load_power.toggled.connect(self._thermal_changed)
+        self.chk_component_heat.toggled.connect(self._thermal_changed)
         for wdg in (self.spin_ambient, self.spin_airflow, self.spin_tgrid, self.spin_max_t,
                     self.spin_max_rise):
             wdg.valueChanged.connect(self._thermal_changed)
@@ -2280,11 +2282,11 @@ class PIPanel(QWidget, PartSelection):
         t.iterations = self.spin_iters.value()
         t.airflow_m_s = self.spin_airflow.value()
         t.grid_mm = self.spin_tgrid.value()
-        t.load_power = self.chk_load_power.isChecked()
+        t.component_heat = self.chk_component_heat.isChecked()
         t.max_temp_c = self.spin_max_t.value() or None
         t.max_rise_c = self.spin_max_rise.value() or None
         for wdg in (self.spin_ambient, self.spin_iters, self.spin_airflow, self.spin_tgrid,
-                    self.chk_load_power, self.spin_max_t, self.spin_max_rise):
+                    self.chk_component_heat, self.spin_max_t, self.spin_max_rise):
             wdg.setEnabled(t.enabled)
         self.btn_edges.setEnabled(t.enabled and self.snapshot is not None)
         self.lbl_edges.setText(edges_summary(t.edges))
@@ -2421,7 +2423,7 @@ class PIPanel(QWidget, PartSelection):
                          (self.spin_airflow, t.airflow_m_s), (self.spin_tgrid, t.grid_mm),
                          (self.spin_max_t, t.max_temp_c or 0.0),
                          (self.spin_max_rise, t.max_rise_c or 0.0),
-                         (self.chk_thermal, t.enabled), (self.chk_load_power, t.load_power)):
+                         (self.chk_thermal, t.enabled), (self.chk_component_heat, t.component_heat)):
             wdg.blockSignals(True)
             (wdg.setChecked if isinstance(wdg, QCheckBox) else wdg.setValue)(val)
             wdg.blockSignals(False)
@@ -2713,7 +2715,7 @@ class PIPanel(QWidget, PartSelection):
         if th is not None:
             x, y, tmax = th.hottest()
             notes.insert(0, f"<b>Electro-thermal:</b> {th.heat_w:.3g} W into the board"
-                            f"{_load_heat(th)}, peak "
+                            f"{_component_heat(th)}, peak "
                             f"<b>{tmax:.1f} °C</b> at ({x:.1f}, {y:.1f}) mm"
                             f"{self._peak_layer(th)}, ambient "
                             f"{th.settings.ambient_c:g} °C, airflow {th.settings.airflow_m_s:g} m/s"

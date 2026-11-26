@@ -45,8 +45,12 @@ def test_coatings_are_built_with_the_nets_in_the_background(app, no_3d, monkeypa
     w.sync_nets()                               # every net shown: nothing to build
     _idle(app, w)
     assert len(built) == 1
+    from kipi.core.model.stackup import restack, thicknesses
     st = w.snapshot.stackup
     w._stackup_changed(type(st)(**{**vars(st), "edited": True}))
+    _idle(app, w)
+    assert len(built) == 1                      # same thicknesses: nothing to rebuild (#252)
+    w._stackup_changed(restack(st, [2 * t for t in thicknesses(st)]))
     _idle(app, w)
     assert len(built) == 2 and len(shown) == 2
     w.close()

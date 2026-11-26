@@ -176,20 +176,56 @@ def pick_step(job: Job, progress: ProgressReporter, wanted: Optional[str] = None
     return step
 
 
+def declared_units(text: Optional[str]) -> Optional[feat.Units]:
+    """The units a job file declares (``UNITS=MM`` or ``U MM``), or None."""
+    for line in (text or "").splitlines()[:40]:
+        s = line.strip()
+        if s.upper().startswith("UNITS="):
+            return feat.Units(s.split("=", 1)[1])
+        if s.upper().startswith("U ") and len(s.split()) == 2:
+            return feat.Units(s.split()[1])
+    return None
+
+
+def job_units(job: Job, step: str, info: Dict[str, str]) -> feat.Units:
+    """The job's units. ``misc/info`` gives them in most exports; 嘉立创EDA专业版 leaves
+    them out there and writes ``UNITS=MM`` in the step header, the profile and every layer
+    attribute list instead. Read those before ODB++'s default of inches, which would scale
+    every coordinate and thickness by 25.4."""
+    if info.get("units"):
+        return feat.Units(info["units"])
+    for name in (f"steps/{step}/stephdr", f"steps/{step}/profile"):
+        units = declared_units(job.read(name))
+        if units is not None:
+            return units
+    for folder in job.list(f"steps/{step}/layers")[:8]:
+        units = declared_units(job.read(f"steps/{step}/layers/{folder}/attrlist"))
+        if units is not None:
+            return units
+    return feat.Units("INCH")
+
+
 def _copper_thickness(attrs: Dict[str, str], mm_per_unit: float) -> Optional[float]:
     """A copper layer's thickness in mm: its own if written precisely enough and in line
     with its weight, else its weight. Altium writes the neighbouring dielectric's thickness
     in a copper layer's .layer_dielectric (an inner layer read 1.33 mm), so a thickness
-    far from the weight is not the copper's."""
+    far from the weight is not the copper's. 嘉立创EDA专业版 writes the thickness in µm in
+    .copper_weight (35.0012 for 35 µm), not the ounces ODB++ specifies."""
     t_text = attrs.get(".copper_thickness") or attrs.get(".layer_dielectric") or ""
     try:
         t = float(t_text) * mm_per_unit if t_text else None
     except ValueError:
         t = None
     try:
-        w = float(attrs.get(".copper_weight") or "") * MM_PER_OZ
+        raw_w = float(attrs.get(".copper_weight") or "")
     except ValueError:
+        raw_w = None
+    if raw_w is None:
         w = None
+    elif raw_w > 5:          # µm, as EasyEDA writes it: no ODB++ copper is 5 oz or more
+        w = raw_w / 1000.0
+    else:
+        w = raw_w * MM_PER_OZ
     # At the default precision (2 decimals) 35 um is written 0.03: the weight says more.
     if w and (t is None or _decimals(t_text) <= 2 or abs(t - w) > COPPER_WEIGHT_TOLERANCE * w):
         return w
@@ -219,9 +255,11 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
     for l in board:
         if l.type in ("SOLDER_MASK", "SILK_SCREEN"):
             # Above the first copper layer it is on top, below it on the bottom.
-            attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
+            text = job.read(f"steps/{step}/layers/{l.folder}/attrlist") or ""
+            attrs = parse_attrs(text)
+            layer_units = declared_units(text) or units
             try:
-                t = float(attrs.get(".layer_dielectric", "")) * units.coord
+                t = float(attrs.get(".layer_dielectric", "")) * layer_units.coord
             except ValueError:
                 t = 0.0
             coat = coating_of("B." if started else "F.",
@@ -230,18 +268,22 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
             coatings.append(coat)
         elif l.type in _COPPER_TYPES:
             started = True
-            attrs = parse_attrs(job.read(f"steps/{step}/layers/{l.folder}/attrlist"))
+            text = job.read(f"steps/{step}/layers/{l.folder}/attrlist") or ""
+            attrs = parse_attrs(text)
+            layer_units = declared_units(text) or units
             lid = ids[l.folder]
             outer = lid in (F_CU, B_CU)
-            t = _copper_thickness(attrs, units.coord)
+            t = _copper_thickness(attrs, layer_units.coord)
             if t is None or t <= 0:
                 missing_cu.append(l.name)
                 t = DEFAULT_OUTER_CU_MM if outer else DEFAULT_INNER_CU_MM
             entries.append(("cu", lid, t, "", 0.0))
         elif l.type == "DIELECTRIC" and started:
-            attrs = _dielectric_attrs(job, step, l)
+            text = _dielectric_text(job, step, l)
+            attrs = parse_attrs(text)
+            layer_units = declared_units(text) or units
             try:
-                t = float(attrs.get(".layer_dielectric", "")) * units.coord
+                t = float(attrs.get(".layer_dielectric", "")) * layer_units.coord
             except ValueError:
                 t = None
             try:
@@ -270,16 +312,20 @@ def read_stackup(job: Job, step: str, layers: List[Layer], units: feat.Units,
                          assumed, coatings), ids
 
 
-def _dielectric_attrs(job: Job, step: str, layer: Layer) -> Dict[str, str]:
-    """A dielectric's attributes. KiCad 10 names a dielectric's sublayers ``NAME_1``,
+def _dielectric_text(job: Job, step: str, layer: Layer) -> str:
+    """A dielectric's attribute file. KiCad 10 names a dielectric's sublayers ``NAME_1``,
     ``NAME_2`` in the matrix but writes one folder, ``name``, holding the first sublayer's
     attributes; that folder stands for ``NAME_1``, and the later sublayers have none."""
-    attrs = parse_attrs(job.read(f"steps/{step}/layers/{layer.folder}/attrlist"))
-    if not attrs:
+    text = job.read(f"steps/{step}/layers/{layer.folder}/attrlist") or ""
+    if not parse_attrs(text):
         base, _, sub = layer.folder.rpartition("_")
         if base and sub == "1":
-            attrs = parse_attrs(job.read(f"steps/{step}/layers/{base}/attrlist"))
-    return attrs
+            text = job.read(f"steps/{step}/layers/{base}/attrlist") or ""
+    return text
+
+
+def _dielectric_attrs(job: Job, step: str, layer: Layer) -> Dict[str, str]:
+    return parse_attrs(_dielectric_text(job, step, layer))
 
 
 # ---------------------------------------------------------------------------
@@ -346,12 +392,17 @@ def read_board(path, progress: ProgressReporter = NULL,
 def _read(job: Job, path: Path, progress: ProgressReporter, t0: float,
           wanted_step: Optional[str] = None) -> BoardSnapshot:
     info = parse_attrs(job.read("misc/info"))
-    units = feat.Units(info.get("units", "INCH"))
     app = info.get("save_app", "") or info.get("odb_source", "")
+    # EasyEDA Pro's ODB++ export names itself in misc/info; label the board by where it
+    # really came from instead of the generic ODB++ (the reader is the same either way).
+    easyeda = "easyeda" in app.lower()
     progress.info(f"ODB++ {info.get('odb_version_major', '?')}.{info.get('odb_version_minor', '?')}"
                   + (f" from {app}" if app else ""))
     assumed: List[str] = []
     step = pick_step(job, progress, wanted_step, assumed)
+    # Units are read after the step is chosen: EasyEDA leaves UNITS=MM out of misc/info
+    # and declares it in the step's own files (see job_units).
+    units = job_units(job, step, info)
     with progress.timed("Reading the job"):
         job.focus(step)
     layers = read_matrix(job, step)
@@ -455,7 +506,8 @@ def _read(job: Job, path: Path, progress: ProgressReporter, t0: float,
     snap = BoardSnapshot(
         board_name=job_name(path), project_dir=str(path.parent), stackup=stackup,
         nets=nets, tracks=tracks, vias=vias, pads=pads, footprints=footprints, zones=zones,
-        outline=outline, source="odb++", source_format="odbpp", assumed=assumed,
+        outline=outline, source="odb++", assumed=assumed,
+        source_format="easyeda-odb" if easyeda else "odbpp",
         silkscreen=silkscreen)
     progress.info(f"{len(nets)} nets")
     progress.info(f"Read in {time.perf_counter() - t0:.2f} s")

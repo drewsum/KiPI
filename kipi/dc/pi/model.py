@@ -512,8 +512,7 @@ class PISetup:
                    for l in d.get("loads", [])],
             links=[_link(k, pin) for k in d.get("links", [])],
             via_current_limit_a=d.get("via_current_limit_a", DEFAULT_VIA_CURRENT_LIMIT_A),
-            thermal=ThermalSettings(**{k: v for k, v in d.get("thermal", {}).items()
-                                       if k in {f.name for f in dataclasses.fields(ThermalSettings)}}),
+            thermal=ThermalSettings.from_dict(d.get("thermal", {})),
             html_report=bool(d.get("html_report", False)),
             report_format=report_format(d.get("report_format")),
             nets=list(d["nets"]) if d.get("nets") is not None else None,

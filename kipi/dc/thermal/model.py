@@ -88,9 +88,11 @@ class ThermalSettings:
     iterations: int = 3
     airflow_m_s: float = 0.0
     grid_mm: float = 0.0        # 0 = automatic (~250 cells across the board)
-    # Heat the loads themselves: each load dissipates the sum over its supply and ground
-    # pins of pin current x pin voltage, spread over those pins (#62).
-    load_power: bool = False
+    # Component heat (#253): the loads' power (each load dissipates the sum over its supply
+    # and ground pins of pin current x pin voltage, spread over those pins, #62) and each
+    # regulator's conversion loss, at its output pins. Off: the copper, vias and DC
+    # connections alone heat the board. Called load_power, for the loads alone, before.
+    component_heat: bool = False
     # PASS / FAIL limits on the solved copper's temperature, per layer (None = no limit)
     max_temp_c: Optional[float] = None
     max_rise_c: Optional[float] = None      # above ambient
@@ -105,8 +107,21 @@ class ThermalSettings:
                       for e in (self.edges or [])]
 
     def __setstate__(self, state):
-        # Results saved before edge boundaries (#221) have none.
+        # Results saved before edge boundaries (#221) have none; before #253 the
+        # component heat setting was load_power.
+        state = dict(state)
+        if "component_heat" not in state:
+            state["component_heat"] = bool(state.pop("load_power", False))
+        state.pop("load_power", None)
         self.__dict__.update({"edges": [], **state})
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ThermalSettings":
+        """From a setup file's ``thermal``; one saved before #253 has ``load_power``."""
+        d = dict(d or {})
+        if "component_heat" not in d and "load_power" in d:
+            d["component_heat"] = d["load_power"]
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
     def limits_set(self) -> bool:
         return self.max_temp_c is not None or self.max_rise_c is not None

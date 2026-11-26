@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KiPI Architecture</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#ffffff',
+            canvasBg: '#fbfbfd',
+            academicBorder: '#e2e8f0',
+            academicText: '#0f172a',
+            academicMuted: '#64748b',
+            accentIndigo: '#4f46e5',
+            accentEmerald: '#059669',
+            accentCyan: '#0284c7',
+            accentRose: '#e11d48',
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+            serif: ['Newsreader', 'Merriweather', 'Georgia', 'serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #fbfbfd;
+      color: #0f172a;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    /* Subtle Academic Dot Grid Background */
+    .bg-academic-grid {
+      background-size: 24px 24px;
+      background-image: radial-gradient(#cbd5e1 1.2px, transparent 1.2px);
+    }
+
+    .academic-card {
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.02);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .academic-card:hover {
+      border-color: #94a3b8;
+      box-shadow: 0 8px 25px -4px rgba(15, 23, 42, 0.09);
+    }
+
+    .academic-card.active-focus {
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15), 0 10px 30px -5px rgba(79, 70, 229, 0.15);
+    }
+
+    .dock-pill {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 10px 35px -5px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.03);
+    }
+
+    /* Flow Animations */
+    @keyframes flowDashes {
+      to {
+        stroke-dashoffset: -32;
+      }
+    }
+    .flow-dash-active {
+      stroke-dasharray: 6, 4;
+      animation: flowDashes 1.1s linear infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) { .flow-dash-active { animation: none; } * { transition: none !important; } }
+
+    /* Laser Pointer Dot */
+    .academic-laser {
+      pointer-events: none;
+      position: fixed;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #e11d48;
+      box-shadow: 0 0 12px #e11d48, 0 0 24px rgba(225, 29, 72, 0.4);
+      transform: translate(-50%, -50%);
+      z-index: 9999;
+    }
+
+    .envelope-box {
+      box-shadow: 0 2px 10px -2px rgba(15, 23, 42, 0.03);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .envelope-box:hover {
+      box-shadow: 0 8px 25px -4px rgba(15, 23, 42, 0.08);
+    }
+  </style>
+</head>
+<body class="w-screen h-screen overflow-hidden bg-academic-grid">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // BEGIN DIAGRAM DATA
+    // Change these definitions for your system; keep the shared runtime below.
+    const INITIAL_NODES = [
+  {
+    "id": "plugin",
+    "title": "KiCad plugin",
+    "subtitle": "kipi_entry.py + plugin.json",
+    "icon": "🔌",
+    "x": 550,
+    "y": 110,
+    "width": 260,
+    "badge": "IPC action",
+    "badgeClass": "bg-indigo-50 text-indigo-700 border-indigo-200"
+  },
+  {
+    "id": "entry",
+    "title": "kipi.__main__",
+    "subtitle": "host.py: plugin or standalone",
+    "icon": "🚀",
+    "x": 1030,
+    "y": 110,
+    "width": 260,
+    "badge": "Entry point",
+    "badgeClass": "bg-indigo-50 text-indigo-700 border-indigo-200"
+  },
+  {
+    "id": "launcher",
+    "title": "Standalone launcher",
+    "subtitle": "kipi/launcher: venv + installer",
+    "icon": "🧰",
+    "x": 1510,
+    "y": 110,
+    "width": 260,
+    "badge": "Stdlib only",
+    "badgeClass": "bg-indigo-50 text-indigo-700 border-indigo-200"
+  },
+  {
+    "id": "kicad",
+    "title": "Running KiCad",
+    "subtitle": "PCB editor over the IPC API",
+    "icon": "🖥️",
+    "x": 70,
+    "y": 420,
+    "width": 260,
+    "badge": "External",
+    "badgeClass": "bg-slate-50 text-slate-700 border-slate-200"
+  },
+  {
+    "id": "boardfiles",
+    "title": "Board files",
+    "subtitle": ".kicad_pcb, ODB++, HYP, .epro2",
+    "icon": "📁",
+    "x": 70,
+    "y": 620,
+    "width": 260,
+    "badge": "External",
+    "badgeClass": "bg-slate-50 text-slate-700 border-slate-200"
+  },
+  {
+    "id": "readers",
+    "title": "Source readers",
+    "subtitle": "kipi/sources: one per format",
+    "icon": "📥",
+    "x": 550,
+    "y": 420,
+    "width": 260,
+    "badge": "sources",
+    "badgeClass": "bg-amber-50 text-amber-700 border-amber-200"
+  },
+  {
+    "id": "snapshot",
+    "title": "BoardSnapshot",
+    "subtitle": "core/model: stackup, nets, parts",
+    "icon": "🧩",
+    "x": 550,
+    "y": 620,
+    "width": 260,
+    "badge": "Board model",
+    "badgeClass": "bg-amber-50 text-amber-700 border-amber-200"
+  },
+  {
+    "id": "files",
+    "title": "Setup & results files",
+    "subtitle": "YAML setup, results zip",
+    "icon": "💾",
+    "x": 550,
+    "y": 820,
+    "width": 260,
+    "badge": "core/*_io",
+    "badgeClass": "bg-amber-50 text-amber-700 border-amber-200"
+  },
+  {
+    "id": "main",
+    "title": "Main window",
+    "subtitle": "PySide6 shell, mode switch",
+    "icon": "🪟",
+    "x": 1030,
+    "y": 420,
+    "width": 260,
+    "badge": "kipi/gui",
+    "badgeClass": "bg-cyan-50 text-cyan-700 border-cyan-200"
+  },
+  {
+    "id": "viewer",
+    "title": "3D viewer",
+    "subtitle": "Board, copper and result maps",
+    "icon": "🧊",
+    "x": 1030,
+    "y": 620,
+    "width": 260,
+    "badge": "viewer3d",
+    "badgeClass": "bg-cyan-50 text-cyan-700 border-cyan-200"
+  },
+  {
+    "id": "reports",
+    "title": "Reports",
+    "subtitle": "HTML and PDF per analysis",
+    "icon": "📄",
+    "x": 1030,
+    "y": 820,
+    "width": 260,
+    "badge": "Outputs",
+    "badgeClass": "bg-cyan-50 text-cyan-700 border-cyan-200"
+  },
+  {
+    "id": "dc",
+    "title": "DC analysis",
+    "subtitle": "Power tree, IR drop, thermal",
+    "icon": "🔋",
+    "x": 1510,
+    "y": 420,
+    "width": 260,
+    "badge": "kipi/dc",
+    "badgeClass": "bg-emerald-50 text-emerald-700 border-emerald-200"
+  },
+  {
+    "id": "ac",
+    "title": "AC analysis",
+    "subtitle": "PDN impedance, targets, transient",
+    "icon": "〰️",
+    "x": 1510,
+    "y": 620,
+    "width": 260,
+    "badge": "kipi/ac",
+    "badgeClass": "bg-emerald-50 text-emerald-700 border-emerald-200"
+  },
+  {
+    "id": "noise",
+    "title": "Coupled Noise",
+    "subtitle": "Hot loops, coupling, victims",
+    "icon": "📡",
+    "x": 1510,
+    "y": 820,
+    "width": 260,
+    "badge": "kipi/noise",
+    "badgeClass": "bg-emerald-50 text-emerald-700 border-emerald-200"
+  },
+  {
+    "id": "tolerance",
+    "title": "Tolerance stack-up",
+    "subtitle": "DC + ripple + transient per load",
+    "icon": "📏",
+    "x": 1510,
+    "y": 1020,
+    "width": 260,
+    "badge": "kipi/tolerance",
+    "badgeClass": "bg-emerald-50 text-emerald-700 border-emerald-200"
+  },
+  {
+    "id": "mesh",
+    "title": "Geometry & mesher",
+    "subtitle": "core/geometry + core/mesh",
+    "icon": "🔺",
+    "x": 1990,
+    "y": 420,
+    "width": 260,
+    "badge": "shapely, Triangle",
+    "badgeClass": "bg-violet-50 text-violet-700 border-violet-200"
+  },
+  {
+    "id": "pool",
+    "title": "BoardPool",
+    "subtitle": "Worker processes, one per core",
+    "icon": "⚙️",
+    "x": 1990,
+    "y": 620,
+    "width": 260,
+    "badge": "core/workers",
+    "badgeClass": "bg-violet-50 text-violet-700 border-violet-200"
+  },
+  {
+    "id": "solvers",
+    "title": "Sparse solvers",
+    "subtitle": "PARDISO, direct or AMG-CG",
+    "icon": "🧮",
+    "x": 1990,
+    "y": 820,
+    "width": 260,
+    "badge": "core/solver",
+    "badgeClass": "bg-violet-50 text-violet-700 border-violet-200"
+  }
+];
+
+    const INITIAL_ENVELOPES = [
+  {
+    "id": "startup",
+    "title": "Start-up: plugin or standalone",
+    "badge": "",
+    "type": "startup",
+    "dotClass": "bg-indigo-500",
+    "x": 510,
+    "y": 40,
+    "width": 1300,
+    "height": 220,
+    "borderClass": "border-indigo-300/90 hover:border-indigo-500 bg-indigo-50/20",
+    "headerClass": "text-indigo-900",
+    "badgeClass": "bg-white text-indigo-700 border-indigo-200"
+  },
+  {
+    "id": "inputs",
+    "title": "Board inputs",
+    "badge": "",
+    "type": "inputs",
+    "dotClass": "bg-slate-500",
+    "x": 30,
+    "y": 350,
+    "width": 340,
+    "height": 420,
+    "borderClass": "border-slate-300/90 hover:border-slate-500 bg-slate-50/20",
+    "headerClass": "text-slate-900",
+    "badgeClass": "bg-white text-slate-700 border-slate-200"
+  },
+  {
+    "id": "model",
+    "title": "Board model & files",
+    "badge": "",
+    "type": "model",
+    "dotClass": "bg-amber-500",
+    "x": 510,
+    "y": 350,
+    "width": 340,
+    "height": 620,
+    "borderClass": "border-amber-300/90 hover:border-amber-500 bg-amber-50/20",
+    "headerClass": "text-amber-900",
+    "badgeClass": "bg-white text-amber-700 border-amber-200"
+  },
+  {
+    "id": "shell",
+    "title": "App shell & outputs",
+    "badge": "",
+    "type": "shell",
+    "dotClass": "bg-cyan-500",
+    "x": 990,
+    "y": 350,
+    "width": 340,
+    "height": 620,
+    "borderClass": "border-cyan-300/90 hover:border-cyan-500 bg-cyan-50/20",
+    "headerClass": "text-cyan-900",
+    "badgeClass": "bg-white text-cyan-700 border-cyan-200"
+  },
+  {
+    "id": "analyses",
+    "title": "Analyses",
+    "badge": "",
+    "type": "analyses",
+    "dotClass": "bg-emerald-500",
+    "x": 1470,
+    "y": 350,
+    "width": 340,
+    "height": 820,
+    "borderClass": "border-emerald-300/90 hover:border-emerald-500 bg-emerald-50/20",
+    "headerClass": "text-emerald-900",
+    "badgeClass": "bg-white text-emerald-700 border-emerald-200"
+  },
+  {
+    "id": "core",
+    "title": "Core engine",
+    "badge": "",
+    "type": "core",
+    "dotClass": "bg-violet-500",
+    "x": 1950,
+    "y": 350,
+    "width": 340,
+    "height": 620,
+    "borderClass": "border-violet-300/90 hover:border-violet-500 bg-violet-50/20",
+    "headerClass": "text-violet-900",
+    "badgeClass": "bg-white text-violet-700 border-violet-200"
+  }
+];
+
+    const STORYBOARD_STEPS = [
+  {
+    "id": "overview",
+    "label": "Map",
+    "title": "KiPI architecture",
+    "subtitle": "From a board to DC, AC and Coupled Noise results.",
+    "activeLinks": [],
+    "highlightNodes": []
+  },
+  {
+    "id": "launch",
+    "label": "Launch",
+    "title": "Start KiPI",
+    "subtitle": "KiCad runs the plugin action, or the launcher sets up the environment; both start kipi.__main__.",
+    "activeLinks": [
+      {
+        "from": "plugin",
+        "to": "entry",
+        "label": "As plugin",
+        "color": "#4f46e5",
+        "srcPort": "right",
+        "dstPort": "left"
+      },
+      {
+        "from": "launcher",
+        "to": "entry",
+        "label": "Start in venv",
+        "color": "#4f46e5",
+        "srcPort": "left",
+        "dstPort": "right"
+      },
+      {
+        "from": "entry",
+        "to": "main",
+        "label": "Open window",
+        "color": "#0284c7",
+        "srcPort": "bottom",
+        "dstPort": "top"
+      }
+    ],
+    "highlightNodes": [
+      "plugin",
+      "entry",
+      "launcher",
+      "main"
+    ]
+  },
+  {
+    "id": "load",
+    "label": "Load",
+    "title": "Load the board",
+    "subtitle": "The main window asks the reader for the chosen source: the running KiCad or a board file.",
+    "activeLinks": [
+      {
+        "from": "main",
+        "to": "readers",
+        "label": "Load board",
+        "color": "#0284c7",
+        "srcPort": "left",
+        "dstPort": "right"
+      },
+      {
+        "from": "kicad",
+        "to": "readers",
+        "label": "IPC API",
+        "color": "#475569",
+        "srcPort": "right",
+        "dstPort": "leftTop"
+      },
+      {
+        "from": "boardfiles",
+        "to": "readers",
+        "label": "Parse file",
+        "color": "#475569",
+        "srcPort": "rightTop",
+        "dstPort": "leftBottom"
+      }
+    ],
+    "highlightNodes": [
+      "main",
+      "readers",
+      "kicad",
+      "boardfiles"
+    ]
+  },
+  {
+    "id": "model",
+    "label": "Model",
+    "title": "Build the board model",
+    "subtitle": "Every source produces the same BoardSnapshot; the 3D viewer draws it.",
+    "activeLinks": [
+      {
+        "from": "readers",
+        "to": "snapshot",
+        "label": "Snapshot",
+        "color": "#d97706",
+        "srcPort": "bottom",
+        "dstPort": "top"
+      },
+      {
+        "from": "snapshot",
+        "to": "main",
+        "label": "Nets, stackup",
+        "color": "#d97706",
+        "srcPort": "rightTop",
+        "dstPort": "leftBottom"
+      },
+      {
+        "from": "main",
+        "to": "viewer",
+        "label": "Show board",
+        "color": "#0284c7",
+        "srcPort": "bottom",
+        "dstPort": "top"
+      }
+    ],
+    "highlightNodes": [
+      "readers",
+      "snapshot",
+      "main",
+      "viewer"
+    ]
+  },
+  {
+    "id": "solve",
+    "label": "Solve",
+    "title": "Run the analyses",
+    "subtitle": "Each mode solves on a worker thread so the window stays responsive.",
+    "activeLinks": [
+      {
+        "from": "main",
+        "to": "dc",
+        "label": "DC solve",
+        "color": "#059669",
+        "srcPort": "rightTop",
+        "dstPort": "left"
+      },
+      {
+        "from": "main",
+        "to": "ac",
+        "label": "AC sweep",
+        "color": "#059669",
+        "srcPort": "right",
+        "dstPort": "leftTop"
+      },
+      {
+        "from": "main",
+        "to": "noise",
+        "label": "Noise solve",
+        "color": "#059669",
+        "srcPort": "rightBottom",
+        "dstPort": "leftTop"
+      }
+    ],
+    "highlightNodes": [
+      "main",
+      "dc",
+      "ac",
+      "noise"
+    ]
+  },
+  {
+    "id": "mesh",
+    "label": "Mesh",
+    "title": "Mesh the copper",
+    "subtitle": "Copper shapes become triangle meshes, built in parallel worker processes that each hold the board.",
+    "activeLinks": [
+      {
+        "from": "dc",
+        "to": "mesh",
+        "label": "Mesh copper",
+        "color": "#7c3aed",
+        "srcPort": "right",
+        "dstPort": "left"
+      },
+      {
+        "from": "mesh",
+        "to": "pool",
+        "label": "Fan out",
+        "color": "#7c3aed",
+        "srcPort": "bottomLeft",
+        "dstPort": "topLeft"
+      },
+      {
+        "from": "pool",
+        "to": "mesh",
+        "label": "Triangles",
+        "color": "#059669",
+        "srcPort": "topRight",
+        "dstPort": "bottomRight"
+      }
+    ],
+    "highlightNodes": [
+      "dc",
+      "mesh",
+      "pool"
+    ]
+  },
+  {
+    "id": "factor",
+    "label": "Factor",
+    "title": "Solve the sparse systems",
+    "subtitle": "FEM, sweep and victim systems go to the shared sparse solvers.",
+    "activeLinks": [
+      {
+        "from": "dc",
+        "to": "solvers",
+        "label": "FEM system",
+        "color": "#7c3aed",
+        "srcPort": "right",
+        "dstPort": "leftTop"
+      },
+      {
+        "from": "ac",
+        "to": "solvers",
+        "label": "Sweep",
+        "color": "#7c3aed",
+        "srcPort": "right",
+        "dstPort": "left"
+      },
+      {
+        "from": "noise",
+        "to": "solvers",
+        "label": "Victims",
+        "color": "#7c3aed",
+        "srcPort": "right",
+        "dstPort": "leftBottom"
+      }
+    ],
+    "highlightNodes": [
+      "dc",
+      "solvers",
+      "ac",
+      "noise"
+    ]
+  },
+  {
+    "id": "results",
+    "label": "Results",
+    "title": "Show the results",
+    "subtitle": "Results return to their panels and to the 3D viewer as maps.",
+    "activeLinks": [
+      {
+        "from": "dc",
+        "to": "main",
+        "label": "IR drop",
+        "color": "#059669",
+        "srcPort": "left",
+        "dstPort": "rightTop"
+      },
+      {
+        "from": "ac",
+        "to": "main",
+        "label": "Z(f) vs target",
+        "color": "#059669",
+        "srcPort": "leftTop",
+        "dstPort": "right"
+      },
+      {
+        "from": "noise",
+        "to": "main",
+        "label": "Ripple",
+        "color": "#059669",
+        "srcPort": "leftTop",
+        "dstPort": "rightBottom"
+      },
+      {
+        "from": "main",
+        "to": "viewer",
+        "label": "Result maps",
+        "color": "#0284c7",
+        "srcPort": "bottom",
+        "dstPort": "top"
+      }
+    ],
+    "highlightNodes": [
+      "dc",
+      "main",
+      "ac",
+      "noise",
+      "viewer"
+    ]
+  },
+  {
+    "id": "outputs",
+    "label": "Outputs",
+    "title": "Report and save",
+    "subtitle": "Each analysis writes an HTML/PDF report; setups save as YAML, results as a zip.",
+    "activeLinks": [
+      {
+        "from": "dc",
+        "to": "reports",
+        "label": "DC report",
+        "color": "#e11d48",
+        "srcPort": "left",
+        "dstPort": "rightTop"
+      },
+      {
+        "from": "ac",
+        "to": "reports",
+        "label": "AC report",
+        "color": "#e11d48",
+        "srcPort": "left",
+        "dstPort": "right"
+      },
+      {
+        "from": "noise",
+        "to": "reports",
+        "label": "Noise report",
+        "color": "#e11d48",
+        "srcPort": "left",
+        "dstPort": "rightBottom"
+      },
+      {
+        "from": "main",
+        "to": "files",
+        "label": "Save",
+        "color": "#d97706",
+        "srcPort": "leftBottom",
+        "dstPort": "right"
+      }
+    ],
+    "highlightNodes": [
+      "dc",
+      "reports",
+      "ac",
+      "noise",
+      "main",
+      "files"
+    ]
+  },
+  {
+    "id": "tolerance",
+    "label": "Tolerance",
+    "title": "Stack up the tolerances",
+    "subtitle": "Per-load DC drop, AC transient and ripple add up against each load's tolerances.",
+    "activeLinks": [
+      {
+        "from": "dc",
+        "to": "tolerance",
+        "label": "DC drop",
+        "color": "#059669",
+        "srcPort": "right",
+        "dstPort": "right",
+        "reach": 140
+      },
+      {
+        "from": "ac",
+        "to": "tolerance",
+        "label": "Transient",
+        "color": "#059669",
+        "srcPort": "left",
+        "dstPort": "left",
+        "reach": 100
+      },
+      {
+        "from": "noise",
+        "to": "tolerance",
+        "label": "Ripple",
+        "color": "#059669",
+        "srcPort": "bottom",
+        "dstPort": "top"
+      }
+    ],
+    "highlightNodes": [
+      "dc",
+      "tolerance",
+      "ac",
+      "noise"
+    ]
+  }
+];
+    // END DIAGRAM DATA
+
+    function AcademicCanvasApp() {
+      const [nodes, setNodes] = useState(INITIAL_NODES);
+      const [envelopes, setEnvelopes] = useState(INITIAL_ENVELOPES);
+      const [currentStepIndex, setCurrentStepIndex] = useState(0);
+
+      // Dragging State for Nodes vs Envelopes vs Canvas Pan
+      const [draggingNodeId, setDraggingNodeId] = useState(null);
+      const [draggingEnvelopeId, setDraggingEnvelopeId] = useState(null);
+      const [resizingEnvelopeId, setResizingEnvelopeId] = useState(null);
+
+
+
+      const [showTenants, setShowTenants] = useState(true);
+
+
+
+
+
+
+      // Canvas Zoom & Pan
+      const [zoom, setZoom] = useState(1);
+      const [pan, setPan] = useState({ x: 0, y: 0 });
+      const [isPanning, setIsPanning] = useState(false);
+
+
+      const currentStep = STORYBOARD_STEPS[currentStepIndex];
+      const dragState = useRef(null);
+      const canvasElement = useRef(null);
+      const canvasState = useRef({ nodes, envelopes });
+      canvasState.current = { nodes, envelopes };
+
+      // Fit the content, including the revision route, with room for the dock.
+      useEffect(() => {
+        fitView();
+        window.addEventListener('resize', fitView);
+        return () => window.removeEventListener('resize', fitView);
+      }, []);
+
+      useEffect(() => {
+        document.title = currentStep.title + ' - KiPI';
+      }, [currentStepIndex]);
+
+      useEffect(() => {
+        const element = canvasElement.current;
+        element.addEventListener('wheel', handleWheel, { passive: false });
+        return () => element.removeEventListener('wheel', handleWheel);
+      }, [zoom, pan]);
+
+      useEffect(() => {
+        const keyDown = (e) => {
+          if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+          if (e.code === 'Space' && e.target.closest('button')) return;
+          if (e.key === 'ArrowRight' || e.code === 'Space') {
+            e.preventDefault();
+            setCurrentStepIndex(i => (i + 1) % STORYBOARD_STEPS.length);
+          } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setCurrentStepIndex(i => (i + STORYBOARD_STEPS.length - 1) % STORYBOARD_STEPS.length);
+          } else if (/^[0-9]$/.test(e.key) && Number(e.key) < STORYBOARD_STEPS.length) {
+            setCurrentStepIndex(Number(e.key));
+          } else if (e.key.toLowerCase() === 'r') {
+            setNodes(INITIAL_NODES.map(n => ({ ...n })));
+            setEnvelopes(INITIAL_ENVELOPES.map(env => ({ ...env })));
+            canvasState.current = { nodes: INITIAL_NODES, envelopes: INITIAL_ENVELOPES };
+            fitView();
+          } else if (e.key.toLowerCase() === 'f') {
+            fitView();
+          } else if (e.key === '+' || e.key === '=') {
+            setZoom(z => Math.min(2, z * 1.08));
+          } else if (e.key === '-' || e.key === '_') {
+            setZoom(z => Math.max(0.3, z / 1.08));
+          }
+        };
+        window.addEventListener('keydown', keyDown);
+        return () => window.removeEventListener('keydown', keyDown);
+      }, []);
+
+      const startDrag = (e, mode, item) => {
+        if (e.button !== 0) return;
+        e.stopPropagation(); e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragState.current = { mode, item: item ? { ...item } : null, x: e.clientX, y: e.clientY, pan: { ...pan }, zoom };
+        setDraggingNodeId(mode === 'node' ? item.id : null);
+        setDraggingEnvelopeId(mode === 'envelope' ? item.id : null);
+        setResizingEnvelopeId(mode === 'resize' ? item.id : null);
+        setIsPanning(mode === 'pan');
+      };
+      const handleMouseDownNode = (e, id) => startDrag(e, 'node', nodes.find(n => n.id === id));
+      const handleMouseDownEnvelope = (e, id) => {
+        const box = e.currentTarget.getBoundingClientRect(), pad = 10 * zoom;
+        const border = e.clientX - box.left < pad || box.right - e.clientX < pad || box.bottom - e.clientY < pad;
+        if (border || e.clientY - box.top < 50 * zoom) startDrag(e, 'envelope', envelopes.find(env => env.id === id));
+      };
+      const handleMouseDownResize = (e, id) => startDrag(e, 'resize', envelopes.find(env => env.id === id));
+      const handleMouseDownCanvas = (e) => startDrag(e, 'pan', null);
+      const handleMouseMove = (e) => {
+        const d = dragState.current;
+        if (!d) return;
+        const dx = (e.clientX - d.x) / d.zoom, dy = (e.clientY - d.y) / d.zoom;
+        if (d.mode === 'node') setNodes(prev => prev.map(n => n.id === d.item.id ? { ...n, x: d.item.x + dx, y: d.item.y + dy } : n));
+        else if (d.mode === 'envelope') setEnvelopes(prev => prev.map(env => env.id === d.item.id ? { ...env, x: d.item.x + dx, y: d.item.y + dy } : env));
+        else if (d.mode === 'resize') setEnvelopes(prev => prev.map(env => env.id === d.item.id ? { ...env, width: Math.max(240, d.item.width + dx), height: Math.max(140, d.item.height + dy) } : env));
+        else setPan({ x: d.pan.x + e.clientX - d.x, y: d.pan.y + e.clientY - d.y });
+      };
+      const handleMouseUp = () => {
+        dragState.current = null;
+        setDraggingNodeId(null); setDraggingEnvelopeId(null); setResizingEnvelopeId(null); setIsPanning(false);
+      };
+      const handleWheel = (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) {
+          e.preventDefault();
+          const next = Math.max(0.3, Math.min(2, zoom * (e.deltaY < 0 ? 1.06 : 1 / 1.06)));
+          setPan({ x: e.clientX - (e.clientX - pan.x) * next / zoom, y: e.clientY - (e.clientY - pan.y) * next / zoom });
+          setZoom(next);
+        }
+      };
+
+      // Dynamic node card dimension calculation: ensures titles, subtitles, and badge footers fit with clean margins
+      const getNodeDimensions = (node) => {
+        if (!node) return { width: 240, height: 86 };
+        const titleLen = (node.title || '').length;
+        const subtitleLen = (node.subtitle || '').length;
+        const footerLen = (node.badge || '').length + (node.id || '').length + 8;
+
+        const titleWidth = titleLen * 7.2 + 36;
+        const subtitleWidth = subtitleLen * 6.6;
+        const footerWidth = footerLen * 6.4;
+
+        const contentWidth = Math.max(titleWidth, Math.min(subtitleWidth, 280), footerWidth) + 30;
+        const computedWidth = Math.max(node.width || 235, Math.ceil(contentWidth));
+
+        const availableTextWidth = computedWidth - 28;
+        const subtitleLines = Math.ceil((subtitleLen * 6.6) / availableTextWidth) || 1;
+
+        const contentHeight = 20 + 6 + (subtitleLines * 15) + 8 + 22 + 24;
+        const computedHeight = Math.max(86, Math.ceil(contentHeight));
+
+        return { width: computedWidth, height: computedHeight };
+      };
+
+      // Smart Edge Anchor Port Calculation
+      const getAnchorPoint = (nodeId, portType = 'center', nodeList = nodes) => {
+        const node = nodeList.find(n => n.id === nodeId);
+        if (!node) return { x: 0, y: 0 };
+        const { width: w, height: h } = getNodeDimensions(node);
+
+        switch (portType) {
+          case 'left':
+            return { x: node.x, y: node.y + h / 2 };
+          case 'leftTop':
+            return { x: node.x, y: node.y + h * 0.28 };
+          case 'leftBottom':
+            return { x: node.x, y: node.y + h * 0.72 };
+          case 'right':
+            return { x: node.x + w, y: node.y + h / 2 };
+          case 'rightTop':
+            return { x: node.x + w, y: node.y + h * 0.28 };
+          case 'rightBottom':
+            return { x: node.x + w, y: node.y + h * 0.72 };
+          case 'top':
+            return { x: node.x + w / 2, y: node.y };
+          case 'topLeft':
+            return { x: node.x + w * 0.25, y: node.y };
+          case 'topRight':
+            return { x: node.x + w * 0.75, y: node.y };
+          case 'bottom':
+            return { x: node.x + w / 2, y: node.y + h };
+          case 'bottomLeft':
+            return { x: node.x + w * 0.25, y: node.y + h };
+          case 'bottomRight':
+            return { x: node.x + w * 0.75, y: node.y + h };
+          default:
+            return { x: node.x + w / 2, y: node.y + h / 2 };
+        }
+      };
+
+      // Dynamic label chip width calculation for JetBrains Mono (monospace ~6.4px/char + symbols + padding)
+      const getLabelBoxWidth = (label) => {
+        if (!label) return 100;
+        let charUnits = 0;
+        for (let i = 0; i < label.length; i++) {
+          const code = label.charCodeAt(i);
+          // Wide symbols like ➔, non-ascii or emojis get extra width
+          charUnits += (code > 255 || code === 8594 ? 1.5 : 1);
+        }
+        // At 10px font size, monospace glyphs are ~6.2px wide; add 24px horizontal padding (12px per side)
+        return Math.max(80, Math.ceil(charUnits * 6.4) + 24);
+      };
+
+      const getLinkGeometry = (link, nodeList = nodes) => {
+        const start = getAnchorPoint(link.from, link.srcPort || 'right', nodeList);
+        const end = getAnchorPoint(link.to, link.dstPort || 'left', nodeList);
+        const normal = port => port.startsWith('left') ? { x: -1, y: 0 } : port.startsWith('right') ? { x: 1, y: 0 } : port.startsWith('top') ? { x: 0, y: -1 } : { x: 0, y: 1 };
+        const a = normal(link.srcPort || 'right'), b = normal(link.dstPort || 'left');
+        const reach = link.reach || Math.min(180, Math.max(64, Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) * 0.42));
+        const c1 = { x: start.x + a.x * reach, y: start.y + a.y * reach };
+        const c2 = { x: end.x + b.x * reach, y: end.y + b.y * reach };
+        return { start, end, c1, c2,
+          pathData: `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
+          midX: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8,
+          midY: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8 };
+      };
+      const fitView = () => {
+        const state = canvasState.current;
+        const boxes = [...state.envelopes, ...state.nodes.map(n => ({ ...n, ...getNodeDimensions(n) }))];
+        STORYBOARD_STEPS.forEach(step => step.activeLinks.forEach((link, i) => {
+          const g = getLinkGeometry(link, state.nodes), width = getLabelBoxWidth(`\u2794 ${i + 1}. ${link.label}`);
+          boxes.push({ x: g.midX - width / 2, y: g.midY - 12, width, height: 24 });
+          [g.start, g.end, g.c1, g.c2].forEach(p => boxes.push({ ...p, width: 0, height: 0 }));
+        }));
+        const left = Math.min(...boxes.map(b => b.x)), top = Math.min(...boxes.map(b => b.y));
+        const width = Math.max(...boxes.map(b => b.x + b.width)) - left;
+        const height = Math.max(...boxes.map(b => b.y + b.height)) - top;
+        const scale = Math.min(1.2, (window.innerWidth - 64) / width, (window.innerHeight - 120) / height);
+        setZoom(scale);
+        setPan({ x: (window.innerWidth - width * scale) / 2 - left * scale,
+          y: 24 + (window.innerHeight - 120 - height * scale) / 2 - top * scale });
+      };
+
+      return (
+        <div
+          ref={canvasElement}
+          onPointerDown={handleMouseDownCanvas}
+          onPointerMove={handleMouseMove}
+          onPointerUp={handleMouseUp}
+          onPointerCancel={handleMouseUp}
+          onLostPointerCapture={handleMouseUp}
+          style={{ touchAction: 'none' }}
+          className={`w-screen h-screen relative select-none overflow-hidden ${
+            isPanning ? 'cursor-grabbing' : 'cursor-default'
+          }`}
+        >
+          {/* MAIN TRANSFORMABLE CANVAS CONTAINER (ZOOM + PAN) */}
+          <div
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: '0 0',
+              width: '3000px',
+              height: '1800px'
+            }}
+            className="absolute inset-0 "
+          >
+            {/* FULLY DRAGGABLE & RESIZABLE TENANT BOUNDARY ENVELOPES */}
+            {showTenants && (
+              <div className="absolute inset-0 pointer-events-auto z-5">
+                {envelopes.map(env => (
+                  <div
+                    key={env.id}
+                    onPointerDown={(e) => handleMouseDownEnvelope(e, env.id)}
+                    style={{
+                      transform: `translate(${env.x}px, ${env.y}px)`,
+                      width: `${env.width}px`,
+                      height: `${env.height}px`,
+                      zIndex: draggingEnvelopeId === env.id ? 15 : 5
+                    }}
+                    className={`absolute cursor-default border-2 border-dashed rounded-3xl p-3.5 envelope-box flex flex-col justify-between ${env.borderClass}`}
+                  >
+                    {/* Envelope Top Header Bar */}
+                    <div className="flex items-center justify-between pointer-events-none">
+                      <div className="flex items-center space-x-2 font-mono text-xs">
+                        <span className={`w-2.5 h-2.5 rounded-full ${env.dotClass}`} />
+                        <span className={`font-bold text-[12.5px] ${env.headerClass}`}>
+                          {env.title}
+                        </span>
+                      </div>
+                      {env.badge && <span className={`text-[10px] px-2 py-0.5 rounded-full border font-mono font-medium whitespace-nowrap ${env.badgeClass}`}>{env.badge}</span>}
+                    </div>
+
+                    {/* Envelope Footer Hint & Resize Handle */}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[9.5px] font-mono text-slate-400 opacity-60">
+                        drag envelope header / border to move
+                      </span>
+                      {/* Resize Handle */}
+                      <div
+                        onPointerDown={(e) => handleMouseDownResize(e, env.id)}
+                        className="w-5 h-5 -mr-1 -mb-1 cursor-se-resize flex items-center justify-center text-slate-400 hover:text-indigo-600 font-mono text-xs opacity-75 hover:opacity-100 transition-opacity"
+                        title="Drag to resize envelope"
+                      >
+                        ⤡
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* SVG DYNAMIC CONNECTIONS LAYER */}
+            <svg
+              className="absolute inset-0 pointer-events-none z-10"
+              style={{ width: '3000px', height: '1800px', overflow: 'visible' }}
+            >
+              <defs>
+                {currentStep.activeLinks.map((link, idx) => (
+                  <React.Fragment key={idx}>
+                    {/* Bold Directional Arrowhead at destination port */}
+                    <marker
+                      id={`arrowhead-${idx}`}
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="9"
+                      markerHeight="9"
+                      orient="auto"
+                    >
+                      <path d="M 0 1.5 L 9 5 L 0 8.5 L 2.5 5 z" fill={link.color || '#4f46e5'} />
+                    </marker>
+                    {/* Origin Dot at source port */}
+                    <marker
+                      id={`origindot-${idx}`}
+                      viewBox="0 0 10 10"
+                      refX="5"
+                      refY="5"
+                      markerWidth="7"
+                      markerHeight="7"
+                    >
+                      <circle cx="5" cy="5" r="3.5" fill={link.color || '#4f46e5'} />
+                    </marker>
+                  </React.Fragment>
+                ))}
+              </defs>
+
+              {/* Render Active Flow Links with Smart Edge Anchors */}
+              {currentStep.activeLinks.map((link, idx) => {
+                const { pathData, midX, midY } = getLinkGeometry(link);
+
+                return (
+                  <g key={idx}>
+                    {/* Subtle Background Guide Path */}
+                    <path
+                      d={pathData}
+                      fill="none"
+                      stroke="#cbd5e1"
+                      strokeWidth="2.5"
+                      strokeOpacity="0.7"
+                    />
+                    {/* Animated Active Flow Line with Origin Dot and Destination Arrowhead */}
+                    <path
+                      d={pathData}
+                      fill="none"
+                      stroke={link.color || '#4f46e5'}
+                      strokeWidth="2.5"
+                      className="flow-dash-active"
+                      markerStart={`url(#origindot-${idx})`}
+                      markerEnd={`url(#arrowhead-${idx})`}
+                    />
+                    {/* Clean Wire Tag Label with dynamically fitted solid white background chip and direction indicator */}
+                    {link.label && (() => {
+                      const displayLabel = `\u2794 ${idx + 1}. ${link.label}`;
+                      const boxWidth = getLabelBoxWidth(displayLabel);
+                      const boxHeight = 23;
+                      return (
+                        <g transform={`translate(${midX}, ${midY})`}>
+                          <rect
+                            x={-boxWidth / 2}
+                            y={-boxHeight / 2}
+                            width={boxWidth}
+                            height={boxHeight}
+                            rx="7"
+                            fill="#ffffff"
+                            stroke={link.color || '#cbd5e1'}
+                            strokeWidth="1.4"
+                            filter="drop-shadow(0 2px 6px rgba(15, 23, 42, 0.11))"
+                          />
+                          <text
+                            x="0"
+                            y="3.5"
+                            textAnchor="middle"
+                            fill="#0f172a"
+                            fontSize="10"
+                            fontFamily="JetBrains Mono"
+                            fontWeight="600"
+                          >
+                            <tspan fill={link.color || '#4f46e5'} fontWeight="800">➔ </tspan>
+                            {idx + 1}. {link.label}
+                          </text>
+                        </g>
+                      );
+                    })()}
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* DRAGGABLE ACADEMIC NODE CARDS */}
+            {nodes.map(node => {
+              const isHighlighted = currentStep.highlightNodes.includes(node.id);
+              const isDragging = draggingNodeId === node.id;
+              const { width: nodeW, height: nodeH } = getNodeDimensions(node);
+
+              return (
+                <div
+                  key={node.id}
+                  onPointerDown={(e) => handleMouseDownNode(e, node.id)}
+                  style={{
+                    transform: `translate(${node.x}px, ${node.y}px)`,
+                    width: `${nodeW}px`,
+                    minHeight: `${nodeH}px`,
+                    zIndex: isDragging ? 50 : 20
+                  }}
+                  className={`absolute cursor-move select-none academic-card rounded-xl p-3 flex flex-col justify-between ${
+                    isHighlighted ? 'active-focus' : ''
+                  }`}
+                >
+                  {/* Node Title & Icon */}
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-base">{node.icon}</span>
+                      <h3 className="text-xs font-bold text-slate-900 tracking-tight whitespace-nowrap">{node.title}</h3>
+                    </div>
+                  </div>
+
+                  {/* Subtitle */}
+                  <p className="text-[11px] text-slate-500 font-sans leading-snug mb-2">
+                    {node.subtitle}
+                  </p>
+
+                  {/* Badge Footer */}
+                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[10px] font-mono mt-auto">
+                    <span className={`px-1.5 py-0.5 rounded border font-medium whitespace-nowrap ${node.badgeClass}`}>
+                      {node.badge}
+                    </span>
+                    <span className="text-slate-400 whitespace-nowrap pl-1">
+                      id: {node.id}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* MINIMAL FLOATING BOTTOM DOCK */}
+          <div onPointerDown={(e) => e.stopPropagation()} className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 max-w-2xl w-full px-4">
+            <div className="dock-pill rounded-2xl p-1.5 flex items-center justify-between space-x-1 shadow-xl">
+
+              {/* Step Buttons */}
+              <div className="flex items-center space-x-1 overflow-x-auto flex-1">
+                {STORYBOARD_STEPS.map((step, idx) => (
+                  <button
+                    key={step.id}
+                    onClick={() => setCurrentStepIndex(idx)}
+                    title={step.title + ': ' + step.subtitle}
+                    aria-current={currentStepIndex === idx ? 'step' : undefined}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
+                      currentStepIndex === idx
+                        ? 'bg-slate-900 text-white shadow-md font-semibold scale-105'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    {step.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Navigation Arrows & Talk Track Trigger */}
+              <div className="flex items-center space-x-1 pl-2 border-l border-slate-200">
+                <button
+                  onClick={() => setCurrentStepIndex(prev => (prev > 0 ? prev - 1 : STORYBOARD_STEPS.length - 1))}
+                  className="w-8 h-8 rounded-lg bg-white hover:bg-slate-100 text-slate-700 flex items-center justify-center text-xs border border-slate-200"
+                  title="Previous (←)"
+                >
+                  ←
+                </button>
+                <button
+                  onClick={() => setCurrentStepIndex(prev => (prev < STORYBOARD_STEPS.length - 1 ? prev + 1 : 0))}
+                  className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow"
+                  title="Next (Space / →)"
+                >
+                  →
+                </button>
+                <button onClick={fitView} className="w-8 h-8 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs" title="Fit diagram (F)">Fit</button>
+              </div>
+
+            </div>
+          </div>
+
+
+        </div>
+      );
+    }
+
+    ReactDOM.render(<AcademicCanvasApp />, document.getElementById('root'));
+  </script>
+</body>
+</html>

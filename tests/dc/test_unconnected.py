@@ -142,6 +142,6 @@ def test_unconnected_pins_add_no_load_heat():
     watts, pts = powers["U2"]
     assert math.isfinite(watts) and watts > 0 and len(pts) == 2      # U2.1 and its ground
     assert powers["U3"][0] == 0.0 and len(powers["U3"][1]) == 0
-    th = ThermalSettings(enabled=True, iterations=1, grid_mm=0.5, load_power=True)
+    th = ThermalSettings(enabled=True, iterations=1, grid_mm=0.5, component_heat=True)
     hot = solve_electrothermal(snap, s, th).thermal
     assert math.isfinite(hot.hottest()[2])

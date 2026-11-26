@@ -14,6 +14,12 @@
 ([source](docs/solver-guide.html)): what PI analysis is, why it matters, and how KiPI's mesh
 and its DC, thermal, AC and coupled noise solvers work.
 
+**How does KiPI compare to a commercial tool? See the
+[HyperLynx PI comparison report](https://drewsum.github.io/KiPI/hyperlynx-comparison.html)**
+([source](docs/hyperlynx-comparison.html)): KiPI and HyperLynx PI
+solve the same Glasgow revC3 board, compared on DC drop pin by pin, board temperature,
+and AC impedance at the FPGA.
+
 KiPI is a power integrity analyzer that runs standalone or as a KiCad 9 and 10 IPC plugin. It has three
 analysis modes:
 
@@ -45,7 +51,7 @@ control in KiPI has a tooltip. This README is an overview; the user guide has th
 
 ![Current density with flow arrows through the +12V input path and the U201 eFuse, with the Series links table](docs/images/current_density.png)
 
-**Status: 1.0.1 (stable)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
+**Status: 1.0.2 (stable)** ([changelog](docs/CHANGELOG.md)). KiPI runs on its own too, with an app launcher that handles dependencies, and imports boards from other layout tools. The author wants to add support for more PCB file formats. If you have an example with good complexity which uses a wide variety of your PCB design tool's features that you are willing to share, please open an [issue](https://github.com/drewsum/KiPI/issues) and attach your PCB file there.
 
 ## Install
 
@@ -518,7 +524,12 @@ add `resources/kipi_64.png` there as `icon.png` as well. Once a version is merge
 can't change, so never replace a release's PCM zip. Tag a release `vX.Y.Z`: a tag like
 `v1.0.0-rc1` gets the manual zip only, since PCM version numbers can't have suffixes.
 
-### Codebase Layout
+### [Codebase Layout](https://drewsum.github.io/KiPI/architecture.html)
+
+**[Open the interactive architecture diagram](https://drewsum.github.io/KiPI/architecture.html)**
+([source](docs/architecture.html)): KiPI's modules as cards you can drag, with a step-through of
+how a board flows from launch to results. Use the bottom dock, the arrow keys or Space to
+step, **0**–**9** to jump to a phase, **F** to fit and **R** to reset.
 
 | Path | Purpose |
 |---|---|

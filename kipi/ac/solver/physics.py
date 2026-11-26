@@ -45,3 +45,32 @@ def slab_difference(rho_ohm_mm: float, t_mm: float, omega: float) -> complex:
     if x.real > 30:
         return rho_ohm_mm * k
     return rho_ohm_mm * k * np.tanh(x / 2)
+
+
+
+# Copper wider than this many gap heights keeps the cavity model's inductance whole: the
+# correction below reaches 1 there (#258).
+FRINGE_NONE = 2.3
+
+
+def fringe_factor(w_mm, gap_mm):
+    """What the inductance height of a face of copper ``w_mm`` wide is scaled by, where it
+    faces wider copper of the other side across ``gap_mm`` (#258).
+
+    The cavity model puts μ₀·gap/2 per square on each of the two facing faces. Under copper
+    much narrower than the plane it faces, a BGA dogbone or a capacitor's fanout trace, the
+    plane's share hardly counts: its current spreads out sideways, where the faces see
+    nothing narrower. The strip's loop inductance is then its own face's, μ₀·gap/(2w) per
+    length, which ignores the field fringing past its edges: 1.2 nH/mm for 0.25 mm at
+    0.48 mm, where the microstrip's (Hammerstad, in air: L = Z₀/c) is 0.55. The factor
+    2·L·w/(μ₀·gap) brings the face to the microstrip's; it reaches 1 at about FRINGE_NONE
+    gap heights, so wider copper and planes are as before.
+    """
+    w = np.maximum(np.asarray(w_mm, dtype=float), 1e-6)
+    # np.inf (a plane): no correction
+    u = np.minimum(w / np.maximum(np.asarray(gap_mm, dtype=float), 1e-9), 2 * FRINGE_NONE)
+    z0 = np.where(u <= 1,
+                  60.0 * np.log(8.0 / u + u / 4.0),
+                  120.0 * np.pi / (u + 1.393 + 0.667 * np.log(u + 1.444)))
+    # L per length over μ₀·gap/w is Z₀/c · w / (μ₀ gap) = Z₀ u / η₀.
+    return np.minimum(2.0 * z0 * u / (120.0 * np.pi), 1.0)

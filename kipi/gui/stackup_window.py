@@ -16,6 +16,11 @@ copper resistivity and TCR, and the dielectric loss tangent and Default εr the 
 The solder masks and silkscreens (#82) are listed above and below the copper. Their
 thicknesses can be changed while unlocked, for the electro-thermal solve; they sit outside
 the board and do not add to its thickness.
+
+An edit is a draft until it is finished (#252): the cross-section follows each keystroke,
+but the analyses and the 3D view take the stackup only when a field is left or Enter is
+pressed, a material is chosen, the window is closed, or the main window saves or solves.
+Enter only finishes the field: neither button is the dialog's default, so it never resets.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Dict, List, Optional
 
-from qtpy.QtCore import QSettings, Qt, QTimer, Signal
+from qtpy.QtCore import QSettings, Qt, Signal
 from qtpy.QtGui import QColor, QIcon, QPixmap
 from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog,
@@ -109,10 +114,7 @@ class StackupWindow(QDialog):
         self._er_spins: List[UnitSpinBox] = []
         self._k_spins: List[UnitSpinBox] = []
         self._rho_spins: List[UnitSpinBox] = []
-        self._timer = QTimer(self)                   # one update after a burst of edits
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(400)
-        self._timer.timeout.connect(self._emit_edit)
+        self._pending = False                        # a draft edit not yet applied
 
         lay = QVBoxLayout(self)
         top = QHBoxLayout()
@@ -203,6 +205,11 @@ class StackupWindow(QDialog):
         btn_close = QPushButton("Close", self)
         btn_close.setToolTip("Close the window; the stackup stays as set here")
         btn_close.clicked.connect(self.close)
+        for b in (self.btn_reset, btn_close):
+            # Neither is the default button: Enter in a field finishes that field, and must
+            # not click Reset (#252).
+            b.setAutoDefault(False)
+            b.setDefault(False)
         row.addWidget(self.btn_reset)
         row.addStretch(1)
         row.addWidget(btn_close)
@@ -224,7 +231,7 @@ class StackupWindow(QDialog):
         """Show a board: ``imported`` as read from KiCad, ``current`` the one in use (edited,
         from the setup file), the setup holding the resistivity, and ``colors``
         {copper id: (r, g, b)}."""
-        self._timer.stop()
+        self._pending = False
         self._imported = imported
         self._current = current or imported
         self._setup = setup
@@ -258,13 +265,17 @@ class StackupWindow(QDialog):
         self._mat = dielectric_materials(self._imported)
         self._k = dielectric_k(self._imported)
         self._show_values()
-        self._timer.stop()
+        self._pending = False
         self._apply(self._imported)
 
+    def pending(self) -> bool:
+        """Whether an edit is still a draft, not yet given to the analyses."""
+        return self._pending
+
     def flush(self):
-        """Apply an edit still waiting for the update timer."""
-        if self._timer.isActive():
-            self._timer.stop()
+        """Apply the draft: the thicknesses, εr, materials and k edited since the last."""
+        if self._pending:
+            self._pending = False
             self._emit_edit()
 
     def done(self, r):           # closing the window applies what was typed last
@@ -323,6 +334,7 @@ class StackupWindow(QDialog):
             thk = UnitSpinBox(self.table)
             thk.setFrame(False)
             thk.valueChanged.connect(partial(self._thickness_edited, i))
+            thk.editingFinished.connect(self.flush)
             self.table.setCellWidget(i, C_THK, thk)
             self._thk_spins.append(thk)
             if copper:
@@ -347,11 +359,13 @@ class StackupWindow(QDialog):
                 er.setToolTip("Dielectric constant ('default' uses the Default εr "
                               "setting below)")
                 er.valueChanged.connect(partial(self._er_edited, d))
+                er.editingFinished.connect(self.flush)
                 self.table.setCellWidget(i, C_ER, er)
                 self._er_spins.append(er)
                 k = _spin(0.0, 1000.0, 0.0, 3, "", 0.1)
                 k.setFrame(False)
                 k.valueChanged.connect(partial(self._k_edited, d))
+                k.editingFinished.connect(self.flush)
                 self.table.setCellWidget(i, C_K, k)
                 self._k_spins.append(k)
                 self.table.setItem(i, C_RHO, QTableWidgetItem(""))
@@ -379,6 +393,7 @@ class StackupWindow(QDialog):
         thk.setFrame(False)
         thk.setToolTip(f"Thickness of the {c.side} {what}")
         thk.valueChanged.connect(partial(self._thickness_edited, i))
+        thk.editingFinished.connect(self.flush)
         self.table.setCellWidget(i, C_THK, thk)
         self._thk_spins.append(thk)
         k = QTableWidgetItem(f"{coating_k(c):g}")
@@ -551,18 +566,18 @@ class StackupWindow(QDialog):
     def _thickness_edited(self, i: int, value: float):
         u = row_unit(self.unit(), isinstance(self._order[i], CopperLayer))
         self._mm[i] = value * THICKNESS_UNITS[u]
-        self._show_view()                # at once; the analyses wait for the timer
-        self._timer.start()
+        self._show_view()                # at once; the analyses wait for the field to finish
+        self._pending = True
 
     def _er_edited(self, d: int, value: float):
         self._er[d] = value
-        self._timer.start()
+        self._pending = True
 
     def _k_edited(self, d: int, value: float):
         """A conductivity typed for a dielectric; its material's typical value unsets it."""
         self._k[d] = 0.0 if abs(value - lookup(self._mat[d]).k_w_mk) < 1e-9 else value
         self._show_k()
-        self._timer.start()
+        self._pending = True
 
     def _material_chosen(self, d: int, box: QComboBox, _index: int):
         """A material picked from the list: its name, and its typical εr where KiPI knows
@@ -581,7 +596,8 @@ class StackupWindow(QDialog):
         self._er_spins[d].blockSignals(False)
         self._show_k()
         self._show_view()
-        self._timer.start()
+        self._pending = True
+        self.flush()                     # a choice made, not a value being typed
 
     def _emit_edit(self):
         if self._imported is None or self.chk_lock.isChecked():

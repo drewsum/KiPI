@@ -416,3 +416,93 @@ def test_solder_masks_and_silkscreens_are_listed_and_editable(app, unit_setting)
     assert thicknesses(got[0]) == pytest.approx(thicknesses(st))
     win.chk_lock.setChecked(True)
     assert got[-1] is st
+
+
+# ---------------------------------------------------------------- #252: Enter and drafts
+def _unlocked(app):
+    win = StackupWindow()
+    win.set_board(board().stackup, setup=PISetup())
+    win.show()
+    app.processEvents()
+    win.chk_lock.setChecked(False)
+    win.cmb_unit.setCurrentText("µm")
+    return win
+
+
+def _type(app, spin, text, key=None):
+    from qtpy.QtTest import QTest
+    spin.setFocus()
+    spin.selectAll()
+    QTest.keyClicks(spin, text)
+    if key is not None:
+        QTest.keyClick(spin, key)
+    app.processEvents()
+
+
+@pytest.mark.parametrize("key", ["Return", "Enter"])
+def test_enter_in_a_field_keeps_the_value_and_does_not_reset(app, unit_setting, key):
+    from qtpy.QtCore import Qt
+    win = _unlocked(app)
+    got, resets = [], []
+    win.stackup_changed.connect(got.append)
+    win.btn_reset.clicked.connect(lambda: resets.append(1))
+    assert not win.btn_reset.autoDefault() and not win.btn_reset.isDefault()
+    top = win._thk_spins[0]
+    _type(app, top, "70", getattr(Qt, f"Key_{key}"))
+    assert resets == [] and win.isVisible()
+    assert top.value() == pytest.approx(70.0) and win._mm[0] == pytest.approx(0.07)
+    assert len(got) == 1 and got[0].edited and not win.pending()
+    win.close()
+
+
+def test_typing_is_a_draft_until_the_field_is_finished(app, unit_setting):
+    from qtpy.QtCore import Qt
+    win = _unlocked(app)
+    got = []
+    win.stackup_changed.connect(got.append)
+    d, c = _diel_rows(win)[0], _copper_rows(win)[0]
+    first, second = win._thk_spins[d], win._thk_spins[c]
+    _type(app, first, "250")
+    t0 = time.time()
+    while time.time() - t0 < 0.6:              # longer than the old 400 ms timer
+        app.processEvents()
+        time.sleep(0.02)
+    assert got == [] and win.pending()          # the analyses wait ...
+    assert win.view.bands()[d].mm == pytest.approx(0.25)   # ... the view does not
+    _type(app, second, "70", Qt.Key_Tab)        # leaving the first field finishes it
+    assert len(got) == 2                        # the first on leaving it, the second on Tab
+    assert win._mm[d] == pytest.approx(0.25) and win._mm[c] == pytest.approx(0.07)
+    win.flush()
+    st = got[-1]
+    assert first.value() == pytest.approx(250.0) and second.value() == pytest.approx(70.0)
+    assert win.stackup() is st and not win.pending()
+    win.close()
+    assert len(got) == 2                        # closing has nothing left to apply
+
+
+def test_a_material_only_edit_does_not_rebuild_the_nets(app, no_3d, tmp_path, unit_setting):
+    from kipi.gui.main_window import MainWindow
+    snap = board()
+    snap.project_dir = str(tmp_path)
+    w = MainWindow()
+    w._set_snapshot(snap)
+    _idle(app, w)
+    rebuilt = []
+    w.viewer.set_board = lambda *a, **k: rebuilt.append(1)
+    win = w.stackup_window
+    win.chk_lock.setChecked(False)
+    _idle(app, w)
+    win._er_spins[0].setValue(3.0)
+    win.flush()
+    _idle(app, w)
+    assert dielectric_er(w.snapshot.stackup)[0] == pytest.approx(3.0)
+    assert w.solve_panel.setup.stackup is not None and rebuilt == []
+    win.cmb_unit.setCurrentText("mm")
+    win._thk_spins[_diel_rows(win)[0]].setValue(0.5)
+    w._save_setup()                              # saving applies the draft first
+    _idle(app, w)
+    assert rebuilt == [1] and not win.pending()
+    saved = PISetup.load(w._setup_path)
+    assert saved.stackup is not None
+    assert w.snapshot.stackup.dielectrics[0].thickness_mm == pytest.approx(0.5)
+    w.close()

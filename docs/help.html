@@ -333,8 +333,8 @@ title bar, or drag it onto the main window, to dock it again.</p>
     board files with <b>Open…</b> and needs no KiCad. The title bar then ends in
     <i>(standalone)</i>, and the controls that need KiCad are hidden (see the
     <a href="#toolbar">toolbar</a>). Standalone opens KiCad board files
-    (<code>.kicad_pcb</code>), ODB++ jobs, HyperLynx files (<code>.hyp</code>) and KiPI
-    snapshots (<code>.kipi.json.gz</code>).</li>
+    (<code>.kicad_pcb</code>), ODB++ jobs, HyperLynx files (<code>.hyp</code>), EasyEDA
+    Pro projects (<code>.epro2</code>) and KiPI snapshots (<code>.kipi.json.gz</code>).</li>
   <li><b>KiCad board files.</b> A <code>.kicad_pcb</code> from KiCad 7 to 10 reads the
     same as the plugin reads it from KiCad, so a board set up in the plugin opens standalone
     with its setup. Net classes come from the <code>.kicad_pro</code> next to it. KiPI uses
@@ -355,6 +355,13 @@ title bar, or drag it onto the main window, to dock it again.</p>
     part sits or how it is turned, so each part is placed in the middle of its pads (listed
     under <b>Placeholders</b>); KiCad's export also leaves out pads with no net. The setup
     is found by the file's name, as for an ODB++ job.</li>
+  <li><b>EasyEDA Pro projects.</b> Open a <code>.epro2</code> archive saved with
+    <i>File &rarr; Save As &rarr; Save Project to Local</i>. KiPI reads copper, nets, pads,
+    vias, parts and the stackup from the project itself, so no ODB++ export is needed.
+    Dielectric constants left empty use KiPI's default &epsilon;r for AC; blind vias are
+    modeled as through vias; bottom-side parts use a best-effort mirror. Older
+    <code>.epro</code> archives, <code>.eprj3</code> folders and <code>.eprj2</code>
+    databases are not read.</li>
   <li><b>Plugin setup.</b> KiCad installs only what KiPI needs to start, so the KiPI button
     appears within seconds. The first click shows the setup window: the packages KiPI
     installs into KiCad's plugin environment for it, with their sizes, and PARDISO on
@@ -429,7 +436,8 @@ of decimals, plus more when a small typed value needs them.</p>
   <tr><td><b>Open…</b><br><small>standalone</small></td><td class="wrap">Opens a board file:
     a KiCad board (<code>.kicad_pcb</code>), an ODB++ job (<code>.zip</code>,
     <code>.tgz</code>, or its <code>matrix/matrix</code> file), a HyperLynx file
-    (<code>.hyp</code>) or a KiPI snapshot (<code>.kipi.json.gz</code>).
+    (<code>.hyp</code>), an EasyEDA Pro project (<code>.epro2</code>) or a KiPI snapshot
+    (<code>.kipi.json.gz</code>).
     Its saved setup comes with it, as with <b>Load from KiCad</b>. The arrow beside it lists
     the boards opened lately.</td></tr>
   <tr><td><b>Reload</b><br><small>standalone</small></td><td class="wrap">Reads the open board
@@ -576,6 +584,11 @@ electro-thermal solve uses them: heat leaving the outer copper for the air cross
   <li>The stackup and resistivities are saved with the PI setup. An edited stackup is used
     again the next time the board is opened (unlocked). If a layer has been added, removed
     or renamed in KiCad since, the log says so and KiCad's stackup is used.</li>
+  <li>The cross-section follows a value as it is typed. The board view and the analyses
+    take it when the field is finished: press Enter or Tab, or click elsewhere. Choosing a
+    material, closing the window, saving the setup and starting a solve also apply it.
+    A thickness change redraws the board's copper; a material, εr or k change does
+    not.</li>
   <li>To compare stackups, solve, edit, and solve again. A stackup change clears the DC
     results, which were for the old stackup; the AC results stay until a rail is solved
     again. Reports note a stackup edited in KiPI.</li>
@@ -947,7 +960,37 @@ links from a Tomachie power-tree file (<code>&lt;schematic&gt;.pdn.json</code>, 
 current and resistance are solved; each maximum the file gives is kept for a
 <b>Worst case (max)</b> solve, chosen beside <b>Solve all</b>. A current the file does not
 give is marked not known, and the results it touches are INCOMPLETE. The log lists what
-could not be placed on the board. Problems that stop a solve are listed in red under the tabs
+could not be placed on the board.</p>
+<p>What the import fills in, all of it editable afterwards:</p>
+<ul>
+  <li><b>Ground pins</b> of every source, regulator and load, so return current flows in
+  the ground copper. A pull resistor returns through the part it pulls, and a motor
+  through its driver. An isolated converter becomes an <b>Isolated</b> VRM with separate
+  input and output grounds. A ground that no source holds at 0&nbsp;V is left to an ideal
+  ground, and the log says so.</li>
+  <li><b>Remote sense</b>: a regulator's sense pins, or the point on the rail they are
+  tied to, and its return-sense pins become the VRM's sense and ground sense.</li>
+  <li><b>Type and rating per output</b>: on a part with several outputs (a PMIC), each
+  output is an LDO or a switcher on its own, with its own rated current as the current
+  limit.</li>
+  <li><b>DC accuracy</b>: a regulator's output band from the file becomes the VRM's DC
+  accuracy in volts. A board input's stated range becomes its source's accuracy.</li>
+  <li><b>Series links</b> for parts between rails, input filters (a ferrite ahead of a
+  regulator or a load), parts joining two ground nets (a 0&nbsp;&Omega; resistor, a net
+  tie) and a board input's series parts. A switcher's output inductor is a
+  0&nbsp;&Omega; link, because it is inside the regulation loop. Its drop is regulated
+  out and its loss is counted in the efficiency. If the feedback is actually taken
+  before the inductor, this understates the rail's drop. Enter its resistance by hand in
+  that case.</li>
+  <li><b>Loads</b> at their typical current, with a PASS / FAIL range taken from the
+  rail's range, or from the datasheet's supply range where that is stricter. On a rail
+  fed by a board input, the datasheet's range is always used. A part on a rail only by a
+  detect, enable or reference pin is not a load. A part that draws what it drives is
+  solved at its own static current, which understates what it draws. ICs with no supply
+  range in the file are listed in the log.</li>
+</ul>
+<p>Fields the importer does not read, such as <code>details</code> objects, are
+skipped. Problems that stop a solve are listed in red under the tabs
 as you edit. The VRMs, Loads and Series links tabs share one layout: a list with <b>Add</b>,
 <b>Duplicate</b> and <b>Remove</b>, and an editor for the selected entry below it.</p>
 
@@ -1272,10 +1315,14 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     and silkscreen on the way (Stackup window).</td></tr>
   <tr><td>Grid</td><td class="wrap">Thermal cell size; <i>auto</i> is about 250 cells across
     the board.</td></tr>
-  <tr><td>Include load power dissipation</td><td class="wrap">Off by default. When ticked,
-    each load heats the board with the power it draws: the sum over its supply and ground
-    pins of pin current × pin voltage, spread over those pins. A load without ground pins is
-    taken as returning at 0 V.</td></tr>
+  <tr><td>Component heat</td><td class="wrap">Off by default: only the copper and vias heat
+    the board. When ticked, the parts heat it too: each DC connection its I²R, at its pins;
+    each VRM its conversion loss (P in − P out), at its output pins; and each load the power
+    it draws, the sum over its supply and ground pins of pin current × pin voltage, spread
+    over those pins. A load without ground pins is taken as returning at 0 V. The results
+    say how much of each went in, or, when it is off, how much was left out. (Before 1.0.2
+    this was <i>Include load power dissipation</i>, for the loads alone, and the DC
+    connections and VRMs always heated the board.)</td></tr>
   <tr><td>Edge boundaries</td><td class="wrap">Optional. <b>Edit…</b> opens a top-down view
     of the board where you mark stretches of its edge to hold at a fixed temperature, as a
     conduction-cooled heatframe, cold wall or wedge lock does. Click an edge to take its
@@ -1289,13 +1336,14 @@ copper becoming more resistive. KiPI alternates electrical and thermal solves.</
     on any layer is FAIL.</td></tr>
   <tr><td>Max rise above ambient</td><td class="wrap">Optional limit on the temperature rise.</td></tr>
 </table>
-<p>Heat comes from every solved net and layer, vias, DC connections (I²R, at their pins), VRM
-conversion loss and, with <b>Include load power dissipation</b>, the loads. Each copper layer
+<p>Heat comes from every solved net and layer and its vias and, with <b>Component heat</b>,
+from the DC connections (I²R, at their pins), the VRMs' conversion loss and the loads. Each copper layer
 has its own temperature: heat goes onto the layer it is made on (a part's on the layers of its
 pads), crosses the laminate to the layers above and below, and goes down plated holes on any
 net. Only the top and bottom layers lose heat to the air; edge boundaries, if any, take
 heat from every layer. The report's
-<b>Component power dissipation</b> table lists the DC connections' and loads' heat. The
+<b>Component power dissipation</b> table lists the DC connections', VRMs' and loads' heat
+when <b>Component heat</b> is on. The
 limits grade the last solve straight away when you change them.</p>
 <figure><img src="images/setup_thermal.png" alt="Thermal settings"><figcaption>Thermal settings.</figcaption></figure>
 </div>
@@ -1502,7 +1550,9 @@ links) against one <b>ground</b> net. It includes:</p>
     cavity resonances, and the inductance of vias and their mounting.</li>
   <li><b>Capacitors</b> between the rail and ground, each as a series R-L-C from its
     <a href="#ac-caps">model</a>. Only the part's own ESL is entered; its mounting (pads, vias,
-    planes) is simulated.</li>
+    planes) is simulated. An ESL that already includes the mounting, such as a HyperLynx
+    decoupling model with <i>includes mounting</i> set, counts the mounting twice here: enter the
+    part's own ESL instead.</li>
   <li><b>Series links</b> as their resistance plus ESL.</li>
 </ul>
 <div class="callout"><b>Note:</b> the VRM itself is not modeled as an impedance. In AC, VRMs only
@@ -2217,9 +2267,12 @@ receiver guessed as the net's two pads farthest apart. For each victim:</p>
     parallel termination at the receiver).</li>
   <li><b>Logic level</b>: the family's supply. Held high, the line sits at the supply
     through the driver's resistance into the receiver and termination; held low, at
-    ground. The noise margin is the smaller gap from those levels to the family's JESD8
-    VIH and VIL: 800 mV for lightly loaded 3.3 V CMOS. <b>Noise margin</b> overrides it,
-    putting each threshold that far from its level.</li>
+    ground. An undriven line, which nothing holds, is taken at the family's VOH or VOL,
+    where its last driver left it. The noise margin is the smaller gap from those levels to
+    the family's JESD8 VIH and VIL: 800 mV for lightly loaded 3.3 V CMOS. A level already
+    past its threshold (a weak driver into a parallel termination, holding a high under
+    VIH) leaves no margin, and the victim fails whatever its noise. <b>Noise margin</b>
+    overrides it, putting each threshold that far from its level.</li>
 </ul>
 <p>With <b>PI Models</b> shown, each victim's driver and receiver pins are marked in orange
 in the 3D view ("<i>victim</i> driver", "<i>victim</i> receiver"; the guessed ones where
@@ -2581,8 +2634,10 @@ them a model or confirm they really do not belong on this rail.</p>
     parts' datasheets: every power rail with its voltage and where it comes from; each
     regulator with its type, efficiency, quiescent current, dropout and input range; the
     parts in series between rails (fuses, ferrites, inductors, load switches, 0&nbsp;&Omega;
-    links) with their DC resistance; and every load with its typical and maximum current and
-    the lowest supply voltage its datasheet allows. <b>Import…</b> in the DC setup reads it.
+    links) with their DC resistance; the ground pins of each source, regulator and load;
+    each regulator's remote sense point and output accuracy; and every load with its
+    typical and maximum current and the supply range its datasheet allows.
+    <b>Import…</b> in the DC setup reads it (see <a href="#dc-setup">DC setup tabs</a>).
     It saves hours of reading datasheets and typing values in.</td></tr>
   <tr><td><code>&lt;board&gt;.kipi-setup.yml</code></td><td class="wrap">The setup: ticked nets, VRMs,
     loads, series links, mesh, copper and thermal settings, capacitor models, probes and the
@@ -2597,6 +2652,8 @@ them a model or confirm they really do not belong on this rail.</p>
     are deprecated: a future KiPI will stop reading them.</td></tr>
   <tr><td><code>*.kipi.json.gz</code></td><td class="wrap">A board snapshot (copper, stackup,
     pads, vias, parts).</td></tr>
+  <tr><td><code>*.epro2</code></td><td class="wrap">An EasyEDA Pro project archive. KiPI reads
+    it; it never writes this format.</td></tr>
   <tr><td><code>*.kipi-dc-results</code></td><td class="wrap">A saved DC solve: JSON and NumPy
     arrays in a zip.</td></tr>
   <tr><td><code>*.kipi-dc-thermal-results</code></td><td class="wrap">A saved electro-thermal
@@ -2720,6 +2777,22 @@ If the running programs cannot be listed, KiPI carries on.</p></div>
     where it sits.</li>
   <li><b>"pad stacks are used but not in the file":</b> those pads are read with no copper.
     Export the file again from the design tool.</li>
+</ul></div>
+</details>
+<details id="ts-easyeda">
+<summary>An EasyEDA Pro .epro2 project opens with parts or copper missing</summary>
+<div class="body"><ul>
+  <li><b>"not an EasyEDA Pro .epro2 archive":</b> the file is not a ZIP. Save the project
+    again with <i>File &rarr; Save As &rarr; Save Project to Local</i>.</li>
+  <li><b>"older EasyEDA Pro .epro project":</b> the archive is the V2.2 format. Open it in
+    EasyEDA Pro 4 and save it as <code>.epro2</code>.</li>
+  <li><b>"has no PCB document":</b> the project is schematic-only or a library.</li>
+  <li><b>Bottom-side parts look mirrored:</b> their mirroring is a best guess until checked
+    against a bottom-heavy project.</li>
+  <li><b>Blind or buried vias are through vias:</b> the rule that gives their layer span is
+    not read yet.</li>
+  <li><b>No dielectric constants:</b> AC uses KiPI's default &epsilon;r; set the stackup's
+    values in the stackup window.</li>
 </ul></div>
 </details>
 <details>

@@ -153,3 +153,35 @@ def test_the_editor_sets_the_driving_low_resistance(app):
     ed.driver_low_ohm.setValue(8.0)
     assert v.driver_low_ohm == 8.0 and ed.preset.currentData() == "custom"
     p.close()
+
+
+@pytest.mark.parametrize("logic_v", [2.5, 5.0])
+def test_a_high_held_under_vih_has_no_margin_and_fails(logic_v):
+    # A 25 Ω driver into a 50 Ω termination holds a high of 2/3 of the supply, under
+    # VIH: the receiver reads it wrongly with no noise, so no noise may pass (#261).
+    v = Victim("X")
+    v.apply_preset("parallel")
+    v.logic_v = logic_v
+    hi, lo = v.states()
+    assert hi.level_v < hi.threshold_v and hi.toward == -1
+    assert hi.margin_v == pytest.approx(hi.level_v - hi.threshold_v) and hi.margin_v < 0
+    assert lo.margin_v > 0 and v.margin() == pytest.approx(hi.margin_v)
+    from kipi.noise.result import StateResult, VictimResult
+    st = StateResult("high", hi.level_v, hi.threshold_v, hi.driver_ohm, excursion_v=1e-6)
+    assert st.margin_v < 0 and not st.passed
+    r = VictimResult("X", "X", "", "", v.margin(), peak_v=1e-6)
+    assert r.ratio == float("inf") and not r.passed
+    assert r.margin_text().startswith("no margin")
+
+
+def test_an_undriven_line_sits_at_the_logic_familys_output_levels():
+    # Its 1 MΩ is what lets coupled charge stay, not a divider setting its level (#261).
+    v = Victim("X")
+    v.apply_preset("hiz")
+    vil, vih, vol, voh = logic_levels(3.3)
+    hi, lo = v.states()
+    assert (hi.level_v, hi.threshold_v, lo.level_v, lo.threshold_v) == (voh, vih, vol, vil)
+    assert v.margin() == pytest.approx(min(voh - vih, vil - vol))
+    v.noise_margin_v = 0.1                  # a margin by hand, from each level
+    hi, lo = v.states()
+    assert hi.margin_v == pytest.approx(0.1) and lo.margin_v == pytest.approx(0.1)

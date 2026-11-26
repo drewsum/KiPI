@@ -4,6 +4,118 @@ All notable changes to KiPI, newest first. Each minor version is one development
 The code's version number went from 0.1.0 straight to 0.5.0, so 0.2.0 to 0.4.0 name
 milestones rather than versions that were ever set.
 
+## 1.0.2
+
+### Added
+- **EasyEDA Pro projects open standalone** (#257, from @LC-xiaotao's fork). **Open…**
+  now reads EasyEDA Pro `.epro2` project archives directly, with no ODB++ export needed.
+  It reads the stackup, nets, tracks, vias, pads, parts and pours. Empty dielectric
+  constants use KiPI's default εr, blind and buried vias are treated as through vias,
+  and bottom-side parts are mirrored on a best guess. Older `.epro` archives, `.eprj3`
+  folders and `.eprj2` databases are not read. A damaged or hostile `.epro2` cannot hang
+  the import: a polygon pad's side count is held to 3 to 64, and records nested too
+  deeply to parse are skipped and counted like other unreadable lines.
+- **ODB++ jobs from EasyEDA Pro read at the right scale** (#257, from @LC-xiaotao's fork).
+  EasyEDA Pro leaves the units out of `misc/info` and gives them in the step's own files
+  instead. KiPI now looks there before falling back to ODB++'s default of inches, which
+  had scaled the board by 25.4. EasyEDA's `.copper_weight`, which it writes in µm rather
+  than ounces, is read as µm. These boards are labelled *EasyEDA Pro (ODB++)*.
+
+### Changed
+- **Interactive architecture diagram.** The README's *Codebase Layout* links a
+  [system flow diagram](https://drewsum.github.io/KiPI/architecture.html) on GitHub Pages: KiPI's
+  modules as movable cards, stepping through launch, board loading, the solves, results,
+  reports and the tolerance stack-up.
+- **"Component heat" replaces "Include load power dissipation"** (#253). The thermal
+  settings' checkbox now turns all heat from parts on or off together: the loads' power,
+  each VRM's conversion loss (P in − P out, at its output pins) and each DC connection's
+  I²R (at its pins). Off, the default, only the copper and vias heat the board. This
+  changes results: before, the VRMs' and DC connections' losses always heated the board,
+  so an electro-thermal solve of a setup with the box unticked, opened again, runs cooler
+  where it has regulators or series links. Tick **Component heat** to heat with them (and
+  the loads). The results and the report say how much of each kind went in, or how much
+  was left out. Setup files and results saved with `load_power` read it as
+  `component_heat`, and are saved with `component_heat`.
+- **A Tomachie power-tree import fills in more of the setup** (#250, from Tomachie). Only
+  the importer changes; the solver works as before, and every value it fills in is one
+  the user can see and edit in the window. Importing the same `.pdn.json` again gives a
+  different setup, and different results:
+  - **Ground pins.** Each source, regulator and load gets its ground pins, so return
+    current flows in the ground copper. A pull resistor returns through the part it
+    pulls, and a motor through its driver. An isolated converter is imported as an
+    isolated VRM, with its input and output grounds kept apart. A ground that no source
+    holds at 0 V is left to an ideal ground, and the log says so.
+  - **Remote sense.** A regulator's sense pins, or the point on the rail they are tied
+    to, and its return-sense pins become the VRM's sense and ground sense.
+  - **A switcher's output inductor is a 0 Ω link.** It sits inside the regulation loop,
+    so its drop is regulated out and its loss is in the efficiency. This is said in the
+    log. An inductor after a load switch keeps its resistance.
+  - **Each output of a multi-output part has its own type.** A PMIC's LDO output draws
+    its output current from the input, and its buck outputs draw their power over the
+    efficiency. Each output gets its own rated current as the VRM's current limit.
+  - **DC accuracy.** A regulator's output band from the file becomes the VRM's DC
+    accuracy in volts. A board input's stated range becomes its source's accuracy.
+  - **More series links.** Input filters (a ferrite ahead of a regulator or a load),
+    parts joining two ground nets (a 0 Ω resistor, a net tie) and a board input's series
+    parts are imported as series links.
+  - **Loads.** A part on a rail only by a detect, enable or reference pin is no longer a
+    load. A load that draws what it drives is solved at its own static current from its
+    datasheet instead of 0 A. On a rail fed by a board input, a load's datasheet supply
+    range replaces the rail's range for PASS / FAIL, even where it is wider. ICs with no
+    supply range in the file are listed in the log.
+  - **Unread fields.** As before, `details` objects and any other fields the importer
+    does not read are skipped and do not cause the file to be refused. The importer's
+    documentation now says so.
+
+### Fixed
+- **Narrow traces over a plane have the microstrip's inductance** (#258). The AC solve gave
+  copper narrower than about twice its height over its return the cavity model's
+  μ₀·h/(2w) per length, with none of the field that fringes past its edges: a 0.25 mm
+  trace 0.48 mm over ground came out at 1.25 nH/mm, where the microstrip's is 0.55. Such
+  copper, BGA dogbones and capacitor fanouts, now has its face scaled to the microstrip
+  (Hammerstad) inductance; wider copper and planes are as before. On Glasgow revC3 this
+  takes U30's inductance above the capacitors' resonances from 0.67 to 0.63 nH on +3V3
+  and from 0.81 to 0.75 nH on +1V2, which is mostly traces.
+  Most of the rest of the gap to HyperLynx PI there comes from the comparison itself:
+  HyperLynx's capacitor models had *includes mounting* set, so it leaves out the mounting
+  that KiPI simulates on top of the ESL. With each capacitor attached at its vias, KiPI
+  gives 0.29 nH on +3V3 against HyperLynx's 0.30, and the first series resonance at 1.15 MHz
+  against 1.14.
+- **Prepreg names with a prefix or suffix glued on are recognized** (#260). A glass style
+  or resin content run together with letters, as fabricators' stackup tables often write
+  them ("PP2116", "PP7628", "1080RC65"), fell back to FR4 core (0.8 / 0.3 W/m·K) instead
+  of prepreg (0.6 / 0.25 W/m·K), which changed the temperature of the layers either side
+  of it. Only digits next to the style number now rule it out, so "10628" is still not
+  taken as 1062 or 0628 glass.
+- **A coupled-noise victim whose level is already past its threshold fails** (#261). The
+  margin was the absolute gap between the held level and the threshold, so a high held
+  under VIH (25 Ω into a 50 Ω termination on 2.5 V or 5 V logic) still had a positive
+  margin and could pass. The margin is now signed: zero or less leaves no margin, and the
+  victim fails, with a warning naming the state. A **High impedance (undriven)** victim,
+  the scan's default, is now taken at the logic family's VOH and VOL rather than at its
+  1 MΩ "driver" into the 1 MΩ receiver, which held the high at half the supply, under
+  VIH. On 3.3 V logic its margin is 400 mV (VOH − VIH and VIL − VOL), where it was 350 mV
+  measured the wrong way. Results saved before keep the margin they were judged on:
+  solve again to judge them the new way.
+- **A HyperLynx session file's DC sinks load only the pins it names** (#251). When every
+  sink pin of a part on a net drew the same current, the import dropped the pin list, so
+  the load drew its current from every pin of the part on that net, including pins the
+  file does not load. A load from a session file now always lists its sink pins. A load
+  already in the setup for that part and net takes the file's pins, and the import notes
+  say which pins it had before. Importing the same file again gives a different setup
+  where a part has more pins on the net than the file names.
+- **Stackup edits reverted when Enter was pressed** (#252). In the Stackup window, Enter
+  in a thickness, εr or k field clicked **Reset**, the dialog's default button, so the
+  values went back to KiCad's. Enter now only finishes the field; neither button is a
+  default. Reported by DnertL.
+- **Stackup edits rebuilt the board view while they were typed** (#252). A pause of
+  0.4 s while typing applied the stackup, which rebuilt every net's mesh (about 3 s on an
+  800-net board). The cross-section still follows each keystroke, but the board view and
+  the analyses now take the stackup when the field is finished (Enter, Tab or a click
+  elsewhere), a material is chosen, the window is closed, or the setup is saved or solved.
+  A material, εr or k change no longer rebuilds the nets, as their meshes depend only on
+  the thicknesses.
+
 ## 1.0.1
 
 ### Added

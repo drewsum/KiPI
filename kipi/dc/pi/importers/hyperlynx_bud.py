@@ -307,13 +307,21 @@ class BudImporter:
         prefer = sorted(self.ref_nets)
         for (ref, net), amps in sinks.items():
             groups = groups_of(amps)
+            # The sink's own pins, always written out (#251): an empty list would spread
+            # the current over every pin of the part on the net, not only the file's.
+            pins = sorted(amps, key=lambda n: (len(n), n))
             load = existing_load(self.setup, ref, net)
             if load is None:
-                supply = PinRef(ref, net)
+                supply = PinRef(ref, net, pins)
                 load = Load(self._unique(f"{ref} {net}"), supply, 0.0,
                             ground=guess_ground_pins(self.snap, self.setup, None, supply,
                                                      prefer))
                 self.setup.loads.append(load)
+            elif load.supply.pins != pins:
+                was = ", ".join(load.supply.pins) or "all its pins"
+                self.notes.append(f"Load {load.name}: supply pins set to the file's DC sink "
+                                  f"pins {', '.join(pins)} (were {was})")
+                load.supply = PinRef(ref, net, pins)
             load.current = sum(amps.values())
             load.groups = groups if len(groups) > 1 else []
             self._tick(net)
