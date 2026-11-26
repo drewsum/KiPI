@@ -140,6 +140,10 @@ def test_load_heat_raises_the_board_temperature():
     ("Rogers RO4003C", 0.71, False), ("RT/duroid 5880", 0.20, False), ("Ceramic", 24.0, False),
     ("Al", 205.0, False), ("Aluminum nitride", 170.0, False), ("unobtainium", 0.8, True),
     ("", 0.8, True),
+    # A prefix or suffix glued to the glass style or resin content (#260), but not a
+    # longer number that only contains one.
+    ("PP2116", 0.6, False), ("PP7628", 0.6, False), ("PP-2116", 0.6, False),
+    ("1080RC65", 0.6, False), ("2116RC54%", 0.6, False), ("10628", 0.8, True),
 ])
 def test_dielectric_lookup(name, k, assumed):
     from kipi.dc.thermal.materials import lookup

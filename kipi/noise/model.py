@@ -130,12 +130,26 @@ class LogicState:
 
     @property
     def margin_v(self) -> float:
-        return abs(self.level_v - self.threshold_v)
+        """How far the level sits inside its threshold: negative when it is already past it
+        (a weak driver into the termination holding a high under VIH), a state the
+        receiver reads wrongly with no noise at all (#261)."""
+        return signed_margin(self.name, self.level_v, self.threshold_v)
 
     @property
     def toward(self) -> int:
-        """The sign of the noise that moves the line toward the threshold."""
-        return -1 if self.threshold_v < self.level_v else 1
+        """The sign of the noise that moves the line toward (or further past) the
+        threshold: down for the high state, up for the low one."""
+        return state_toward(self.name)
+
+
+def state_toward(name: str) -> int:
+    """The sign of the noise that moves a line held ``name`` toward its threshold."""
+    return -1 if name == "high" else 1
+
+
+def signed_margin(name: str, level_v: float, threshold_v: float) -> float:
+    """A held state's margin, negative when its level is already past its threshold."""
+    return (level_v - threshold_v) * -state_toward(name)
 
 
 @dataclass(frozen=True)
@@ -148,6 +162,10 @@ class VictimPreset:
     margin_v: Optional[float] = None    # None: from the logic levels
     note: str = ""
     driver_low_ohm: Optional[float] = None  # pulling low, where it differs from driver_ohm
+    # Nothing drives the line: its resistance is only what lets coupled charge stay on it,
+    # and it does not set the level. The level is whatever the last driver left, taken
+    # as the logic family's VOH and VOL (#261), not the driver's divider into the load.
+    undriven: bool = False
 
 
 VICTIM_PRESETS = {
@@ -169,7 +187,8 @@ VICTIM_PRESETS = {
     # driver is not known can take. (An EMF along it divides by where that capacitance
     # sits; a low-impedance driver puts it all at the receiver.)
     "hiz": VictimPreset("High impedance (undriven)", 1e6, 1e6, 5.0, None,
-                        note="tri-stated or floating: only its inputs' leakage holds it"),
+                        note="tri-stated or floating: only its inputs' leakage holds it",
+                        undriven=True),
 }
 CUSTOM = "custom"
 
@@ -204,7 +223,8 @@ class Victim:
         return None
 
     def margin(self) -> float:
-        """The smaller of the high and low states' margins."""
+        """The smaller of the high and low states' margins: zero or less when a state's
+        level is already past its threshold, which no noise can pass (#261)."""
         return min(st.margin_v for st in self.states())
 
     def load_ohm(self) -> float:
@@ -219,16 +239,23 @@ class Victim:
         with its drive strength into the load (the supply or ground through its resistance
         in that state, against the receiver and termination to ground), the input
         threshold it must not cross, and that resistance. A margin set by hand or by the
-        type puts the threshold that far from the level."""
-        vil, vih, _, _ = logic_levels(self.logic_v)
-        low = self.driver_ohm if self.driver_low_ohm is None else self.driver_low_ohm
-        load = self.load_ohm()
-        high = self.logic_v if math.isinf(load) else self.logic_v * load / (self.driver_ohm + load)
+        type puts the threshold that far from the level. An undriven line (#261) sits at
+        the logic family's VOH or VOL, where its last driver left it."""
+        vil, vih, vol, voh = logic_levels(self.logic_v)
+        low_ohm = self.driver_ohm if self.driver_low_ohm is None else self.driver_low_ohm
+        preset = VICTIM_PRESETS.get(self.preset)
+        if preset is not None and preset.undriven:
+            high, low = voh, vol
+        else:
+            load = self.load_ohm()
+            high = (self.logic_v if math.isinf(load)
+                    else self.logic_v * load / (self.driver_ohm + load))
+            low = 0.0
         m = self._set_margin()
         if m is not None:
-            vih, vil = high - m, m
+            vih, vil = high - m, low + m
         return [LogicState("high", high, vih, self.driver_ohm),
-                LogicState("low", 0.0, vil, low)]
+                LogicState("low", low, vil, low_ohm)]
 
     def apply_preset(self, key: str):
         """Take a preset's terminations (custom keeps the values)."""

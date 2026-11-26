@@ -10,7 +10,7 @@ than through the thickness (the glass weave), so these are higher than the
 through-plane figures datasheets usually quote; those are kept as well, for the heat that
 crosses the laminate from one copper layer to the next. Names are matched loosely: KiCad's
 built-in materials ("FR4", "Polyimide", "Kapton", "PTFE", "Ceramic", "Al", ...), vendor
-part names ("RO4350B", "370HR") and prepreg descriptions ("2116 RC54%") all work.
+part names ("RO4350B", "370HR") and prepreg descriptions ("2116 RC54%", "PP2116") all work.
 """
 
 from __future__ import annotations
@@ -44,8 +44,10 @@ _TABLE: List[Tuple[str, str, float, float, float]] = [
     (r"ro\s*3\d\d\d", "Rogers RO3000 series", 0.50, 3.0, 0.50),
     (r"duroid|5880|5870", "Rogers RT/duroid (PTFE)", 0.20, 2.2, 0.20),
     (r"ptfe|teflon", "PTFE", 0.25, 2.1, 0.25),
-    (r"\b(1027|1035|1037|106|1067|1078|1080|1086|2113|2116|2313|3313|3070|1501|1506|1652|7628)\b"
-     r"|prepreg|\brc\s*\d+", "FR4 prepreg", 0.6, 4.2, 0.25),
+    # A glass style or a resin content may have letters glued to it ("PP2116", "1080RC65",
+    # #260): only digits around the style number, or a letter before "rc", rule it out.
+    (r"(?<!\d)(1027|1035|1037|106|1067|1078|1080|1086|2113|2116|2313|3313|3070|1501|1506|"
+     r"1652|7628)(?!\d)|prepreg|(?<![a-z])rc\s*\d+", "FR4 prepreg", 0.6, 4.2, 0.25),
     (r"fr[-\s]?4|fr408|370\s*hr|is\s*4\d\d|isola|\bepoxy|tu[-\s]?\d|core", "FR4 core", 0.8,
      DEFAULT_ER, DEFAULT_K_Z_W_MK),
 ]

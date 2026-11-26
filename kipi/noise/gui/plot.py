@@ -304,7 +304,7 @@ class NoisePlot(QWidget):
             v = self._victim() if self.cmb_view.currentData() == "victim" else None
             # In volts (#179). The margin lines are drawn where they fit; far above small
             # noise they would flatten it, so the axis then follows the noise.
-            if v is not None and v.margin_v <= 4 * max(v.peak_v, 1e-15):
+            if v is not None and 0 < v.margin_v <= 4 * max(v.peak_v, 1e-15):
                 _level(ax, v.margin_v, f"noise margin ±{_eng(v.margin_v, 'V')}", "#ff6060", "--")
                 _level(ax, -v.margin_v, None, "#ff6060", "--")
             elif v is not None:
@@ -316,7 +316,7 @@ class NoisePlot(QWidget):
         v = self._victim() if self.cmb_view.currentData() in ("victim", "states") else None
         if v is not None:
             ax.set_title(f"{v.name}: {v.peak_v * 1e3:.4g} mV peak against its "
-                         f"±{v.margin_v * 1e3:.4g} mV margin, from {self.result.aggressor}",
+                         f"{v.margin_text()}, from {self.result.aggressor}",
                          fontsize=10)
         else:
             ax.set_title(f"{self.result.aggressor} ({op.topology}, {op.vin:g} V → {op.vout:g} V, "

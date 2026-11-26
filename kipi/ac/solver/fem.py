@@ -18,7 +18,10 @@ conduction element with a complex 2x2 sheet admittance.
 For two facing planes this is exactly the plane-pair (cavity) model: loop inductance
 μ₀h per square, capacitance ε/h per area, so the plane capacitance, spreading inductance
 and cavity resonances come out of the mesh. Via inductance comes out the same way: the
-current spreading from a barrel on the faces around it gives μ₀h/(2π)·ln(R/r).
+current spreading from a barrel on the faces around it gives μ₀h/(2π)·ln(R/r). Copper
+narrower than about two gap heights facing a wider return (a trace over a plane) has its
+face's height scaled down to the microstrip's inductance, for the field that fringes past
+its edges (#258, :func:`physics.fringe_factor`).
 
 The two faces meet wherever current can pass from one to the other around the copper:
 on the copper boundary (plane edges, antipads, trace edges), drill rings and terminal
@@ -39,6 +42,7 @@ field solve independent of the part values.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -52,7 +56,7 @@ from scipy.spatial import cKDTree
 
 from kipi.ac.solver.near_rail import near_rail
 from kipi.ac.solver.physics import (
-    EPS0_F_PER_MM, MU0_H_PER_MM, slab_difference, slab_impedance,
+    EPS0_F_PER_MM, FRINGE_NONE, MU0_H_PER_MM, fringe_factor, slab_difference, slab_impedance,
 )
 from kipi.core.geometry.copper import contains_xy, net_layer_copper
 from kipi.core.mesh.mesher import MeshOptions, NetMesh, combine_meshes, mesh_many
@@ -78,6 +82,35 @@ SCHUR_MAX_ROWS = 4000
 class ACError(RuntimeError):
     pass
 
+
+# Local copper width (#258), measured by opening the copper (eroding and growing it back)
+# at radii from WIDTH_R0 up, each WIDTH_STEP times the last: a point the opening at r keeps
+# lies in copper at least 2r wide there.
+WIDTH_R0 = 0.02
+WIDTH_STEP = 1.25
+
+
+def local_width(geom, x: np.ndarray, y: np.ndarray, w_max: float, quad_segs: int = 4
+                ) -> np.ndarray:
+    """Width of the copper ``geom`` at points (x, y) in it: about 2r for the largest
+    opening radius r that keeps the point (the geometric mean of the two radii it falls
+    between), np.inf where it is wider than ``w_max``."""
+    w = np.full(len(x), 2 * WIDTH_R0)
+    todo = np.arange(len(x))
+    r = WIDTH_R0
+    while len(todo):
+        if 2 * r > w_max:
+            w[todo] = np.inf
+            break
+        opened = geom.buffer(-r, quad_segs=quad_segs)
+        if opened.is_empty:
+            break
+        opened = opened.buffer(r, quad_segs=quad_segs)
+        kept = contains_xy(opened, x[todo], y[todo])
+        w[todo[kept]] = 2 * r * math.sqrt(WIDTH_STEP)
+        todo = todo[kept]
+        r *= WIDTH_STEP
+    return w
 
 
 def dielectric_summary(stackup: Stackup, default_er: float) -> str:
@@ -490,6 +523,7 @@ class ACSystem:
         h_far = max(st.board_thickness_mm, 0.5)
         h_ext = np.full((len(tris), 2), h_far)
         cap_tri, cap_face, cap_layer, cap_c = [], [], [], []
+        loops = []                      # faces facing the other side: (tris, face, li, j)
         for li in np.unique(tri_li):
             sel = np.flatnonzero(tri_li == li)
             for face, step in ((0, -1), (1, +1)):          # top looks up, bottom down
@@ -507,6 +541,7 @@ class ACSystem:
                         opposite = np.where(tri_kind[tri_here] == 0, hit_g[hit], hit_r[hit])
                         gap, er = self._gap(li, j)
                         h_ext[tri_here[opposite], face] = gap
+                        loops.append((tri_here[opposite], face, li, j))
                         rail_faces = tri_here[opposite & (tri_kind[tri_here] == 0)]
                         if len(rail_faces):
                             cap_tri.append(rail_faces)
@@ -515,6 +550,7 @@ class ACSystem:
                             cap_c.append(EPS0_F_PER_MM * er / gap * area[rail_faces])
                     todo = todo[~hit]
                     j += step
+        self._fringe(loops, h_ext, tri_kind, cen, geom, progress)
         # A face that sees no return while the sheet's other face does is shielded: the
         # field lives in the cavity on the other side, so it carries almost no current at
         # high frequency (on a plane pair, the outer faces). Splitting the current in
@@ -561,6 +597,46 @@ class ACSystem:
                       f"{dielectric_summary(self.snap.stackup, self.ac.default_er)}")
         progress.info(f"Rail-to-ground plane capacitance "
                       f"{self.total_plane_capacitance * 1e9:.3f} nF")
+
+    def _fringe(self, loops, h_ext, tri_kind, cen, geom, progress):
+        """Narrow copper's fringing (#258): a face of copper narrower than the copper of the
+        other side it faces has its inductance height scaled by
+        :func:`physics.fringe_factor` of its width; the wider copper's face, and copper
+        wider than FRINGE_NONE gaps, keep the cavity model's."""
+        if not loops:
+            return
+        t0 = time.perf_counter()
+        layers = self.snap.stackup.copper
+        need: Dict[Tuple[int, int], List[np.ndarray]] = {}
+        w_max: Dict[Tuple[int, int], float] = {}
+        for tsel, _face, li, j in loops:
+            gap = self._gap(li, j)[0]
+            for side in (0, 1):
+                own = tsel[tri_kind[tsel] == side]
+                for key in ((side, li), (1 - side, j)):     # its copper, and what it faces
+                    need.setdefault(key, []).append(own)
+                    w_max[key] = max(w_max.get(key, 0.0), FRINGE_NONE * gap)
+        widths: Dict[Tuple[int, int], np.ndarray] = {}
+        for (side, li), parts in need.items():
+            sel = np.unique(np.concatenate(parts))
+            w = np.full(len(tri_kind), np.inf)
+            g = geom[side].get(layers[li].id)
+            if len(sel) and g is not None:
+                w[sel] = local_width(g, cen[sel, 0], cen[sel, 1], w_max[(side, li)],
+                                     self.dc.circle_quad_segs)
+            widths[(side, li)] = w
+        n_narrow = 0
+        for tsel, face, li, j in loops:
+            gap = self._gap(li, j)[0]
+            k = tri_kind[tsel]
+            own = np.where(k == 0, widths[(0, li)][tsel], widths[(1, li)][tsel])
+            other = np.where(k == 0, widths[(1, j)][tsel], widths[(0, j)][tsel])
+            f = np.where(own <= other, fringe_factor(own, gap), 1.0)
+            h_ext[tsel, face] *= f
+            n_narrow += int((f < 1).sum())
+        if n_narrow:
+            progress.info(f"Narrow copper: {n_narrow} face(s) given its fringing "
+                          f"({time.perf_counter() - t0:.2f} s)")
 
     def _gap(self, i: int, j: int) -> Tuple[float, float]:
         """Distance between the facing faces of copper layers i and j (stack indices) and

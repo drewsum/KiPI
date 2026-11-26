@@ -305,10 +305,11 @@ def write_noise_report(path, result, snap, setup, progress=None) -> Path:
                   for label, sp in ([(f"{v.receiver} total", v.receiver_v["total"])] +
                                     [(k, sp) for k, sp in v.receiver_v.items()
                                      if k != "total"])]
-        margin = v.margin_v * 1e3 if v.margin_v <= 4 * max(v.peak_v, 1e-15) else None
+        margin = (v.margin_v * 1e3 if 0 < v.margin_v <= 4 * max(v.peak_v, 1e-15)
+                  else None)
         parts.append(f"<h3>{_e(v.name)}</h3>")
         plot(curves, f"{v.name}: {v.peak_v * 1e3:.4g} mV peak against its "
-                     f"±{v.margin_v * 1e3:.4g} mV margin", "mV", margin)
+                     f"{v.margin_text()}", "mV", margin)
     if len(result.victims) > len(worst):
         parts.append(f"<p class='note'>The {len(worst)} victims nearest their margin are "
                      "plotted.</p>")
