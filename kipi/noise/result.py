@@ -9,6 +9,7 @@ import numpy as np
 
 from kipi.noise.checks import OperatingPoint
 from kipi.noise.fields import EmiReport, FieldSources
+from kipi.noise.model import signed_margin
 from kipi.noise.parasitics import HotLoopReport
 from kipi.noise.scan import ScanRow
 from kipi.noise.splits import SplitCrossing
@@ -31,11 +32,17 @@ class StateResult:
 
     @property
     def margin_v(self) -> float:
-        return abs(self.level_v - self.threshold_v)
+        """Negative when the level is already past the threshold (#261)."""
+        return signed_margin(self.name, self.level_v, self.threshold_v)
 
     @property
     def ratio(self) -> float:
+        """The noise as a part of the margin; infinite (failed) with no margin left."""
         return self.excursion_v / self.margin_v if self.margin_v > 0 else float("inf")
+
+    @property
+    def passed(self) -> bool:
+        return self.ratio <= 1.0
 
 
 @dataclass
@@ -75,11 +82,19 @@ class VictimResult:
 
     @property
     def ratio(self) -> float:
+        """The peak noise as a part of the margin; infinite (failed) when a held state's
+        level is already past its threshold, so the margin is zero or less (#261)."""
         return self.peak_v / self.margin_v if self.margin_v > 0 else float("inf")
 
     @property
     def passed(self) -> bool:
         return self.ratio <= 1.0
+
+    def margin_text(self) -> str:
+        """The margin as plot titles give it."""
+        if self.margin_v <= 0:
+            return "no margin (a held state is already past its threshold)"
+        return f"±{self.margin_v * 1e3:.4g} mV margin"
 
     @property
     def dominant(self) -> str:

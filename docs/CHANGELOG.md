@@ -68,6 +68,22 @@ milestones rather than versions that were ever set.
     documentation now says so.
 
 ### Fixed
+- **Prepreg names with a prefix or suffix glued on are recognized** (#260). A glass style
+  or resin content run together with letters, as fabricators' stackup tables often write
+  them ("PP2116", "PP7628", "1080RC65"), fell back to FR4 core (0.8 / 0.3 W/m·K) instead
+  of prepreg (0.6 / 0.25 W/m·K), which changed the temperature of the layers either side
+  of it. Only digits next to the style number now rule it out, so "10628" is still not
+  taken as 1062 or 0628 glass.
+- **A coupled-noise victim whose level is already past its threshold fails** (#261). The
+  margin was the absolute gap between the held level and the threshold, so a high held
+  under VIH (25 Ω into a 50 Ω termination on 2.5 V or 5 V logic) still had a positive
+  margin and could pass. The margin is now signed: zero or less leaves no margin, and the
+  victim fails, with a warning naming the state. A **High impedance (undriven)** victim,
+  the scan's default, is now taken at the logic family's VOH and VOL rather than at its
+  1 MΩ "driver" into the 1 MΩ receiver, which held the high at half the supply, under
+  VIH. On 3.3 V logic its margin is 400 mV (VOH − VIH and VIL − VOL), where it was 350 mV
+  measured the wrong way. Results saved before keep the margin they were judged on:
+  solve again to judge them the new way.
 - **A HyperLynx session file's DC sinks load only the pins it names** (#251). When every
   sink pin of a part on a net drew the same current, the import dropped the pin list, so
   the load drew its current from every pin of the part on that net, including pins the

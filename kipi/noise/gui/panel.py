@@ -711,7 +711,9 @@ class VictimEditor(_Editor):
         hi, lo = v.states()
         self.lbl_margin.setText(f"Margin used: {v.margin() * 1e3:.4g} mV (high: "
                                 f"{hi.level_v:.3g} V against {hi.threshold_v:.3g} V; low: "
-                                f"{lo.level_v:.3g} V against {lo.threshold_v:.3g} V)")
+                                f"{lo.level_v:.3g} V against {lo.threshold_v:.3g} V)"
+                                + (": a state is already past its threshold, so it fails"
+                                   if v.margin() <= 0 else ""))
 
     def _net_changed(self, _i):
         """Another net: its pins are guessed afresh."""
